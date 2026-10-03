@@ -297,13 +297,13 @@ test("CALIBRATION: the rule refuses ONE of the Acceptance sections on `main`'s o
   assert.ok(clean.length > 0, "the population this filters must not be empty, or the emptiness below is "
     + "satisfied by having examined nothing");
   const offenders = clean.flatMap((command) =>
-    unresolvedAcceptancePaths(rowWithRegion("packages/x/y.ts", command)).map((hit: any) => hit.path));
+    unresolvedAcceptancePaths(rowWithRegion("packages/x/y.ts", command)).map((hit: UntypedTool) => hit.path));
   assert.deepEqual(offenders, [],
     "a real Acceptance command naming only real files must file — two offenders in twenty-eight is a "
     + "guard, and four false ones would be a wall");
   assert.deepEqual(
     unresolvedAcceptancePaths(rowWithRegion("packages/x/y.ts",
-      "npx tsx --test packages/lab/src/packaging/board-summary-origin.test.ts")).map((hit: any) => hit.path),
+      "npx tsx --test packages/lab/src/packaging/board-summary-origin.test.ts")).map((hit: UntypedTool) => hit.path),
     ["packages/lab/src/packaging/board-summary-origin.test.ts"],
     "#20's own string, which is what the calibration found");
 });

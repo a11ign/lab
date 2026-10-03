@@ -848,7 +848,7 @@ test("#2233: an excluded path is not reported STRAY either -- it is out of the s
 // The pre-#2233 grammar, verbatim -- the extension ended `\.[A-Za-z]{2,4}` with nothing after it -- so the
 // truncation is REPRODUCED here rather than described.
 const oldRegionPaths = (text: string): string[] => {
-  const alts = trackedTopLevelDirs().map((d: any) => d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const alts = trackedTopLevelDirs().map((d: UntypedTool) => d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const old = new RegExp(`(?:^|[\\s\`"'(])((?:${alts})\\/[A-Za-z0-9/_.-]+\\.[A-Za-z]{2,4})`, "g");
   return [...text.matchAll(old)].map((m) => m[1]);
 };

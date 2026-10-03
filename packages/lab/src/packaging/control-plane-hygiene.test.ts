@@ -39,7 +39,7 @@ test("the real repo's dist-trap check finds every package it claims to check, pr
   assert.equal(trap.protectedByRoot, true,
     "the real repo's root package.json must declare a prepare that builds everything -- if this is false, "
     + "#168's fix has been reverted or edited into a shape this check no longer recognises");
-  assert.deepEqual(trap.exposed.map((p: any) => p.name), []);
+  assert.deepEqual(trap.exposed.map((p: UntypedTool) => p.name), []);
 });
 
 test("rootPrepareBuildsEverything: true when prepare invokes pnpm run build", () => {
@@ -100,7 +100,7 @@ test("MUTATION-shaped: a bare-imported, dist-exporting package is EXPOSED when t
   );
   const trap = distTrapReport(dir);
   assert.equal(trap.protectedByRoot, false);
-  assert.deepEqual(trap.exposed.map((p: any) => p.name), ["@fake/exposed-pkg"]);
+  assert.deepEqual(trap.exposed.map((p: UntypedTool) => p.name), ["@fake/exposed-pkg"]);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -157,7 +157,7 @@ test("a package only ever imported from its own directory is not counted as need
     [{ dir: "self-only", name: "@fake/self-only", rootExport: "./dist/index.js" }],
     [{ path: "packages/self-only/src/self-test.ts", line: 'import { x } from "@fake/self-only";\n' }],
   );
-  assert.deepEqual(workspacePackages(dir).map((p: any) => p.name), ["@fake/self-only"]);
+  assert.deepEqual(workspacePackages(dir).map((p: UntypedTool) => p.name), ["@fake/self-only"]);
   assert.deepEqual([...packagesImportedByName(dir, workspacePackages(dir))], [],
     "a package importing only ITSELF must not count as needed by another package");
   rmSync(dir, { recursive: true, force: true });
@@ -297,7 +297,7 @@ test("#2220: the quotactl script is real Python that answers in JSON on ANY host
 
 test("#2220: the report row carries the verdict, the df contrast, a rule the report accepts, and reads via `read`", () => {
   let asked = "";
-  const [label, measured, rule] = tmpQuotaRow((path: any) => { asked = path; return readingOf({ quota: quotaAt(1) }); });
+  const [label, measured, rule] = tmpQuotaRow((path: UntypedTool) => { asked = path; return readingOf({ quota: quotaAt(1) }); });
   assert.equal(asked, "/tmp");
   assert.match(label, /\/tmp user quota/);
   assert.match(measured, /^EXHAUSTED -- .*100%.*; df shows 3174 MB free$/);

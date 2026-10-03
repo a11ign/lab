@@ -83,7 +83,7 @@ function draft(n: number, rollup: unknown[], comments: { body: string }[] = []) 
 test("#912: a settled green draft with no verdict wakes its parity reviewer -- and nothing else does", () => {
   // THE POSITIVE, first: without this the rest is satisfied by a function that never emits anything.
   const orders = decide({ prs: [draft(1, GREEN), draft(2, GREEN)], readyRows: [] });
-  assert.deepEqual(orders.map((o: any) => o.session), ["reviewer-1", "reviewer-2"],
+  assert.deepEqual(orders.map((o: UntypedTool) => o.session), ["reviewer-1", "reviewer-2"],
     "PR n's reviewer is `reviewer-<n>` (#2401); the odd/even split is retired");
   assert.equal(orders[0].cause, "draft-awaiting-verdict");
   assert.ok(CAUSES.includes(orders[0].cause), "every emitted cause is declared in CAUSES");
@@ -94,8 +94,8 @@ test("#912: a settled green draft with no verdict wakes its parity reviewer -- a
   // command, re-derived numbers, mutation) on a head the author is still moving. The author being woken
   // is the comment's own conclusion, finally acted on.
   const red = decide({ prs: [draft(3, RED)], readyRows: [] });
-  assert.deepEqual(red.map((o: any) => o.cause), ["pr-checks-failing"], "a red draft is its author's to fix");
-  assert.ok(!red.some((o: any) => o.session.startsWith("reviewer")), "and no reviewer is spent on a red head");
+  assert.deepEqual(red.map((o: UntypedTool) => o.cause), ["pr-checks-failing"], "a red draft is its author's to fix");
+  assert.ok(!red.some((o: UntypedTool) => o.session.startsWith("reviewer")), "and no reviewer is spent on a red head");
 
   // PENDING IS NOT GREEN AND NOT RED: unknowable yet, so ask again next tick rather than wake onto a
   // moving head.
@@ -191,7 +191,7 @@ test("#912: a claimed row is not work, and an unclaimed one names no session", (
   const rows = [{ number: 20, labels: [{ name: "ready" }] },
     { number: 21, labels: [{ name: "ready" }, { name: "in-progress" }] }];
   const orders = decide({ prs: [], readyRows: rows });
-  assert.deepEqual(orders.map((o: any) => o.subject), ["row-20"],
+  assert.deepEqual(orders.map((o: UntypedTool) => o.subject), ["row-20"],
     "`ready` WITHOUT `in-progress` is the unclaimed set, and the claimed row is excluded");
 
   // NO SESSION IS NAMED, deliberately: which engineer takes it depends on who is idle at that instant,
@@ -212,14 +212,14 @@ test("#912: a claimed row is not work, and an unclaimed one names no session", (
 test("every unclaimed row is its OWN order, so one tick can fill every idle engineer", () => {
   const rows = [30, 31, 32].map((n) => ({ number: n, labels: [{ name: "ready" }] }));
   const orders = decide({ prs: [], readyRows: rows });
-  assert.deepEqual(orders.map((o: any) => o.subject), ["row-30", "row-31", "row-32"]);
-  assert.equal(new Set(orders.map((o: any) => o.causeKey)).size, 3,
+  assert.deepEqual(orders.map((o: UntypedTool) => o.subject), ["row-30", "row-31", "row-32"]);
+  assert.equal(new Set(orders.map((o: UntypedTool) => o.causeKey)).size, 3,
     "distinct keys, or the ledger would treat the queue as one already-delivered job");
 });
 
 test("rows go out OLDEST first -- a queue that hands out its newest starves its oldest", () => {
   const rows = [90, 12, 45].map((n) => ({ number: n, labels: [{ name: "ready" }] }));
-  assert.deepEqual(decide({ prs: [], readyRows: rows }).map((o: any) => o.subject),
+  assert.deepEqual(decide({ prs: [], readyRows: rows }).map((o: UntypedTool) => o.subject),
     ["row-12", "row-45", "row-90"]);
 });
 
@@ -282,8 +282,8 @@ test("a row already woken for keeps its key, so the next tick does not recruit a
   // #41 gets claimed; #40's key must be unchanged, or the ledger re-offers a row already being worked.
   const after = decide({ prs: [], readyRows: [rows[0], { ...rows[1], labels: [{ name: "ready" },
     { name: "in-progress" }] }] });
-  assert.equal(after.find((o: any) => o.subject === "row-40")?.causeKey,
-    first.find((o: any) => o.subject === "row-40")?.causeKey,
+  assert.equal(after.find((o: UntypedTool) => o.subject === "row-40")?.causeKey,
+    first.find((o: UntypedTool) => o.subject === "row-40")?.causeKey,
     "keyed on the queue DEPTH, every claim rewrote every remaining key and re-woke someone");
 });
 
@@ -1679,7 +1679,7 @@ const requiredWithLog = (run: (args: string[]) => string) => {
   const lines: string[] = [];
   const calls: string[][] = [];
   const required = requiredCheckNames((args: string[]) => { calls.push(args); return run(args); },
-    (line: any) => { lines.push(line); });
+    (line: UntypedTool) => { lines.push(line); });
   return { required, lines, calls };
 };
 
@@ -1997,7 +1997,7 @@ test("the gate's read count is counted, not remembered", () => {
     + "this cause was told not to buy");
   assert.ok(GH_READS.conditionalOnClaimedRows.includes("readClaimedRowComments"));
   // #2356: the trunk read is ONE call when main is healthy, and its four follow-ups are paid only by a red.
-  assert.ok(GH_READS.unconditional.some((r: any) => r.includes("readTrunkRed")));
+  assert.ok(GH_READS.unconditional.some((r: UntypedTool) => r.includes("readTrunkRed")));
   assert.ok(GH_READS.conditionalOnRedTrunk.includes("readTrunkRed"));
 });
 
@@ -2249,7 +2249,7 @@ const epic = (n: number, total = 0) => ({ number: n, title: `epic ${n}`,
   labels: [{ name: "backlog" }, { name: "epic" }], subIssuesSummary: { total, completed: 0 } });
 
 test("an epic with no sub-issues is unfiled work; one with children is a real container", () => {
-  assert.deepEqual(unfiledEpics([epic(34), epic(1317, 10)]).map((e: any) => e.number), [34],
+  assert.deepEqual(unfiledEpics([epic(34), epic(1317, 10)]).map((e: UntypedTool) => e.number), [34],
     "#1317 has ten children and is doing its job; #34 has none and is hiding capture work");
   assert.deepEqual(unfiledEpics([]), []);
   assert.deepEqual(unfiledEpics(undefined as never), []);
@@ -2502,7 +2502,7 @@ test("a `blocked` row naming nothing is reported; one naming something is not", 
   const bare = staleBlocked(1731);
   const edge = staleBlocked(72, { blockedBy: { nodes: [{ number: 9, state: "OPEN" }] } });
   const dated = staleBlocked(1234, { body: "Not-before: 2099-01-01" });
-  assert.deepEqual(blockedWithoutReferent([bare, edge, dated], "2026-09-20").map((r: any) => r.number),
+  assert.deepEqual(blockedWithoutReferent([bare, edge, dated], "2026-09-20").map((r: UntypedTool) => r.number),
     [1731], "a recorded blocker is examinable; a bare label is not");
 });
 
@@ -2535,7 +2535,7 @@ test("it waits for an empty shelf, like epic-unfiled", () => {
 test("a row whose blocker has CLOSED is reported, because the label outlived the condition", () => {
   // The exact case that cost the day: #1731's blocker was fixed the day before and the label stayed on.
   const cleared = staleBlocked(1731, { blockedBy: { nodes: [{ number: 9, state: "CLOSED" }] } });
-  assert.deepEqual(blockedWithoutReferent([cleared], "2026-09-20").map((r: any) => r.number), [1731]);
+  assert.deepEqual(blockedWithoutReferent([cleared], "2026-09-20").map((r: UntypedTool) => r.number), [1731]);
 });
 
 /**
@@ -2557,7 +2557,7 @@ test("an epic with a recorded blocker is not reported as unfiled", () => {
     body: "Not-before: 2099-01-01" };
   const plain = { number: 34, title: "captures", subIssuesSummary: { total: 0 } };
 
-  assert.deepEqual(unfiledEpics([blocked, dated, plain], "2026-09-20").map((e: any) => e.number), [34],
+  assert.deepEqual(unfiledEpics([blocked, dated, plain], "2026-09-20").map((e: UntypedTool) => e.number), [34],
     "only the epic that is genuinely unfiled AND not waiting");
   assert.deepEqual(epicOrders([blocked, dated], []), [],
     "and an epic waiting on a recorded condition produces no order at all");
@@ -2572,10 +2572,10 @@ test("#3088: a `parked` or `needs:chairman` epic is not reported as unfiled, and
     assert.deepEqual(epicOrders([epicWith(2628, label)], []), [], `and it produces no order on an empty shelf (${label})`);
   }
   // POSITIVE CONTROL: the identical epic WITHOUT the label is still reported and still ordered.
-  assert.deepEqual(unfiledEpics([epicWith(2628)]).map((e: any) => e.number), [2628]);
+  assert.deepEqual(unfiledEpics([epicWith(2628)]).map((e: UntypedTool) => e.number), [2628]);
   assert.equal(epicOrders([epicWith(2628)], []).length, 1);
   assert.deepEqual(
-    unfiledEpics([epicWith(2628, PARKED_LABEL), epicWith(34), epicWith(35, CHAIRMAN_LABEL)]).map((e: any) => e.number),
+    unfiledEpics([epicWith(2628, PARKED_LABEL), epicWith(34), epicWith(35, CHAIRMAN_LABEL)]).map((e: UntypedTool) => e.number),
     [34], "only the labelled epics of a mixed population are dropped");
 });
 
@@ -2583,7 +2583,7 @@ test("a CLEARED blocker makes the epic unfiled again, with no human involved", (
   // The self-clearing property #1780 was built for, now reaching this cause too.
   const cleared = { number: 57, subIssuesSummary: { total: 0 },
     blockedBy: { nodes: [{ number: 9, state: "CLOSED" }] } };
-  assert.deepEqual(unfiledEpics([cleared], "2026-09-20").map((e: any) => e.number), [57]);
+  assert.deepEqual(unfiledEpics([cleared], "2026-09-20").map((e: UntypedTool) => e.number), [57]);
 });
 
 test("readEpics fetches the fields a waiting condition lives in", () => {
@@ -2792,7 +2792,7 @@ const doneEpic = (n: number, total = 1) => ({ number: n, title: `epic ${n}`,
   labels: [{ name: "backlog" }, { name: "epic" }], subIssuesSummary: { total, completed: total } });
 
 test("#1848: every child closed is FINISHED; part-done and never-filed are not", () => {
-  assert.deepEqual(finishedEpics([doneEpic(1317, 10), epic(149, 6), epic(69)]).map((e: any) => e.number), [1317],
+  assert.deepEqual(finishedEpics([doneEpic(1317, 10), epic(149, 6), epic(69)]).map((e: UntypedTool) => e.number), [1317],
     "#1317 is 10/10 -- done. #149 is 6 children with none closed. #69 has none at all, which is "
     + "unfiledEpics' finding, not this one");
   assert.deepEqual(finishedEpics([]), []);
@@ -2804,8 +2804,8 @@ test("#1848: THE TWO CAUSES ARE DISJOINT -- no epic is ever both unfiled and fin
   // epic reported twice would put product-manager in front of two contradictory orders about one row,
   // and `0 === 0` is exactly the kind of boundary a later edit gets wrong.
   const population = [epic(69), epic(149, 6), doneEpic(1317, 10), doneEpic(31)];
-  const unfiled = unfiledEpics(population).map((e: any) => e.number);
-  const finished = finishedEpics(population).map((e: any) => e.number);
+  const unfiled = unfiledEpics(population).map((e: UntypedTool) => e.number);
+  const finished = finishedEpics(population).map((e: UntypedTool) => e.number);
   assert.deepEqual(unfiled, [69]);
   assert.deepEqual(finished, [1317, 31]);
   assert.deepEqual(unfiled.filter((n) => finished.includes(n)), [],
@@ -2821,7 +2821,7 @@ test("#1848: a WAITING epic is waiting, not finished -- #1780's filter, same as 
     "a real blockedBy edge counts too, not only the date field -- and the shape is GraphQL's "
     + "`{ nodes: [...] }`, which my first fixture got wrong and the test caught");
   assert.deepEqual(finishedEpics([{ ...doneEpic(59, 3), blockedBy: { nodes: [{ number: 5, state: "CLOSED" }] } }])
-    .map((e: any) => e.number), [59],
+    .map((e: UntypedTool) => e.number), [59],
     "POSITIVE CONTROL: a CLOSED blocker is not a wait, or a finished epic would be hidden for ever "
     + "by an edge that resolved months ago");
 });
@@ -2890,10 +2890,10 @@ test("#1941/#2443: the batch is every open fleet-gated row, in row order, WHATEV
   // be offered, unchanged.
   const rows = [batchRow(1768), batchRow(1042), batchRow(99, OFF_PATH),
     { number: 5, labels: [{ name: "backlog" }], milestone: { title: ON_PATH } }];
-  assert.deepEqual(fleetBatchRows(rows).map((r: any) => r.number), [99, 1042, 1768],
+  assert.deepEqual(fleetBatchRows(rows).map((r: UntypedTool) => r.number), [99, 1042, 1768],
     "label-scoped, and SORTED -- an unsorted set would mint a different causeKey "
     + "for the same batch depending on what order GitHub happened to return it in");
-  assert.deepEqual(fleetBatchRows([batchRow(1, null)]).map((r: any) => r.number), [1],
+  assert.deepEqual(fleetBatchRows([batchRow(1, null)]).map((r: UntypedTool) => r.number), [1],
     "a row with no milestone at all is still a row that needs a fleet run");
 });
 
@@ -2904,7 +2904,7 @@ test("#2443: a fleet-gated row carrying `out-of-release` and the `Out of release
   const [order] = fleetBatchOrders([offPath]);
   assert.equal(order?.causeKey, "orchestrator/fleet-batch-due/2212");
   assert.doesNotMatch(order.prompt, /Road to version one/, "the order no longer claims a milestone");
-  assert.deepEqual(fleetBatchOrders([batchRow(2258)]).map((o: any) => o.causeKey),
+  assert.deepEqual(fleetBatchOrders([batchRow(2258)]).map((o: UntypedTool) => o.causeKey),
     ["orchestrator/fleet-batch-due/2258"], "POSITIVE CONTROL: the on-path case is unchanged");
 });
 
@@ -2995,8 +2995,8 @@ test("#2443: the waiting fields still shelve an OFF-path row, exactly as they do
   const blocked = { ...gatedRow(2213, blockedByOpen), milestone: { title: OFF_PATH } };
   const free = { ...gatedRow(2214), milestone: { title: OFF_PATH } };
   const { batch, waiting } = partitionFleetBatch([future, blocked, free], CLOCK);
-  assert.deepEqual(batch.map((r: any) => r.number), [2214], "the runnable off-path row is offered");
-  assert.deepEqual(waiting.map((w: any) => w.number), [2212, 2213], "the waiting ones leave, and are reported");
+  assert.deepEqual(batch.map((r: UntypedTool) => r.number), [2214], "the runnable off-path row is offered");
+  assert.deepEqual(waiting.map((w: UntypedTool) => w.number), [2212, 2213], "the waiting ones leave, and are reported");
 });
 
 test("#2027: an open `blockedBy` edge takes the row out of the fleet batch -- and a closed one puts it back", () => {
@@ -3005,7 +3005,7 @@ test("#2027: an open `blockedBy` edge takes the row out of the fleet batch -- an
   // THE POSITIVE CONTROL, and it is the one that matters: an exclusion test alone passes on a filter that
   // returns nothing at all, which is the defect with the sign flipped.
   assert.deepEqual(
-    fleetBatchRows([gatedRow(1976, blockedByClosed)], CLOCK).map((r: any) => r.number),
+    fleetBatchRows([gatedRow(1976, blockedByClosed)], CLOCK).map((r: UntypedTool) => r.number),
     [1976], "a blocker that has CLOSED is a condition that cleared, and the row comes back by itself");
 });
 
@@ -3014,7 +3014,7 @@ test("#2027: a future `Not-before:` takes the row out -- and today's date puts i
   assert.deepEqual(fleetBatchRows([future], CLOCK), [],
     "#1042 carried exactly this on 2026-09-22 and was dispatched anyway");
   const arrived = gatedRow(1042, { body: `Not-before: ${TODAY}` });
-  assert.deepEqual(fleetBatchRows([arrived], CLOCK).map((r: any) => r.number), [1042],
+  assert.deepEqual(fleetBatchRows([arrived], CLOCK).map((r: UntypedTool) => r.number), [1042],
     "POSITIVE CONTROL: `Not-before:` is not-BEFORE, so the named day itself is runnable");
 });
 
@@ -3026,7 +3026,7 @@ test("#2027: a live `Fleet-hold-until:` takes the row out -- and a lapsed one pu
   assert.deepEqual(fleetBatchRows([live], CLOCK), [],
     "a multi-round same-build sequence owns the fleet until the second it named");
   const lapsed = gatedRow(1768, { body: "Fleet-hold-until: 2026-09-23T06:00:00Z" });
-  assert.deepEqual(fleetBatchRows([lapsed], CLOCK).map((r: any) => r.number), [1768],
+  assert.deepEqual(fleetBatchRows([lapsed], CLOCK).map((r: UntypedTool) => r.number), [1768],
     "POSITIVE CONTROL: the hold lapses with no edit to anyone's row, which is the property it was built for");
 });
 
@@ -3035,7 +3035,7 @@ test("#2027: an `answer:<session>` label takes the row out -- and removing it pu
     labels: [{ name: "fleet-gated" }, { name: `${ANSWER_PREFIX}product-manager` }] };
   assert.deepEqual(fleetBatchRows([owed], CLOCK), [],
     "#914 is the row that cost 6.5 hours waiting for a ruling -- re-dispatching it is re-asking it");
-  assert.deepEqual(fleetBatchRows([gatedRow(914)], CLOCK).map((r: any) => r.number), [914],
+  assert.deepEqual(fleetBatchRows([gatedRow(914)], CLOCK).map((r: UntypedTool) => r.number), [914],
     "POSITIVE CONTROL: removing the label IS the act of answering, and the row returns on that alone");
 });
 
@@ -3056,7 +3056,7 @@ test("#2027: a whole batch that is waiting produces NO ORDER, rather than an ord
 test("#2027: a shelved fleet row is REPORTED, never silently dropped", () => {
   const { batch, waiting } = partitionFleetBatch(
     [gatedRow(1976, blockedByOpen), gatedRow(1908)], CLOCK);
-  assert.deepEqual(batch.map((r: any) => r.number), [1908]);
+  assert.deepEqual(batch.map((r: UntypedTool) => r.number), [1908]);
   assert.deepEqual(waiting, [{ number: 1976,
     reason: "blocked by #1918 -- declared on the row, and it clears itself" }],
     "the same sentence the engineer pool's shelvings print, because a row that vanishes silently is the "
@@ -3073,14 +3073,14 @@ test("#2730: `needs:chairman` takes a row out of the fleet batch -- and removing
   const asked = gatedRow(2728, { labels: [{ name: "fleet-gated" }, { name: CHAIRMAN_LABEL }] });
   assert.deepEqual(fleetBatchRows([asked], CLOCK), [],
     "#2728 is a credential row answered `needs:chairman`; re-dispatching it is re-asking it");
-  assert.deepEqual(fleetBatchRows([gatedRow(2728)], CLOCK).map((r: any) => r.number), [2728],
+  assert.deepEqual(fleetBatchRows([gatedRow(2728)], CLOCK).map((r: UntypedTool) => r.number), [2728],
     "POSITIVE CONTROL: removing the label IS the act of answering, and the row returns on that alone");
 });
 
 test("#2730: a `needs:chairman` row is REPORTED as waiting, in the sentence the other conditions get", () => {
   const asked = gatedRow(2728, { labels: [{ name: "fleet-gated" }, { name: CHAIRMAN_LABEL }] });
   const { batch, waiting } = partitionFleetBatch([asked, gatedRow(1908)], CLOCK);
-  assert.deepEqual(batch.map((r: any) => r.number), [1908]);
+  assert.deepEqual(batch.map((r: UntypedTool) => r.number), [1908]);
   assert.deepEqual(waiting, [{ number: 2728,
     reason: "waiting on the chairman (needs:chairman) -- declared on the row, and it clears itself" }]);
 });
@@ -3189,7 +3189,7 @@ test("#2161: the SAME row is announced with no pull request and screened once on
   assert.equal(unresumed?.session, "worker-capture",
     "POSITIVE CONTROL: an open PR for ANOTHER row is not this holder's answer, so the order still goes");
   assert.equal(unresumed?.causeKey, "worker-capture/blocker-cleared/row-2031/2014");
-  assert.deepEqual(blockerClearedOrders([row], TODAY, NOW, { openPrs: [] }).map((o: any) => o.causeKey),
+  assert.deepEqual(blockerClearedOrders([row], TODAY, NOW, { openPrs: [] }).map((o: UntypedTool) => o.causeKey),
     ["worker-capture/blocker-cleared/row-2031/2014"], "no open PR at all: the holder has not resumed");
   assert.deepEqual(blockerClearedOrders([row], TODAY, NOW, { openPrs: [openPr(2156, "Closes #2031")] }), [],
     "an open PR whose `Closes:` names the row proves the clearing was acted on -- and this is the SAME "
@@ -3247,7 +3247,7 @@ test("#2161: a truncated file list does not withdraw the screen -- it reads `prs
 test("#2161: the narrowing REMOVES nothing but the resumed row -- one orders, one does not, side by side", () => {
   const rows = [heldRow(2031, "worker-capture", { ...blockedByClosed }),
     heldRow(2145, "worker-5", { ...blockedByClosed })];
-  assert.deepEqual(blockerClearedOrders(rows, TODAY, NOW, { openPrs: [openPr(2156, "Closes #2031")] }).map((o: any) => o.session),
+  assert.deepEqual(blockerClearedOrders(rows, TODAY, NOW, { openPrs: [openPr(2156, "Closes #2031")] }).map((o: UntypedTool) => o.session),
     ["worker-5"], "the holder who has NOT resumed is still told, with #2027's prompt");
   assert.match(blockerClearedOrders(rows, TODAY, NOW, { openPrs: [openPr(2156, "Closes #2031")] })[0]?.prompt ?? "",
     /PICK IT BACK UP/);
@@ -3256,7 +3256,7 @@ test("#2161: the narrowing REMOVES nothing but the resumed row -- one orders, on
 test("#2161: decide() hands the cause the pull requests it already read", () => {
   const row = heldRow(2031, "worker-capture", { ...blockedByClosed });
   const cleared = (prs: ReturnType<typeof openPr>[]) => decide({ prs, readyRows: [], openRows: [row] })
-    .filter((o: any) => o.cause === "blocker-cleared");
+    .filter((o: UntypedTool) => o.cause === "blocker-cleared");
   assert.equal(cleared([]).length, 1, "POSITIVE CONTROL: with no open PR the order is still emitted");
   assert.equal(cleared([openPr(2156, "Closes #2031")]).length, 0,
     "and with the holder's open PR in `prs` the same call emits none -- decide must pass `prs` through");
@@ -3287,10 +3287,10 @@ test("#2741: blocker-cleared is JUDGMENT, the same reclassification row-branch-u
 test("#2027: decide() routes it, and ahead of the causes that offer new work", () => {
   const orders = decide({ prs: [], readyRows: [],
     openRows: [heldRow(1908, "worker-capture", { ...blockedByClosed })] });
-  const causes = orders.map((o: any) => o.cause);
+  const causes = orders.map((o: UntypedTool) => o.cause);
   assert.ok(causes.includes("blocker-cleared"),
     "the gate could see the row become runnable and, before this, had nobody to tell");
-  assert.equal(orders.find((o: any) => o.cause === "blocker-cleared")?.session, "worker-capture");
+  assert.equal(orders.find((o: UntypedTool) => o.cause === "blocker-cleared")?.session, "worker-capture");
 });
 
 // --- #2741: `blocker-cleared` backs off THE SAME WAY `unclaimed-blocker-cleared` already does ----------
@@ -3326,7 +3326,7 @@ test("#2741: with no closing times (an old caller, or a refused read), every ask
   // The exact fallback `unclaimedBlockerClearedOrders` already documents for its own `closings`: absent
   // or `null` behaves exactly as before this row, never toward silence.
   for (const now of [T2741 + 20 * 60_000, T2741 + 3 * HOUR_MS, T2741 + 40 * HOUR_MS]) {
-    assert.deepEqual(blockerClearedOrders([row1756()], TODAY, now).map((o: any) => o.causeKey), [FIRST_1756_KEY],
+    assert.deepEqual(blockerClearedOrders([row1756()], TODAY, now).map((o: UntypedTool) => o.causeKey), [FIRST_1756_KEY],
       `now=${now}`);
   }
 });
@@ -3335,7 +3335,7 @@ test("#2741: decide() passes the closing times through, and without them behaves
   const state = { prs: [], readyRows: [], openRows: [row1756()] };
   const asked = (closings?: Map<number, number> | null) =>
     decide({ ...state, ...(closings === undefined ? {} : { closings }) })
-      .filter((o: any) => o.cause === "blocker-cleared").length;
+      .filter((o: UntypedTool) => o.cause === "blocker-cleared").length;
   assert.equal(asked(), 1, "a caller that passes nothing gets the unstaged ask");
   assert.equal(asked(new Map([[1931, Date.now() - 30 * HOUR_MS], [1959, Date.now() - 30 * HOUR_MS]])), 0,
     "and one that passes closing times gets the backoff: 30h after the clearing is between the 24h and 72h asks");
@@ -3424,7 +3424,7 @@ test("#2780: a CLAIMED row labelled `parked` is WAITING on `ceo`, so its cleared
   assert.equal(blockerClearedOrders([control], TODAY).length, 1,
     "POSITIVE CONTROL: without `parked` the same claimed row still reaches its holder");
   assert.equal(blockerClearedOrders([parked, heldRow(2569, "worker-2569", blockedByClosed)], TODAY)
-    .map((o: any) => o.session).join(), "worker-2569", "only the labelled row of a mixed set is dropped");
+    .map((o: UntypedTool) => o.session).join(), "worker-2569", "only the labelled row of a mixed set is dropped");
 });
 
 // --- #2139, the other half of #2027: nobody was told when an UNCLAIMED row's last blocker closed ----
@@ -3562,16 +3562,16 @@ test("#2139: the cause is in the CAUSES contract wake.mjs routes on, and is STAR
 test("#2139: decide() routes it, and NOT behind an empty-shelf gate", () => {
   const orders = decide({ prs: [], readyRows: [readyRow(2222)],
     openRows: [backlogRow(1998, blockedByClosed)] });
-  const order = orders.find((o: any) => o.cause === "unclaimed-blocker-cleared");
+  const order = orders.find((o: UntypedTool) => o.cause === "unclaimed-blocker-cleared");
   assert.equal(order?.session, "product-manager",
     "the Ready queue was NOT empty on 2026-09-23 -- four rows -- which is exactly why `ready-queue-empty` "
     + "stayed silent while six rows sat runnable. Depth is not throughput.");
-  const causes = orders.map((o: any) => o.cause);
+  const causes = orders.map((o: UntypedTool) => o.cause);
   assert.ok(causes.indexOf("ready-row-unclaimed") < causes.indexOf("unclaimed-blocker-cleared"),
     "behind the offers: a row already on the shelf can be claimed this minute, this one needs promoting");
   assert.deepEqual(decide({ prs: [], readyRows: [readyRow(2222)],
     openRows: [backlogRow(1998, blockedByClosed)], drain: true })
-    .filter((o: any) => o.cause === "unclaimed-blocker-cleared"), [],
+    .filter((o: UntypedTool) => o.cause === "unclaimed-blocker-cleared"), [],
     "a transfer window stops the org taking on work, and this is the plainest case of taking some on");
 });
 
@@ -3588,7 +3588,7 @@ const T0 = Date.parse("2026-09-23T22:00:00Z");
 const clearedRow = (n: number) => backlogRow(n, { blockedBy: { nodes: [{ number: 2139, state: "CLOSED" }] } });
 const closedAtT0 = new Map([[2139, T0]]);
 const askKeys = (rows: object[], now: number, closings: Map<number, number> | null = closedAtT0) =>
-  unclaimedBlockerClearedOrders(rows, TODAY, { closings, now }).map((o: any) => o.causeKey);
+  unclaimedBlockerClearedOrders(rows, TODAY, { closings, now }).map((o: UntypedTool) => o.causeKey);
 const FIRST_KEY = "product-manager/unclaimed-blocker-cleared/row-2161/2139";
 
 test("#2286: the schedule -- each window is one ask, the ladder is 0/6h/24h and the tail never ends", () => {
@@ -3687,7 +3687,7 @@ test("#2286: decide() passes the closing times through, and without them behaves
   const state = { prs: [], readyRows: [readyRow(2222)], openRows: [clearedRow(2161)] };
   const asked = (closings?: Map<number, number> | null) =>
     decide({ ...state, ...(closings === undefined ? {} : { closings }) })
-      .filter((o: any) => o.cause === "unclaimed-blocker-cleared").length;
+      .filter((o: UntypedTool) => o.cause === "unclaimed-blocker-cleared").length;
   assert.equal(asked(), 1, "a caller that passes nothing gets the unstaged ask");
   assert.equal(asked(new Map([[2139, Date.now() - 30 * HOUR + 3 * 60_000]])), 0,
     "and one that passes closing times gets the backoff: 30h after the clearing is between the 24h and 72h asks");
@@ -3771,7 +3771,7 @@ test("#2110: a constraint the row ALREADY CARRIED at claim time is not news -- t
     withComments(2099, [CONSTRAINT, CLAIM_RECORD])), [],
     "it was there to be read when the row was taken; this cause is about a row moving UNDER a holder");
   assert.deepEqual(constraintsAfterClaim([CONSTRAINT, CLAIM_RECORD, BUILD_REPORT]), []);
-  assert.deepEqual(constraintsAfterClaim([CONSTRAINT, CLAIM_RECORD, CONSTRAINT]).map((c: any) => c.id),
+  assert.deepEqual(constraintsAfterClaim([CONSTRAINT, CLAIM_RECORD, CONSTRAINT]).map((c: UntypedTool) => c.id),
     ["IC_constraint"], "the SECOND claim is the anchor, and the constraint after it still counts");
 });
 
@@ -3941,20 +3941,20 @@ test("#2110: decide() routes it, ahead of blocker-cleared and every cause that o
   const held = heldRow(2099, "worker-capture", { ...blockedByClosed });
   const orders = decide({ prs: [], readyRows: [], openRows: [held],
     claimedComments: withComments(2099, [CLAIM_RECORD, CONSTRAINT]) });
-  const causes = orders.map((o: any) => o.cause);
+  const causes = orders.map((o: UntypedTool) => o.cause);
   assert.ok(causes.includes("claimed-row-amended"),
     "before this, the gate could see the row change and had nobody to tell");
   assert.ok(causes.indexOf("claimed-row-amended") < causes.indexOf("blocker-cleared"),
     "an unread constraint means work in progress is being done against a rule nobody applied; a cleared "
     + "blocker merely means work can start again and loses nothing by waiting a tick");
-  assert.equal(orders.find((o: any) => o.cause === "claimed-row-amended")?.session, "worker-capture");
+  assert.equal(orders.find((o: UntypedTool) => o.cause === "claimed-row-amended")?.session, "worker-capture");
 });
 
 test("#2110: a caller that could not read the comments still sees the body and edge markers", () => {
   // `[]` is "not asked or refused". The degradation may go QUIET on the half it could not read; it must
   // never invent a constraint, and it must never be worse than before this cause existed.
   assert.deepEqual(decide({ prs: [], readyRows: [],
-    openRows: [heldRow(2099, "worker-capture")] }).map((o: any) => o.cause), [],
+    openRows: [heldRow(2099, "worker-capture")] }).map((o: UntypedTool) => o.cause), [],
     "no comments, no body line, no open edge -- nothing to say");
   const [order] = claimedRowAmendedOrders(
     [heldRow(1918, "orchestrator", { blockedBy: { nodes: [{ number: 2100, state: "OPEN" }] } })], []);
@@ -4351,7 +4351,7 @@ test("#2031: a Ready row whose branch is on origin gets its own cause, and is no
   const rows = [readyRow(2000), readyRow(2001)];
   const branches = [{ branch: BRANCH_2000, head: SHA_2000, row: 2000 }];
   const orders = decide({ prs: [], readyRows: rows, rowBranches: branches });
-  const mine = orders.filter((o: any) => o.cause === "row-branch-unshipped");
+  const mine = orders.filter((o: UntypedTool) => o.cause === "row-branch-unshipped");
   assert.equal(mine.length, 1, "one order, for the one row origin holds a branch for");
   assert.equal(mine[0].subject, "row-2000");
   // NAMED IN BOTH COMMANDS, not merely somewhere in the prompt. A mutant that left one of the two as a
@@ -4367,7 +4367,7 @@ test("#2031: a Ready row whose branch is on origin gets its own cause, and is no
   // DONE-WHEN 2: the row is no longer offered as a fresh start while the condition holds. #2001, whose
   // number matches no head, still is -- without that half this passes against a gate that stopped
   // offering every row.
-  assert.deepEqual(orders.filter((o: any) => o.cause === "ready-row-unclaimed").map((o: any) => o.subject),
+  assert.deepEqual(orders.filter((o: UntypedTool) => o.cause === "ready-row-unclaimed").map((o: UntypedTool) => o.subject),
     ["row-2001"], "#2000 is withheld and #2001 is not");
   assert.ok(CAUSES.includes("row-branch-unshipped"),
     "it must be in CAUSES or worker-profile refuses it at run time");
@@ -4414,7 +4414,7 @@ test("#2031: a refused listing is `null`, and the gate then behaves exactly as i
     null, "a refused read is `null`, never an empty listing");
   const rows = [readyRow(2000)];
   for (const rowBranches of [null, undefined]) {
-    assert.deepEqual(decide({ prs: [], readyRows: rows, rowBranches }).map((o: any) => o.cause),
+    assert.deepEqual(decide({ prs: [], readyRows: rows, rowBranches }).map((o: UntypedTool) => o.cause),
       ["ready-row-unclaimed"],
       "not asked and refused are the same thing here: no cause invented, and no row withheld");
   }
@@ -4565,13 +4565,13 @@ test("#2174: it is an ACTION cause -- in CAUSES, NOT in JUDGMENT_CAUSES, and rou
 
 test("#2174: decide() routes it, and only when it is handed drift", () => {
   const withDrift = decide({ prs: [], readyRows: [], hostDrift: [DRIFT_STALE] });
-  const order = withDrift.find((o: any) => o.cause === "host-units-stale");
+  const order = withDrift.find((o: UntypedTool) => o.cause === "host-units-stale");
   assert.ok(order, "the gate could see the host had drifted and, before this, had nobody to tell");
   assert.match(order.prompt, /a11ign-board-report\.service/);
   // NOT ASKED IS NOT A FALSE ALARM. `decide` carries no default for `hostDrift` deliberately -- a default
   // parameter is a branch `complexity` counts and `decide` sits exactly on its limit of 15 -- so the
   // omitted case has to behave, and this is what says it does.
-  assert.deepEqual(decide({ prs: [], readyRows: [] }).filter((o: any) => o.cause === "host-units-stale"), [],
+  assert.deepEqual(decide({ prs: [], readyRows: [] }).filter((o: UntypedTool) => o.cause === "host-units-stale"), [],
     "a caller that cannot read the host must produce no order at all");
 });
 
@@ -4746,7 +4746,7 @@ test("#2084 THE LIVE SHAPE: a green, unheld, ready PR awaiting review reaches pr
   // That reading is this test's subject, and it is why the row's "done-when 1 removes most of the need for
   // it" is wrong: #2198 has no review to dismiss.
   const orders = decide({ prs: [ready(2198, "REVIEW_REQUIRED")], readyRows: [], required: ["gate"] });
-  assert.deepEqual(orders.map((o: any) => o.cause), ["pr-review-blocked"],
+  assert.deepEqual(orders.map((o: UntypedTool) => o.cause), ["pr-review-blocked"],
     "before this row a pull request in exactly this state produced no order at all");
   assert.equal(orders[0].session, "product-manager");
   assert.ok(CAUSES.includes(orders[0].cause), "every emitted cause is declared in CAUSES");
@@ -4768,7 +4768,7 @@ test("#2084: a CHANGES_REQUESTED at head is reported, and the prompt says a push
   // carry the mechanism rather than the word, because the recipient's first instinct is to tell the author
   // to push -- and pushing past a refusal is exactly what does not work.
   const orders = decide({ prs: [ready(2049, "CHANGES_REQUESTED")], readyRows: [], required: ["gate"] });
-  assert.deepEqual(orders.map((o: any) => o.cause), ["pr-review-blocked"]);
+  assert.deepEqual(orders.map((o: UntypedTool) => o.cause), ["pr-review-blocked"]);
   assert.match(orders[0].prompt, /does NOT clear by being pushed past/);
   assert.match(orders[0].prompt, /compare the review's commit against `headRefOid`/,
     "the row's whole finding: the refusal may be at a head the author has already fixed");
@@ -4780,10 +4780,10 @@ test("#2084: a DRAFT, a RED one and a HELD one are other causes' subjects, never
   // reporting it would send somebody to unblock what a ruling holds.
   const drafted = { ...ready(1, "REVIEW_REQUIRED"), isDraft: true };
   assert.ok(!decide({ prs: [drafted], readyRows: [], required: ["gate"] })
-    .some((o: any) => o.cause === "pr-review-blocked"), "a draft is the reviewer lane's, not this cause's");
+    .some((o: UntypedTool) => o.cause === "pr-review-blocked"), "a draft is the reviewer lane's, not this cause's");
   const red = { ...ready(3, "REVIEW_REQUIRED"),
     statusCheckRollup: [{ name: "gate", status: "COMPLETED", conclusion: "FAILURE" }] };
-  assert.deepEqual(decide({ prs: [red], readyRows: [], required: ["gate"] }).map((o: any) => o.cause),
+  assert.deepEqual(decide({ prs: [red], readyRows: [], required: ["gate"] }).map((o: UntypedTool) => o.cause),
     ["pr-checks-failing"], "a red PR needs a fix, not a reviewer");
   assert.deepEqual(reviewBlocked([ready(5, "REVIEW_REQUIRED", ["hold:ceo"])], ["gate"]), [],
     "a held pull request is not merging by decision, and this cause must not argue with one");
@@ -4830,7 +4830,7 @@ const OLD_HEAD = "0ldc0mm1t0000000000000000000000f";
 test("#2283 done-when 1: a labelled PR in AWAITING_REVIEW or REFUSED is ITS SESSION's order, keyed without a head", () => {
   const orders = blockedOrders([labelled(2301, "worker-9", "REVIEW_REQUIRED"),
     labelled(2302, "worker-4", "CHANGES_REQUESTED", HEAD)]);
-  assert.deepEqual(orders.map((o: any) => [o.session, o.causeKey]), [
+  assert.deepEqual(orders.map((o: UntypedTool) => [o.session, o.causeKey]), [
     ["worker-9", "worker-9/pr-review-blocked/pr-2301/AWAITING_REVIEW"],
     ["worker-4", "worker-4/pr-review-blocked/pr-2302/REFUSED"]], "one order per labelled PR, to its own session");
   for (const o of orders) {
@@ -4840,17 +4840,17 @@ test("#2283 done-when 1: a labelled PR in AWAITING_REVIEW or REFUSED is ITS SESS
   // Positive control: the SAME two states with NO label still make the ONE set order to product-manager,
   // and the labelled and unlabelled orders are different keys, never swallowed as one.
   const unlabelled = blockedOrders([ready(2301, "REVIEW_REQUIRED"), ready(2302, "CHANGES_REQUESTED")]);
-  assert.deepEqual(unlabelled.map((o: any) => [o.session, o.causeKey]),
+  assert.deepEqual(unlabelled.map((o: UntypedTool) => [o.session, o.causeKey]),
     [["product-manager", "product-manager/pr-review-blocked/2301:AWAITING_REVIEW.2302:REFUSED"]]);
   const mixed = blockedOrders([labelled(2301, "worker-9", "REVIEW_REQUIRED"), ready(2302, "CHANGES_REQUESTED")]);
-  assert.deepEqual(mixed.map((o: any) => o.causeKey).sort(), [
+  assert.deepEqual(mixed.map((o: UntypedTool) => o.causeKey).sort(), [
     "product-manager/pr-review-blocked/2302:REFUSED", "worker-9/pr-review-blocked/pr-2301/AWAITING_REVIEW"]);
 });
 
 test("#2283 done-when 2: the product-manager set order does not list a labelled PR", () => {
   const orders = blockedOrders([labelled(2301, "worker-9", "REVIEW_REQUIRED"),
     labelled(2303, "worker-9", "CHANGES_REQUESTED", HEAD), ready(2304, "REVIEW_REQUIRED")]);
-  const set = orders.filter((o: any) => o.session === "product-manager");
+  const set = orders.filter((o: UntypedTool) => o.session === "product-manager");
   assert.equal(set.length, 1);
   assert.match(set[0].prompt, /#2304\s+AWAITING_REVIEW/, "the unlabelled PR stays in the set");
   assert.doesNotMatch(set[0].prompt, /#2301|#2303/, "a labelled PR is its session's, not the queue reader's");
@@ -4882,13 +4882,13 @@ test("#2283: a refusal's FIRST FACT is the review's commit against headRefOid, i
 test("#2283: an UNRECOGNISED decision stays at product-manager even on a labelled PR", () => {
   // The author can neither read nor fix a value of GitHub's this gate has never seen.
   const orders = blockedOrders([labelled(2307, "worker-9", "A_STATE_GITHUB_HAS_NOT_SHIPPED_YET")]);
-  assert.deepEqual(orders.map((o: any) => [o.session, o.causeKey]),
+  assert.deepEqual(orders.map((o: UntypedTool) => [o.session, o.causeKey]),
     [["product-manager", "product-manager/pr-review-blocked/2307:UNRECOGNISED"]]);
 });
 
 test("#2283: through `decide`, a labelled AWAITING_REVIEW PR reaches its session with the reviewer named", () => {
   const orders = decide({ prs: [labelled(2308, "worker-9", "REVIEW_REQUIRED")], readyRows: [], required: ["gate"] });
-  assert.deepEqual(orders.map((o: any) => [o.cause, o.session]), [["pr-review-blocked", "worker-9"]]);
+  assert.deepEqual(orders.map((o: UntypedTool) => [o.cause, o.session]), [["pr-review-blocked", "worker-9"]]);
   assert.match(orders[0].prompt, /prompt:session -- reviewer-2308/);
   assert.match(orders[0].prompt, /never entered the reviewer lane/);
 });
@@ -4911,7 +4911,7 @@ test("#2084: an UNRECOGNISED decision BLOCKS -- the `!== never` shape, and the v
   assert.equal(v.code, REVIEW_STATE.UNRECOGNISED);
   assert.notEqual(v.code, REVIEW_STATE.APPROVED);
   assert.deepEqual(reviewBlocked([ready(1, "A_STATE_GITHUB_HAS_NOT_SHIPPED_YET")], ["gate"])
-    .map((r: any) => r.number), [1], "and it reaches somebody rather than passing quietly");
+    .map((r: UntypedTool) => r.number), [1], "and it reaches somebody rather than passing quietly");
 });
 
 test("#2084: an EMPTY decision is NOT an approval -- the #1968 state has its own name", () => {
@@ -4935,7 +4935,7 @@ const pipelinePr = (n: number, files: string[], extra: Record<string, unknown> =
 
 test("#1959 (a): fires for an open PR touching a pipeline path with no code-owner approval", () => {
   const pr = pipelinePr(10, [".github/workflows/release.yml"]);
-  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])).map((m: any) => m.number), [10]);
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])).map((m: UntypedTool) => m.number), [10]);
 });
 
 test("#1959 (b): does NOT fire for a PR touching ONLY the generated consumer-gate.yml", () => {
@@ -4946,7 +4946,7 @@ test("#1959 (b): does NOT fire for a PR touching ONLY the generated consumer-gat
 
 test("#1959: a PR touching BOTH the carve-out and an owned path still fires, on the owned path", () => {
   const pr = pipelinePr(12, [".github/workflows/consumer-gate.yml", ".github/workflows/ci.yml"]);
-  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])).map((m: any) => m.number), [12]);
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])).map((m: UntypedTool) => m.number), [12]);
 });
 
 test("#1959 (c): does NOT fire once the code owner has approved", () => {
@@ -4959,7 +4959,7 @@ test("#1959 (c): does NOT fire once the code owner has approved", () => {
 test("#1959: an APPROVED review from anyone ELSE does not satisfy CODEOWNERS", () => {
   const pr = pipelinePr(14, [".github/workflows/release.yml"],
     { reviews: [{ state: "APPROVED", author: { login: "a11ign-bot" } }] });
-  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])).map((m: any) => m.number), [14],
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])).map((m: UntypedTool) => m.number), [14],
     "GitHub's own rule: only an approval BY a code owner satisfies the requirement");
 });
 
@@ -4989,7 +4989,7 @@ test("#1959: decide() wakes ceo with ONE order naming every PR still missing the
   const a = pipelinePr(20, [".github/workflows/release.yml"]);
   const b = pipelinePr(21, [".github/workflows/auto-arm.yml"], { labels: [{ name: "session:worker-21" }] });
   const orders = decide({ prs: [a, b], readyRows: [], prFiles: comparablePrFiles([a, b]) })
-    .filter((o: any) => o.cause === "pr-codeowner-review-missing");
+    .filter((o: UntypedTool) => o.cause === "pr-codeowner-review-missing");
   assert.equal(orders.length, 1, "one set order, not one per pull request");
   assert.equal(orders[0].session, "ceo");
   assert.match(orders[0].prompt, /#20/);
@@ -5006,7 +5006,7 @@ test("#1959: it is FINISH (never withheld by a drain) and an ACTION cause (not i
     "ACTION: the causeKey already carries the waiting set, so a review that clears one PR mints a new key");
   const a = pipelinePr(22, [".github/workflows/release.yml"]);
   const orders = decide({ prs: [a], readyRows: [], prFiles: comparablePrFiles([a]), drain: true })
-    .filter((o: any) => o.cause === "pr-codeowner-review-missing");
+    .filter((o: UntypedTool) => o.cause === "pr-codeowner-review-missing");
   assert.equal(orders.length, 1, "a drain stops the org taking on work, not finishing a review already owed");
 });
 
@@ -5097,7 +5097,7 @@ test("#2209 THE LIVE SHAPE: a conflicted, approved, green PR reaches its AUTHOR 
   // `product-manager` as a credential outage. THE REMEDY IS NOT AN EXCLUSION: dropping it from
   // `shouldBeMerging` and reporting it nowhere fails the row, and this is the assertion that says so.
   const orders = decide({ prs: [conflicted(2203)], readyRows: [], required: ["gate"] });
-  assert.deepEqual(orders.map((o: any) => o.cause), ["pr-merge-conflict"],
+  assert.deepEqual(orders.map((o: UntypedTool) => o.cause), ["pr-merge-conflict"],
     "it must still reach somebody, and not as pr-green-unarmed or pr-review-blocked");
   assert.equal(orders[0].session, "worker-tooling", "the conflict is code work: the PR's own session");
   assert.ok(CAUSES.includes(orders[0].cause));
@@ -5128,7 +5128,7 @@ test("#2209 a draft, a red PR and a held PR are other causes' subjects, never th
   const red = { ...conflicted(3), statusCheckRollup: [{ name: "gate", status: "COMPLETED", conclusion: "FAILURE" }] };
   const held = conflicted(5, ["hold:ceo"]);
   assert.deepEqual(conflictedPrs([drafted, red, held], ["gate"]), []);
-  assert.deepEqual(decide({ prs: [red], readyRows: [], required: ["gate"] }).map((o: any) => o.cause),
+  assert.deepEqual(decide({ prs: [red], readyRows: [], required: ["gate"] }).map((o: UntypedTool) => o.cause),
     ["pr-checks-failing"]);
 });
 
@@ -5152,7 +5152,7 @@ test("#2209 pr-green-unarmed keeps saying what it said for the state it was buil
   const mergeable = { ...ready(8, "APPROVED"), mergeStateStatus: "CLEAN", mergeable: "MERGEABLE" };
   assert.deepEqual(shouldBeMergingPrs([mergeable], ["gate"]), [8]);
   const orders = decide({ prs: [mergeable], readyRows: [], required: ["gate"], unarmed: [8] });
-  assert.deepEqual(orders.map((o: any) => o.cause), ["pr-green-unarmed"]);
+  assert.deepEqual(orders.map((o: UntypedTool) => o.cause), ["pr-green-unarmed"]);
 });
 
 
@@ -5322,7 +5322,7 @@ test("#2202: readClosedAnswerRows asks for the CLOSED rows carrying the repo's o
 test("#2202: readClosedAnswerRows refuses rather than reporting nobody owes anything, and asks nothing with no labels", () => {
   assert.equal(readClosedAnswerRows(() => { throw new Error("HTTP 502"); }), null);
   assert.equal(readClosedAnswerRows(() => "not json"), null);
-  assert.deepEqual(readClosedAnswerRows((args: any) => { if (args[0] === "label") return "[]"; throw new Error("no search with no labels"); }),
+  assert.deepEqual(readClosedAnswerRows((args: UntypedTool) => { if (args[0] === "label") return "[]"; throw new Error("no search with no labels"); }),
     [], "no answer: label exists, so nothing can owe -- and no search is made");
   const refusedSearch = (args: string[]) => { if (args[0] === "label") return JSON.stringify([{ name: "answer:ceo" }]); return "{}"; };
   assert.equal(readClosedAnswerRows(refusedSearch), null, "a search answering a non-list is a refusal, never an empty tracker");
@@ -5525,7 +5525,7 @@ test("#2075 DONE-WHEN 3 (freshness): a row on the board that was added seconds a
   // And the window in which row-file is between `gh issue create` and the board: the grace.
   const young = boardFacts(2100, false, ROW_OFF_BOARD_GRACE_MS - 1);
   assert.deepEqual(rowsOffBoard([young], NOW_MS), [], "younger than the grace: row-file may still be about to add it");
-  assert.deepEqual(rowsOffBoard([{ ...young, createdMs: NOW_MS - ROW_OFF_BOARD_GRACE_MS }], NOW_MS).map((r: any) => r.number), [2100],
+  assert.deepEqual(rowsOffBoard([{ ...young, createdMs: NOW_MS - ROW_OFF_BOARD_GRACE_MS }], NOW_MS).map((r: UntypedTool) => r.number), [2100],
     "POSITIVE CONTROL: at the grace it is reported, so the filter is a boundary and not a blanket");
 });
 
@@ -5554,12 +5554,12 @@ test("#2075: readRowsOffBoard reads membership of PROJECT 1 specifically, across
     page([issueNode(3, [2]), issueNode(4, [2, 1])]),
   ]);
   const facts = readRowsOffBoard(run)!;
-  assert.deepEqual(facts.map((f: any) => [f.number, f.onBoard]), [[1, true], [2, false], [3, false], [4, true]],
+  assert.deepEqual(facts.map((f: UntypedTool) => [f.number, f.onBoard]), [[1, true], [2, false], [3, false], [4, true]],
     "an item on some OTHER project (3) is not an item on Project 1");
   assert.equal(calls.length, 2);
   assert.ok(!calls[0].join(" ").includes("after="), "the first page has no cursor");
   assert.ok(calls[1].includes("after=cursor-1"), "the second page is asked with the first's cursor");
-  assert.deepEqual(rowsOffBoard(facts, NOW_MS).map((r: any) => r.number), [2, 3]);
+  assert.deepEqual(rowsOffBoard(facts, NOW_MS).map((r: UntypedTool) => r.number), [2, 3]);
 });
 
 test("#2075: a refused, errored, malformed or never-ending read is `null` -- never an empty board", () => {
@@ -5680,12 +5680,12 @@ test("#2823: four open PRs declaring a Closes that GitHub resolved nothing for w
   assert.equal(order.causeKey, "product-manager/closes-unresolved-repo-wide/1+2+3+4", "keyed on the SET of pull requests");
   assert.deepEqual(closesUnresolvedOrders([...FOUR_UNRESOLVED].reverse(), CLOSES_NOW)[0].causeKey, order.causeKey,
     "and the read order does not change the key");
-  assert.deepEqual(decide({ prs: FOUR_UNRESOLVED, readyRows: [] }).filter((o: any) => o.cause === order.cause).length, 1,
+  assert.deepEqual(decide({ prs: FOUR_UNRESOLVED, readyRows: [] }).filter((o: UntypedTool) => o.cause === order.cause).length, 1,
     "`decide` emits it -- a builder nobody calls wakes nobody");
 });
 
 test("#2823: the order clears when ANY of them resolves, and is silent on every non-repo-wide shape", () => {
-  const key = (prs: unknown[]) => closesUnresolvedOrders(prs, CLOSES_NOW).map((o: any) => o.causeKey);
+  const key = (prs: unknown[]) => closesUnresolvedOrders(prs, CLOSES_NOW).map((o: UntypedTool) => o.causeKey);
   assert.deepEqual(key([closesPr(1, []), closesPr(2, []), closesPr(3, []), closesPr(4, [999])]), [],
     "the newest PR resolved -- GitHub is resolving, so it is not repo-wide");
   assert.deepEqual(key([closesPr(1, []), closesPr(2, []), closesPr(3, [998]), closesPr(4, [])]), [],
@@ -5776,9 +5776,9 @@ test("#2781: it is an ACTION cause (re-offered on the expiry), FINISH not START,
   assert.ok(CAUSES.includes("primary-stale"), "or worker-profile refuses it at run time");
   assert.ok(!JUDGMENT_CAUSES.includes("primary-stale"), "a judgment cause is never re-offered; a stale primary must be");
   assert.ok(!START_CAUSES.includes("primary-stale"), "a drain must not withhold it");
-  assert.ok(decide({ prs: [], readyRows: [], primaryDrift: PRIMARY_DIRTY_BEHIND }).some((o: any) => o.cause === "primary-stale"));
-  assert.deepEqual(decide({ prs: [], readyRows: [] }).filter((o: any) => o.cause === "primary-stale"), [], "not asked -> no order");
-  assert.deepEqual(decide({ prs: [], readyRows: [], primaryDrift: PRIMARY_CURRENT }).filter((o: any) => o.cause === "primary-stale"), []);
+  assert.ok(decide({ prs: [], readyRows: [], primaryDrift: PRIMARY_DIRTY_BEHIND }).some((o: UntypedTool) => o.cause === "primary-stale"));
+  assert.deepEqual(decide({ prs: [], readyRows: [] }).filter((o: UntypedTool) => o.cause === "primary-stale"), [], "not asked -> no order");
+  assert.deepEqual(decide({ prs: [], readyRows: [], primaryDrift: PRIMARY_CURRENT }).filter((o: UntypedTool) => o.cause === "primary-stale"), []);
 });
 
 test("#2781 done-when 2: every other order is headed with the stale sha and the count; the current primary's orders are untouched", () => {

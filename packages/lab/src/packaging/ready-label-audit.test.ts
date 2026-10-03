@@ -390,7 +390,7 @@ test("isClosedDebrisLabel: any runner:* label counts too (#444) -- a reservation
 });
 
 test("#444: runner: must NOT join MUTEX_LABELS -- a reserved-but-ready row is genuinely pickable, by its runner", () => {
-  assert.ok(!MUTEX_LABELS.some((l: any) => l.startsWith("runner")),
+  assert.ok(!MUTEX_LABELS.some((l: UntypedTool) => l.startsWith("runner")),
     "a row reading ready + runner:worker-audit is not a contradiction the way ready + blocked is -- adding "
     + "runner: here would flag every reservation as a violation nobody can resolve");
   const issues = [{ number: 324, title: "V1 rehearsal", labels: [READY_LABEL, "runner:worker-audit"] }];
@@ -529,7 +529,7 @@ test("#1090 ACCEPTANCE: a population LARGER than the first ask is read WHOLE, no
 
   assert.equal(issues.length, 531,
     "the walk must return the whole population -- stopping at the first ask is the defect #1090 is");
-  assert.deepEqual([...new Set(issues.map((i: any) => i.number))].length, 531,
+  assert.deepEqual([...new Set(issues.map((i: UntypedTool) => i.number))].length, 531,
     "and every row distinct, so a repeated page could not be mistaken for progress");
 });
 
@@ -723,7 +723,7 @@ test("labellessRows: a mixed population reports only the labelless ones, in orde
     { number: 601, title: "labelled", labels: ["backlog"] },
     { number: 644, title: "also labelless", labels: [] },
   ];
-  assert.deepEqual(labellessRows(issues).map((i: any) => i.number), [600, 644]);
+  assert.deepEqual(labellessRows(issues).map((i: UntypedTool) => i.number), [600, 644]);
 });
 
 // --- readyRowsAlreadyMerged: pure, no I/O -- #443's fourth population, refined by #550 ---
@@ -1140,7 +1140,7 @@ test("CHECKS names all eighteen, so the partial-audit sentence states a true den
   // It caught #1163's entry within a minute of it being added, and the fourteenth the same way,
   // which is the whole of its job.
   assert.equal(CHECKS.length, 18);
-  assert.deepEqual(CHECKS.map(([what]: any[]) => what), [
+  assert.deepEqual(CHECKS.map(([what]: UntypedTool[]) => what), [
     "open issues", "hand claims", "labelless rows", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
     "closing PR never merged", "coverage vs tracker", "release declaration", "filing guidance",
@@ -1413,7 +1413,7 @@ test("#848: the provenance finding counts ONLY undeclared rows -- a pre-#839 clo
     912: { number: 913, headRefName: "agent/unclaimed-912", merged: true, createdAt: ARM_LABELS_FROM, sessionLabels: [] },
   };
   const verdicts = provenanceVerdicts([887, 853, 900, 912].map(row) as never, (n: number) => closers[n] as never);
-  assert.deepEqual(verdicts.map((v: any) => [v.number, v.verdict]),
+  assert.deepEqual(verdicts.map((v: UntypedTool) => [v.number, v.verdict]),
     [[887, "work"], [853, "undeclared"], [900, "worker"], [912, "undeclared"]]);
   assert.deepEqual(provenanceFindings(verdicts), [853, 912], "the count the audit exits with");
 });
@@ -1484,7 +1484,7 @@ test("#1960: the AUDIT'S OWN OUTPUT carries the remedy -- not merely the helper 
   const out: string[] = [];
   const found = reportProvenanceOf(
     [887, 853, 900, 912, 919].map(REMEDY_ROW) as never,
-    { closingPrFor: ((n: number) => REMEDY_CLOSERS[n]) as never, out: (t: any) => out.push(t), err: (t: any) => err.push(t) });
+    { closingPrFor: ((n: number) => REMEDY_CLOSERS[n]) as never, out: (t: UntypedTool) => out.push(t), err: (t: UntypedTool) => err.push(t) });
   assert.equal(found, 3, "the audit's own exit count");
   assert.match(err.join(""), /#912:\s+gh pr edit 913 --add-label session:/,
     "the emitted summary must name the closing pull request, not the row");
@@ -1610,7 +1610,7 @@ test("#1163: the claims are matched across LINE BREAKS, because the page wraps a
 });
 
 test("#1163: `filing guidance` is the thirteenth CHECKS entry, so the live comparison actually runs", () => {
-  const names = CHECKS.map(([name]: any[]) => name);
+  const names = CHECKS.map(([name]: UntypedTool[]) => name);
   assert.ok(names.includes("filing guidance"),
     "a pure comparison nothing calls is a fact stated once more, not a fact compared");
   assert.equal(names.length, new Set(names).size, "each check is named once");
@@ -1671,7 +1671,7 @@ test("a row with labels but neither backlog nor ready is reported", () => {
     { number: 1, title: "fine", labels: ["backlog", "fleet-gated"] },
     { number: 2, title: "fine", labels: ["ready"] },
   ]);
-  assert.deepEqual(found.map((r: any) => r.number), [1830]);
+  assert.deepEqual(found.map((r: UntypedTool) => r.number), [1830]);
 });
 
 test("an epic or a meta row is reached by something, and is not a finding", () => {
@@ -1743,7 +1743,7 @@ test("#2008: a claim whose holder has gone is reportDeadClaims' finding, handed 
       lastPushMinutes: new Map(),
       claimedMinutes: new Map([[1966, STALE_CLAIM_MINUTES]]),
       lastCommentMinutes: new Map(),
-    }).map((c: any) => c.number),
+    }).map((c: UntypedTool) => c.number),
     [1966],
     "and reportDeadClaims still sees it, on the `in-progress` label this check now skips");
 });
@@ -1774,7 +1774,7 @@ test("#2111 ACCEPTANCE, MUTATION TARGET: a row carrying BOTH backlog and ready i
     { number: 2110, title: "promoted by hand too", labels: [READY_LABEL, "backlog"] },
     { number: 1, title: "cleanly promoted", labels: [READY_LABEL, "lane:any", "out-of-release"] },
   ]);
-  assert.deepEqual(found.map((r: any) => r.number), [2050, 2110]);
+  assert.deepEqual(found.map((r: UntypedTool) => r.number), [2050, 2110]);
   // The labels travel with the finding: the report prints them, so a reader can see WHICH promotion this
   // was without opening the row.
   assert.deepEqual(found[0].labels, ["backlog", READY_LABEL, "lane:any"]);
@@ -1839,18 +1839,18 @@ function readyRow(number: number, body: string, labels: string[] = [READY_LABEL,
 
 test("#2190 ACCEPTANCE, MUTATION TARGET: a ready row with NO Region is reported, naming Region", () => {
   const found = unclaimableReadyRows([readyRow(75, bodyWithout("Region"))]);
-  assert.deepEqual(found.map((r: any) => [r.number, r.missing]), [[75, ["Region"]]]);
+  assert.deepEqual(found.map((r: UntypedTool) => [r.number, r.missing]), [[75, ["Region"]]]);
 });
 
 test("#2190 ACCEPTANCE, MUTATION TARGET: a ready row with NO Acceptance is reported, naming Acceptance", () => {
   const found = unclaimableReadyRows([readyRow(76, bodyWithout("Acceptance"))]);
-  assert.deepEqual(found.map((r: any) => [r.number, r.missing]), [[76, ["Acceptance"]]]);
+  assert.deepEqual(found.map((r: UntypedTool) => [r.number, r.missing]), [[76, ["Acceptance"]]]);
 });
 
 test("#2190 ACCEPTANCE, MUTATION TARGET: a ready row with NO Open-check is reported, naming Open-check "
   + "-- #1990's shape, promoted by hand", () => {
   const found = unclaimableReadyRows([readyRow(1990, bodyWithout("Open-check"))]);
-  assert.deepEqual(found.map((r: any) => [r.number, r.missing]), [[1990, ["Open-check"]]]);
+  assert.deepEqual(found.map((r: UntypedTool) => [r.number, r.missing]), [[1990, ["Open-check"]]]);
 });
 
 test("#2190: a ready row carrying all three sections is NOT reported", () => {
@@ -1862,7 +1862,7 @@ test("#2190: a ready row carrying all three sections is NOT reported", () => {
 test("#2190: an EMPTY body reports all three sections, and a heading with nothing under it counts as absent", () => {
   assert.deepEqual(unclaimableReadyRows([readyRow(2, "")])[0].missing, ["Region", "Acceptance", "Open-check"]);
   const found = unclaimableReadyRows([readyRow(3, `${bodyWithout("Open-check")}\n## Open-check\n`)]);
-  assert.deepEqual(found.map((r: any) => r.missing), [["Open-check"]],
+  assert.deepEqual(found.map((r: UntypedTool) => r.missing), [["Open-check"]],
     "the rule reads a bare heading as absent, and this check reports what the rule reports");
 });
 
@@ -1873,7 +1873,7 @@ test("#2190: only rows carrying `ready` are in the population -- a backlog row m
     readyRow(5, bodyWithout("Region")),
     readyRow(6, bodyWithout()),
   ]);
-  assert.deepEqual(found.map((r: any) => r.number), [5]);
+  assert.deepEqual(found.map((r: UntypedTool) => r.number), [5]);
   assert.deepEqual(unclaimableReadyRows([]), []);
   assert.deepEqual(unclaimableReadyRows(undefined as never), []);
 });
@@ -1905,7 +1905,7 @@ test("#2190: it is its OWN population -- an unclaimable ready row is not a mutex
 });
 
 test("#2190: `unclaimable ready rows` is a CHECKS entry, so the live comparison actually runs", () => {
-  assert.ok(CHECKS.some(([name]: any[]) => name === "unclaimable ready rows"),
+  assert.ok(CHECKS.some(([name]: UntypedTool[]) => name === "unclaimable ready rows"),
     "a pure predicate nothing calls is a fact stated once more, not a fact checked");
 });
 
@@ -1955,14 +1955,14 @@ test("#2150 DIRECTION 2, MUTATION TARGET: the `ready` label beside any other Sta
   const found = statusLabelDisagreements(
     [issue(1988, READY_LABEL), issue(1989, READY_LABEL, "lane:any"), issue(1990, READY_LABEL)],
     [item(1988, "Backlog"), item(1989, "In progress"), item(1990, "Fleet-gated")]);
-  assert.deepEqual(found.map((r: any) => [r.number, r.status]),
+  assert.deepEqual(found.map((r: UntypedTool) => [r.number, r.status]),
     [[1988, "Backlog"], [1989, "In progress"], [1990, "Fleet-gated"]], "positive control: all three");
-  assert.ok(found.every((r: any) => r.kind === STATUS_LABEL_KINDS.LABEL_READY_STATUS_ELSEWHERE));
+  assert.ok(found.every((r: UntypedTool) => r.kind === STATUS_LABEL_KINDS.LABEL_READY_STATUS_ELSEWHERE));
 });
 
 test("#2150: Status `Ready` with NEITHER `ready` nor `backlog` on the row is the third kind, and is reported", () => {
   const found = statusLabelDisagreements([issue(5, "lane:any", "out-of-release")], [item(5, "Ready")]);
-  assert.deepEqual(found.map((r: any) => r.kind), [STATUS_LABEL_KINDS.STATUS_READY_LABEL_ABSENT]);
+  assert.deepEqual(found.map((r: UntypedTool) => r.kind), [STATUS_LABEL_KINDS.STATUS_READY_LABEL_ABSENT]);
 });
 
 test("#2150 NEGATIVE, must stay clean: every agreeing pair is silent", () => {
@@ -1997,7 +1997,7 @@ test("#2150: a row carrying BOTH board labels beside Status `Ready` is bothBoard
 test("#2150: findings come back in row-number order whatever order the board pages arrived in", () => {
   const issues = [issue(9, READY_LABEL), issue(3, READY_LABEL), issue(6, "backlog")];
   const board = [item(9, "Backlog"), item(6, "Ready"), item(3, "Backlog")];
-  assert.deepEqual(statusLabelDisagreements(issues, board).map((r: any) => r.number), [3, 6, 9]);
+  assert.deepEqual(statusLabelDisagreements(issues, board).map((r: UntypedTool) => r.number), [3, 6, 9]);
   assert.deepEqual(statusLabelDisagreements(undefined as never, undefined as never), []);
 });
 
@@ -2020,7 +2020,7 @@ test("#2150 (done-when 2): a hand-moved field states BOTH readings and picks nei
 });
 
 test("#2150: `status vs ready label` is a CHECKS entry, and its name says it reads Status (the row's open-check)", () => {
-  const named = CHECKS.filter(([name]: any[]) => /status/i.test(name));
+  const named = CHECKS.filter(([name]: UntypedTool[]) => /status/i.test(name));
   assert.equal(named.length, 1, "the row's open-check read 0 of 16; it reads 1 once the check is registered");
   assert.equal(named[0][0], "status vs ready label");
 });

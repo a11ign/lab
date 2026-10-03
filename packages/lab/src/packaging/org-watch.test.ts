@@ -28,7 +28,7 @@ import {
   redWindows, redHoursFigure, runsHaveStopped, weeklyRedHoursFigure, RUNS_PAGE_SIZE,
 } from "agent-org/src/org-watch.mjs";
 
-const metric = (key: string) => METRICS.find((m: any) => m.key === key)!;
+const metric = (key: string) => METRICS.find((m: UntypedTool) => m.key === key)!;
 
 test("#912: every metric renders with its baseline and target beside the value, so a number that moved "
   + "the wrong way is visible without arithmetic", () => {
@@ -363,7 +363,7 @@ test("#1047: TWO breaks in one interval are two windows, not one", () => {
   ];
   const { windows, examined } = redWindows(runs, new Date("2026-09-12T07:00:00Z"));
   assert.equal(windows.length, 2, "a reader told `1 window` would go looking for one cause");
-  assert.deepEqual(windows.map((w: any) => w.hours), [1, 1]);
+  assert.deepEqual(windows.map((w: UntypedTool) => w.hours), [1, 1]);
   assert.equal(examined, 5);
 });
 
@@ -738,7 +738,7 @@ test("#1286: a queue with content is unaffected -- the third state is additive",
 // `mainColour` returns.
 
 const weeklyRow = (colour: ReturnType<typeof mainColour>) => renderTable({ redHours: weeklyRedHoursFigure(colour) })
-  .split("\n").find((line: any) => line.includes(metric("redHours").label)) ?? "";
+  .split("\n").find((line: UntypedTool) => line.includes(metric("redHours").label)) ?? "";
 
 test("#1267 ACCEPTANCE: the weekly figure for a main that could not be read is NOT MEASURED, never 0", () => {
   const unreadable = mainColour({ repo: "o/r", run: () => { throw new Error("gh: HTTP 502"); } });
