@@ -90,6 +90,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 /** A requirement is only REQUIRED when it bites AND exempts nobody; anything unreadable is its own state. */
 const VERDICT = { REQUIRED: "REQUIRED", DECORATIVE: "DECORATIVE", CANNOT_TELL: "CANNOT_TELL" } as const;
@@ -429,6 +432,44 @@ test("#2022: the three verdicts are genuinely distinct -- none is a spelling of 
 /** The one `gh` shell-out every live read here goes through. It throws; each caller catches by name. */
 const gh = (args: string[]) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 
+// --- #3123: WHICH REPOSITORY the live reads ask about ------------------------------------------------
+
+const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+/** The tool's own declaration of the code repositories; the entry with the EMPTY key is the host's primary. */
+const PROJECT_FILE = ".agent-org/project.json";
+/** The two facts the tool does not hold, keyed by `repo`: default branch and required check name. */
+const PROTECTION_FILE = "docs/code-repository-protection.json";
+const ENV_REPO = "A11Y_PROTECTION_REPO";
+
+type LiveTarget = { repo: string; branch: string };
+
+/**
+ * The repository and branch every live read below asks about, taken from the declared files and never from
+ * a literal in this file (#3123, ADR 0039 item 5: this guard read exactly one repository, so a second code
+ * repository could be unprotected with every check green).
+ *
+ * `A11Y_PROTECTION_REPO=<owner/name>` picks one declared repository, which is how `nightly.yml` runs this
+ * once per listed repository; unset, it is the primary's. A repository with no entry THROWS: a default
+ * branch guessed as `main` would be a read of a branch nobody declared, and an unread repository is
+ * CANNOT_TELL -- a failed test -- rather than a pass.
+ */
+function liveTarget(): LiveTarget {
+  const fromEnv = process.env[ENV_REPO];
+  const repo = fromEnv && fromEnv !== "" ? fromEnv : primaryRepository();
+  const entries = (JSON.parse(readFileSync(join(REPO_ROOT, PROTECTION_FILE), "utf8")) as
+    { repositories: { repo: string; defaultBranch: string }[] }).repositories;
+  const entry = entries.find((e) => e.repo === repo);
+  if (!entry) throw new Error(`CANNOT_TELL: ${repo} has no entry in ${PROTECTION_FILE}, so there is no declared default branch to read`);
+  return { repo, branch: entry.defaultBranch };
+}
+
+function primaryRepository(): string {
+  const code = (JSON.parse(readFileSync(join(REPO_ROOT, PROJECT_FILE), "utf8")) as { code: { key: string; repo: string }[] }).code;
+  const primary = code.find((c) => c.key === "");
+  if (!primary) throw new Error(`CANNOT_TELL: ${PROJECT_FILE} declares no code repository with the empty key`);
+  return primary.repo;
+}
+
 test("#2022 LIVE: `main` requires an approving review, asked of GitHub", () => {
   // OPT-IN, for `arm-pr-labels-live.test.ts`'s reason: a test that spawns `gh` whenever a token happens
   // to be present asks GitHub on every local run and inside the acceptance job. An agent asks deliberately.
@@ -438,9 +479,10 @@ test("#2022 LIVE: `main` requires an approving review, asked of GitHub", () => {
       + "verdict logic above ran against synthetic inputs; nothing here read the live branch.");
     return;
   }
+  const target = liveTarget();
   let openPr: { number: number; reviewDecision: string | null } | undefined;
   try {
-    openPr = JSON.parse(gh(["pr", "list", "--repo", "a11ign/a11ign", "--state", "open", "--limit", "1",
+    openPr = JSON.parse(gh(["pr", "list", "--repo", target.repo, "--state", "open", "--limit", "1",
       "--json", "number,reviewDecision"]))[0];
   } catch (cause) {
     // Never an empty catch, and never a pass: a check that could not ask reports that it could not ask.
@@ -451,7 +493,7 @@ test("#2022 LIVE: `main` requires an approving review, asked of GitHub", () => {
     console.log("  SKIPPED: no open PR to read a decision from. NOT a pass -- `reviewDecision` is a property of a PR.");
     return;
   }
-  const protection = liveProtection(gh);
+  const protection = liveProtection(gh, target);
   const v = reviewRequirementVerdict({ reviewDecision: openPr.reviewDecision, protection });
   // CANNOT_TELL FAILS HERE, and that is the point. An earlier version asserted only `!== DECORATIVE`, so
   // the one state this repository's own token actually reaches -- the exemption list forbidden -- exited
@@ -463,19 +505,19 @@ test("#2022 LIVE: `main` requires an approving review, asked of GitHub", () => {
       ? " Re-run with a token holding repository admin -- this session's `a11ign-ai-workers` has `permissions.admin: false`." : ""}`);
   // A pass prints WHAT it read. `ok 21` alone is indistinguishable from a check that asked nothing, and
   // this row is about a guard whose green run nobody had seen: the line below is what gets quoted.
-  console.log(`  LIVE PASS on #${openPr.number}: ${v.why}`);
+  console.log(`  LIVE PASS on ${target.repo}#${openPr.number}: ${v.why}`);
 });
 
 /** Reads both halves of the protection state, keeping "forbidden" distinguishable from "absent". */
-function liveProtection(gh: (args: string[]) => string): ProtectionRead {
+function liveProtection(gh: (args: string[]) => string, { repo, branch }: LiveTarget): ProtectionRead {
   let protectedFlag: boolean | null = null;
   try {
-    protectedFlag = JSON.parse(gh(["api", "repos/a11ign/a11ign/branches/main", "--jq", ".protected"])) === true;
+    protectedFlag = JSON.parse(gh(["api", `repos/${repo}/branches/${branch}`, "--jq", ".protected"])) === true;
   } catch (cause) {
-    console.log(`  \`branches/main\` could not be read (${String(cause)}); the 404 discriminator is unavailable.`);
+    console.log(`  \`branches/${branch}\` could not be read (${String(cause)}); the 404 discriminator is unavailable.`);
   }
   try {
-    const body = JSON.parse(gh(["api", "repos/a11ign/a11ign/branches/main/protection"]));
+    const body = JSON.parse(gh(["api", `repos/${repo}/branches/${branch}/protection`]));
     return { status: HTTP_OK, protectedFlag, body };
   } catch {
     // The admin-only endpoint refusing is the EXPECTED shape for this repository's own token, and the
@@ -896,7 +938,8 @@ test("#2086 LIVE: the `pull_request` rule applies to `main` and this identity ca
       + "synthetic inputs; nothing here read the live ruleset.");
     return;
   }
-  const binding = liveRulesetBinding();
+  const target = liveTarget();
+  const binding = liveRulesetBinding(target);
   if (binding.branchRules === null) {
     // Never an empty catch and never a pass: a check that could not ask reports that it could not ask.
     console.log("  SKIPPED: `rules/branches/main` could not be asked. NOT a pass.");
@@ -906,7 +949,10 @@ test("#2086 LIVE: the `pull_request` rule applies to `main` and this identity ca
   assert.equal(v.code, BINDING.BINDS_ME, v.why);
   // A pass prints WHAT it read, and what it did NOT establish. `ok 30` alone would be quoted as proof
   // that nobody can bypass the requirement, which is the one thing this check cannot say.
-  console.log(`  LIVE PASS (no admin required): ${v.why}`);
+  // The repository is IN the line, because the nightly asks once per listed repository and greps for the
+  // one it asked about: a run that ignored `A11Y_PROTECTION_REPO` and read the primary would otherwise
+  // certify every repository with the primary's answer.
+  console.log(`  LIVE PASS (no admin required) on ${target.repo}@${target.branch}: ${v.why}`);
   // #2119: and the third surface, named rather than eyeballed. On this token it prints WITHHELD.
   reportExemptionSurface(binding, "LIVE");
 });
@@ -925,12 +971,12 @@ test("#2086 LIVE: the `pull_request` rule applies to `main` and this identity ca
  * is what keeps the verdict honest if a second ever appears, and a ruleset that could not be read is simply
  * left OUT of the map, where `contributingRuleVerdict` fails closed on it.
  */
-function liveRulesetBinding(): RulesetBinding {
+function liveRulesetBinding({ repo, branch }: LiveTarget): RulesetBinding {
   let branchRules: BranchRule[];
   try {
-    branchRules = JSON.parse(gh(["api", "repos/a11ign/a11ign/rules/branches/main"]));
+    branchRules = JSON.parse(gh(["api", `repos/${repo}/rules/branches/${branch}`]));
   } catch (cause) {
-    console.log(`  \`rules/branches/main\` could not be read (${String(cause)}).`);
+    console.log(`  \`rules/branches/${branch}\` could not be read (${String(cause)}).`);
     return { branchRules: null, rulesets: {} };
   }
   const ids = new Set((branchRules ?? [])
@@ -939,16 +985,16 @@ function liveRulesetBinding(): RulesetBinding {
     .filter((id): id is number => typeof id === "number"));
   const rulesets: Record<number, RulesetMeta> = {};
   for (const id of ids) {
-    const meta = liveRulesetMeta(id);
+    const meta = liveRulesetMeta(repo, id);
     if (meta) rulesets[id] = meta;
   }
   return { branchRules, rulesets };
 }
 
 /** One ruleset's own `enforcement` and `current_user_can_bypass`; null when the object could not be read. */
-function liveRulesetMeta(id: number): RulesetMeta | null {
+function liveRulesetMeta(repo: string, id: number): RulesetMeta | null {
   try {
-    const ruleset = JSON.parse(gh(["api", `repos/a11ign/a11ign/rulesets/${id}`]));
+    const ruleset = JSON.parse(gh(["api", `repos/${repo}/rulesets/${id}`]));
     // The whole object, deliberately unprojected: `--jq` would flatten the one thing #2119 is about.
     return { enforcement: ruleset.enforcement ?? null, canBypass: ruleset.current_user_can_bypass ?? null,
       exemptions: exemptionRead(ruleset) };
@@ -1483,14 +1529,15 @@ test("#2084 LIVE: `main`'s staleness configuration still matches the recorded ru
       + "synthetic inputs; nothing here read the live branch.");
     return;
   }
-  const binding = liveRulesetBinding();
+  const target = liveTarget();
+  const binding = liveRulesetBinding(target);
   if (binding.branchRules === null) {
     // Never an empty catch and never a pass: a check that could not ask reports that it could not ask.
     console.log("  SKIPPED: `rules/branches/main` could not be asked. NOT a pass.");
     return;
   }
   const ruleset = rulesetStalenessVerdict(binding.branchRules);
-  const classic = classicStalenessVerdict(liveProtection(gh));
+  const classic = classicStalenessVerdict(liveProtection(gh, target));
   console.log(`  LIVE classic surface  : ${classic.code} -- ${classic.why}`);
   console.log(`  LIVE ruleset surface  : ${ruleset.code} -- ${ruleset.why}`);
   console.log(`  LIVE surfaces agree?  : ${JSON.stringify(surfacesAgree(classic, ruleset))}`);
@@ -1506,5 +1553,7 @@ test("#2084 LIVE: `main`'s staleness configuration still matches the recorded ru
   assert.notEqual(agreement.agree, false,
     `the two staleness surfaces DISAGREE -- ${agreement.why}. #2084's amendment: changing one does not move `
     + "the other, so a guard reading either alone goes green while the branch is half-configured.");
-  console.log(`  LIVE PASS (no admin required): \`main\` ${ruleset.code} a stale review, as ruled 2026-09-23`);
+  // Worded differently from the #2086 read's pass line ON PURPOSE: this one used to carry the same
+  // `LIVE PASS (no admin required)` words, so the nightly's grep for that line was satisfied by EITHER test.
+  console.log(`  LIVE PASS (staleness) on ${target.repo}@${target.branch}: ${ruleset.code} a stale review, as ruled 2026-09-23`);
 });

@@ -12,6 +12,15 @@
  * swapping its identity, or re-enabling console interception would each return the repo to that silence
  * while every existing test stayed green -- so each is a red test here.
  *
+ * ## ONCE PER LISTED REPOSITORY (#3123, ADR 0039 item 5)
+ *
+ * The step used to read one repository. It now loops over `.agent-org/project.json`'s `code` array and sets
+ * `A11Y_PROTECTION_REPO` for each, and what is pinned about THAT is behaviour, not text: the step is executed
+ * with two repositories and the stub records one invocation per repository; a repository whose run prints no
+ * pass line, or fails, turns the step red WITHOUT stopping the others being read; and the pass line it greps
+ * for names the repository, so one repository's pass cannot be counted for another's. The list itself is
+ * derived from the file, and the derivation is RUN against the real `project.json` below, not scanned.
+ *
  * WHY THE `LIVE PASS` LITERAL IS CHECKED AGAINST THE GUARD'S OWN SOURCE (the test at the end). The step's
  * whole discriminating power is a `grep` for a line the guard PRINTS. A grep and a print in two files drift
  * silently in the one direction that matters: reword the guard's message and the grep matches nothing, so
@@ -114,14 +123,18 @@ function runnerLine(): string {
   return runner;
 }
 
-/** An EXECUTED `grep -q '<literal>' <log>`, with both halves read out of it rather than assumed. */
-const GREP_INVOCATION = /^grep\s+-q\s+'([^']+)'\s+(\S+)/;
+/**
+ * An EXECUTED `grep -qF "<literal>${repo}@" <log>`, with both halves read out of it rather than assumed. The
+ * literal is the part BEFORE the repository, which is what the guard's source must contain (#3123: the pass
+ * line names the repository, so the grep is for THIS repository's line).
+ */
+const GREP_INVOCATION = /^grep\s+-qF\s+"([^"$]+)\$\{repo\}@"\s+(\S+)/;
 
 function grepStep(): { literal: string, log: string } {
   const greps = commands(readStep().run ?? "")
     .map((line) => GREP_INVOCATION.exec(line))
     .filter((match): match is RegExpExecArray => match !== null);
-  assert.equal(greps.length, 1, `expected exactly one executed \`grep -q '<literal>' <log>\` in \`${JOB}\`, `
+  assert.equal(greps.length, 1, `expected exactly one executed \`grep -qF "<literal>\${repo}@" <log>\` in \`${JOB}\`, `
     + `found ${greps.length} -- a grep named inside an \`echo\` argument asserts nothing`);
   const [[, literal, log]] = greps as [RegExpExecArray];
   return { literal: literal as string, log: log as string };
@@ -156,8 +169,10 @@ test("#2120: the ruleset read runs on the DAILY cron, not the hourly one -- once
 test("#2120: the step sets `A11Y_CHECK_MAIN_RULESET=1` on the command line that runs the guard", () => {
   // The flag is the whole job. Without it the guard prints `NOT RUN` and exits 0 -- the exact silence this
   // row exists to end -- so it is pinned on the same line as the runner rather than anywhere in the step.
-  assert.match(runnerLine(), /^A11Y_CHECK_MAIN_RULESET=1\s+pnpm\b/,
+  assert.match(runnerLine(), /^A11Y_CHECK_MAIN_RULESET=1\s+(?:[A-Za-z_]\w*="?\$?\w*"?\s+)*pnpm\b/,
     "the opt-in flag must be set on the runner invocation itself; without it the guard skips and passes");
+  assert.match(runnerLine(), /\sA11Y_PROTECTION_REPO="\$repo"\s+pnpm\b/,
+    "and the repository must be handed to the guard on that same invocation, or every iteration reads the primary");
 });
 
 test("#2120: the runner disables console interception, or the `LIVE PASS` assertion can never match", () => {
@@ -188,22 +203,23 @@ test("#2120: the step ASSERTS the `LIVE PASS` line was printed -- a green exit i
 
 /**
  * The step's refusal arms, named so the count is a statement rather than a number: the missing secret, an
- * unreadable runner config, and a run that never printed its `LIVE PASS` line. An EXACT count, not a floor,
- * because a fourth arm added without a reason to expect it is the kind of thing to notice, and each of the
- * three is exercised end to end against the committed shell (the table in this row's PR body).
+ * unreadable runner config, an unreadable (or empty) repository list, a runner that FAILED for a repository,
+ * a run that never printed its `LIVE PASS` line for one, and the closing summary naming every repository that
+ * did not certify. An EXACT count, not a floor, because a seventh arm added without a reason to expect it is
+ * the kind of thing to notice, and each is exercised end to end against the committed shell below.
  */
-const REFUSAL_ARMS = 3;
+const REFUSAL_ARMS = 6;
 
 test("#2120: a failure is CANNOT_TELL and LOUD, and names where to look for which read was unavailable", () => {
   // `ceo`'s 2026-09-22 rule: a verdict that cannot read the exemption surface is CANNOT_TELL, loudly --
   // never a pass. `::error::` is what makes it loud in the Actions UI rather than one line of log.
   const run = readStep().run ?? "";
   const errors = codeLines(run).filter((line) => line.includes("::error::"));
-  assert.equal(errors.length, REFUSAL_ARMS, "every refusal arm -- the missing secret, an unreadable runner config, and "
-    + "the missing LIVE PASS line -- must be loud");
+  assert.equal(errors.length, REFUSAL_ARMS, "every refusal arm -- the missing secret, an unreadable runner config or "
+    + "repository list, a failed runner, the missing LIVE PASS line and the closing summary -- must be loud");
   for (const line of errors) {
     assert.match(line, /CANNOT_TELL/, "a refusal must say which verdict it is, not merely that something went wrong");
-    assert.match(line, /^echo '::error::/, "and it must be an executed `echo`, not a line of prose about one");
+    assert.match(line, /^echo ["']::error::/, "and it must be an executed `echo`, not a line of prose about one");
   }
   assert.match(run, /could not be read/,
     "the LIVE PASS refusal must tell the next reader what to look for in the log, so they need not reproduce it");
@@ -379,10 +395,7 @@ test("#2120: the literal the step greps for is one the guard actually prints", (
   // silently, and the direction that matters is the loosening one: a pattern broad enough to match the
   // guard's `NOT RUN` or `SKIPPED` lines would let a skip pass again. Pinning the literal against the
   // guard's own source closes both directions at once.
-  const grepLine = codeLines(readStep().run ?? "").find((line) => /\bgrep\b/.test(line) && line.includes("LIVE PASS"));
-  assert.ok(grepLine, "no grep for the LIVE PASS line");
-  const literal = /grep\s+-q\s+'([^']+)'/.exec(grepLine)?.[1];
-  assert.ok(literal, `could not read the grepped literal out of: ${grepLine}`);
+  const { literal } = grepStep();
   const guard = readFileSync(join(REPO, GUARD), "utf8");
   assert.ok(guard.includes(literal),
     `${NIGHTLY} greps for ${JSON.stringify(literal)}, which ${GUARD} never prints -- the nightly would fail every night`);
@@ -406,17 +419,19 @@ const STUB_TOKEN = "not-a-secret-stub-token";
  */
 const STUB_CONFIG = "/stub/only/rstest-config-the-node-stub-printed.mjs";
 /**
- * The guard's REAL output, measured 2026-09-23 by running the committed runner command as
- * `a11ign-ai-workers` -- not a plausible-looking invention (`a-number-from-the-apparatus`: a fixture that
- * merely looks like the artefact is not evidence about the artefact). The skip line is the same read with
+ * The guard's REAL output, measured 2026-10-03 by running the committed runner command as
+ * `a11ign-ai-workers` (`A11Y_PROTECTION_REPO=a11ign/a11ign`) -- not a plausible-looking invention
+ * (`a-number-from-the-apparatus`: a fixture that merely looks like the artefact is not evidence about the
+ * artefact). `%REPO%` is the one thing the stub fills in per invocation. The skip line is the same read with
  * the flag unset, which is the state this whole job exists to make red.
  */
-const LIVE_PASS_OUTPUT = "  LIVE PASS (no admin required): a `pull_request` rule requires 1 approval(s) on "
+const LIVE_PASS_OUTPUT = "  LIVE PASS (no admin required) on %REPO%@main: a `pull_request` rule requires 1 approval(s) on "
   + '`main`, and `current_user_can_bypass` is "never" for the identity running this check -- who ELSE may '
   + "bypass is not knowable without admin";
 const NOT_RUN_OUTPUT = "  NOT RUN: the live ruleset read is opt-in -- `A11Y_CHECK_MAIN_RULESET=1 npx tsx "
   + "--test packages/lab/src/packaging/branch-protection.test.ts` asks GitHub whether the ruleset's "
   + "`pull_request` rule binds THIS identity. It needs no admin.";
+const TWO_REPOS = ["a11ign/first-repo", "a11ign/second-repo"];
 
 const shellQuote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`;
 
@@ -426,36 +441,58 @@ function writeStub(dir: string, name: string, body: string): void {
   chmodSync(path, STUB_MODE);
 }
 
-type StepOutcome = { status: number | null, output: string, ranRstest: string | null };
+type StepOutcome = { status: number | null, output: string, ranRstest: string | null, repos: string[] };
+type StepOptions = {
+  token?: string | null; config?: string | null; says?: string; rstestExit?: number;
+  /** What the repository lister prints, or null for a lister that fails. */
+  repoList?: string | null;
+  /** A repository for which the stub runner prints the skip line instead of the pass line. */
+  skipFor?: string; failFor?: string;
+};
 
 /**
  * Run the step's OWN `run:` text under `bash -e` -- the shell a `run:` block gets -- with `node` and `pnpm`
  * stubbed, so this needs no secret, no network and no `dist/`, and the runner RECORDS what it was handed.
  *
- * `ranRstest` is `null` when the runner never started. That is the whole point of this helper: every token
- * assertion in this file passes on an `echo` carrying the same words, and this one cannot.
+ * `node` is asked two things and the stub tells them apart by their text: the runner's config path (the
+ * line naming `RSTEST_CONFIG`) and the repository list (anything else). `pnpm` appends one block per
+ * invocation, so a step that reads one repository leaves one block, and `repos` is the list of
+ * `A11Y_PROTECTION_REPO` values it was handed. `ranRstest` is `null` when the runner never started. That is
+ * the whole point of this helper: every token assertion in this file passes on an `echo` carrying the same
+ * words, and this one cannot.
  */
-function runReadStep(
-  { token = STUB_TOKEN as string | null, config = STUB_CONFIG as string | null,
-    says = LIVE_PASS_OUTPUT, rstestExit = 0 } = {},
-): StepOutcome {
+function writeStubs(dir: string, record: string, { config = STUB_CONFIG, repoList = TWO_REPOS.join(" "), rstestExit = 0 }: StepOptions): void {
+  const answer = (value: string | null): string => (value === null ? "exit 1" : `printf '%s\\n' ${shellQuote(value)}`);
+  writeStub(dir, "node", `case "$*" in\n  *RSTEST_CONFIG*) ${answer(config)} ;;\n  *) ${answer(repoList)} ;;\nesac\n`);
+  writeStub(dir, "pnpm", `{ printf 'ARGV: %s\\n' "$*"\n`
+    + `  printf 'A11Y_CHECK_MAIN_RULESET=%s\\n' "$A11Y_CHECK_MAIN_RULESET"\n`
+    + `  printf 'A11Y_PROTECTION_REPO=%s\\n' "$A11Y_PROTECTION_REPO"\n`
+    + `  printf 'GH_TOKEN=%s\\n' "$GH_TOKEN"\n`
+    + `} >> ${shellQuote(record)}\n`
+    + `if [ "$A11Y_PROTECTION_REPO" = "$STUB_FAIL_REPO" ]; then echo "stub: runner failed"; exit 1; fi\n`
+    + `if [ "$A11Y_PROTECTION_REPO" = "$STUB_SKIP_REPO" ]; then printf '%s\\n' ${shellQuote(NOT_RUN_OUTPUT)}; exit 0; fi\n`
+    + `printf '%s\\n' "$STUB_RSTEST_SAYS" | sed "s#%REPO%#$A11Y_PROTECTION_REPO#"\nexit ${rstestExit}\n`);
+}
+
+function stepEnv(dir: string, { token = STUB_TOKEN, says = LIVE_PASS_OUTPUT, skipFor = "", failFor = "" }: StepOptions): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}`,
+    STUB_RSTEST_SAYS: says, STUB_SKIP_REPO: skipFor || "-", STUB_FAIL_REPO: failFor || "-", A11IGN_BOT_TOKEN: token ?? "" };
+  if (token === null) delete env.A11IGN_BOT_TOKEN;
+  return env;
+}
+
+function runReadStep(options: StepOptions = {}): StepOutcome {
   const dir = mkdtempSync(join(tmpdir(), "nightly-ruleset-read-"));
   try {
     const record = join(dir, "rstest-invocation.txt");
-    writeStub(dir, "node", config === null ? "exit 1\n" : `printf '%s\\n' ${shellQuote(config)}\n`);
-    writeStub(dir, "pnpm", `{ printf 'ARGV: %s\\n' "$*"\n`
-      + `  printf 'A11Y_CHECK_MAIN_RULESET=%s\\n' "$A11Y_CHECK_MAIN_RULESET"\n`
-      + `  printf 'GH_TOKEN=%s\\n' "$GH_TOKEN"\n`
-      + `} > ${shellQuote(record)}\nprintf '%s\\n' "$STUB_RSTEST_SAYS"\nexit ${rstestExit}\n`);
-    const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}`,
-      STUB_RSTEST_SAYS: says, A11IGN_BOT_TOKEN: token ?? "" };
-    if (token === null) delete env.A11IGN_BOT_TOKEN;
+    writeStubs(dir, record, options);
     // `-e` and nothing else: GitHub's default shell for a `run:` block does NOT set pipefail, which is why
     // the step sets it itself -- and why a test below can tell whether it still does.
     const result = spawnSync("bash", ["-e", "-c", readStep().run ?? ""],
-      { cwd: dir, encoding: "utf8", env, timeout: STEP_TIMEOUT_MS });
-    return { status: result.status, output: `${result.stdout}${result.stderr}`,
-      ranRstest: existsSync(record) ? readFileSync(record, "utf8") : null };
+      { cwd: dir, encoding: "utf8", env: stepEnv(dir, options), timeout: STEP_TIMEOUT_MS });
+    const ran = existsSync(record) ? readFileSync(record, "utf8") : null;
+    return { status: result.status, output: `${result.stdout}${result.stderr}`, ranRstest: ran,
+      repos: [...(ran ?? "").matchAll(/^A11Y_PROTECTION_REPO=(.*)$/gm)].map((m) => m[1] as string) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -480,10 +517,65 @@ test("#2120 EXECUTED: the step really INVOKES the guard, with the flag, the deri
     "and the read must be made as the merging identity's secret, which is the subject the verdict is about");
 });
 
+test("#3123 EXECUTED: the guard is run ONCE PER LISTED REPOSITORY, each handed its own repository", () => {
+  const run = runReadStep();
+  assert.equal(run.status, 0, run.output);
+  assert.deepEqual(run.repos, TWO_REPOS, "one invocation per listed repository, in order, each with its own A11Y_PROTECTION_REPO");
+  // POSITIVE CONTROL for the count: a one-repository list yields ONE invocation, so the two above are the list.
+  assert.deepEqual(runReadStep({ repoList: TWO_REPOS[0] as string }).repos, [TWO_REPOS[0]]);
+});
+
+test("#3123 EXECUTED: one repository's pass is NOT another's -- a skip for the second is red and names it", () => {
+  const skipped = TWO_REPOS[1] as string;
+  const run = runReadStep({ skipFor: skipped });
+  assert.equal(run.status, 1, "the first repository certified and the second never printed its pass line");
+  assert.match(run.output, new RegExp(`the run for ${skipped} exited green but never printed its LIVE PASS line`));
+  assert.doesNotMatch(run.output, new RegExp(`the run for ${TWO_REPOS[0]} exited green`), "and the one that passed is not blamed");
+  assert.match(run.output, new RegExp(`did not certify: ${skipped}\\.`));
+});
+
+test("#3123 EXECUTED: a pass line for the WRONG repository certifies nothing -- the primary cannot answer for another", () => {
+  // The defect the repository in the pass line exists to close: a guard that ignored `A11Y_PROTECTION_REPO`
+  // prints the PRIMARY's line on every iteration, and a bare `LIVE PASS` grep would count it for each.
+  const primary = "  LIVE PASS (no admin required) on a11ign/a11ign@main: a `pull_request` rule requires 1 approval(s)";
+  const run = runReadStep({ says: primary });
+  assert.equal(run.status, 1);
+  for (const repo of TWO_REPOS) assert.match(run.output, new RegExp(`the run for ${repo} exited green but never printed`));
+});
+
+test("#3123 EXECUTED: a runner that FAILS for one repository does not stop the others being read", () => {
+  const run = runReadStep({ failFor: TWO_REPOS[0] as string });
+  assert.equal(run.status, 1, "a repository whose read failed is not certified");
+  assert.deepEqual(run.repos, TWO_REPOS, "and the second was still read: `bash -e` must not end the loop at the first failure");
+  assert.match(run.output, new RegExp(`read FAILED for ${TWO_REPOS[0]}`));
+});
+
+test("#3123 EXECUTED: an unreadable or EMPTY repository list refuses BY NAME and reads nothing", () => {
+  for (const repoList of [null, ""]) {
+    const run = runReadStep({ repoList });
+    assert.equal(run.status, 1, `a list of ${JSON.stringify(repoList)} certifies no repository`);
+    assert.match(run.output, /::error::CANNOT_TELL: could not read the code repositories out of \.agent-org\/project\.json/);
+    assert.equal(run.ranRstest, null, "nothing may run against a list nobody could read");
+  }
+});
+
+test("#3123: the list the step reads IS `project.json`'s `code` array -- the derivation is run, not scanned", () => {
+  const line = commands(readStep().run ?? "").find((l) => l.startsWith('REPOS="$(node -e '));
+  assert.ok(line, "the step must derive REPOS from a `node -e` command substitution");
+  const script = /node -e '([^']+)'/.exec(line)?.[1];
+  assert.ok(script, `could not read the script out of: ${line}`);
+  const printed = spawnSync("node", ["-e", script], { cwd: REPO, encoding: "utf8" });
+  assert.equal(printed.status, 0, printed.stderr);
+  const declared = (JSON.parse(readFileSync(join(REPO, ".agent-org/project.json"), "utf8")) as { code: { repo: string }[] })
+    .code.map((c) => c.repo);
+  assert.ok(declared.length >= 2, "POSITIVE CONTROL: the real declared list has more than one repository, so 'per repository' is not vacuous");
+  assert.deepEqual(printed.stdout.trim().split(/\s+/), declared);
+});
+
 test("#2120 EXECUTED: a green run that never printed LIVE PASS is RED -- done-when 2, as a behaviour", () => {
   const run = runReadStep({ says: NOT_RUN_OUTPUT });
   assert.equal(run.status, 1, "the guard exits 0 on every skip, so only the printed line can tell them apart");
-  assert.match(run.output, /::error::CANNOT_TELL: the run exited green but never printed its LIVE PASS line/);
+  assert.match(run.output, /::error::CANNOT_TELL: the run for \S+ exited green but never printed its LIVE PASS line/);
   assert.ok(run.ranRstest,
     "POSITIVE CONTROL: the step must have really run the guard and then judged its output -- a step that "
     + "stopped invoking it would fail this case too, for the wrong reason, and read as this fix working");
@@ -508,7 +600,9 @@ test("#2120 EXECUTED: a renamed RSTEST_CONFIG export refuses BY NAME, not by dyi
 test("#2120 EXECUTED: `set -o pipefail` -- a runner that FAILS is red even with LIVE PASS in the log", () => {
   // Without it the pipeline reports `tee`'s zero, the grep then finds the LIVE PASS line the failing run
   // had already printed, and a read that crashed halfway certifies `main`. `bash -e` alone cannot see it.
+  // The stub prints the pass line AND exits 1, which is the shape that case needs.
   const run = runReadStep({ rstestExit: 1 });
   assert.notEqual(run.status, 0, "a failing runner must fail the step even though its output was captured");
   assert.ok(run.ranRstest, "POSITIVE CONTROL: the runner ran and failed, rather than never starting");
+  assert.match(run.output, /read FAILED for/, "and it is the runner's own status that is read, not the log's content");
 });
