@@ -869,7 +869,9 @@ test("ci.yml's board job runs exactly the board guards and the claim guard, and 
   };
   const board = doc.jobs.board;
   assert.ok(board, "ci.yml must declare a job named 'board'");
-  assert.equal(board.if, "needs.changed.outputs.board == 'true'");
+  // #3211: still selected by the diff, and now also not run for a body edit or a label (the suite did not move). The
+  // exclusion itself is pinned, over every heavy job, by `ci-meta-events-do-not-run-the-suite.test.ts`.
+  assert.match(String(board.if), /^needs\.changed\.outputs\.board == 'true'( && |$)/);
   // A1 (#452): board is now a CALLER, not a step list of its own -- see reusable-board.yml for the
   // actual steps this test goes on to check.
   assert.equal(board.uses, "./.github/workflows/reusable-board.yml",
