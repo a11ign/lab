@@ -173,6 +173,15 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "Its other git call, `git log -p -- packages/pdf`, asserts its output contains a `diff --git` header "
       + "before scanning it, and skips by name on a shallow clone.",
   },
+  "packages/lab/src/packaging/screenreader-worker-extraction.test.ts": {
+    guard: 'diffs.includes("diff --git")',
+    note: "guarded -- #2701's history scan spawns `git log -p` over the two moving packages and expects NO credential "
+      + "shape and nothing the purge rules redact. A clean result is the EXPECTED answer, so 'the history is clean' "
+      + "and 'the log read nothing' would be the same observation; the assertion that the output contains a "
+      + "`diff --git` header tells them apart. Its message scan asserts more than 300 lines came back before scanning, "
+      + "and carries a positive control that the raw messages still need `--replace-message`. Both skip by name on a "
+      + "shallow clone, and its fixtures prove each predicate refuses a planted address and token.",
+  },
   "packages/lab/src/packaging/reported-counts.test.ts": {
     guard: 'assert.deepEqual(found, ["reported.test.ts: walked.length"]',
     note: "guarded, and NOT by a floor -- which would be this guard committing the defect it exists to "
