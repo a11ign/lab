@@ -352,8 +352,9 @@ const DOCUMENTED: Record<string, string> = {
     + "on file; 0 every requested worker answered",
   "packages/control/src/fleet-auto-off.mjs":
     "2 usage error — inventory unreadable or empty (precondition, matching fleet-wake.mjs's own empty-"
-    + "inventory code); 0 otherwise regardless of what any worker was decided — #2656 ships this report-"
-    + "only, so the decision itself is the output, never a pass/fail verdict",
+    + "inventory code); 1 a shutdown held back because the checkout differs from main, or any worker's "
+    + "wake proof is lapsing or lapsed (#3309); 0 otherwise regardless of what any worker was decided — "
+    + "the decision itself is the output, never a pass/fail verdict",
   "packages/worker-fleet/src/guest-run.mjs":
     "2 usage error; 1 via a top-level catch for ANY thrown error, including the polling-timeout path whose "
     + "own message reads 'the script may still be running' — a confirmed 'gave up observing' instance "
