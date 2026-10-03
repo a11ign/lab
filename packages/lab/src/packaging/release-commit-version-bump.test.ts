@@ -6,7 +6,7 @@
  *
  * #3131: the script no longer pushes `main` (its required review refuses it). `release.yml`'s `version-pr` job runs it
  * right after `release:version`, and it force-pushes `VERSION_BRANCH`, from which the ONE version pull request is
- * opened. It also writes one EMPTY changeset, which is what lets that pull request pass `ci.yml`'s `changeset` job.
+ * opened. It writes NO changeset (#3161): `ci.yml`'s `changeset` job exempts that branch instead.
  * This file pins three things: the pure path-selection logic (`versionBumpPaths`), which
  * is what avoids the glob-pathspec trap `git add` falls into (see that function's own header); the script
  * run for real, in a sandbox, on both of its branches; and the workflow wiring itself, the same way
@@ -232,8 +232,8 @@ test("#2057/#3131 POSITIVE CONTROL: with an uncommitted `.changeset/` edit the s
       "the message describes a release -- which is why finding this on your own branch reads as somebody else's work");
     const shown = sandbox.run(["show", "--stat", "--format=", "HEAD"]);
     assert.match(shown, /\.changeset\/README\.md/, "the in-flight edit planted above is what the release commit swept up");
-    assert.match(shown, /\.changeset\/version-packages\.md/,
-      "the EMPTY changeset rides along: without it `changeset status --since` exits 1 on a version commit and the pull request never merges");
+    assert.doesNotMatch(shown, /\.changeset\/version-packages\.md/,
+      "no empty changeset rides along (#3161): `ci.yml`'s `changeset` job exempts the version branch instead");
     assert.equal(remoteRef(`refs/heads/${VERSION_BRANCH}`), sandbox.run(["rev-parse", "HEAD"]).trim(),
       "and it pushed: the version branch in the throwaway remote names the commit just written, so the whole "
       + "config/add/commit/push path ran rather than stopping at the commit");
