@@ -53,8 +53,11 @@ const CONTROL = "packages/lab/src/packaging/fixtures/broken-continuation.ps1";
  * merged, which is where `packages/worker-fleet/src/display-mode-harness.ps1` comes from: 17 `.ps1` and
  * 1 `.psm1`. If a script is added or removed, move this number DELIBERATELY — it moving on its own is
  * how a population stops being the one anybody checked.
+ *
+ * 18 -> 21 with #3230: `a11y_wake_prereqs.ps1` and the two Pester files that pin the new reads
+ * (`a11y_nic_power.Tests.ps1`, `a11y_wake_prereqs.Tests.ps1`).
  */
-const EXPECTED_FILES = 18;
+const EXPECTED_FILES = 21;
 
 /** Exactly one file is excluded, and it is the control. Asserted, so the exclusion cannot widen quietly. */
 const EXPECTED_EXCLUDED = 1;

@@ -81,6 +81,18 @@ test("the refusals one at a time: each fires on its own diff and on no other", (
   assert.match(derive({ ...ranges("^2.9.0", "^2.9.1"), files: ["packages/x/package.json", "packages/x/src/a.ts"] }).reasons.join(), /packages\/x\/src\/a\.ts is not a manifest/);
 });
 
+test("#3283: a manifest ADDED and a manifest DELETED are each refused by name, and not as one another", () => {
+  const path = "packages/x/package.json";
+  const manifest = { name: "x", dependencies: { yaml: "^2.9.0" } };
+  const added = derive({ files: [path], manifests: { [path]: { before: null as unknown as Manifest, after: manifest } } });
+  const deleted = derive({ files: [path], manifests: { [path]: { before: manifest, after: null as unknown as Manifest } } });
+  assert.equal(added.verdict, "refused");
+  assert.deepEqual(added.reasons, [`${path} was added, which is not a dependency bump`]);
+  assert.equal(deleted.verdict, "refused");
+  assert.deepEqual(deleted.reasons, [`${path} was deleted, which is not a dependency bump`]);
+  assert.deepEqual([added.entries, deleted.entries], [[], []], "a refused diff derives no entry");
+});
+
 /** What each wrong entry for #3155 looks like, built the wrong way on purpose. */
 const derived3155 = () => derive(fixture(3155));
 const fromTheTitle = () => ({ package: "a11ign", bump: "patch", text: fixture(3155).title });
@@ -158,8 +170,8 @@ function recognisedInTheQueue(step: Step, message: string): boolean {
   }
 }
 
-/** Whether the `dependency` step RUNS for this event, the job having found a published package touched. */
-function dependencyStepRuns(event: { title?: string; queueMessage?: string }): boolean {
+/** Whether the `dependency` step RUNS for this event; `changeset` is what the `precise` step found (default: a published package is touched). */
+function dependencyStepRuns(event: { title?: string; queueMessage?: string; changeset?: string }): boolean {
   const steps = changesetSteps();
   const dependency = steps.find((s) => s.run?.includes("dependency-changeset.mjs check"));
   const recogniser = steps.find((s) => s.id === "dependencyQueue");
@@ -168,7 +180,7 @@ function dependencyStepRuns(event: { title?: string; queueMessage?: string }): b
     && recognisedInTheQueue(recogniser, event.queueMessage);
   return evaluate(dependency.if, {
     github: { event: { pull_request: { title: event.title ?? "" } } },
-    steps: { precise: { outputs: { changeset: "true" } }, dependencyQueue: { outputs: { queue: queue ? "true" : "" } } },
+    steps: { precise: { outputs: { changeset: event.changeset ?? "true" } }, dependencyQueue: { outputs: { queue: queue ? "true" : "" } } },
   });
 }
 
@@ -186,6 +198,15 @@ test("THE JOB IS WIRED: a `deps:` pull request is read from the diff; any other 
   assert.doesNotMatch(dependency.run ?? "", /github\.event\.pull_request\.title/, "the title is never interpolated into a shell line");
   assert.match(dependency.run ?? "", /--since=\$\{\{ github\.event\.merge_group\.base_sha \}\}/,
     "a queue entry is diffed against its own parent, or entry 2 is blamed for entry 1's files and ejected");
+});
+
+test("#3283: the derivation runs only when the job found a published package touched, for a pull request and for its queue entry alike", () => {
+  const title = "deps: bump yaml from 2.9.0 to 2.9.1";
+  for (const changeset of ["false", ""]) {
+    assert.equal(dependencyStepRuns({ title, changeset }), false, `precise says ${JSON.stringify(changeset)}: no published package is touched`);
+    assert.equal(dependencyStepRuns({ queueMessage: REAL_QUEUE_MESSAGE, changeset }), false, "the queue entry is gated the same way");
+  }
+  assert.equal(dependencyStepRuns({ title, changeset: "true" }), true, "the control: the same title runs when it is");
 });
 
 test("#3220: a dependency pull request's QUEUE ENTRY (a MERGE commit, not a squash) is read from the diff, and only that", () => {
@@ -281,6 +302,34 @@ test("the `before` side is the MERGE-BASE: what `main` moved since the branch le
     const out = run("check", "--base=main");
     assert.match(out, /ACCEPTED \(entries\)/);
     assert.match(out, /a: patch -- Updates the `yaml` dependency range from `\^2\.9\.0` to `\^2\.9\.1`\./);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#3283: git's output is read WHOLE: a manifest far over 256 bytes is a bump, not an ADDED manifest", () => {
+  const root = mkdtempSync(join(tmpdir(), "dependency-changeset-3283-"));
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, env: sandboxGitEnv(), encoding: "utf8" });
+  const write = (path: string, body: object) => {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), `${JSON.stringify(body, null, 2)}\n`);
+  };
+  const manifest = (yaml: string) => ({ name: "a", version: "1.0.0", description: "x".repeat(4096), dependencies: { yaml } });
+  try {
+    git("init", "-q", "-b", "main");
+    git("config", "user.email", "test@example.invalid");
+    git("config", "user.name", "test");
+    write("docs/owned-path-facts.json", { owned: [] });
+    write("packages/a/package.json", manifest("^2.9.0"));
+    git("add", "-A");
+    git("commit", "-qm", "first");
+    git("checkout", "-qb", "dependabot/yaml");
+    write("packages/a/package.json", manifest("^2.9.1"));
+    git("commit", "-qam", "deps: bump yaml");
+    assert.ok(git("show", "HEAD:packages/a/package.json").length > 4096, "the control: the manifest git must hand back is far over 256 bytes");
+    const out = execFileSync("node", [resolve(REPO, "scripts/dependency-changeset.mjs"), "check", "--base=main"], { cwd: root, encoding: "utf8" });
+    assert.doesNotMatch(out, /was added/, "a read that overflowed its buffer reports the manifest as missing");
+    assert.match(out, /ACCEPTED \(entries\)/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
