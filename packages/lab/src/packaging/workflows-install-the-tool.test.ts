@@ -54,7 +54,7 @@ test("every workflow step that runs `agent-org` has an earlier step in its job t
 
 test("the control: the real workflows run the tool in many steps, so an empty offender list above is a reading and not a miss", () => {
   const count = realWorkflows().reduce((sum, { doc }) => sum + toolSteps(doc).length, 0);
-  assert.ok(count >= 15, `only ${count} step(s) read as running the tool; the pattern is broken, not the workflows`);
+  assert.ok(count >= 15, "too few steps read as running the tool: the pattern is broken, not the workflows");
 });
 
 test("the control: the walk flags a job with no install, flags one that installs AFTER the tool, and passes one that installs first", () => {

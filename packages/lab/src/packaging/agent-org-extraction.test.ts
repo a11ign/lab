@@ -514,9 +514,11 @@ function decision4Counts(): { total: number; divided: number } {
 // readings and the gate) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
 // 2026-10-02, #2975 (cut-over 4 of 6, the travelled tests deleted; `work-gate.test.ts` KEPT, because #3088 added a test to it that a11ign/agent-org's copy does not have): 91 total, 18 divided. Seventy-one FEWER totals and the same divided: each deleted file had a same-named test in
 // a11ign/agent-org and imported `agent-org/src` (t-import) with no product pattern. Re-derived by running this test, not inferred.
-// 2026-10-03, #2975 (cut-over 4 of 6, the repoint): 92 total, 18 divided. One MORE total, `project-roles-a11ign-plugin.test.ts`, which now imports `agent-org/src/cause-shape.mjs` to run the real `declareCause`
-// over the plugin's entries (the plugin itself became plain data, so nothing else validates them) and matches no product pattern. Re-derived by running this test, not inferred.
-const RECORDED_DECISION_4 = { total: 92, divided: 18 };
+// 2026-10-03, #2975 (cut-over 4 of 6, the repoint): 95 total, 19 divided, from 91/18. FOUR MORE totals, each re-derived with `git grep` against the parent commit: `project-roles-a11ign-plugin.test.ts`
+// (imports `agent-org/src/cause-shape.mjs` to run the real `declareCause` over the plugin, which became plain data), `primary-checkout-mark.test.ts` (imports the tool's command table),
+// `tracker-writer-population.test.ts` (a REGEX naming `agent-org/src` that follows the dependency edge, matched by this scan as an import) and `fleet-hold-readers-agree.test.ts`, which is the one
+// MORE DIVIDED: it imports `agent-org/src` AND `control/src/fleet-playbook.mjs`, the two packages that cannot import each other.
+const RECORDED_DECISION_4 = { total: 95, divided: 19 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
