@@ -12,7 +12,7 @@
  *
  * `askAnthropic` (`packages/judge/src/judge.ts`) uses `messages.stream`, `finalMessage()`, `thinking: { type:
  * "adaptive" }` and `content` blocks whose `type` is `"text"`. That snippet was compiled with `tsc --strict`
- * against the published type declarations of EVERY SDK release from 0.106.0 to 0.129.0 (26 versions, none skipped)
+ * against the published type declarations of EVERY SDK release from 0.106.0 to 0.129.0 (30 versions, none skipped)
  * and compiled in each; a mutated copy (`"adaptive"` -> `"bogus"`) failed to compile, so the compile was not
  * vacuous. That is why the peer is `>=0.106.0 <0.130.0` and not `^0.106.0 || ^0.129.0`: nothing in it is a
  * version nobody checked. 0.106.0 stays the floor because nothing older was measured. A TYPE check, not a call to
