@@ -11,9 +11,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import {
-  qualificationDecision, fleetPartReads, isFleetGated, releasedDirectories,
+  qualificationDecision, rowToFile, fleetPartReads, isFleetGated, releasedDirectories,
   FLEET_GATED_PACKAGES, RUNNER_ONLY_PACKAGES, PRIVATE_PACKAGES, WAIT_BOUND_MINUTES,
 } from "../../../../scripts/release-reads-qualification.mjs";
 
@@ -237,4 +241,116 @@ test("release.yml READS the verdict before it publishes, and only a rehearsal ma
     "a stop is survivable only in a rehearsal, which publishes nothing");
   assert.doesNotMatch(step, /continue-on-error: true/);
   assert.match(workflow, /permissions:[\s\S]*?statuses: read/);
+});
+
+// ---- #3291: the release files a row when the wait is overdue or a regression is confirmed ----------------------------
+
+const labelsOf = (row: { labels: string[] } | null) => row?.labels ?? [];
+
+test("an OVERDUE wait names a row: the sha in the title, its own label, the bound and the writer in the body", () => {
+  const decision = decide([on(RELEASE, [])], { waitedMinutes: WAIT_BOUND_MINUTES + 1 });
+  const row = rowToFile(decision, RELEASE)!;
+  assert.ok(row, "an overdue wait files a row");
+  assert.match(row.title, new RegExp(RELEASE));
+  assert.ok(labelsOf(row).includes("qualification-overdue"));
+  assert.match(row.body, new RegExp(RELEASE));
+  assert.match(row.body, new RegExp(`${WAIT_BOUND_MINUTES} minute bound`));
+  assert.match(row.body, /#3289/);
+  assert.match(row.body, /Nothing is skipped/);
+});
+
+test("a REGRESSION names a row with the `regression` label and the sha in the title", () => {
+  const row = rowToFile(decide([on(RELEASE, [], "failure", "failure")]), RELEASE)!;
+  assert.ok(row, "a regression files a row");
+  assert.match(row.title, new RegExp(RELEASE));
+  assert.ok(labelsOf(row).includes("regression"));
+  assert.match(row.body, /FAILED twice/);
+});
+
+test("the two rows have different titles, so one sha's overdue wait never hides its later regression", () => {
+  const overdue = rowToFile(decide([on(RELEASE, [])], { waitedMinutes: 1000 }), RELEASE)!;
+  const regression = rowToFile(decide([on(RELEASE, [], "failure", "failure")]), RELEASE)!;
+  assert.notEqual(overdue.title, regression.title);
+});
+
+test("no row for proceed, rerun, or a wait still inside its bound; the run URL goes in the body when there is one", () => {
+  assert.equal(rowToFile(decide([on(RELEASE, [], "success")]), RELEASE), null);
+  assert.equal(rowToFile(decide([on(RELEASE, [], "failure")]), RELEASE), null);
+  assert.equal(rowToFile(decide([on(RELEASE, [])], { waitedMinutes: WAIT_BOUND_MINUTES }), RELEASE), null);
+  const row = rowToFile(decide([on(RELEASE, [], "failure", "failure")]), RELEASE, "https://github.com/o/r/actions/runs/7")!;
+  assert.match(row.body, /actions\/runs\/7/);
+});
+
+test("the overdue case REFUSES a fixture that never files -- the positive control for the emptiness above", () => {
+  const aFilerThatNeverFiles = () => null;
+  const overdue = decide([on(RELEASE, [])], { waitedMinutes: WAIT_BOUND_MINUTES + 1 });
+  assert.equal(aFilerThatNeverFiles(), null);
+  assert.notEqual(rowToFile(overdue, RELEASE), aFilerThatNeverFiles(), "the shipped filer must disagree with one that never files");
+});
+
+const EXECUTABLE = 0o755;
+interface Step { name?: string; run?: string; env?: Record<string, string> }
+interface Job { needs?: string | string[]; if?: string; permissions?: Record<string, string>; outputs?: Record<string, string>; steps?: Step[] }
+const jobs = () => (parseYaml(readFileSync(".github/workflows/release.yml", "utf8")) as { jobs: Record<string, Job> }).jobs;
+
+test("the filing job holds `issues: write` and `contents: read` and nothing else, and the publishing job gained no write scope", () => {
+  const { "qualification-row": filing, release } = jobs();
+  assert.deepEqual(filing.permissions, { contents: "read", issues: "write" });
+  assert.deepEqual(release.permissions, { contents: "write", "id-token": "write", statuses: "read" },
+    "the publishing job's permissions are exactly what #3290 left");
+  assert.ok(!filing.steps!.some((step) => step.run === undefined), "every step of the filing job runs a command: no `uses:` action meets the issue token");
+  assert.deepEqual([filing.needs].flat().sort(), ["plan", "release"]);
+  assert.match(filing.if!, /failure\(\)/);
+  assert.match(filing.if!, /mode == 'publish'/, "a rehearsal files nothing");
+});
+
+test("the publishing job hands the row on: each `row-*` output reads the verdict step", () => {
+  const { release } = jobs();
+  for (const name of ["row-title", "row-labels", "row-body"]) {
+    assert.equal(release.outputs?.[name], `\${{ steps.qualification.outputs.${name} }}`);
+  }
+});
+
+/** Runs the filing job's OWN shell with a fake `gh` that records every call and answers the two lookups. */
+function runFilingStep(existing: { rows: number; labelsPresent: string[] }, row: { title: string; labels: string[]; body: string }) {
+  const dir = mkdtempSync(join(tmpdir(), "filing-"));
+  try {
+    mkdirSync(join(dir, "bin"));
+    const record = join(dir, "calls.txt");
+    writeFileSync(join(dir, "bin/gh"), `#!/bin/bash
+printf '%s\\n' "$*" >> "$RECORD"
+case "$1 $2" in
+  "issue list") echo "$FAKE_ROWS" ;;
+  "label list") if printf '%s\\n' "$FAKE_LABELS" | grep -qxF "$LABEL"; then echo 1; else echo 0; fi ;;
+esac
+`);
+    chmodSync(join(dir, "bin/gh"), EXECUTABLE);
+    const step = jobs()["qualification-row"].steps!.find((candidate) => /gh issue create/.test(candidate.run ?? ""))!;
+    const result = spawnSync("bash", ["-c", step.run!], { encoding: "utf8", env: {
+      PATH: `${join(dir, "bin")}:${process.env.PATH}`, RECORD: record, FAKE_ROWS: String(existing.rows),
+      FAKE_LABELS: existing.labelsPresent.join("\n"), ROW_TITLE: row.title, ROW_LABELS: row.labels.join(","), ROW_BODY: row.body } });
+    assert.equal(result.status, 0, result.stderr);
+    let calls: string[] = [];
+    try { calls = readFileSync(record, "utf8").trim().split("\n"); } catch { /* the fake was never called */ }
+    return calls;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const ROW = { title: `release ${RELEASE}: qualification wait overdue`, labels: ["qualification-overdue", "answer:orchestrator"], body: "the body" };
+
+test("the filing step files ONE row, creating only the label that is missing", () => {
+  const calls = runFilingStep({ rows: 0, labelsPresent: ["answer:orchestrator"] }, ROW);
+  const creates = calls.filter((call) => call.startsWith("issue create"));
+  assert.equal(creates.length, 1);
+  assert.match(creates[0], new RegExp(`--title ${ROW.title}`));
+  assert.match(creates[0], /--label qualification-overdue --label answer:orchestrator/);
+  assert.deepEqual(calls.filter((call) => call.startsWith("label create")), ["label create qualification-overdue"]);
+});
+
+test("a re-run for the same sha finds the existing row and files none", () => {
+  const calls = runFilingStep({ rows: 1, labelsPresent: [] }, ROW);
+  assert.ok(calls.some((call) => call.startsWith("issue list")), "the step asked (positive control: the lookup ran)");
+  assert.deepEqual(calls.filter((call) => /^(issue|label) create/.test(call)), []);
 });
