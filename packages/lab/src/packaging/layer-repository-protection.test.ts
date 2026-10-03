@@ -134,8 +134,8 @@ function literalLines(text: string, literal: string): string[] {
 
 test("#3123 POSITIVE CONTROL: the literal scan sees a code line and skips a comment line", () => {
   const fixture = [` * prose naming ${FORMER_LITERAL}`, `// ${FORMER_LITERAL}`,
-    `  gh(["api", "repos/${FORMER_LITERAL}/branches/main"]);`].join("\n");
-  assert.deepEqual(literalLines(fixture, FORMER_LITERAL), [`  gh(["api", "repos/${FORMER_LITERAL}/branches/main"]);`]);
+    `  readApi(["api", "repos/${FORMER_LITERAL}/branches/main"]);`].join("\n");
+  assert.deepEqual(literalLines(fixture, FORMER_LITERAL), [`  readApi(["api", "repos/${FORMER_LITERAL}/branches/main"]);`]);
 });
 
 test("#3123: `branch-protection.test.ts` carries no repository literal on a non-comment line", () => {
