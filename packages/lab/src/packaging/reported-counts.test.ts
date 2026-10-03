@@ -124,7 +124,6 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "licence-boundary.test.ts: obliged.length",
   "local-import-closure.test.ts: files.length",
   "local-import-closure.test.ts: walked",
-  "merge-method-is-one-fact.test.ts: sites.length",
   "npm-cli-windows-spawn.test.ts: files.length",
   "npm-cli-windows-spawn.test.ts: touchingNpmCli.length",
   "pre-push-hook-scope.test.ts: sites.length",

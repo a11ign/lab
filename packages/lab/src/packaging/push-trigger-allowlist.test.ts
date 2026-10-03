@@ -46,7 +46,7 @@ import { parse as parseYaml } from "yaml";
 // request. The declaration is ENFORCED rather than trusted: `declareWalkScope` observes what this
 // file actually reads and fails it here if anything lands outside the scope -- so a scope that is
 // too narrow is loud, never a guard that silently stopped running.
-export const WALK_SCOPE = ["packages/agent-org",".github/workflows"];
+export const WALK_SCOPE = [".github/workflows"];
 await declareWalkScope(import.meta.url);
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));

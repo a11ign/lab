@@ -110,8 +110,8 @@ test("#2729: readLabJobRecords — an absent directory is empty, a bad file is s
     writeFileSync(join(dir, "future.json"), JSON.stringify(record({ schema: 2 })));
     writeFileSync(join(dir, "note.txt"), "ignored: not a record");
     const skipped: string[] = [];
-    const read = readLabJobRecords({ dir, skipped: (f) => skipped.push(f) });
-    assert.deepEqual(read.map((r) => r.invocation), ["a1b2c3"]);
+    const read = readLabJobRecords({ dir, skipped: (f: any) => skipped.push(f) });
+    assert.deepEqual(read.map((r: any) => r.invocation), ["a1b2c3"]);
     assert.deepEqual(skipped.sort(), ["future.json", "torn.json"], "one bad record must not hide the good one, or go unmentioned");
     const denied = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
     assert.throws(() => readLabJobRecords({ dir, list: () => { throw denied; } }), /EACCES/);

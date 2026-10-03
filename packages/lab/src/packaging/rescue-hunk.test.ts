@@ -66,9 +66,9 @@ test("THE REAL PAIR: the un-redaction is NAMED before anything is applied", () =
   const mainRedactedLater = "const a = 1;\n * uses `<the lab's address>:5050` to serve pages\nconst b = 2;\n";
   const baseWithLiteral = "const a = 1;\n * uses `192.0.2.79:5050` to serve pages\nconst b = 2;\n";
   const gained = linesGained(baseWithLiteral, mainRedactedLater);
-  assert.ok(gained.some((l) => l.includes("<the lab's address>")),
+  assert.ok(gained.some((l: any) => l.includes("<the lab's address>")),
     `the redaction main gained must be named:\n${gained.join("\n")}`);
-  assert.ok(!gained.some((l) => l.includes("192.0.2.79")),
+  assert.ok(!gained.some((l: any) => l.includes("192.0.2.79")),
     "the literal is what main REPLACED; reporting it as a gain would invert the finding");
 });
 

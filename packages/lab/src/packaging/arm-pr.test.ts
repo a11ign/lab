@@ -195,7 +195,7 @@ test("#1000: the live and retired sets are DISJOINT, and the split is checked ag
   // So the DISJOINTNESS is checked here (pure, always), and the COVERAGE is checked against `gh label
   // list` in arm-pr-labels-live.test.ts (#1140) -- which needs a token, so it reports honestly rather than
   // passing when it cannot ask.
-  assert.deepEqual(LIVE_SESSIONS.filter((s) => RETIRED_SESSIONS.includes(s)), [],
+  assert.deepEqual(LIVE_SESSIONS.filter((s: any) => RETIRED_SESSIONS.includes(s)), [],
     "a session cannot be both live and retired");
   assert.ok(LIVE_SESSIONS.length >= 1 && RETIRED_SESSIONS.length >= 1);
 });
@@ -524,7 +524,7 @@ test("#2046 WIRING: both callers of the armed read build it from the SAME `armed
   const queued = armedQueryArgs({ number: "2044", repo: "a11ign/a11ign" });
   assert.deepEqual(queued.slice(0, 2), ["api", "graphql"],
     "REST structurally cannot see the merge queue -- this must be the GraphQL read");
-  assert.ok(queued.some((a) => a.includes("mergeQueueEntry")),
+  assert.ok(queued.some((a: any) => a.includes("mergeQueueEntry")),
     "and it must ask for every field `armedFromApi` decides on, `mergeQueueEntry` above all");
   assert.ok(queued.includes("o=a11ign") && queued.includes("r=a11ign") && queued.includes("n=2044"),
     "the owner, repo and number are variables, never interpolated into the query text");
@@ -1004,11 +1004,11 @@ test("#2391 PURE: extractTrunkFixDeclaration keeps none, fixes-trunk and malform
 
 test("#2391 PURE: redStreak is the run of reds up to the newest green -- through a cancelled or in-flight run", () => {
   assert.deepEqual(redStreak(GREEN_MAIN), []);
-  assert.deepEqual(redStreak(RED_MAIN).map((r) => r.id), [3]);
+  assert.deepEqual(redStreak(RED_MAIN).map((r: any) => r.id), [3]);
   const runs = [trunkRun(6, "aaaaaaa", "failure"), trunkRun(5, "bbbbbbb", "cancelled"), trunkRun(4, "ccccccc", null, "in_progress"),
     trunkRun(3, "ddddddd", "failure"), trunkRun(2, "eeeeeee", "success"), trunkRun(1, "fffffff", "failure")];
-  assert.deepEqual(redStreak({ workflow_runs: runs }).map((r) => r.id), [6, 3], "cancelled and running say nothing about main; the green ends it");
-  assert.deepEqual(redStreak({ workflow_runs: [...runs].reverse() }).map((r) => r.id), [6, 3], "the order the API hands them in decides nothing");
+  assert.deepEqual(redStreak({ workflow_runs: runs }).map((r: any) => r.id), [6, 3], "cancelled and running say nothing about main; the green ends it");
+  assert.deepEqual(redStreak({ workflow_runs: [...runs].reverse() }).map((r: any) => r.id), [6, 3], "the order the API hands them in decides nothing");
   assert.deepEqual(redStreak({ workflow_runs: [trunkRun(1, "aaaaaaa", "cancelled")] }), [], "no verdict at all is not a red");
   assert.deepEqual(redStreak(null as never), []);
 });
@@ -1099,7 +1099,7 @@ test("#2441 PURE: redStreakReading says whether the streak is KNOWN to have ende
   assert.deepEqual(redStreakReading(RED_MAIN).ended, true);
   assert.deepEqual(redStreakReading(GREEN_MAIN), { streak: [], ended: true });
   const unfinished = redStreakReading({ workflow_runs: [trunkRun(3, RED_SHA, "failure"), trunkRun(2, OLDER_RED_SHA, "failure")] });
-  assert.deepEqual(unfinished.streak.map((r) => r.id), [3, 2]);
+  assert.deepEqual(unfinished.streak.map((r: any) => r.id), [3, 2]);
   assert.equal(unfinished.ended, false, "reds that run out of runs are a streak that may go on");
   assert.equal(redStreakReading({ workflow_runs: [trunkRun(2, RED_SHA, "failure"), trunkRun(1, GREEN_SHA, "cancelled")] }).ended, false, "a cancelled run ends nothing");
   assert.deepEqual(redStreakReading(null as never), { streak: [], ended: false });

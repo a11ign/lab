@@ -33,30 +33,21 @@ import { localImports, stripComments } from "../../../guards/src/local-import-cl
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
-// #2658 (child 3g of #69): the guard the tool's writers REACH is the tool's own `lib/leak-patterns.mjs`, since `agent-org` no longer imports the
-// product's. The declared registries below (`TRACKER_WRITERS`, `TRACKER_WRITER_DIRS`, `sendsABody`) stay in the product's file, which is
-// why this file still imports them from there: they are the product's list of which scripts send a body, not something a writer imports.
-const GUARD_FILE = "packages/agent-org/src/lib/leak-patterns.mjs";
-const GUARD = resolve(REPO, GUARD_FILE);
-// THE GUARD IS EXCLUDED FROM ITS OWN CENSUS IN CODE, not by an entry in the list it maintains. The census walks `packages/agent-org/src`,
-// which the guard now lives in, and `sendsABody`'s predicate reads the `"--body"` string that `bodyFromArgv` itself matches: it would
-// classify itself as a writer that no list declares. It CHECKS bodies; it sends none. (Before #2658 it sat in `packages/lab`, outside
-// every root the census walks, so nothing had to say this.)
-const SELF = GUARD_FILE;
+// #2975 PR 3: the tool left this tree, and with it ten of the eleven declared writers. The census now covers what the project authors
+// (`scripts/`, `packages/guards/src`), and the guard those writers REACH is the INSTALLED tool's `lib/leak-patterns.mjs` (see below). The same census
+// over the tool's own writers is a11ign/agent-org's to hold, where `tracker-writer-spawn-guard.test.ts` already lives.
 
 /** Every `.mjs` a tracker writer could live in, from git rather than a glob, so an untracked scratch file
- * is not a writer. THREE ROOTS, not one: the org tooling moved to `@a11ign/agent-org` and the repo-hygiene
- * guards to `@a11ign/guards`, and a census still pointed at `scripts/` alone would walk what is left --
- * 27 files instead of 100 -- and report a clean population having never looked at the writers. */
+ * is not a writer. TWO ROOTS, not one: the repo-hygiene guards live in `packages/guards/src`, and a census pointed at `scripts/` alone would walk
+ * what is left and report a clean population having never looked at the writers. */
 const trackedScripts = () =>
-  execFileSync("git", ["ls-files", "scripts", "packages/agent-org/src", "packages/guards/src"],
+  execFileSync("git", ["ls-files", "scripts", "packages/guards/src"],
     { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
     .split("\n").filter((f) => f.endsWith(".mjs"));
 
 // #2975: a script here now takes the tool by the dependency (`from "agent-org/src/board-data.mjs"`), a bare specifier `localImports`
 // does not follow, so `scripts/npm-token-liveness.mjs` read as reaching no guard though it reaches the very one it did. The walk follows
-// that one specifier into the INSTALLED copy, and the guard counts at either place: the in-tree one for the tool's own files, the installed
-// one for a project script that imports it.
+// that one specifier into the INSTALLED copy, and the guard is the installed one.
 const INSTALLED_TOOL = resolve(REPO, "node_modules/agent-org");
 const INSTALLED_GUARD = resolve(INSTALLED_TOOL, "src/lib/leak-patterns.mjs");
 const importsThroughDependency = (file: string): string[] => [
@@ -68,7 +59,7 @@ const importsThroughDependency = (file: string): string[] => [
 /** Does `entry`'s local-import closure reach the guard? */
 function reachesGuard(entry: string, deps: { imports?: (f: string) => string[]; guard?: string } = {}) {
   const imports = deps.imports ?? importsThroughDependency;
-  const guards = deps.guard ? [deps.guard] : [GUARD, INSTALLED_GUARD];
+  const guards = deps.guard ? [deps.guard] : [INSTALLED_GUARD];
   const seen = new Set<string>();
   const visit = (file: string) => {
     if (seen.has(file)) return;
@@ -103,7 +94,7 @@ function writerPopulation(
 
 const realPopulation = () => writerPopulation({
   root: REPO,
-  files: trackedScripts().filter((file) => file !== SELF),
+  files: trackedScripts(),
   declared: TRACKER_WRITERS.map((name) => {
     // Resolve against each root; a writer must exist in exactly one of them.
     const hit = TRACKER_WRITER_DIRS.map((d) => `${d}${name}`).find((p) => existsSync(resolve(REPO, p)));
@@ -133,9 +124,9 @@ test("#1053: the population is real — this cannot pass having walked nothing",
   // means the body-flag predicate did. Either one gives two empty lists above and a clean sheet.
   const { examined, sending } = realPopulation();
   assert.ok(examined >= 100, `expected the whole scripts directory, walked ${examined}`);
-  assert.ok(sending.length >= 8,
+  assert.ok(sending.length >= 1,
     `only ${sending.length} script(s) read as sending a body; the flag predicate is broken, not the tree `
-    + "empty. Measured at 11 when this landed");
+    + "empty. Measured at 11 when this landed, and at 1 (`npm-token-liveness.mjs`) once the tool's ten writers left with it (#2975 PR 3)");
   assert.equal(sending.length, TRACKER_WRITERS.length,
     "and the declared list is exactly the found set — a writer removed from the tree must leave the list");
 });

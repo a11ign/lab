@@ -126,9 +126,9 @@ test("#1877 MUTATION TARGET: applyClosurePlan closes/strips/settles nothing for 
     { close: [], already: [], skip: [{ number: 1865, labels: ["was-ready"] }] },
     { prNumber: "1868", sha: "abc123", repo: "a11ign/a11ign" },
     {
-      closeOne: (n) => { closed.push(n); return true; },
-      strip: (n) => { stripped.push(n); },
-      settle: (n) => { settled.push(n); return { settled: true, refused: [] }; },
+      closeOne: (n: any) => { closed.push(n); return true; },
+      strip: (n: any) => { stripped.push(n); },
+      settle: (n: any) => { settled.push(n); return { settled: true, refused: [] }; },
     },
   );
   assert.deepEqual(result, { failed: [], unsettled: [], skipped: [1865], owed: [] });
@@ -211,8 +211,8 @@ test("#2202: applyClosurePlan reports each owed row in its log and return value,
         already: [{ number: 1970, labels: ["answer:product-manager"] }],
         owed: [{ number: 1936, session: "orchestrator" }, { number: 1970, session: "product-manager" }] },
       { prNumber: "1944", sha: "abc123", repo: "o/r" },
-      { closeOne: (n, ctx) => { closedWith.push([n, ctx.owedBy]); return true; },
-        strip: (n, labels) => { stripped.push([n, labelsToStrip(labels)]); }, settle: settledOk },
+      { closeOne: (n: any, ctx: any) => { closedWith.push([n, ctx.owedBy]); return true; },
+        strip: (n: any, labels: any) => { stripped.push([n, labelsToStrip(labels)]); }, settle: settledOk },
     );
   } finally { console.log = log; }
   assert.deepEqual(result.owed, [{ number: 1936, session: "orchestrator" }, { number: 1970, session: "product-manager" }]);
@@ -341,7 +341,7 @@ test("#754 MUTATION TARGET: closedDebris (the real audit check) reports the EXAC
     { number: 687, title: "row 687", state: "CLOSED" as const, labels: ["in-progress", "session:worker-capture"] },
   ];
   const found = closedDebris(closedWithoutStripping);
-  assert.deepEqual(found.map((f) => f.number).sort(), [687, 703, 721],
+  assert.deepEqual(found.map((f: any) => f.number).sort(), [687, 703, 721],
     "this is the exact finding measured 13:24:55Z before the hand clean-up -- the audit must reproduce "
     + "it against the unstripped shape, or this test is not proving anything about the real regression");
 });
@@ -396,7 +396,7 @@ test("#776/#791 MUTATION TARGET: applyClosurePlan strips EVERY already-closed ro
   const { failed } = applyClosurePlan(
     { close: [], already: [{ number: 677, labels: ["in-progress", "session:worker-capture"] }] },
     { prNumber: "769", sha: "abc123", repo: "a11ign/a11ign" },
-    { closeOne: () => true, strip: (n, labels) => { stripped.push([n, labels]); }, settle: settledOk },
+    { closeOne: () => true, strip: (n: any, labels: any) => { stripped.push([n, labels]); }, settle: settledOk },
   );
   assert.deepEqual(failed, []);
   assert.deepEqual(stripped, [[677, ["in-progress", "session:worker-capture"]]]);
@@ -408,7 +408,7 @@ test("applyClosurePlan still closes and strips a freshly-closing row, exactly as
   const { failed } = applyClosurePlan(
     { close: [{ number: 344, labels: ["ready"] }], already: [] },
     { prNumber: "1", sha: "abc", repo: "a11ign/a11ign" },
-    { closeOne: (n) => { closedRows.push(n); return true; }, strip: (n) => { stripped.push(n); }, settle: settledOk },
+    { closeOne: (n: any) => { closedRows.push(n); return true; }, strip: (n: any) => { stripped.push(n); }, settle: settledOk },
   );
   assert.deepEqual(failed, []);
   assert.deepEqual(closedRows, [344]);
@@ -421,7 +421,7 @@ test("applyClosurePlan does NOT strip a row whose close failed -- a failed close
   const { failed } = applyClosurePlan(
     { close: [{ number: 344, labels: ["ready"] }], already: [] },
     { prNumber: "1", sha: "abc", repo: "a11ign/a11ign" },
-    { closeOne: () => false, strip: (n) => { stripped.push(n); }, settle: settledOk },
+    { closeOne: () => false, strip: (n: any) => { stripped.push(n); }, settle: settledOk },
   );
   assert.deepEqual(failed, [344]);
   assert.deepEqual(stripped, []);
@@ -583,11 +583,11 @@ test("#1360 BOTH defaults settle with LIVE_SETTLE_DEPS: the per-merge effects an
   // Read from CODE with comments stripped, anchored to the call shape only code can have. Measured before this test:
   // the sweep's own inline default could drop currentStatus and every close-rows test stayed green.
   const code = (rel: string) => stripComments(readFileSync(fileURLToPath(new URL(`../../../../${rel}`, import.meta.url)), "utf8"));
-  assert.match(code("packages/agent-org/src/close-rows-for-merged-pr.mjs"), /settle:\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
+  assert.match(code("node_modules/agent-org/src/close-rows-for-merged-pr.mjs"), /settle:\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
     "liveClosureEffects' settle must use the one definition");
-  assert.match(code("packages/agent-org/src/close-rows-sweep.mjs"), /settle\s*=\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
+  assert.match(code("node_modules/agent-org/src/close-rows-sweep.mjs"), /settle\s*=\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
     "closeOnePr's default settle must use the one definition");
-  for (const rel of ["packages/agent-org/src/close-rows-for-merged-pr.mjs", "packages/agent-org/src/close-rows-sweep.mjs"]) {
+  for (const rel of ["node_modules/agent-org/src/close-rows-for-merged-pr.mjs", "node_modules/agent-org/src/close-rows-sweep.mjs"]) {
     assert.doesNotMatch(code(rel), /settleClosedStatus\(n,\s*\{/, `${rel} builds its own settle deps inline again`);
   }
 });
@@ -763,8 +763,8 @@ test("#2036 WIRING: the report posts exactly one comment, on the row the branch 
   const posted: { n: number, text: string }[] = [];
   const askedFor: number[] = [];
   const reported = reportOrphanedRow(ORPHAN_PR, {
-    lookupRow: (n) => { askedFor.push(n); return CLAIMED_OPEN; },
-    comment: (n, text) => { posted.push({ n, text }); },
+    lookupRow: (n: any) => { askedFor.push(n); return CLAIMED_OPEN; },
+    comment: (n: any, text: any) => { posted.push({ n, text }); },
   });
   assert.equal(reported, 2000);
   assert.deepEqual(askedFor, [2000], "ONE row lookup -- the row's own budget line: no new API call beyond it");
@@ -783,10 +783,10 @@ const noLookup = (n: number): never => { throw new Error(`the fallback must not 
 test("#2822 DONE-WHEN 3: GitHub resolved none and the body declares rows -> those rows are the plan, basis `body`", () => {
   const asked: number[] = [];
   const result = planForMergedPr({ issues: [], prMergedAt: null, prBody: "Closes #2822\nCloses #2823" },
-    (n) => { asked.push(n); return row(n); });
+    (n: any) => { asked.push(n); return row(n); });
   assert.equal(result.basis, "body");
   assert.deepEqual(result.declared, [2822, 2823]);
-  assert.deepEqual(result.plan.close.map((r) => r.number), [2822, 2823]);
+  assert.deepEqual(result.plan.close.map((r: any) => r.number), [2822, 2823]);
   assert.equal(result.plan.none, false);
   assert.deepEqual(asked, [2822, 2823]);
 });
@@ -810,11 +810,11 @@ test("#2822 DONE-WHEN 4: `Closes: none` and a body that declares nothing plan no
 test("#2822: a declared row already CLOSED is `already`, one REOPENED after the merge is `skip`, one unreadable is named and not planned", () => {
   const result = planForMergedPr(
     { issues: [], prMergedAt: "2026-09-30T12:00:00Z", prBody: "Closes #1\nCloses #2\nCloses #3\nCloses #4" },
-    (n) => (n === 1 ? row(1, "CLOSED") : n === 2 ? row(2, "OPEN", { reopenedAt: "2026-09-30T13:00:00Z" })
+    (n: any) => (n === 1 ? row(1, "CLOSED") : n === 2 ? row(2, "OPEN", { reopenedAt: "2026-09-30T13:00:00Z" })
       : n === 3 ? null : row(4)));
-  assert.deepEqual(result.plan.already.map((r) => r.number), [1]);
-  assert.deepEqual(result.plan.skip.map((r) => r.number), [2]);
-  assert.deepEqual(result.plan.close.map((r) => r.number), [4]);
+  assert.deepEqual(result.plan.already.map((r: any) => r.number), [1]);
+  assert.deepEqual(result.plan.skip.map((r: any) => r.number), [2]);
+  assert.deepEqual(result.plan.close.map((r: any) => r.number), [4]);
   assert.deepEqual(result.unreadable, [3]);
   const { failed } = applyClosurePlan(result.plan, { prNumber: "9", sha: "abc", repo: "o/r", basis: "body" },
     { closeOne: () => true, strip: () => {}, settle: settledOk });
@@ -823,9 +823,9 @@ test("#2822: a declared row already CLOSED is `already`, one REOPENED after the 
 
 test("#2822: the plan applies through applyClosurePlan carrying its basis to the closer", () => {
   const seen: { n: number; basis?: string }[] = [];
-  applyClosurePlan(planForMergedPr({ issues: [], prMergedAt: null, prBody: "Closes #7" }, (n) => row(n)).plan,
+  applyClosurePlan(planForMergedPr({ issues: [], prMergedAt: null, prBody: "Closes #7" }, (n: any) => row(n)).plan,
     { prNumber: "9", sha: "abc", repo: "a11ign/a11ign", basis: "body" },
-    { closeOne: (n, ctx) => { seen.push({ n, basis: ctx.basis }); return true; }, strip: () => {}, settle: settledOk });
+    { closeOne: (n: any, ctx: any) => { seen.push({ n, basis: ctx.basis }); return true; }, strip: () => {}, settle: settledOk });
   assert.deepEqual(seen, [{ n: 7, basis: "body" }]);
 });
 

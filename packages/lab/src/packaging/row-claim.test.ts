@@ -1059,7 +1059,7 @@ test("#1275: through the real caller, a Project the token cannot read is still r
     throw error;
   };
   const result = moveProjectStatus(1275, "Done", { run, log: () => {},
-    snapshot: (mutate, deps) => withBoardSnapshot(mutate, { ...deps, run, mkdir: () => {}, writeFile: () => {}, log: () => {} }) });
+    snapshot: (mutate: any, deps: any) => withBoardSnapshot(mutate, { ...deps, run, mkdir: () => {}, writeFile: () => {}, log: () => {} }) });
   assert.equal(result.moved, false);
   assert.equal((result as { notOnBoard: boolean }).notOnBoard, false, "unreadable is not the same as not on the board");
   assert.equal(refusalCause((result as { reason: string }).reason), PROJECT_UNREADABLE);
@@ -1567,7 +1567,7 @@ test("#1275: a Status move reads only the item it touches, through the real call
         { id: `PVTI_${issue}`, project: { number: 1 }, fieldValueByName: { name: "Ready" } }] } } } } });
   };
   const results = [1, 2, 3, 3].map((n) => moveProjectStatus(n, "In progress",
-    { run, log: () => {}, snapshot: (mutate, deps) => withBoardSnapshot(mutate,
+    { run, log: () => {}, snapshot: (mutate: any, deps: any) => withBoardSnapshot(mutate,
       // `exists: () => true` because `writeFile` is stubbed to drop the file -- with the real
       // `existsSync` the snapshot this test never wrote reads as deleted and every reuse takes a fresh
       // read, which is the disk check doing its job against a fixture rather than a defect.
@@ -2160,7 +2160,7 @@ test("#2782 DONE-WHEN 3: decline's removal is REFUSED when the row the TREE name
   withRealWorktree(({ primary, worktree }) => {
     const gh = () => JSON.stringify({ state: "OPEN", labels: [{ name: "session:worker-other" }] });
     const result = removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => git(primary, args), session: "worker-me",
-      branch: "agent/test-branch-777", claim: (tree, deps) => claimRefusal(tree, { ...deps, gh }) });
+      branch: "agent/test-branch-777", claim: (tree: any, deps: any) => claimRefusal(tree, { ...deps, gh }) });
     assert.equal(result.removed, false);
     assert.match((result as { reason: string }).reason, /row #777, which still carries session:worker-other/);
     assert.ok(git(primary, ["worktree", "list", "--porcelain"]).includes(worktree), "nothing was removed");
@@ -2172,7 +2172,7 @@ test("#2782: the session declining is EXEMPT from its own label -- or every decl
     const gh = () => JSON.stringify({ state: "OPEN", labels: [{ name: "session:worker-me" }] });
     let excepted: string | undefined;
     const result = removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => git(primary, args), session: "worker-me",
-      branch: "agent/test-branch-777", claim: (tree, deps) => { excepted = deps?.except; return claimRefusal(tree, { ...deps, gh }); } });
+      branch: "agent/test-branch-777", claim: (tree: any, deps: any) => { excepted = deps?.except; return claimRefusal(tree, { ...deps, gh }); } });
     assert.deepEqual(result, { removed: true });
     assert.equal(excepted, "worker-me", "the decline's own session is what the claim check excuses");
   });
@@ -2205,7 +2205,7 @@ test("#2782: a removal whose log cannot be written does not happen, and a failed
     const failing = removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => {
       if (args[0] === "worktree" && args[1] === "remove") throw new Error("fatal: locked");
       return git(primary, args);
-    }, record: (line) => { events.push(line.event); } });
+    }, record: (line: any) => { events.push(line.event); } });
     assert.equal(failing.removed, false);
     assert.deepEqual(events, ["removing", "failed"]);
   });
