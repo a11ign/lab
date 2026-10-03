@@ -117,13 +117,6 @@ interface RecordGroup { kind: "record" | "deliberate"; reason: string; files: Re
 const LEFT_AS_TYPED: RecordGroup[] = [
   {
     kind: "record",
-    reason: "the CLI's deprecation notice, quoted as printed on a run with no worker (#3198); try-it-runnable.test.ts compares it to the source",
-    files: {
-      "docs/try-it.md": 1,
-    },
-  },
-  {
-    kind: "record",
     reason: "the dated plan: each command names what a measurement or a status was taken with",
     files: {
       "PLAN.md": 5,

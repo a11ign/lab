@@ -29,7 +29,6 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { warnUtmDeprecated } from "../../../worker-fleet/src/utm-deprecated.mjs";
 import { DEFAULT_WORKER } from "../../../worker-fleet/src/local-vm.js";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -347,18 +346,21 @@ test("#3186 ACCEPTANCE: the page states the route that works today, and a page w
     "a mention in a sentence is not the command a stranger can paste");
 });
 
-// #3198: THE PAGE QUOTES THE REFUSAL "EXACTLY ... QUOTED RATHER THAN PARAPHRASED" AND LEFT OUT THE FOUR LINES THE
-// CLI PRINTS BEFORE IT. Measured 2026-10-03 with the published `npx a11ign` from an empty directory and no worker: a
-// UTM deprecation notice, then `Using http://localhost:8765 (default)`, then the refusal `quoted-cli-output.test.ts`
-// already compares. A stranger who typed the page's command got a screen the page had never shown them.
+// #3198: THE PAGE QUOTES THE REFUSAL "EXACTLY ... QUOTED RATHER THAN PARAPHRASED" AND LEFT OUT THE LINE THE CLI PRINTS
+// BEFORE IT. Measured 2026-10-03 with the published `npx a11ign` from an empty directory and no worker: `Using
+// http://localhost:8765 (default)`, then the refusal `quoted-cli-output.test.ts` already compares. A stranger who typed
+// the page's command got a screen the page had never shown them.
 //
-// The expected text is DERIVED, never retyped: the notice from `warnUtmDeprecated` itself (its stderr captured), the
-// sentence it is called with from the call site in `local-vm.ts`, and the source label from `describeSource` in `cli.ts`.
-// A fourth copy of the string here would be the defect this row is about. The refusal stays in its own fence and its
-// own test, so the two comparisons do not share a failure.
-const LOCAL_VM_SOURCE = resolve(REPO, "packages/worker-fleet/src/local-vm.ts");
+// #3219 REMOVED THE UTM NOTICE FROM THAT RUN: `leaseWorker` printed it before it looked for a VM, so a machine with none
+// was told about a VM it did not have. The quote therefore carries no `DEPRECATED` lines, and this test refuses a page that
+// still does -- a stranger's screen must not be shown a notice the CLI no longer prints on their run.
+//
+// The expected text is DERIVED, never retyped: the default address from `DEFAULT_WORKER` and the source label from
+// `describeSource` in `cli.ts`. A fourth copy of the string here would be the defect this row is about. The refusal stays
+// in its own fence and its own test, so the two comparisons do not share a failure.
 const CLI_SOURCE = resolve(REPO, "packages/cli/src/cli.ts");
 const REFUSAL_OPENING = "No capture worker answered";
+const UTM_NOTICE_OPENING = "DEPRECATED";
 
 const normalized = (text: string): string => text.trim().replace(/\s+/g, " ");
 
@@ -368,20 +370,11 @@ function firstMatch(source: string, pattern: RegExp, what: string): string {
   return found[1];
 }
 
-function capturedStderr(write: () => void): string {
-  const original = process.stderr.write;
-  let captured = "";
-  process.stderr.write = ((chunk: string | Uint8Array) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
-  try { write(); } finally { process.stderr.write = original; }
-  return captured;
-}
-
-/** The lines the CLI writes before the refusal on a run with no worker named and no fleet configured. */
+/** The line the CLI writes before the refusal on a run with no worker named, no fleet configured and no local VM. */
 function preambleFromSource(): string {
-  const caller = firstMatch(readFileSync(LOCAL_VM_SOURCE, "utf8"), /warnUtmDeprecated\("([^"]+)"\)/, "warnUtmDeprecated call");
   const label = firstMatch(readFileSync(CLI_SOURCE, "utf8"),
     /function describeSource[\s\S]*?return "([^"]+)";\s*\}/, "describeSource fallback label");
-  return `${capturedStderr(() => warnUtmDeprecated(caller))}Using ${DEFAULT_WORKER} (${label})`;
+  return `Using ${DEFAULT_WORKER} (${label})`;
 }
 
 /** Every fenced block on the page, in order, read line by line: a closing fence is not mistaken for an opening one. */
@@ -400,7 +393,7 @@ function fencedBlocks(pageText: string): string[] {
 function preambleQuote(pageText: string): string | undefined {
   const blocks = fencedBlocks(pageText);
   const refusalAt = blocks.findIndex((body) => body.startsWith(REFUSAL_OPENING));
-  return blocks.slice(0, Math.max(refusalAt, 0)).find((body) => body.startsWith("DEPRECATED"));
+  return blocks.slice(0, Math.max(refusalAt, 0)).find((body) => body.startsWith("Using "));
 }
 
 function quotesPreamble(pageText: string, expected: string): boolean {
@@ -413,10 +406,9 @@ test("#3198 ACCEPTANCE: the page quotes the lines the CLI prints before the refu
     "docs/try-it.md's first fenced quote is not what the CLI prints before `No capture worker answered` -- update the page");
 });
 
-test("#3198 POSITIVE CONTROL: the expected text is the real notice, and a page without it is refused", () => {
+test("#3198 POSITIVE CONTROL: the expected text is the real line, and a page without it is refused", () => {
   const expected = preambleFromSource();
-  assert.match(expected, /^DEPRECATED: this run \(no worker named, no fleet configured\) manages a local UTM worker VM\./);
-  assert.match(expected, /\nUsing http:\/\/localhost:8765 \(default\)$/);
+  assert.equal(expected, "Using http://localhost:8765 (default)");
   const quote = preambleQuote(page());
   assert.ok(quote !== undefined, "the real page has no preamble fence for the control to drop");
   const dropped = page().replace(`\`\`\`\n${quote}\n\`\`\``, "");
@@ -424,14 +416,22 @@ test("#3198 POSITIVE CONTROL: the expected text is the real notice, and a page w
   assert.equal(quotesPreamble(dropped, expected), false, "a page with the preamble dropped was accepted");
 });
 
-test("#3198: a quote missing either half of the preamble, or one that changed a word, is refused", () => {
+test("#3198: a quote that changed a word is refused", () => {
   const expected = preambleFromSource();
   const fence = (body: string): string => `\`\`\`\n${body}\n\`\`\`\n\n\`\`\`\n${REFUSAL_OPENING} at x\n\`\`\``;
-  const [notice, using] = [expected.split("\nUsing ")[0], `Using ${expected.split("\nUsing ")[1]}`];
   assert.equal(quotesPreamble(fence(expected), expected), true, "the exact text was refused");
-  assert.equal(quotesPreamble(fence(notice), expected), false, "the `Using` line was not required");
-  assert.equal(quotesPreamble(fence(using), expected), false, "the notice was not required");
-  assert.equal(quotesPreamble(fence(expected.replace("UTM", "VM")), expected), false, "a changed word was accepted");
+  assert.equal(quotesPreamble(fence(expected.replace("default", "guessed")), expected), false, "a changed word was accepted");
+});
+
+test("#3219 ACCEPTANCE: the page quotes no UTM notice, because the CLI prints none on a run with no VM", () => {
+  const quoted = fencedBlocks(page()).filter((body) => body.startsWith(UTM_NOTICE_OPENING));
+  assert.deepEqual(quoted, [], "docs/try-it.md quotes a notice a stranger with no VM is no longer shown");
+});
+
+test("#3219 POSITIVE CONTROL: a page that still quotes the notice is refused", () => {
+  const withNotice = `${page()}\n\`\`\`\n${UTM_NOTICE_OPENING}: this run manages a local UTM worker VM.\n\`\`\`\n`;
+  const quoted = fencedBlocks(withNotice).filter((body) => body.startsWith(UTM_NOTICE_OPENING));
+  assert.equal(quoted.length, 1, "the check cannot see a notice fence, so the acceptance above proves nothing");
 });
 
 test("#3198: a preamble fence AFTER the refusal is not the quote of what comes first", () => {
