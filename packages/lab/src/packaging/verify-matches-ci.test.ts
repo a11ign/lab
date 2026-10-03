@@ -9,14 +9,19 @@
  *
  * POSITIVE CONTROLS, named where each emptiness or absence is asserted: the real `ci.yml` yields a non-empty set that
  * includes `ts` and `guardSweep` (1), the green stamp reads green (3), and `stepsToRun` of a docs-only diff still
- * names `guardSweep` (5).
+ * names `guardSweep` (5). The staged agent-org copy is listed with two test files in the throwaway tool, so an empty
+ * listing cannot pass (6).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import {
-  CI_ONLY, agentOrgSource, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, stampVerdict, stepsToRun, unaccountedJobs,
+  CI_ONLY, agentOrgSource, stageAgentOrg, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, stampVerdict, stepsToRun, unaccountedJobs,
 } from "../../../../scripts/verify.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
 
 const ROOT = new URL("../../../../", import.meta.url);
@@ -55,8 +60,43 @@ test("CI_ONLY names only jobs gate needs, and none of them is also a step", () =
   assert.ok(Object.keys(CI_ONLY).length > 0, "the CI-only list is empty, which the row says it must not be");
 });
 
-test("verify stages the whole agent-org suite: it leaves no test file out (#3329)", () => {
-  assert.doesNotMatch(VERIFY, /HOST_ONLY_AGENT_ORG_TESTS|leaveOutHostOnlyTests/);
+// THE STAGED COPY IS READ, NOT THE SOURCE OF verify.mjs (#3329, review of #3350): a grep for two old names passes when
+// the test goes missing under any other, so this stages a throwaway tool and a throwaway tree and lists what arrived.
+function stageThrowawayTool(toolFiles: Record<string, string>) {
+  const dir = mkdtempSync(join(tmpdir(), "verify-stage-"));
+  const run = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "pipe", env: sandboxGitEnv() });
+  const tool = join(dir, "tool");
+  const root = join(dir, "root");
+  for (const [file, text] of Object.entries(toolFiles)) {
+    mkdirSync(dirname(join(tool, file)), { recursive: true });
+    writeFileSync(join(tool, file), text);
+  }
+  const helpers = join(root, "packages/lab/src/packaging");
+  mkdirSync(helpers, { recursive: true });
+  writeFileSync(join(helpers, "board-document-chrome-resolver.test.ts"), 'import "agent-org/src/board-document.mjs";\n');
+  writeFileSync(join(helpers, "helper.mjs"), "export {};\n");
+  run(tool, "init", "-q");
+  run(tool, "add", ".");
+  run(tool, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "tool");
+  run(tool, "fetch", "-q", ".", "HEAD");
+  run(root, "init", "-q");
+  const scratch = join(dir, "scratch");
+  mkdirSync(scratch);
+  const { status } = stageAgentOrg({ toolRepo: tool, scratch, copied: ["src"], root });
+  return { dir, status, staged: join(root, "packages/agent-org/src/packaging") };
+}
+
+test("the staged agent-org copy holds every test file the tool has, live-tree-independence included (#3329)", () => {
+  const tests = ["live-tree-independence.test.ts", "acceptance-commands.test.ts"].map((name) => `src/packaging/${name}`);
+  const { dir, status, staged } = stageThrowawayTool(Object.fromEntries(tests.map((file) => [file, "// test\n"])));
+  try {
+    assert.equal(status, 0, "staging the throwaway tool failed, so the listing below would prove nothing");
+    assert.deepEqual(readdirSync(staged).filter((name) => name.endsWith(".test.ts")).sort(),
+      ["acceptance-commands.test.ts", "live-tree-independence.test.ts"]);
+    assert.ok(existsSync(join(staged, "helper.mjs")), "the lab's packaging helpers were not laid beside the tool's");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // A NORMAL CHECKOUT HAS NO SIBLING GIT CHECKOUT OF THE TOOL, AND THE STEP MUST NOT DEPEND ON ONE (review of #3342).
