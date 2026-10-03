@@ -15,7 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  CI_ONLY, HOST_ONLY_AGENT_ORG_TESTS, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, stampVerdict, stepsToRun, unaccountedJobs,
+  CI_ONLY, agentOrgSource, HOST_ONLY_AGENT_ORG_TESTS, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, stampVerdict, stepsToRun, unaccountedJobs,
 } from "../../../../scripts/verify.mjs";
 import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
 
@@ -63,6 +63,27 @@ test("every agent-org test verify leaves out is a named test file with a reason 
     assert.ok(reason.trim().length > 0, `${file} is left out with no reason`);
   }
   assert.match(VERIFY, /filed as #\d+/, "the comment on the omission names the row that removes it");
+});
+
+// A NORMAL CHECKOUT HAS NO SIBLING GIT CHECKOUT OF THE TOOL, AND THE STEP MUST NOT DEPEND ON ONE (review of #3342).
+const source = (env: Record<string, string>, present: string[]) =>
+  agentOrgSource({ env, sibling: "/w/agent-org", cache: "/w/.git/verify-agent-org", isCheckout: (dir) => present.includes(dir) });
+
+test("agentOrgSource: the env var wins, then a sibling checkout, then a clone in the git dir, made only when absent", () => {
+  assert.deepEqual(source({ A11Y_AGENT_ORG_REPO: "/x" }, ["/w/agent-org"]), { dir: "/x", clone: false });
+  assert.deepEqual(source({}, ["/w/agent-org"]), { dir: "/w/agent-org", clone: false });
+  assert.deepEqual(source({}, []), { dir: "/w/.git/verify-agent-org", clone: true }, "no checkout to hand must clone, not fail");
+  assert.deepEqual(source({}, ["/w/.git/verify-agent-org"]), { dir: "/w/.git/verify-agent-org", clone: false });
+});
+
+test("an explicit A11Y_AGENT_ORG_REPO that is not a checkout is never replaced by a clone", () => {
+  assert.equal(source({ A11Y_AGENT_ORG_REPO: "/nope" }, []).clone, false);
+});
+
+test("CONTRIBUTING.md documents where the agent-org step finds the tool, including the clone", () => {
+  const text = read("CONTRIBUTING.md");
+  assert.match(text, /A11Y_AGENT_ORG_REPO/);
+  assert.match(text, /clones `a11ign\/agent-org` once/);
 });
 
 // 2. `verify` CALLS THE SELECTOR `ci.yml` CALLS, AND DOES NOT COPY IT.
