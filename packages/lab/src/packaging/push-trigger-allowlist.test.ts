@@ -35,11 +35,12 @@
 import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, matchesGlob } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import { versionBumpPaths } from "../../../../scripts/release-commit-version-bump.mjs";
 
 // #929: THIS GUARD READS ONLY `.github/workflows`, so a diff that cannot reach it need not run this file.
 // Undeclared means unbounded, which is why the selector runs 173 always-run guards on every pull
@@ -208,6 +209,63 @@ test("#3131: the release allowlist names exactly release.yml, and its push trigg
   assert.deepEqual(doc.on.push?.branches, ["main"]);
   assert.ok((doc.on.push?.paths ?? []).length > 0,
     "an unfiltered push trigger would start a release plan on every merge, which carries neither a changeset nor a version");
+});
+
+// #3359: THE FILTER MUST LET THROUGH EVERY FILE THE VERSION COMMIT REWRITES. The version pull request is a branch
+// force-rewritten by `release.yml` only when a run gets past this `paths` filter, so a merge to main that moves a file
+// the version commit also rewrites (root `package.json`, `pnpm-lock.yaml`) and matches nothing here leaves the branch on
+// its old base, and the pull request goes CONFLICTING (#3353: three merges, none ran). The list is CHECKED against
+// `versionBumpPaths` on a fixture rather than trusted, so a file the version commit starts to touch fails the control
+// below instead of becoming a quiet hole. Two kinds of path are not asked for: a `CHANGELOG.md`, which only the version
+// commit ever writes (no other merge can conflict on it), and the `.changeset` directory, which stands for the
+// markdown files inside it.
+const releasePushPaths = (): string[] => {
+  const doc = parseYaml(readWorkflow("release.yml")) as { on: { push?: { paths?: string[] } } };
+  return doc.on.push?.paths ?? [];
+};
+const matchesAnyPath = (file: string, globs: string[]): boolean => globs.some((glob) => matchesGlob(file, glob));
+
+const pathsTheVersionCommitRewrites = (): string[] => {
+  const dir = mkdtempSync(join(tmpdir(), "version-bump-paths-"));
+  try {
+    mkdirSync(join(dir, "packages", "example"), { recursive: true });
+    mkdirSync(join(dir, ".changeset"));
+    for (const file of ["package.json", "pnpm-lock.yaml", "packages/example/package.json", "packages/example/CHANGELOG.md"]) {
+      writeFileSync(join(dir, file), "");
+    }
+    return versionBumpPaths(dir)
+      .filter((path) => !path.endsWith("CHANGELOG.md"))
+      .map((path) => (path === ".changeset" ? ".changeset/pending-change.md" : path));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+// The list is written out, and the test after it is what keeps it equal to what `versionBumpPaths` names: reading the
+// fixture while the file is still being collected reads the runner's own shim, which `WALK_SCOPE` above refuses.
+const VERSION_COMMIT_REWRITES = [".changeset/pending-change.md", "package.json", "packages/example/package.json", "pnpm-lock.yaml"];
+
+test("#3359 control: the paths tested below are exactly what `versionBumpPaths` names, so the loop is neither stale nor empty", () => {
+  assert.deepEqual(pathsTheVersionCommitRewrites().sort(), VERSION_COMMIT_REWRITES);
+});
+
+for (const file of VERSION_COMMIT_REWRITES) {
+  test(`#3359: release.yml's push trigger lets a change to ${file} through, so the version branch is rebuilt on it`, () => {
+    assert.ok(matchesAnyPath(file, releasePushPaths()),
+      `a merge that changes ${file} matches nothing in release.yml's on.push.paths, so \`release.yml\` does not run, `
+      + "the version branch keeps its old base, and the version pull request goes CONFLICTING (#3359). `plan` installs "
+      + "nothing, so adding the path costs a checkout and two reads");
+  });
+}
+
+test("#3359: release.yml's push trigger is still a filter -- no catch-all glob, and an ordinary change does not match", () => {
+  const globs = releasePushPaths();
+  const catchAlls = globs.filter((glob) => ["*", "**", "**/*", "/**"].includes(glob));
+  assert.deepEqual(catchAlls, [], "a catch-all runs `plan` on every merge, which is the cost the filter exists to avoid (#3131)");
+  for (const ordinary of ["README.md", "docs/backlog.md", "packages/lab/src/example.ts", ".github/workflows/ci.yml"]) {
+    assert.ok(!matchesAnyPath(ordinary, globs),
+      `${ordinary} carries neither a changeset nor a version change, so it must not start \`plan\``);
+  }
 });
 
 // STRUCTURAL PROOF that each allowlisted entry is actually a watchdog and not a gate wearing the allowlist
