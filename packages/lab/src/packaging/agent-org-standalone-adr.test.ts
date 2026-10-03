@@ -255,7 +255,7 @@ function appendixProblems(text: string): string[] {
  */
 const RESERVED_BY_A_ROW: readonly RegExp[] = [
   /^\.agent-org\//,
-  // #2976 deletes `packages/agent-org/` outright; the appendix Regions that named files in it then name files that no longer exist.
+  // #2976 deletes the tool's directory outright; the appendix Regions that named files in it then name files that no longer exist.
   /^packages\/agent-org\//,
   // #2976 also deletes the two-copy period's instruments, which only measured or performed the extraction. Listed by name.
   /^(?:docs\/split-baseline\.md|scripts\/split-baseline\.mjs|scripts\/agent-org-extraction-rehearsal\.mjs|\.github\/workflows\/agent-org-extraction\.yml)$/,

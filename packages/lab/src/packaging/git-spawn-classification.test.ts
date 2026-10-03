@@ -113,7 +113,7 @@ function trackedSourceFiles(): string[] {
 /**
  * WHAT THIS POPULATION IS NOT, MEASURED 2026-09-09 AFTER IT MISSED A REAL COLLISION (#890).
  *
- * `trunk-revert-guard.test.ts` spawned `node packages/agent-org/src/trunk-revert-guard.mjs` with `cwd` set to the real
+ * `trunk-revert-guard.test.ts` spawned the tool's `src/trunk-revert-guard.mjs` (then in this repository) with `cwd` set to the real
  * checkout. That script runs `git fetch origin` unconditionally, so a `npm test` in any worktree fetched
  * into the SHARED primary `.git` and could collide with another worktree doing the same on the
  * remote-tracking refs. A test mutating the checkout that drives the fleet.
@@ -158,7 +158,7 @@ const SPAWNS_GIT_DIRECTLY = /\b\w+\(\s*["']git["']/;
  * file that genuinely imports no spawning capability, so an entry added to silence a REAL offender fails
  * on its own terms rather than passing quietly.
  */
-// Empty since `packages/agent-org/` left this repository (#2976): its one member, the tool's
+// Empty since the tool left this repository (#2976): its one member, the tool's
 // `wake-review-recheckout.test.ts`, went with it. The mechanism stays for the next file whose `"git"` is data.
 const GIT_IS_DATA_NOT_A_SPAWN: Record<string, string> = {};
 

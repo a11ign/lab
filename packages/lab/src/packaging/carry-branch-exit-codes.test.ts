@@ -1,5 +1,5 @@
 /**
- * `packages/agent-org/src/carry-branch.mjs` -- the exit-code and PR-note contract, driven entirely through an
+ * `node_modules/agent-org/src/carry-branch.mjs` -- the exit-code and PR-note contract, driven entirely through an
  * INJECTED `run`. No repository, no remote, no worktree: every test here answers "given these command
  * results, what does the carry decide and what does it exit with", which is a question about this module,
  * not about git.

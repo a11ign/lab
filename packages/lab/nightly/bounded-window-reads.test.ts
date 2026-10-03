@@ -84,7 +84,7 @@ import { newestPerName, newestConclusionOf } from "agent-org/src/newest-check-ru
 
 // THE DISCOVERY HALF LEFT WITH ITS POPULATION (#2976). This file walked the tracked tree for code reading `.statusCheckRollup` and
 // held a by-name list of the readers it must still find (`merge-queue.mjs`, `queue-stalled.mjs`, `update-branch-sweep.mjs`). All
-// three lived in `packages/agent-org/`, which now lives in `a11ign/agent-org`, so with no named reader the list could only pass
+// three lived in the tool's directory, which now lives in `a11ign/agent-org`, so with no named reader the list could only pass
 // having examined nothing. The newest-per-name helpers below are the tool's, and are still driven here from fixtures.
 
 // #1144: THE PER-NODE HALF IS NOW AN ESLINT RULE -- `local/bounded-window-reads` in `eslint.config.js`.

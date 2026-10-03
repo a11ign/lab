@@ -95,7 +95,7 @@ function readmeProjectLink(): { file: string; homepage: string | null } {
  * and after. Same extraction and the same reason as `region-paths.mjs` (#462, B4).
  */
 function boardDocumentHome(): { file: string; homepage: string | null } {
-  return { file: `packages/agent-org/src/board-document.mjs (via ${PRODUCT_HOME_SOURCE})`, homepage: productHome() };
+  return { file: `node_modules/agent-org/src/board-document.mjs (via ${PRODUCT_HOME_SOURCE})`, homepage: productHome() };
 }
 
 /**

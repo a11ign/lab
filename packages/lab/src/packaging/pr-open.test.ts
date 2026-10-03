@@ -18,15 +18,15 @@
 
 /**
  * `pr:open`/`pr:edit` (#746) -- check a PR body's Acceptance/Closes with the tree's OWN parser
- * (`packages/agent-org/src/acceptance-commands.mjs`) BEFORE `gh pr create`/`gh pr edit` ever sends it, refusing with the
+ * (`node_modules/agent-org/src/acceptance-commands.mjs`) BEFORE `gh pr create`/`gh pr edit` ever sends it, refusing with the
  * parser's own message. Four real PRs went red on the body in one day, four authors, four modes, none of
- * them a defect in the change -- see `packages/agent-org/src/pr-open.mjs`'s own header for the full account.
+ * them a defect in the change -- see `node_modules/agent-org/src/pr-open.mjs`'s own header for the full account.
  *
  * THE FOUR FIXTURES BELOW ARE RECONSTRUCTED, not archived verbatim -- #708/#723/#727/#736 were each
  * edited to fix the body after the fact (confirmed via `gh api graphql`'s `userContentEdits`, which does
  * not cleanly hand back the exact pre-fix text through consecutive diffs), so each fixture here reproduces
  * the SHAPE #746's own summary table names, verified against the REAL, unmodified
- * `packages/agent-org/src/acceptance-commands.mjs` (never guessed): a duplicate Acceptance header (#708), prose under
+ * `node_modules/agent-org/src/acceptance-commands.mjs` (never guessed): a duplicate Acceptance header (#708), prose under
  * `Acceptance:` with no `Closes` at all (#723), a piped command the file pre-check cannot parse (#727),
  * and the section living under `## Verified` instead of `## Acceptance` (#736).
  */

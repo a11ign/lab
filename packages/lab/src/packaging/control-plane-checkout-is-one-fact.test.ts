@@ -112,7 +112,7 @@ const ENTERS_A_DIRECTORY = new RegExp([
  *
  * Until this row the alternation was `/root`, `$HOME`, `~`. **A systemd unit cannot expand `~` or `$HOME`
  * in an `Environment=` line** — the literal absolute path is the only form available to it — so every
- * host unit in `packages/agent-org/host/` named absolute home paths that this pattern was structurally
+ * host unit the tool ships (its `host/` directory) named absolute home paths that this pattern was structurally
  * blind to. Host units are the file class MOST likely to carry a second copy of a machine's layout, being
  * the only files here that address a specific host by absolute path, and they were precisely the class it
  * could not see.

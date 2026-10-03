@@ -128,7 +128,7 @@ test("auto-arm.yml actually RUNS the sweep — a correct predicate wired to noth
     "the sweep runs a script from the repo, so it needs a checkout. Without one the step fails with "
     + "MODULE_NOT_FOUND — the #331 shape, where a workflow's own missing prerequisite reads as a code bug.");
   const runner = steps.find((s) => s.run?.includes("auto-arm-sweep.mjs"));
-  assert.ok(runner, "no step runs packages/agent-org/src/auto-arm-sweep.mjs.");
+  assert.ok(runner, "no step runs auto-arm-sweep.mjs.");
   // #416: GH_TOKEN is no longer a static env: mapping -- it is resolved at runtime (A11IGN_BOT_TOKEN if
   // set, else github.token, see auto-arm-token.test.ts) and exported inside the step's own `run:` script.
   // The gh-token-jobs.test.ts finding this pins is unaffected: the sweep still spawns `gh` with SOME

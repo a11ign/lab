@@ -8,7 +8,7 @@
  * trunk-guard.yml, trunk-sweep.yml and close-rows.yml collapsed into trunk.yml: thirteen, each named here so
  * a fourteenth arriving is a failure with a name rather than a number. The fourteenth arrived with #2519's
  * registry gate, named below with its reason. (A fifteenth, `agent-org-extraction.yml`, ADR 0040 decision 6's one-time push of
- * `agent-org` into its own repository, left with `packages/agent-org/` in #2976: it had done its one push.) A row that removes or
+ * `agent-org` into its own repository, left with the directory in #2976: it had done its one push.) A row that removes or
  * adds one moves this list in the same commit and says why.
  */
 import { test } from "node:test";

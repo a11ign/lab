@@ -22,7 +22,7 @@
  * reader changing the file meets it.
  *
  * Nothing else is exempt, and a new spawn anywhere else is refused naming file and line. (A `PENDING` list once exempted rows
- * still owing a port, `packages/agent-org/` last, until #2976 deleted that directory and the list with it.)
+ * still owing a port, the tool's directory last, until #2976 deleted that directory and the list with it.)
  *
  * WHAT THIS CANNOT SEE: a command assembled at run time (`spawn(tool, ...)` with `tool = "npm"`), or `npm` handed to a shell
  * as part of a longer string such as `sh -c "npm run x"`. It reads the literal at the call, which is the shape every spawn

@@ -507,7 +507,7 @@ test("alwaysRunTests: THE INCIDENT, reproduced -- the diff that added `acceptanc
   const guard = "packages/lab/src/packaging/git-spawn-classification.test.ts";
   // The incident's own diff, quoted rather than re-derived from history: a shallow checkout cannot see
   // `bb0854da`, and a test that skips in CI proves nothing about the job CI runs.
-  // The incident's second file was `packages/agent-org/src/acceptance-commands.mjs`; that directory leaves the tree in #2975/#2976 (a path under a
+  // The incident's second file was the tool's `src/acceptance-commands.mjs`; the tool left the tree in #2975/#2976 (a path under a
   // package that no longer exists would widen the selection by itself, which is not what this test is about), so a lab test that stays stands in for it.
   const changed = ["packages/lab/src/packaging/acceptance-prose.test.ts", "packages/lab/src/packaging/acceptance-check-at-filing.test.ts"];
   const testFiles = discoverTestFiles(REPO, ["lab"]);

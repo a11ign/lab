@@ -1,6 +1,6 @@
 /**
  * #2975 (cut-over 4 of 6): a workflow step that runs `pnpm exec agent-org <command>` runs the tool FROM `node_modules`, so the job must have
- * installed the pinned dependency in an earlier step. The jobs that used to run `node packages/agent-org/src/<x>.mjs` needed a checkout and
+ * installed the pinned dependency in an earlier step. The jobs that used to run `node node_modules/agent-org/src/<x>.mjs` needed a checkout and
  * nothing else (`auto-arm.yml`'s `sweep` says so in as many words), so each of them gained an install, and a job added or reordered later can
  * lose it without any other test noticing: the step then fails `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL`/"Command not found" on the next run
  * of that one trigger, which for a sweep is a Sunday-night discovery.

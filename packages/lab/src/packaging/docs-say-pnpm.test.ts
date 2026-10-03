@@ -218,13 +218,6 @@ const LEFT_AS_TYPED: RecordGroup[] = [
   },
   {
     kind: "record",
-    reason: "GENERATED from each script's own `// command:` header; the header is edited in its own row, then regenerated",
-    files: {
-      "docs/commands.md": 1,
-    },
-  },
-  {
-    kind: "record",
     reason: "a dated plan with MET statuses and transcripts",
     files: {
       "docs/control-plane-plan.md": 8,

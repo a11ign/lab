@@ -580,7 +580,7 @@ test("a pool shelf that is empty with NO unlaned backlog wakes nobody", () => {
 });
 
 // --- #63: the escalation path ended at ceo, and ceo's onward route was a sentence (2026-09-18) ---
-// The key and the window moved with #2989 and their tests with them: `packages/agent-org/src/work-gate-chairman-blocked.test.ts`.
+// The key and the window moved with #2989 and their tests with them: `src/work-gate-chairman-blocked.test.ts` in a11ign/agent-org.
 
 const blockedRow = (n: number, daysAgo: number) =>
   ({ number: n, title: `row ${n}`, updatedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString() });
@@ -2955,7 +2955,7 @@ test("#1941: the order tells orchestrator how to LEAVE the set, not just to work
 });
 
 test("#1941: the retired timer's units are gone from the shipped host set", () => {
-  // The clock is the thing being removed; leaving the unit in `packages/agent-org/host/` would let
+  // The clock is the thing being removed; leaving the unit in the tool's `host/` would let
   // `host:install` put it straight back, and the org would have both a timer and a gate cause firing the
   // same batch at two different cadences.
   const units = shippedUnits();
@@ -4479,7 +4479,7 @@ test("#2031: a branch whose trailing number is a COINCIDENCE is named as one, no
 /**
  * #2174: THE HOST GOES STALE ON A MERGE AND NOTHING IN THIS ORG FINDS OUT.
  *
- * The shipped units are COPIES, so a merge touching `packages/agent-org/host/` changes the tree and
+ * The shipped units are COPIES, so a merge touching the tool's `host/` changes the tree and
  * leaves the host as it was. Measured three times in 24 hours; the third had a consequence -- #2144
  * (#1998) merged at 14:04:06Z changing the board unit's `ExecStart`, and eight hours later the service
  * manager still loaded the pre-#1998 program, due to dispatch the 06:10Z board edition from the 31 lines

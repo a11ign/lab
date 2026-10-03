@@ -1,5 +1,5 @@
 /**
- * `packages/agent-org/src/row-claim.mjs` answers "is this row claimed?" by reading the BOARD (issue labels), never git
+ * `node_modules/agent-org/src/row-claim.mjs` answers "is this row claimed?" by reading the BOARD (issue labels), never git
  * history -- #28 and #30 (2026-09-06) were each pulled twice because the documented collision check
  * (`git log --branches='agent/*' --not origin/main -- <path>`) answers "would I collide in this file",
  * not "is somebody already on this row". See that file's own header for the incident and the reasoning.
@@ -123,7 +123,7 @@ test("multiple session labels are all reported -- a race leaves both visible unt
 });
 
 // --- #656: the claim records the BRANCH, so an escalating session can tell a portable row from a held
-// one before it ever offers to take it (see packages/agent-org/src/carry-branch.mjs's own header for the incident) ---
+// one before it ever offers to take it (see node_modules/agent-org/src/carry-branch.mjs's own header for the incident) ---
 
 test("claimStatus reads the recorded branch off a branch: label", () => {
   const status = claimStatus(["in-progress", "session:worker-config", "started",

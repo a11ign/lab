@@ -312,7 +312,7 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     guard: null,
     note: "RETIRED WITH ITS POPULATION, 2026-10-03 (#2976). It walked `git ls-files` for every file whose CODE reads "
       + "`statusCheckRollup` off an object (#634) and held a by-name list of the readers it must still find, each "
-      + "lived in `packages/agent-org/`: `merge-queue.mjs`, `queue-stalled.mjs` and `update-branch-sweep.mjs`. They "
+      + "lived in the tool's directory: `merge-queue.mjs`, `queue-stalled.mjs` and `update-branch-sweep.mjs`. They "
       + "went to `a11ign/agent-org` with the directory, so the list could only pass having examined nothing, and the "
       + "discovery and its list were removed. The file stays for the newest-per-name fixtures, which read no tree. "
       + "Kept as an entry rather than deleted, as `action-reference.test.ts` above is, so the record says RETIRED.",

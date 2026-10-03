@@ -122,7 +122,7 @@ function tsxTestSpawns(source: Source): string[] {
 /**
  * THE ONE `tsx --test` THE PROJECT DOES NOT OWN (#3105): the step that runs ANOTHER repository's suite. `a11ign/agent-org`'s tests
  * are `node:test` files and its own `gate` runs them as `node --import tsx --test`; `ci.yml`'s `agentOrg` job lays that tool over
- * `packages/agent-org` and runs the identical command, so the reading is the tool's own and not a project reimplementation of it.
+ * the layout its own tests expect and runs the identical command, so the reading is the tool's own and not a project reimplementation of it.
  * Measured 2026-10-03 on that layout: this runner 4669 tests, 0 failed, 1 skipped, 4m10s; this project's rstest runner 5 of 4649
  * failed (one of them a fixture `import()` the node:test alias hook could not resolve) in 5m24s.
  * The rstest adoption (#1317) is about THIS project's own tests going through one runner; it was never a claim about the

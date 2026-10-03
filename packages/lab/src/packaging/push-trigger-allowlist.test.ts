@@ -41,7 +41,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
-// #929: THIS GUARD READS ONLY `packages/agent-org`, `.github/workflows`, so a diff that cannot reach it need not run this file.
+// #929: THIS GUARD READS ONLY `.github/workflows`, so a diff that cannot reach it need not run this file.
 // Undeclared means unbounded, which is why the selector runs 173 always-run guards on every pull
 // request. The declaration is ENFORCED rather than trusted: `declareWalkScope` observes what this
 // file actually reads and fails it here if anything lands outside the scope -- so a scope that is
@@ -99,7 +99,7 @@ const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {};
 // MERGE COMMIT landing on `main` was ever tested -- `ci.yml`'s `pull_request` trigger tests a PR's head,
 // never the commit it produces on merge. That is a genuinely different gap from "did a schedule go
 // silent", and closing it needs the opposite shape from a watchdog: real verification, real action. See
-// `trunk.yml`'s own header for the full reasoning and `packages/agent-org/src/trunk-red.mjs`'s for why a red `main` wakes
+// `trunk.yml`'s own header for the full reasoning and `node_modules/agent-org/src/trunk-red.mjs`'s for why a red `main` wakes
 // a fixer and nothing reverts it (#2356).
 const TRUNK_GATE_ALLOWLIST: Record<string, string> = {
   "trunk.yml": "pipeline unit 3 (#316): the merge commit landing on main after strict=false (#298) "

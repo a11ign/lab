@@ -1,6 +1,6 @@
 /**
  * `ready` must be mutually exclusive with every label that already means "not actually pickable" (#121).
- * See `packages/agent-org/src/ready-label-audit.mjs`'s own header for the incident: `dispatcher` labelled #13 and #75
+ * See `node_modules/agent-org/src/ready-label-audit.mjs`'s own header for the incident: `dispatcher` labelled #13 and #75
  * `ready` to hit a floor, while one was disputed and the other had no Region or Acceptance at all.
  */
 // no-token: defaultRun
@@ -1149,7 +1149,7 @@ test("CHECKS names all eighteen, so the partial-audit sentence states a true den
   ]);
 });
 
-// --- #804: the four claim-label literals are declared in EXACTLY ONE place, packages/agent-org/src/claim-labels.mjs ---
+// --- #804: the four claim-label literals are declared in EXACTLY ONE place, node_modules/agent-org/src/claim-labels.mjs ---
 
 // claim-labels.mjs and every consumer of it moved into @a11ign/agent-org, so the census walks there.
 // A scan still pointed at scripts/ would find none of the four literals and report a clean run.
