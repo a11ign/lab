@@ -207,6 +207,9 @@ export const TRACKER_WRITERS = Object.freeze([
   "weekly-review.mjs",
   // #3212: the weekly CI-health reading comments its table on #928; the body is checked before it leaves.
   "ci-health.mjs",
+  // #3184: the outsider verdict job files a `regression` row; its body is checked before it leaves. In a subdirectory, so the name
+  // carries it (the walk prefixes `scripts/`).
+  "outsider/verdict-job.mjs",
 ]);
 
 /** Where a declared writer may live. The prefixes are here so the registry above holds no path-shaped

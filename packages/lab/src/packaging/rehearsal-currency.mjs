@@ -1,14 +1,13 @@
 // @ts-check
 
 /**
- * Does the commit being released match the one `RELEASE.md`'s own rehearsal entry says it ran against?
+ * What the commit being released has changed since the one `RELEASE.md`'s own rehearsal entry says it ran against.
  *
- * #813's own rule: a rehearsal covers the ONE commit it ran against, never the tip of a branch by
- * assumption. Written as prose ("whenever the current commit is not the one named above, no rehearsal
- * covers it") that is a rule a human has to remember to apply -- this repo's own definition of a rule
- * that gets broken. `<!-- REHEARSAL:COMMIT <sha> -->` is the machine-readable half: an HTML comment,
- * invisible in rendered markdown, that survives a rewording of the surrounding prose the way a bare regex
- * over "against `a11y-witness@<short-sha>`" would not.
+ * #813 made this a GATE and #3184 (ADR 0042 decision 6) made it a READING: the outsider job's verdict now stands where the
+ * marker stood, so nothing here refuses a publish and a marker that has gone stale is a number, never a failure. The marker
+ * stays as the record of the last hand rehearsal (2026-09-20). `<!-- REHEARSAL:COMMIT <sha> -->` is the machine-readable
+ * half: an HTML comment, invisible in rendered markdown, that survives a rewording of the surrounding prose the way a bare
+ * regex over "against `a11y-witness@<short-sha>`" would not.
  */
 
 const MARKER = /<!--\s*REHEARSAL:COMMIT\s+([0-9a-f]{7,40})\s*-->/;
@@ -46,62 +45,56 @@ export function publishedPackagePaths(packages) {
   return packages.filter(({ manifest }) => manifest.private !== true).map(({ dir }) => `packages/${dir}/`);
 }
 
+const MS_PER_DAY = 86_400_000;
+
 /**
- * THE VERDICT, PURE. `[]` means the rehearsal on record covers the commit being released; anything else
- * is a refusal reason, never inferred silently.
- * @param {{ releaseMd: string | null, releaseSha: string | null, isAncestor?: boolean | null,
- *           changedPaths?: string[] | null, diffError?: string }} input
- *   `isAncestor` and `changedPaths` are `null` -- or omitted -- when the read could not be made, and both
- *   refuse: a caller that forgets to gather a fact is refused, never passed.
- * @returns {string[]}
+ * Whole days from the marker commit's committer date to `nowMs`, or `null` when the date is unreadable: an age nobody could
+ * read is "unknown", never 0 days (absence is not proof of freshness).
+ * @param {string | null | undefined} committedAt an ISO-8601 date, as `git show -s --format=%cI` prints it
+ * @param {number} nowMs
+ * @returns {number | null}
  */
-export function rehearsalCurrencyProblems(
-  { releaseMd, releaseSha, isAncestor = null, changedPaths = null, diffError = "" }) {
+export function ageInDays(committedAt, nowMs) {
+  const then = Date.parse(committedAt ?? "");
+  return Number.isNaN(then) ? null : Math.max(0, Math.floor((nowMs - then) / MS_PER_DAY));
+}
+
+/**
+ * THE READING, PURE. `readable: false` means a fact could not be read, which is a defect in the reading and is never
+ * reported as staleness; `readable: true` means `lines` say how far the marker is behind, and that is ALL they say:
+ * a stale marker is not a failure, because the marker no longer gates a publish.
+ * @param {{ releaseMd: string | null, releaseSha: string | null, isAncestor?: boolean | null,
+ *           changedPaths?: string[] | null, diffError?: string, ageDays?: number | null }} input
+ *   `isAncestor` and `changedPaths` are `null` -- or omitted -- when the read could not be made: a caller that forgets to
+ *   gather a fact gets `readable: false`, never a clean reading.
+ * @returns {{ readable: boolean, lines: string[] }}
+ */
+export function rehearsalReading(
+  { releaseMd, releaseSha, isAncestor = null, changedPaths = null, diffError = "", ageDays = null }) {
   const marked = rehearsalMarkerSha(releaseMd);
   if (!marked) {
-    return ["RELEASE.md carries no `<!-- REHEARSAL:COMMIT <sha> -->` marker at all -- no rehearsal is on "
-      + "record for ANY commit, which is a stronger refusal than a stale one"];
+    return unreadable("RELEASE.md carries no `<!-- REHEARSAL:COMMIT <sha> -->` marker, so there is no hand rehearsal on record to read");
   }
-  // FAIL CLOSED on an unresolved release commit -- the opposite of "cannot ask, so let it through". This
-  // gate exists specifically to stop an assumption standing in for a measurement; treating "I could not
-  // tell" as "must be current" would be exactly that assumption, one layer in.
-  if (!releaseSha) {
-    return ["could not resolve the commit being released -- refusing rather than guessing whether the "
-      + "rehearsal on record is current"];
-  }
-  // #1265: ANCESTOR PLUS UNCHANGED PATHS, because MARKER-EQUALS-RELEASE COULD NOT BE SATISFIED.
-  //
-  // The rule here required the release sha to EQUAL the marker. A rehearsal runs against commit X;
-  // recording it moves the marker in RELEASE.md, which IS commit Y; a release at Y reads marker X and
-  // refuses, and a release at X reads the previous marker and refuses. No committed tree satisfies it,
-  // and "run the rehearsal again and update the marker" cannot terminate. That is #558 part 1's defect
-  // -- `--check` once required the consumer-gate pin to EQUAL HEAD -- arriving in this gate.
-  //
-  // #558 part 2 settled the shape and `consumer-gate.yml`'s `check-pin` carries it: the marker must be
-  // an ANCESTOR of the release commit, and nothing the rehearsal EXERCISES may have changed since. The
-  // facts are INJECTED rather than read here: this function is a pure decision and giving it two `git`
-  // calls would put the spawn inside the judgement, where #1279 measured what a composed command costs.
+  if (!releaseSha) return unreadable("could not resolve the commit being released, so nothing was compared");
   if (isAncestor === null) {
-    return ["could not tell whether the rehearsal marker is an ancestor of the commit being released -- "
-      + "refusing rather than assuming it is (the same fail-closed reading as an unresolved release sha)"];
+    return unreadable(`could not tell whether the rehearsal marker ${marked} is an ancestor of ${releaseSha}`);
   }
+  const age = ageDays === null ? "of unknown age" : `${ageDays} day(s) old`;
   if (isAncestor === false) {
-    return [`RELEASE.md's rehearsal marker names ${marked}, which is NOT an ancestor of the commit being `
-      + `released (${releaseSha}) -- the rehearsal ran on a history this release is not descended from, `
-      + "so it says nothing about it. Run the rehearsal against a commit in this history."];
+    return { readable: true, lines: [`the rehearsal marker ${marked} (${age}) is NOT an ancestor of ${releaseSha}: the hand `
+      + "rehearsal ran on a history this release is not descended from"] };
   }
-  // A diff that could not be taken is its OWN refusal, never a changed path. Reported as a change it
-  // would state something the gate never observed, collapsing one read later the could-not-tell/no split
-  // kept for ancestry above (`worker-capture`'s should-fix on #1291).
+  // A diff that could not be taken is its OWN unreadable state, never a changed path: reported as a change it would state
+  // something nobody observed, collapsing the could-not-tell / no split kept for ancestry above (#1291).
   if (changedPaths === null) {
-    return ["could not tell whether anything the rehearsal exercises changed since the marker -- the diff "
-      + `could not be taken${diffError ? `: ${diffError}` : ""}. Refusing rather than assuming nothing did.`];
+    return unreadable(`could not tell whether anything the rehearsal exercises changed since ${marked}: the diff could not `
+      + `be taken${diffError ? `: ${diffError}` : ""}`);
   }
-  if (changedPaths.length > 0) {
-    return [`RELEASE.md's rehearsal marker names ${marked}, an ancestor of ${releaseSha} -- but the `
-      + `rehearsal EXERCISES ${changedPaths.length} path(s) that have changed since it:\n  `
-      + `${changedPaths.join("\n  ")}\nA rehearsal covers what it ran against. Run it again and update `
-      + "the marker (and the prose beside it) before this release."];
-  }
-  return [];
+  return { readable: true, lines: [`the rehearsal marker ${marked} (${age}) is an ancestor of ${releaseSha}; the rehearsal `
+    + `EXERCISES ${changedPaths.length} path(s) that have changed since it`, ...changedPaths.map((p) => `  ${p}`)] };
+}
+
+/** @param {string} line @returns {{ readable: false, lines: string[] }} */
+function unreadable(line) {
+  return { readable: false, lines: [line] };
 }

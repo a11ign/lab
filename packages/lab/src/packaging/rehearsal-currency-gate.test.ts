@@ -1,9 +1,9 @@
 /**
- * `release:rehearsal-check` must REFUSE a release the rehearsal `RELEASE.md` names no longer covers: a
- * marker that is not an ancestor, or an exercised document or published package changed since it (#1265,
- * replacing #813's marker-equals-release rule). Tier 2 of `docs/proving-a-gate.md`'s recipe:
- * `rehearsal-currency.test.ts` proves the decision over injected inputs; this proves the COMMAND -- the
- * paths it composes, the exit code it returns, the sentence it prints.
+ * `release:rehearsal-check` is a READING since #3184 (ADR 0042 decision 6): it prints the marker, its age and the exercised
+ * documents and published packages (#1265) that changed since it, and EXITS 0 however far behind the marker is. It exits 2 (could not
+ * tell) only when it could not read. `rehearsal-currency.test.ts` proves the reading over injected inputs; this proves the COMMAND -- the
+ * paths it composes, the exit code it returns, the sentence it prints. That the check is in no publish chain is
+ * `outsider-verdict-wired.test.ts`'s, which reads `package.json`.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -83,13 +83,14 @@ function runGate(root: string, releaseSha: string): { code: number; out: string 
 // This fixture was "#813's own mutation, made real". Under #1265 a planted tmpdir is not a repository, so
 // ancestry cannot be read and it reaches the COULD-NOT-TELL refusal -- it kept passing for that reason
 // (#1291's second head). Named now for the branch it actually reaches, and asserting that branch by name.
-test("a tree that is not a repository cannot answer ancestry, and REFUSES as could-not-tell, printing both shas",
+test("a tree that is not a repository cannot answer ancestry, and is NOT READ as could-not-tell, printing both shas",
   () => {
   const root = planted(`Prose.\n\n<!-- REHEARSAL:COMMIT ${SHA} -->\n\nMore prose.`);
   try {
     const { code, out } = runGate(root, OTHER_SHA);
-    assert.equal(code, 1, "an ancestry nobody could read must not pass");
-    assert.match(out, /could not tell whether the rehearsal marker is an ancestor/);
+    assert.equal(code, 2, "an ancestry nobody could read is no reading, and says so with the repo's could-not-tell exit");
+    assert.match(out, /NOT READ/);
+    assert.match(out, /could not tell whether the rehearsal marker .* is an ancestor/);
     assert.match(out, new RegExp(SHA), "the marked sha must be printed");
     assert.match(out, new RegExp(OTHER_SHA), "the release sha must be printed");
   } finally {
@@ -105,46 +106,48 @@ test("a tree that is not a repository cannot answer ancestry, and REFUSES as cou
 // that no history could produce -- a fixture describing a state the system cannot reach. #558 part 1's
 // defect, and its part 2's shape (ancestor + unchanged exercised paths) is what replaces it below.
 
-test("#1265: an ancestor marker with NOTHING exercised changed PASSES -- the real control", () => {
+test("#1265: an ancestor marker with NOTHING exercised changed reads as ZERO paths and exits 0 -- the real control", () => {
   const { root, head } = repoWith();
   try {
     const { code, out } = runGate(root, head);
-    assert.equal(code, 0, `an ancestor with no exercised change must pass; the gate said: ${out}`);
-    assert.match(out, /PASS/);
+    assert.equal(code, 0, `a readable marker exits 0; the reading said: ${out}`);
+    assert.match(out, /EXERCISES 0 path/);
+    assert.match(out, /\d+ day\(s\) old/, "the age of the last recorded review is printed");
+    assert.match(out, /READING ONLY/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("#1265: an exercised path changed since the marker REFUSES, naming the path", () => {
+test("#1265: an exercised path changed since the marker is READ, naming the path, and exits 0", () => {
   const { root, head } = repoWith({ touchAfter: ["README.md"] });
   try {
     const { code, out } = runGate(root, head);
-    assert.equal(code, 1);
-    assert.match(out, /README\.md/, "the gate prints WHICH path, or the operator cannot act on it");
+    assert.equal(code, 0, "#3184: a stale marker is a number, never a failure");
+    assert.match(out, /README\.md/, "the reading prints WHICH path, or the operator cannot act on it");
     assert.match(out, /EXERCISES/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("#1265: a PUBLISHED package changed since the marker REFUSES, naming the file", () => {
-  // `worker-capture`'s fixture on #1291: with only the four documents exercised, this passed.
+test("#1265: a PUBLISHED package changed since the marker is READ, naming the file", () => {
+  // `worker-capture`'s fixture on #1291: with only the four documents exercised, this read as zero changed paths.
   const { root, head } = repoWith({ touchAfter: ["packages/cli/src/index.ts"] });
   try {
     const { code, out } = runGate(root, head);
-    assert.equal(code, 1, `a consumer installs this package; the gate said: ${out}`);
+    assert.equal(code, 0, `a consumer installs this package, and the reading says so; it said: ${out}`);
     assert.match(out, /packages\/cli\/src\/index\.ts/);
     assert.match(out, /EXERCISES 1 path/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("#1265: a PRIVATE package changed since the marker PASSES -- the set is derived, not every path", () => {
+test("#1265: a PRIVATE package changed since the marker reads as ZERO -- the set is derived, not every path", () => {
   const { root, head } = repoWith({ touchAfter: ["packages/lab/src/internal.ts"] });
   try {
     const { code, out } = runGate(root, head);
-    assert.equal(code, 0, `nothing a consumer installs changed; the gate said: ${out}`);
-    assert.match(out, /PASS/);
+    assert.equal(code, 0, `nothing a consumer installs changed; the reading said: ${out}`);
+    assert.match(out, /EXERCISES 0 path/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("#1265: a marker that is NOT an ancestor REFUSES, and says so differently", () => {
+test("#1265: a marker that is NOT an ancestor is READ and exits 0, and says so differently", () => {
   // A REAL non-ancestor, on an orphan branch: the sha EXISTS, so `merge-base --is-ancestor` answers
   // "no" (exit 1) rather than "could not tell" (exit >1). My first version passed `OTHER_SHA`, which no
   // repository contains -- so it hit the could-not-tell branch while its assertion read
@@ -161,37 +164,48 @@ test("#1265: a marker that is NOT an ancestor REFUSES, and says so differently",
     const orphan = git("rev-parse", "HEAD");
 
     const { code, out } = runGate(root, orphan);
-    assert.equal(code, 1);
-    assert.match(out, /NOT an ancestor/, "and not the could-not-tell refusal, which is a different fact");
+    assert.equal(code, 0, "a history the marker is not in is still a reading");
+    assert.match(out, /NOT an ancestor/, "and not the could-not-tell state, which is a different fact");
     assert.doesNotMatch(out, /could not tell/i);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("a RELEASE.md with no marker at all is a REFUSAL, never a quiet pass", () => {
+test("a RELEASE.md with no marker at all is NOT READ, never a quiet clean reading", () => {
   const root = planted("RELEASE.md with no rehearsal marker at all.");
   try {
     const { code, out } = runGate(root, SHA);
-    assert.equal(code, 1);
-    assert.match(out, /no rehearsal is on record/);
+    assert.equal(code, 2);
+    assert.match(out, /no hand rehearsal on record/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("a missing RELEASE.md entirely is a REFUSAL, never a crash", () => {
+test("a missing RELEASE.md entirely is NOT READ, never a crash", () => {
   const root = planted(null);
   try {
     const { code, out } = runGate(root, SHA);
-    assert.equal(code, 1);
-    assert.match(out, /no rehearsal is on record/);
+    assert.equal(code, 2);
+    assert.match(out, /no hand rehearsal on record/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("INCONCLUSIVE is unreachable from this gate, by construction -- one marker, one question", () => {
-  // "matching commit" used to be a planted tmpdir handed two equal shas: a state no history produces, and
-  // under #1265 a could-not-tell refusal. Real repositories now, so the PASS here is a real one.
+// #3184 ACCEPTANCE 1: today's reading was 190 exercised paths behind (ADR 0042), and the command used to refuse it. The positive control
+// -- that the swap removed a refusal and ADDED one -- is `outsider-verdict-wired.test.ts`'s `red` fixture, which fails the job.
+test("#3184: a marker 190 exercised paths behind EXITS 0 and its output names the count", () => {
+  const stale = Array.from({ length: 190 }, (_, i) => `packages/cli/src/stale-${i}.ts`);
+  const { root, head } = repoWith({ touchAfter: stale });
+  try {
+    const { code, out } = runGate(root, head);
+    assert.equal(code, 0, `a stale marker no longer blocks a publish; the reading said: ${out.slice(0, 400)}`);
+    assert.match(out, /EXERCISES 190 path\(s\)/);
+    assert.doesNotMatch(out, /\bFAIL\b|refus/i, "a stale marker must not be printed as a failure");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("the exit code is 2 ONLY for a reading that could not be made -- one marker, one question", () => {
   const current = repoWith();
   const changed = repoWith({ touchAfter: ["README.md"] });
   const scenarios = [
@@ -203,11 +217,11 @@ test("INCONCLUSIVE is unreachable from this gate, by construction -- one marker,
   try {
     const codes = scenarios.map(({ label, root, sha }) => {
       const { code, out } = runGate(root, sha);
-      assert.doesNotMatch(out, /INCONCLUSIVE/, `${label}: printed INCONCLUSIVE, which this gate must never reach`);
+      assert.doesNotMatch(out, /PASS/, `${label}: printed PASS, which would read as a claim about the marker`);
       return code;
     });
-    // Exact, not "0 or 1": a gate that refused everything would satisfy the looser form.
-    assert.deepEqual(codes, [0, 1, 1, 1]);
+    // Exact, not "0 or 1": a command that exited 0 for everything would satisfy the looser form.
+    assert.deepEqual(codes, [0, 0, 2, 2]);
   } finally {
     for (const { root } of scenarios) rmSync(root, { recursive: true, force: true });
   }

@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 // @ts-check
-// command: refuse a release not descended from RELEASE.md's rehearsal marker, or that changed a document or
-//          published package the rehearsal exercised since it
+// command: print how far RELEASE.md's rehearsal marker is behind the commit about to be released: the marker, its age, and the exercised paths changed since. Never blocks a publish
 
 /**
- * `#813`'s gate half: `release:gate:ci` calls this, and it refuses a publish unless the most recent
- * V1 rehearsal still covers the commit about to be released -- its marker an ANCESTOR of that commit, and
- * nothing the rehearsal exercised changed since (#1265, which replaced a marker-EQUALS-release rule that no
- * committed tree could satisfy). The runbook half (`RELEASE.md`'s own prose) says the rule; this is what
- * makes a stale rehearsal fail a COMMAND, not a reader who forgot to check a date.
+ * A READING since #3184 (it was `#813`'s gate, in `release:gate:ci` and `release:gate`). The outsider job's verdict
+ * (`registry-consumer-gate.yml`, ADR 0042) took the gate's place, so this prints the marker's commit, its age in days
+ * and how many exercised paths changed since -- the marker's ANCESTRY and the exercised set are still what #1265 settled
+ * -- and exits 0 whatever it found. It exits 2 (could not tell) only when it could not read: a stale marker is a number, not a failure.
  */
 import { readFileSync, existsSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -16,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
-import { rehearsalCurrencyProblems, rehearsalMarkerSha, REHEARSAL_DOCUMENTS, publishedPackagePaths }
+import { rehearsalReading, rehearsalMarkerSha, ageInDays, REHEARSAL_DOCUMENTS, publishedPackagePaths }
   from "../src/packaging/rehearsal-currency.mjs";
 import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
 
@@ -140,27 +138,37 @@ function gitFacts(marked, releaseSha) {
     : { isAncestor, changedPaths: changed.paths, diffError: "" };
 }
 
-/** @returns {number} process exit code */
+/**
+ * The marker commit's age in days, from its committer date: `null` when git could not say (an unknown age is printed as
+ * unknown, never as zero).
+ * @param {string | null} marked @returns {number | null}
+ */
+function markerAgeDays(marked) {
+  if (!marked) return null;
+  const shown = gitAt(REPO, ["show", "-s", "--format=%cI", marked]);
+  return shown.status === 0 ? ageInDays(shown.stdout.trim(), Date.now()) : null;
+}
+
+/** @returns {number} process exit code: 0 for a reading, 2 only when the reading could not be made */
 function main() {
   const releaseMd = existsSync(RELEASE_MD) ? readFileSync(RELEASE_MD, "utf8") : null;
   // `A11Y_REHEARSAL_RELEASE_SHA` lets a test (or a CI job that already knows the release sha some other
   // way) supply it directly, without needing `root` to be a real git checkout at all.
   const releaseSha = process.env.A11Y_REHEARSAL_RELEASE_SHA || currentSha(REPO);
   const marked = rehearsalMarkerSha(releaseMd);
-  const problems = rehearsalCurrencyProblems({ releaseMd, releaseSha, ...gitFacts(marked, releaseSha) });
+  const reading = rehearsalReading({ releaseMd, releaseSha, ageDays: markerAgeDays(marked), ...gitFacts(marked, releaseSha) });
 
   process.stdout.write(`  rehearsal marker: ${marked ?? "none"}; release commit: ${releaseSha ?? "unknown"}\n`);
-  for (const problem of problems) process.stdout.write(`\n  ${problem}\n`);
-
-  // Identical shape to `check-shipped-provenance.mjs`: one artefact (RELEASE.md's own marker), one
-  // question (does the rehearsal it names still cover the release commit), so INCONCLUSIVE is unreachable
-  // here -- a fact that could not be read is a refusal inside that one question, not a partial examination.
-  const verdict = gateVerdict({
-    examined: 1, of: 1,
-    source: "RELEASE.md's own rehearsal marker",
-    failures: problems.length,
-  });
-  process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
+  process.stdout.write(`\n  ${reading.lines.join("\n  ")}\n`);
+  // THE EXIT CODE IS ABOUT THE READING, NOT THE MARKER (#3184). A marker 190 paths behind is a number and exits 0: the
+  // outsider job's verdict (`registry-consumer-gate.yml`) is what stands where this stood, and no publish chain names this
+  // command. A fact that could not be read is INCONCLUSIVE (exit 2, the repo's "could not tell"), never a fresh marker. The
+  // verdict is built with `gateVerdict` so a reading that examined nothing cannot exit 0, but only INCONCLUSIVE is rendered:
+  // "PASS ... clean" beside 190 changed paths would read as a claim about the marker that nobody is making.
+  const verdict = gateVerdict({ examined: reading.readable ? 1 : 0, of: 1, source: "RELEASE.md's own rehearsal marker" });
+  process.stdout.write(verdict.verdict === "PASS"
+    ? "\n  READING ONLY: this never blocks a publish (ADR 0042 decision 6).\n"
+    : `\n  NOT READ: ${renderVerdict(verdict)}. This is not a staleness result.\n`);
   return exitCodeFor(verdict);
 }
 
