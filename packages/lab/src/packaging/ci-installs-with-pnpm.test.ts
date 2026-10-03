@@ -47,9 +47,25 @@ const installLines = () => allSteps().flatMap(({ where, step }) =>
 const MIN_INSTALLS = 15;
 const MIN_PNPM_CACHES = 12;
 
+/**
+ * A line that resolves the project's tree with npm. The one global install of npm ITSELF (#3180, `release.yml`: trusted
+ * publishing needs npm 11.5.1+, and only npm upgrades npm) touches no project tree and so is not this defect; any other
+ * global install, and every local one, still is.
+ */
+const installsProjectWithNpm = (line: string): boolean =>
+  /\bnpm (ci|install)\b/.test(line) && !/^npm install (-g|--global)\s+"?npm@[^\s"]+"?$/.test(line);
+
+test("#3180: only the global install of npm itself is allowed, and every other npm install is still refused", () => {
+  assert.equal(installsProjectWithNpm('npm install -g "npm@^11.5.1"'), false);
+  assert.equal(installsProjectWithNpm("npm install --global npm@latest"), false);
+  for (const line of ["npm ci", "npm install", "npm install -g left-pad", "npm install -g npm@11 left-pad", "npm install npm@11", "npm install -g npm@11 && npm ci"]) {
+    assert.equal(installsProjectWithNpm(line), true, line);
+  }
+});
+
 test("#2298: no job in any workflow installs with npm", () => {
   const offenders = allSteps().flatMap(({ where, step }) =>
-    codeLines(step).filter((l) => /\bnpm (ci|install)\b/.test(l)).map((l) => `${where}: ${l}`));
+    codeLines(step).filter(installsProjectWithNpm).map((l) => `${where}: ${l}`));
   assert.ok(installLines().length >= MIN_INSTALLS, `only ${installLines().length} pnpm installs found; the scan is broken`);
   assert.deepEqual(offenders, [], "these still resolve CI's tree from package-lock.json, not pnpm-lock.yaml");
 });
