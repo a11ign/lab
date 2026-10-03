@@ -1,3 +1,4 @@
+// no-token: gh -- `gh` and `row-file` are injected fakes here, so no case reaches GitHub; the one real call, the leak refusal, throws before anything is spawned.
 /**
  * The outsider verdict job's FILING and LABEL behaviour (#3184, `product-manager`'s ruling on the row): `scripts/outsider/verdict-job.mjs` files ONE
  * `regression` row per version, creates the `regression` label only when it is absent (nothing else creates it: ADR 0041, #3135), is idempotent

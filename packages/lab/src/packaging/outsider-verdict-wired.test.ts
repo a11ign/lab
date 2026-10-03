@@ -1,3 +1,4 @@
+// no-token: gh -- nothing here reaches GitHub: the driver is run only with `A11Y_OUTSIDER_FACTS` (a fixture, read INSTEAD of the network, and a fixture never files), and the rest is pure or reads files.
 /**
  * THE SWAP IS ATOMIC (#3184, ADR 0042 decision 6): the rehearsal marker stopped blocking a publish and the outsider job's verdict took its
  * place in ONE pull request. Five things are pinned here, each with the fixture that must be REFUSED beside the one that must pass:
