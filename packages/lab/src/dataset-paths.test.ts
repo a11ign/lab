@@ -193,10 +193,6 @@ const EXEMPT: Record<string, string> = {
     + "@a11ign/control cannot import @a11ign/lab, and runs/fleet-auto-off-state.json is a tiny local "
     + "ledger of idle-since/shutdown-requested-at timestamps between one auto-off tick and the next, not "
     + "a dataset root this module owns at all.",
-  "packages/control/src/fleet-wake.mjs":
-    "#3227: the identical shape fleet-auto-off.mjs is exempted for -- ADR 0012's @a11ign/control cannot "
-    + "import @a11ign/lab, and runs/fleet-wake-proof.json is a tiny local ledger of when each worker last "
-    + "proved a wake, not a dataset root this module owns at all.",
   "packages/lab/src/packaging/acceptance-check-at-filing.test.ts":
     "#1973: the same literals, as the expected VALUES the refusal above must name -- a test that read "
     + "them from dataset-paths.mjs would be asserting the checker against its own source and could not "
