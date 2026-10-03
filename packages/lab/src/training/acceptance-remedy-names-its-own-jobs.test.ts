@@ -64,9 +64,12 @@ function npmScripts(): Record<string, string> {
   return JSON.parse(read("package.json")).scripts;
 }
 
-/** `npm run [--silent] <name>` → `<name>`, for every such segment of a script body. */
+/**
+ * `npm run [--silent] <name>` → `<name>`, for every such segment of a script body. `pnpm run` matches as a substring,
+ * and `node scripts/pnpm.mjs run` is the spelling a chained script uses where the lab has no `pnpm` on PATH (#3141).
+ */
 function npmRunTargets(body: string): string[] {
-  return [...body.matchAll(/npm run (?:--silent )?([\w:-]+)/g)].map((match) => match[1]);
+  return [...body.matchAll(/(?:npm|scripts\/pnpm\.mjs) run (?:--silent )?([\w:-]+)/g)].map((match) => match[1]);
 }
 
 /** A script's body plus the body of every script it runs, so `training:capture:fresh` is not just its own line. */
