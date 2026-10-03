@@ -28,12 +28,18 @@ import {
 
 const SHA = "308b2de5bbd8a1f0c4e7d9b3a6f2e1d0c9b8a7f6";
 const GITHUB_DESCRIPTION_LIMIT = 140;
+const LONG_SOURCE = 400;
+const FORBIDDEN = 403;
+
+/** What the function accepts; malformed fixtures are cast through `unknown` so the casts are visible. */
+type Outcome = Parameters<typeof qualificationStatus>[0]["outcome"];
+const malformed = (value: unknown) => value as Outcome;
 
 const PASS = gateVerdict({ examined: 8, of: 8, source: "8 canaries" });
 const FAIL = gateVerdict({ examined: 8, of: 8, source: "8 canaries", failures: 1 });
 const INCONCLUSIVE = gateVerdict({ examined: 5, of: 8, source: "8 canaries" });
 
-const TABLE: { name: string; outcome: any; state: string }[] = [
+const TABLE: { name: string; outcome: Outcome; state: string }[] = [
   { name: "a started run", outcome: { started: true }, state: "pending" },
   { name: "PASS verdict", outcome: { verdict: PASS }, state: "success" },
   { name: "exit 0", outcome: { exitCode: 0 }, state: "success" },
@@ -43,10 +49,10 @@ const TABLE: { name: string; outcome: any; state: string }[] = [
   { name: "exit 2 (INCONCLUSIVE)", outcome: { exitCode: 2 }, state: "failure" },
   { name: "no outcome at all", outcome: undefined, state: "failure" },
   { name: "an empty outcome", outcome: {}, state: "failure" },
-  { name: "a verdict object with no verdict name", outcome: { verdict: { why: "?" } }, state: "failure" },
-  { name: "a verdict named something else", outcome: { verdict: { verdict: "OK" } }, state: "failure" },
-  { name: "a null verdict", outcome: { verdict: null }, state: "failure" },
-  { name: "a non-numeric exit code", outcome: { exitCode: "0" }, state: "failure" },
+  { name: "a verdict object with no verdict name", outcome: malformed({ verdict: { why: "?" } }), state: "failure" },
+  { name: "a verdict named something else", outcome: malformed({ verdict: { verdict: "OK" } }), state: "failure" },
+  { name: "a null verdict", outcome: malformed({ verdict: null }), state: "failure" },
+  { name: "a non-numeric exit code", outcome: malformed({ exitCode: "0" }), state: "failure" },
   { name: "exit 127 (job not wired)", outcome: { exitCode: 127 }, state: "failure" },
   { name: "exit 137 (killed)", outcome: { exitCode: 137 }, state: "failure" },
   { name: "exit 3 (a precondition, not a verdict)", outcome: { exitCode: 3 }, state: "failure" },
@@ -73,7 +79,7 @@ test("POSITIVE CONTROL: the table reaches success, and ONLY through a PASS readi
 test("a missing or unparseable verdict is never success, and says so", () => {
   for (const outcome of [undefined, {}, { verdict: "PASS" }, { verdict: 0 }, { exitCode: Number.NaN },
     { exitCode: 1.5 }, { exitCode: null }]) {
-    const payload = qualificationStatus({ sha: SHA, outcome: outcome as any });
+    const payload = qualificationStatus({ sha: SHA, outcome: malformed(outcome) });
     assert.equal(payload.state, "failure", JSON.stringify(outcome));
     assert.match(payload.description, /not a pass/, JSON.stringify(outcome));
   }
@@ -95,7 +101,7 @@ test("the description claims the fleet part only, never the whole release gate",
 });
 
 test("a long reason is trimmed but the gate, the scope and the run survive", () => {
-  const long = gateVerdict({ examined: 1, of: 8, source: "x".repeat(400) });
+  const long = gateVerdict({ examined: 1, of: 8, source: "x".repeat(LONG_SOURCE) });
   const payload = qualificationStatus({ sha: SHA, outcome: { verdict: long }, run: "run-123" });
   assert.ok(payload.description.length <= GITHUB_DESCRIPTION_LIMIT);
   assert.match(payload.description, /gate:stability \(fleet part only\)/);
@@ -104,7 +110,7 @@ test("a long reason is trimmed but the gate, the scope and the run survive", () 
 
 test("a malformed sha throws rather than yielding a payload for nothing", () => {
   for (const sha of ["", "abc123", SHA.toUpperCase(), `${SHA}0`, undefined, null, 42]) {
-    assert.throws(() => qualificationStatus({ sha, outcome: { started: true } }), /40-character/);
+    assert.throws(() => qualificationStatus({ sha: sha as string, outcome: { started: true } }), /40-character/);
   }
 });
 
@@ -118,8 +124,8 @@ function withToken(contents: string | undefined, run: (path: string) => Promise<
 }
 
 const recorder = (status = 201) => {
-  const calls: { url: string; init: any }[] = [];
-  const fetchImpl = (async (url: string, init: any) => {
+  const calls: { url: string; init: { method: string; headers: Record<string, string>; body: string } }[] = [];
+  const fetchImpl = (async (url: string, init: (typeof calls)[number]["init"]) => {
     calls.push({ url, init });
     return { status, text: async () => "boom" };
   }) as unknown as typeof fetch;
@@ -137,7 +143,7 @@ test("with the token file ABSENT it posts nothing, says so, and exits 3 -- never
     const result = await postQualificationStatus({
       sha: SHA, outcome: { verdict: PASS }, tokenPath, fetchImpl });
     assert.equal(result.posted, false);
-    assert.equal((result as any).reason, "no-token");
+    assert.equal((result as { reason?: string }).reason, "no-token");
     assert.equal(calls.length, 0, "no request may leave when there is no token");
     const said = renderResult(result);
     assert.match(said, /NOT POSTED/);
@@ -152,7 +158,7 @@ test("an EMPTY token file is absent, not a token", async () => {
   await withToken("  \n", async (tokenPath) => {
     const { calls, fetchImpl } = recorder();
     const result = await postQualificationStatus({ sha: SHA, outcome: { started: true }, tokenPath, fetchImpl });
-    assert.equal((result as any).reason, "no-token");
+    assert.equal((result as { reason?: string }).reason, "no-token");
     assert.equal(calls.length, 0);
   });
 });
@@ -175,10 +181,10 @@ test("with a token it posts the payload to the sha's statuses endpoint, as a bea
 
 test("GitHub refusing the post is reported, not swallowed", async () => {
   await withToken("ghp_example", async (tokenPath) => {
-    const { fetchImpl } = recorder(403);
+    const { fetchImpl } = recorder(FORBIDDEN);
     const result = await postQualificationStatus({ sha: SHA, outcome: { exitCode: 0 }, tokenPath, fetchImpl });
     assert.equal(result.posted, false);
-    assert.equal((result as any).reason, "rejected");
+    assert.equal((result as { reason?: string }).reason, "rejected");
     assert.match(renderResult(result), /403/);
   });
 });
