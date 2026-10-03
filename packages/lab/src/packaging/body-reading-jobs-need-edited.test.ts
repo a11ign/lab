@@ -30,10 +30,11 @@ const WORKFLOWS = fileURLToPath(new URL("../../../../.github/workflows/", import
 type Job = {
   steps?: { env?: Record<string, string>; run?: string; with?: Record<string, string> }[];
   // A1 (#452): a job calling a REUSABLE WORKFLOW has no `steps` of its own -- its `with:` sits at the JOB
-  // level instead, one per `workflow_call` input. `ci.yml#acceptance` reads the body this way now
-  // (`with: { pr-body: ${{ github.event.pull_request.body }} }`), and a discovery that only looked inside
-  // `steps` would find NOTHING here -- the exact "asserting over an empty set" shape this file's own
-  // header already warns about, reached through a door that did not exist when it was written.
+  // level instead, one per `workflow_call` input. `ci.yml#acceptance` used to read the body this way
+  // (`with: { pr-body: ${{ github.event.pull_request.body }} }`); since #3286 it passes no input and the called
+  // job reads the LIVE body through the API, so the discovery below finds `ci.yml#deliberateRefusals` instead
+  // (its `closes-mismatch-check` step still takes the event's body). The `with:` door stays discovered: a
+  // caller that handed a body in again would be found by it.
   with?: Record<string, string>;
 };
 type Workflow = { on?: Record<string, { types?: string[] }>; jobs?: Record<string, Job> };
@@ -63,11 +64,11 @@ function jobsReadingTheBody(): { file: string; job: string }[] {
 test("the discovery finds a real job, so this cannot pass having examined nothing", () => {
   const found = jobsReadingTheBody();
   assert.ok(found.length >= 1,
-    "no workflow job reads the PR body. Either the acceptance job (#353) is gone — in which case this "
+    "no workflow job reads the PR body. Either the body-reading jobs of ci.yml are gone — in which case this "
     + "test should go with it — or the discovery has stopped matching and is now asserting over an empty "
     + "set, which is the defect it exists to prevent.");
-  assert.ok(found.some((f) => f.file === "ci.yml" && f.job === "acceptance"),
-    `expected ci.yml#acceptance among ${JSON.stringify(found)}`);
+  assert.ok(found.some((f) => f.file === "ci.yml" && f.job === "deliberateRefusals"),
+    `expected ci.yml#deliberateRefusals among ${JSON.stringify(found)}`);
 });
 
 test("every workflow with a body-reading job triggers on `edited`", () => {
