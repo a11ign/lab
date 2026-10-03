@@ -342,7 +342,8 @@ test("#3346 THE FIX: a version bump of more than 12 files is committed THROUGH t
     runScript(sandbox, WITHOUT_AMBIENT_BREADTH);
 
     const committed = sandbox.run(["show", "--name-only", "--format=", "HEAD"]).trim().split("\n");
-    assert.ok(committed.length > 12, `the commit must be wider than the hook's limit of 12 or this proves nothing; got ${committed.length}`);
+    assert.deepEqual([...committed].sort(), [...THIRTEEN_PACKAGES].sort(),
+      "the commit holds all thirteen bumped manifests -- one more than the hook's limit of 12, or this proves nothing");
     assert.notEqual(sandbox.run(["rev-parse", "HEAD"]).trim(), headBefore, "the hook refused the commit: HEAD did not move");
     assert.equal(execFileSync("git", ["--git-dir", remote, "rev-parse", `refs/heads/${VERSION_BRANCH}`], { encoding: "utf8", env: sandboxGitEnv() }).trim(),
       sandbox.run(["rev-parse", "HEAD"]).trim());
