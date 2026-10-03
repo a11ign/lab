@@ -141,6 +141,57 @@ test("THE JOB IS WIRED: a `deps:` pull request, and its queue entry, is read fro
   assert.match(standard.if ?? "", new RegExp(`steps\\.${dependency.id}\\.outputs\\.settled`), "the standard step stands down only when the derivation settled");
   assert.ok(steps.indexOf(dependency) < steps.indexOf(standard));
   assert.doesNotMatch(dependency.run ?? "", /github\.event\.pull_request\.title/, "the title is never interpolated into a shell line");
+  assert.match(dependency.run ?? "", /--since=\$\{\{ github\.event\.merge_group\.base_sha \}\}/,
+    "a queue entry is diffed against its own parent, or entry 2 is blamed for entry 1's files and ejected");
+});
+
+/** A throwaway QUEUE: entry 1 (`main` plus an unrelated source file) and, on top of it, entry 2 (the dependency bump). */
+function repoWithAnEntryAheadInTheQueue(): { root: string; entryOne: string; run: (...args: string[]) => string } {
+  const root = mkdtempSync(join(tmpdir(), "dependency-queue-3159-"));
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, env: sandboxGitEnv(), encoding: "utf8" });
+  const write = (path: string, body: string) => {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), body);
+  };
+  const manifest = (yaml: string) => `${JSON.stringify({ name: "a", version: "1.0.0", dependencies: { yaml } }, null, 2)}\n`;
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "test");
+  write("docs/owned-path-facts.json", `${JSON.stringify({ owned: [] })}\n`);
+  write("packages/a/package.json", manifest("^2.9.0"));
+  git("add", "-A");
+  git("commit", "-qm", "first");
+  git("checkout", "-qb", "gh-readonly-queue/main/entry-2");
+  write("packages/a/src/entry-one.mjs", "export const one = 1;\n");
+  git("add", "-A");
+  git("commit", "-qm", "entry 1: another pull request, already ahead in the queue");
+  const entryOne = git("rev-parse", "HEAD").trim();
+  write("packages/a/package.json", manifest("^2.9.1"));
+  git("commit", "-qam", "deps: bump yaml");
+  const script = resolve(REPO, "scripts/dependency-changeset.mjs");
+  const run = (...args: string[]) => {
+    try {
+      return execFileSync("node", [script, ...args], { cwd: root, encoding: "utf8" });
+    } catch (error) {
+      return String((error as { stdout?: string }).stdout ?? error);
+    }
+  };
+  return { root, entryOne, run };
+}
+
+test("A QUEUE ENTRY is judged on its OWN diff: entry 1's files ahead of it must not eject it, and without `--since` they would", () => {
+  const { root, entryOne, run } = repoWithAnEntryAheadInTheQueue();
+  try {
+    const alone = run("check", "--base=main", `--since=${entryOne}`);
+    assert.match(alone, /ACCEPTED \(entries\)/);
+    assert.match(alone, /a: patch -- Updates the `yaml` dependency range from `\^2\.9\.0` to `\^2\.9\.1`\./);
+    const contaminated = run("check", "--base=main");
+    assert.match(contaminated, /REFUSED/, "positive control: against `main` alone entry 1's file is in the diff, which is the ejection");
+    assert.match(contaminated, /entry-one\.mjs/);
+    assert.match(run("check", "--base=main", "--since="), /REFUSED/, "an empty `--since` (a pull_request event) falls back to the base");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 /** A throwaway repository: `main` moves on after the branch leaves it, then the branch bumps one runtime range. */
