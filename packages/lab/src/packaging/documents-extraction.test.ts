@@ -70,7 +70,9 @@ function sourceFilesUnder(root: string, dir = "."): string[] {
 test("the package is named @a11ign/documents, at a version the first publish can start from", () => {
   const manifest = JSON.parse(readFileSync(join(PACKAGE_DIR, "package.json"), "utf8")) as { name: string; version: string };
   assert.equal(manifest.name, NEW_NAME);
-  assert.match(manifest.version, /^0\.0\.0$/, "the changeset (not a hand edit) takes 0.0.0 to the 0.1.0 the row publishes");
+  // 0.0.0 until the version pull request's `changeset version` takes it to the 0.1.0 the row publishes (#3131): both
+  // sides of that bump are this package's, and a hand edit to a 1.x or a prerelease is neither.
+  assert.match(manifest.version, /^0\.\d+\.\d+$/, "the first publish starts from a plain 0.x version, which only a changeset moves");
 });
 
 test("cli imports the package by its new name (positive control for claim 2: the population is not empty)", () => {
