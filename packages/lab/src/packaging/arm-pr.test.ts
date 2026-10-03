@@ -672,7 +672,7 @@ function entryRun({ viewFails = false, state = "OPEN", mergeFails = false, editF
     calls.push([cmd, ...args]);
     if (args[0] === "pr" && args[1] === "view") {
       if (viewFails) throw new Error("gh: HTTP 502 on pr view");
-      return args.includes("labels,body,state")
+      return args.some((arg) => arg.startsWith("labels,body,state"))
         ? JSON.stringify({ labels: [], body: "Closes #725\n", state })
         : JSON.stringify({ state });
     }

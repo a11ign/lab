@@ -119,10 +119,13 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   // #2621 IS THE FIFTH (child 3e of #69): the eighth specifier is `project-roles.mjs`, imported for
   // `roleBriefPath` -- `SESSIONS_FILE` moved from a literal `new URL("../docs/roles/...")` to the
   // project's declared role-briefs directory.
+  //
+  // THE SIXTH IS `lane-ownership.mjs` (agent-org v0.3.0, #3254): `authorshipVerdict`, which refuses to arm a PR
+  // a lane owner's own login authored into a review-only lane. Moved here with the pin to v0.4.2 (#3151).
   assert.deepEqual(
     localImports(`${REPO}node_modules/agent-org/src/arm-pr.mjs`).map((p: string) => p.replace(REPO, "")).sort(),
     ["node_modules/agent-org/src/acceptance-commands.mjs", "node_modules/agent-org/src/api-pool.mjs",
-      "node_modules/agent-org/src/lib/cli-flags.mjs", "node_modules/agent-org/src/pr-armed-state.mjs",
+      "node_modules/agent-org/src/lane-ownership.mjs", "node_modules/agent-org/src/lib/cli-flags.mjs", "node_modules/agent-org/src/pr-armed-state.mjs",
       "node_modules/agent-org/src/pr-hold-state.mjs", "node_modules/agent-org/src/project-roles.mjs",
       "node_modules/agent-org/src/project-vocabulary.mjs", "node_modules/agent-org/src/trunk-red.mjs"],
     "arm-pr.mjs's local imports must all be visible to the walk");
