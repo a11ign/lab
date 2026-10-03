@@ -15,7 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  CI_ONLY, agentOrgSource, HOST_ONLY_AGENT_ORG_TESTS, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, stampVerdict, stepsToRun, unaccountedJobs,
+  CI_ONLY, agentOrgSource, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, stampVerdict, stepsToRun, unaccountedJobs,
 } from "../../../../scripts/verify.mjs";
 import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
 
@@ -55,14 +55,8 @@ test("CI_ONLY names only jobs gate needs, and none of them is also a step", () =
   assert.ok(Object.keys(CI_ONLY).length > 0, "the CI-only list is empty, which the row says it must not be");
 });
 
-test("every agent-org test verify leaves out is a named test file with a reason that cites its row", () => {
-  const left = Object.entries(HOST_ONLY_AGENT_ORG_TESTS) as Array<[string, string]>;
-  assert.ok(left.length > 0, "the host-only list is empty; either the omission is gone (delete this test) or the list lost its entry");
-  for (const [file, reason] of left) {
-    assert.match(file, /\.test\.(ts|mjs)$/);
-    assert.ok(reason.trim().length > 0, `${file} is left out with no reason`);
-  }
-  assert.match(VERIFY, /filed as #\d+/, "the comment on the omission names the row that removes it");
+test("verify stages the whole agent-org suite: it leaves no test file out (#3329)", () => {
+  assert.doesNotMatch(VERIFY, /HOST_ONLY_AGENT_ORG_TESTS|leaveOutHostOnlyTests/);
 });
 
 // A NORMAL CHECKOUT HAS NO SIBLING GIT CHECKOUT OF THE TOOL, AND THE STEP MUST NOT DEPEND ON ONE (review of #3342).
