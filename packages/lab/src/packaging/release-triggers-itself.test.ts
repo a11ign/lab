@@ -132,6 +132,24 @@ function publishRefusals(publishing: Job): string[] {
   return found;
 }
 
+/** The step that upgrades npm: it installs `npm@^11.5.1`, the floor npm's trusted publishing documents (#3180). */
+const isNpmUpgrade = (step: Step): boolean => /^npm install -g\s+"?npm@\^11\.5\.1"?/m.test(step.run ?? "");
+
+/** The steps that talk to the registry through npm, which must find the upgraded one: the publish and its rehearsal. */
+const NPM_USERS = [/^pnpm exec changeset publish\b/, /release-publish-rehearsal\.mjs/];
+
+function npmUpgradeRefusals(publishing: Job): string[] {
+  const steps = publishing.steps ?? [];
+  const upgrades = steps.filter(isNpmUpgrade);
+  if (upgrades.length !== 1) return [`npm-upgrade: ${upgrades.length} steps install npm ^11.5.1, expected exactly 1 (trusted publishing needs 11.5.1+)`];
+  const at = steps.indexOf(upgrades[0]);
+  const found = NPM_USERS.flatMap((user) => {
+    const using = steps.findIndex((step) => user.test(step.run ?? ""));
+    return using !== -1 && using < at ? [`npm-upgrade-before-publish: the upgrade is step ${at} but ${user} runs at step ${using}, on npm 10`] : [];
+  });
+  return runsOnPublish(upgrades[0]) ? found : [...found, "npm-upgrade-on-publish: its if: keeps it off the publishing event"];
+}
+
 function guardStepRefusals(publishing: Job): string[] {
   const steps = publishing.steps ?? [];
   return Object.entries(GUARDS).flatMap(([name, isGuard]) => {
@@ -160,7 +178,7 @@ function refusals(workflow: Workflow, script: string): string[] {
   const publishing = workflow.jobs[PUBLISHING_JOB];
   const outside = [...triggerRefusals(workflow, script), ...concurrencyRefusals(workflow)];
   if (publishing === undefined) return [...outside, `publishing-job: no job named ${PUBLISHING_JOB}`];
-  return [...outside, ...publishRefusals(publishing), ...guardStepRefusals(publishing), ...calledGuardRefusals(workflow, publishing)];
+  return [...outside, ...publishRefusals(publishing), ...npmUpgradeRefusals(publishing), ...guardStepRefusals(publishing), ...calledGuardRefusals(workflow, publishing)];
 }
 
 test("guards are declared: the lists the checks loop over are not empty, which is the positive control for every loop", () => {
@@ -510,4 +528,84 @@ test("PLAN: a dispatch rehearses, however much is pending or ahead, and a dispat
   assert.notEqual(refused.status, 0);
   assert.equal(refused.mode, null, "a refused dispatch writes no mode");
   assert.match(refused.log, /never publishes/);
+});
+
+// ---- npm 11.5.1 for trusted publishing (#3180) -----------------------------------------------------------------------
+//
+// The job runs the npm that ships with Node 22 (10.x) and publishes with no `NODE_AUTH_TOKEN`; npm documents 11.5.1 as the
+// floor for the OIDC exchange. The structure is pinned by `npmUpgradeRefusals`; the floor is pinned by RUNNING the step's
+// shell against a fake npm, because a regex over `sort -V -C` proves a spelling and not a decision.
+
+const upgradeStep = (workflow: Workflow): Step => workflow.jobs[PUBLISHING_JOB].steps!.find(isNpmUpgrade)!;
+const upgradeIndex = (workflow: Workflow): number => workflow.jobs[PUBLISHING_JOB].steps!.findIndex(isNpmUpgrade);
+const refusalNames = (workflow: Workflow): string[] => npmUpgradeRefusals(workflow.jobs[PUBLISHING_JOB]).map((r) => r.split(":")[0]);
+
+test("POSITIVE CONTROL (#3180): the upgrade step is in the live publishing job to begin with, once, so the controls below have something to break", () => {
+  assert.equal(liveWorkflow().jobs[PUBLISHING_JOB].steps!.filter(isNpmUpgrade).length, 1);
+  assert.deepEqual(refusalNames(liveWorkflow()), []);
+});
+
+test("POSITIVE CONTROL (#3180): the upgrade step deleted is refused", () => {
+  const workflow = clone();
+  workflow.jobs[PUBLISHING_JOB].steps!.splice(upgradeIndex(workflow), 1);
+  assert.deepEqual(refusalNames(workflow), ["npm-upgrade"]);
+});
+
+test("POSITIVE CONTROL (#3180): the upgrade step AFTER `Publish` is refused, and only for that", () => {
+  const workflow = clone();
+  const steps = workflow.jobs[PUBLISHING_JOB].steps!;
+  const [upgrade] = steps.splice(upgradeIndex(workflow), 1);
+  steps.splice(steps.findIndex((step) => /^pnpm exec changeset publish\b/.test(step.run ?? "")) + 1, 0, upgrade);
+  assert.deepEqual(refusalNames(workflow), ["npm-upgrade-before-publish"]);
+});
+
+test("POSITIVE CONTROL (#3180): the upgrade step kept off the publishing event is refused", () => {
+  const workflow = clone();
+  upgradeStep(workflow).if = "needs.plan.outputs.mode == 'rehearsal'";
+  assert.deepEqual(refusalNames(workflow), ["npm-upgrade-on-publish"]);
+});
+
+test("POSITIVE CONTROL (#3180): a step that only COMMENTS the install, or a floor below 11.5.1, is not the upgrade", () => {
+  const commented = clone();
+  upgradeStep(commented).run = '# npm install -g "npm@^11.5.1"\ntrue\n';
+  assert.deepEqual(refusalNames(commented), ["npm-upgrade"]);
+  const lowered = clone();
+  upgradeStep(lowered).run = upgradeStep(lowered).run!.replace("^11.5.1", "^11.0.0");
+  assert.deepEqual(refusalNames(lowered), ["npm-upgrade"]);
+});
+
+/** Runs the live upgrade step with a fake `npm` that installs nothing and reports `version`. */
+function runUpgrade(version: string): { status: number | null; log: string; installArgs: string } {
+  const dir = mkdtempSync(join(tmpdir(), "a11y-npm-floor-"));
+  try {
+    mkdirSync(join(dir, "bin"));
+    const fake = `#!/bin/sh\ncase "$1" in install) echo "$@" > "$RECORD"; exit 0;; --version) echo "$FAKE_NPM_VERSION"; exit 0;; esac\nexit 99\n`;
+    writeFileSync(join(dir, "bin/npm"), fake);
+    chmodSync(join(dir, "bin/npm"), EXECUTABLE);
+    const record = join(dir, "install-args");
+    writeFileSync(record, "");
+    const result = spawnSync("bash", ["-eo", "pipefail", "-c", upgradeStep(liveWorkflow()).run!], {
+      cwd: dir, encoding: "utf8",
+      env: { PATH: `${join(dir, "bin")}:${process.env.PATH}`, FAKE_NPM_VERSION: version, RECORD: record },
+    });
+    return { status: result.status, log: `${result.stdout}${result.stderr}`, installArgs: readFileSync(record, "utf8").trim() };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("#3180: the upgrade step installs npm ^11.5.1 and passes only at or above 11.5.1", () => {
+  for (const version of ["11.5.1", "11.5.2", "11.10.0", "12.0.0"]) {
+    const { status, installArgs } = runUpgrade(version);
+    assert.equal(status, 0, `${version} meets the floor`);
+    assert.equal(installArgs, "install -g npm@^11.5.1");
+  }
+});
+
+test("POSITIVE CONTROL (#3180): the upgrade step run against an npm below 11.5.1 FAILS, naming the version, before anything publishes", () => {
+  for (const version of ["10.9.0", "11.4.9", "11.5.0", "9.0.0"]) {
+    const { status, log } = runUpgrade(version);
+    assert.equal(status, 1, `${version} is below the floor`);
+    assert.ok(log.includes(`npm ${version} is below 11.5.1`), log);
+  }
 });

@@ -12,6 +12,8 @@
  *   - `release.yml`'s publish. No step spells `npm publish`: the step is `pnpm exec changeset publish`, and pnpm shells
  *     out to npm at the far end, because trusted publishing is bound to npm's OIDC and the provenance is npm's to sign.
  *     It is pinned here as a step that must stay pnpm's and name its npm hand-off in a comment.
+ *     The one npm step in that file is the upgrade of npm itself (#3180): trusted publishing needs npm 11.5.1+, and only
+ *     `npm install -g` upgrades npm; `release-triggers-itself.test.ts` pins where it sits and the floor it refuses below.
  *   - `registry-consumer-gate.yml`'s consumer half. The row named `npm install a11ign`; that command runs inside
  *     `scripts/registry-consumer-gate.mjs` (which `no-npm-spawn.test.ts` pins), not in a step. What IS a step is what
  *     the consumer types AFTER the install, three steps that call `npx` in the clean directory. That job installs
@@ -37,7 +39,12 @@ const STAYS_NPM: { file: string; step: string; why: string }[] = [
   { file: "registry-consumer-gate.yml", step: "Set up NVDA", why: "the consumer's clean directory has no pnpm project; the pinned installer reads that directory's guidepup manifest" },
   { file: "registry-consumer-gate.yml", step: "Set up the local scorer from the installed package", why: "the bin is the one the consumer's npm install linked" },
   { file: "registry-consumer-gate.yml", step: "npx a11ign <url>, from the clean install", why: "this IS the consumer's command, quoted verbatim in the row's Acceptance" },
+  { file: "release.yml", step: "Upgrade npm to the trusted-publishing floor, and refuse below it", why: "trusted publishing needs npm 11.5.1+ and setup-node's Node 22 ships 10.x; only `npm install -g` upgrades npm itself (#3180)" },
 ];
+
+const CONSUMER_GATE = "registry-consumer-gate.yml";
+/** The consumer gate's three and release.yml's npm upgrade. */
+const EXCEPTION_COUNT = 4;
 
 /** A step's shell lines with blank and comment lines dropped: a command named only in prose runs nothing. */
 const codeLines = (step: Step): string[] =>
@@ -121,9 +128,9 @@ test("#2891: no `run:` step in any workflow spells npm, outside the named except
     "a job that installs with pnpm and runs through npm resolves the same scripts by a different tool");
 });
 
-test("#2891: the exceptions are exactly the consumer gate's three, each one live, each with a reason", () => {
-  assert.equal(STAYS_NPM.length, 3, "a fourth npm step is a decision for the row, not a drift");
-  assert.deepEqual([...new Set(STAYS_NPM.map((e) => e.file))], ["registry-consumer-gate.yml"]);
+test("#2891/#3180: the exceptions are exactly the consumer gate's three and release.yml's npm upgrade, each one live, each with a reason", () => {
+  assert.equal(STAYS_NPM.length, EXCEPTION_COUNT, "a fifth npm step is a decision for the row, not a drift");
+  assert.deepEqual([...new Set(STAYS_NPM.map((e) => e.file))], [CONSUMER_GATE, "release.yml"]);
   const steps = realSteps();
   for (const e of STAYS_NPM) {
     assert.ok(e.why.length > 0);
@@ -133,11 +140,12 @@ test("#2891: the exceptions are exactly the consumer gate's three, each one live
   }
 });
 
-test("#2891: each exception carries its comment in the workflow, and so does release.yml's publish", () => {
-  const consumer = readFileSync(join(WORKFLOWS, "registry-consumer-gate.yml"), "utf8");
-  assert.equal((consumer.match(/# STAYS `npx` \(#2891/g) ?? []).length, STAYS_NPM.length, "one `STAYS npx` comment per exception");
+test("#2891/#3180: each exception carries its comment in the workflow, and so does release.yml's publish", () => {
+  const consumer = readFileSync(join(WORKFLOWS, CONSUMER_GATE), "utf8");
+  assert.equal((consumer.match(/# STAYS `npx` \(#2891/g) ?? []).length, STAYS_NPM.filter((e) => e.file === CONSUMER_GATE).length, "one `STAYS npx` comment per exception");
   const release = readFileSync(join(WORKFLOWS, "release.yml"), "utf8");
-  assert.match(release, /# THE ONE DELIBERATE npm IN THIS FILE \(#2891/, "a reader seeing npm there must be told it is deliberate");
+  assert.match(release, /# THE DELIBERATE npm HAND-OFF IN THIS FILE \(#2891/, "a reader seeing npm there must be told it is deliberate");
+  assert.match(release, /# STAYS npm \(#3180/, "the upgrade step carries its own `STAYS npm` comment");
 });
 
 test("#2891: release.yml publishes through `pnpm exec changeset publish`, and no step there spells `npm publish`", () => {
