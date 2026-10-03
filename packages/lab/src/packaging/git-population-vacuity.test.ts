@@ -279,6 +279,13 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "what the observer RECORDED, never over git's output -- so there is no population to be vacuous "
       + "about. Its own discovery walk, the always-run guards, is floored by `declarers.length > 0`.",
   },
+  "packages/lab/src/packaging/dependency-pr-changeset.test.ts": {
+    guard: null,
+    note: "NOT a discovery test (#3159). Its two git-spawning tests build a THROWAWAY repository with a planted release "
+      + "tag and a planted range move, then assert the exact entry `compile` and `check` derive from it, so the answer is "
+      + "known and a listing that came back empty fails them (an empty result cannot equal the planted entry). It "
+      + "never asserts that git found nothing, so there is no population to be vacuous about.",
+  },
   "packages/lab/src/packaging/rescue-hunk.test.ts": {
     guard: null,
     note: "NOT a discovery test — it drives `git merge-file` and `git show` on ONE named pair of refs "

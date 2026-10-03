@@ -6,7 +6,8 @@
  * REAL diffs the row names (`fixtures/dependency-pr/`, the manifests those pull requests changed, fetched at their
  * base and head commits and trimmed to the keys the derivation reads).
  *
- * THE ROW NAMED THE PACKAGES BY THEIR DIRECTORIES (`@a11ign/cli`, `@a11ign/worker-fleet`); THE MANIFESTS SAY OTHERWISE.
+ * THE ROW NAMED THE PACKAGES BY THEIR DIRECTORIES (`@a11ign/cli` and the fleet package under its old scope);
+ * THE MANIFESTS SAY OTHERWISE.
  * `packages/cli` is `a11ign`, and `packages/worker-fleet` is `@a11ign/screenreader-fleet` with `yaml` in its
  * `devDependencies`, so only `a11ign` owes a consumer an entry. Read from the fixture, not from the row.
  */
