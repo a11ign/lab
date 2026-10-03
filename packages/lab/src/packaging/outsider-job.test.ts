@@ -8,7 +8,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
@@ -95,6 +97,85 @@ test("a short sha is refused: `uses:` accepts only a full one", () => {
   assert.throws(() => generateOutsiderJob(readme, SHA.slice(0, 7)), /not a full 40-character commit sha/);
 });
 
+// --- the pin is baked ONCE (#3221): Dependabot rewrites the `uses:` line and its `# v` comment, and nothing else ---
+
+const NEW_SHA = "fedcba9876543210fedcba9876543210fedcba98";
+const WORKFLOW_PATH = ".github/workflows/outsider-job.yml";
+
+/** The pin job's `run: |` script, dedented, exactly as the generated workflow carries it. */
+function pinScriptOf(workflow: string): string {
+  const after = workflow.slice(workflow.indexOf("- name: Refuse a run whose pin is not the release it is named for"));
+  const body = after.slice(after.indexOf("run: |\n") + "run: |\n".length).split("\n");
+  const end = body.findIndex((line) => line.trim() !== "" && !line.startsWith(" ".repeat(10)));
+  return body.slice(0, end).map((line) => line.slice(10)).join("\n");
+}
+
+/**
+ * Runs the pin job's real shell against a workflow file on disk, as the outside repository's runner would (the file
+ * checked out at `$GITHUB_WORKFLOW_REF`'s path), with `git ls-remote` stubbed to answer `tagSha` for the release tag.
+ */
+function runPinJob({ workflow, tagSha, inputSha }: { workflow: string, tagSha: string, inputSha: string }) {
+  const dir = mkdtempSync(join(tmpdir(), "outsider-pin-"));
+  try {
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(dir, WORKFLOW_PATH), workflow);
+    mkdirSync(join(dir, "bin"));
+    writeFileSync(join(dir, "bin", "git"), `#!/bin/sh\nprintf '%s\\trefs/tags/v1.2.3\\n' ${tagSha}\n`);
+    chmodSync(join(dir, "bin", "git"), 0o755);
+    return spawnSync("bash", ["-c", pinScriptOf(workflow)], {
+      cwd: dir, encoding: "utf8",
+      env: {
+        PATH: `${join(dir, "bin")}:${process.env.PATH}`, VERSION: "1.2.3", SHA: inputSha,
+        GITHUB_REPOSITORY: "a11ign-labs/a11ign-consumer-check", GITHUB_WORKFLOW_REF: `a11ign-labs/a11ign-consumer-check/${WORKFLOW_PATH}@refs/heads/main`,
+      },
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** @returns the workflow with ONLY the `uses:` line's sha (and its comment's version) bumped: what Dependabot's PR does */
+function bumpedAsDependabotDoes(workflow: string): string {
+  return replaced(workflow, `${PIN_LINE} # v1.2.3`, `      - uses: a11ign/a11ign@${NEW_SHA} # v1.2.4`);
+}
+
+test("the sha is written once, in the `uses:` line, and the pin job and the summary do not restate it", () => {
+  assert.equal(annotated.split(SHA).length - 1, 1, "the Action's sha appears exactly once in the generated file");
+  assert.equal(annotated.split("# v1.2.3").length - 1, 1, "and so does its version comment");
+  assert.ok(annotated.includes(`${PIN_LINE} # v1.2.3`), "positive control: the one place is the `uses:` line");
+});
+
+test("a file where only the `uses:` line was bumped passes the pin job for the new release", () => {
+  const result = runPinJob({ workflow: bumpedAsDependabotDoes(annotated), tagSha: NEW_SHA, inputSha: NEW_SHA });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("the pin job still refuses when the `uses:` line and the release tag disagree, or the run is named for another sha", () => {
+  const stale = runPinJob({ workflow: annotated, tagSha: NEW_SHA, inputSha: NEW_SHA });
+  assert.notEqual(stale.status, 0);
+  assert.match(stale.stdout, new RegExp(`this file pins ${SHA}, which is not v1.2.3 \\(${NEW_SHA}\\)`));
+  const misnamed = runPinJob({ workflow: bumpedAsDependabotDoes(annotated), tagSha: NEW_SHA, inputSha: SHA });
+  assert.notEqual(misnamed.status, 0);
+  assert.match(misnamed.stdout, /this run is named for/);
+  assert.equal(runPinJob({ workflow: annotated, tagSha: SHA, inputSha: SHA }).status, 0, "positive control: agreement passes");
+});
+
+test("a `uses:` line that is not a full sha, or a second one, leaves no pin to read, and the job refuses", () => {
+  const byTag = replaced(annotated, `${PIN_LINE} # v1.2.3`, "      - uses: a11ign/a11ign@v1.2.3");
+  const twice = replaced(annotated, `${PIN_LINE} # v1.2.3`, `${PIN_LINE} # v1.2.3\n      - uses: a11ign/a11ign@${NEW_SHA}`);
+  for (const workflow of [byTag, twice]) {
+    const result = runPinJob({ workflow, tagSha: SHA, inputSha: SHA });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /no single line pinning the Action to a full commit sha/);
+  }
+});
+
+test("the pin job checks out the repository it runs in, with no `repository:` of anyone else's", () => {
+  const pin = generated.slice(generated.indexOf("  pin:"), generated.indexOf("  # >>> README's job"));
+  assert.match(pin, /- uses: actions\/checkout@v4/);
+  assert.deepEqual(forbiddenReferences(generated), []);
+});
+
 // --- the pin's `# v<version>` comment, which is what lets Dependabot bump a sha pin (ruled on #3182) ---
 
 const PIN_LINE = `      - uses: a11ign/a11ign@${SHA}`;
@@ -108,7 +189,7 @@ test("a version writes `# v<version>` after the pin, and the file without one ca
 test("the comment changes nothing a reader of the pin reads: the sha, the drift check, the pin job and --check", () => {
   assert.equal(extractPinnedSha(annotated), SHA);
   refuseDriftFromReadme(readme, annotated);
-  assert.ok(annotated.includes(`pinned=${SHA}\n`), "the pin job compares the bare sha, never the comment");
+  assert.deepEqual(runPinJob({ workflow: annotated, tagSha: SHA, inputSha: SHA }).status, 0, "the pin job reads the bare sha, never the comment");
   assert.deepEqual(checkCommitted(readme, annotated), { ok: true });
 });
 
