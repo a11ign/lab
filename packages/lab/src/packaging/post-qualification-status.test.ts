@@ -48,7 +48,7 @@ const TABLE: { name: string; outcome: Outcome; state: string }[] = [
   { name: "INCONCLUSIVE verdict", outcome: { verdict: INCONCLUSIVE }, state: "failure" },
   { name: "exit 2 (INCONCLUSIVE)", outcome: { exitCode: 2 }, state: "failure" },
   { name: "no outcome at all", outcome: undefined, state: "failure" },
-  { name: "an empty outcome", outcome: {}, state: "failure" },
+  { name: "an empty outcome", outcome: malformed({}), state: "failure" },
   { name: "a verdict object with no verdict name", outcome: malformed({ verdict: { why: "?" } }), state: "failure" },
   { name: "a verdict named something else", outcome: malformed({ verdict: { verdict: "OK" } }), state: "failure" },
   { name: "a null verdict", outcome: malformed({ verdict: null }), state: "failure" },
