@@ -4640,7 +4640,10 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // it LEFT this set without any change in what it needs: a blind spot of the walk, not a fix. #3103 teaches the walk the specifier; this file returns then.
   // #2975 PR 3 DELETED `shadow-window-arm.test.ts` too (and `shadow-window.test.ts`, `shadow-state-dir.test.ts`): each has every test title in a11ign/agent-org
   // (one title's wording differs, "monorepo commits" -> "tool commits"), which carries the `host-units.mjs` edge. The set shrank by it and nothing joined.
-  assert.deepEqual(charged, ["documents-extraction.test.ts", "pre-push-resolve-toward-main.test.ts"],
+  // #2701 added `screenreader-worker-extraction.test.ts`: checked -- it asks `--is-shallow-repository` before reading `git log` over `packages/nvda-worker`
+  // and `packages/nvda-speech` (the history `filter-repo` carries across, file contents AND commit messages, is part of the first commit's leak scan),
+  // so it genuinely needs history, and its pull request declares `History: full`.
+  assert.deepEqual(charged, ["documents-extraction.test.ts", "pre-push-resolve-toward-main.test.ts", "screenreader-worker-extraction.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
 });
