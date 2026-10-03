@@ -177,10 +177,10 @@ function withScriptSandbox<T>(fn: (sandbox: GitSandbox, remote: string) => T): T
 }
 
 /** The script's own stdout, or a failure that says which of its two branches it died on. */
-function runScript(sandbox: GitSandbox): string {
+function runScript(sandbox: GitSandbox, env: Record<string, string> = {}): string {
   try {
     return execFileSync("node", [join(sandbox.dir, SCRIPT)],
-      { cwd: sandbox.dir, encoding: "utf8", env: sandboxGitEnv() });
+      { cwd: sandbox.dir, encoding: "utf8", env: sandboxGitEnv(env) });
   } catch (error) {
     // NAMED, not rethrown bare: #1824's failure mode if the early return goes is precisely a non-zero exit
     // -- `git commit` with nothing staged refuses with "nothing to commit" -- and the raw
@@ -285,4 +285,89 @@ test("#3131: the script is told apart from its old self by what it pushes -- nev
   assert.doesNotMatch(source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""), /HEAD:main/);
   assert.equal(VERSION_BRANCH, "release/version-packages");
   assert.match(WORKFLOW, new RegExp(`--head ${VERSION_BRANCH}`), "release.yml opens the pull request from the branch the script pushes");
+});
+
+// --- #3346: the commit goes through the REAL pre-commit hook, which refuses a 17-file version bump ---
+//
+// `release.yml`'s `version-pr` job failed four pushes running at "Commit the version bump to the version branch": the
+// repo's `core.hooksPath` hook refuses a commit of more than 12 staged files, and the version bump is 17. Every test
+// above runs in a sandbox with NO hook installed, so none of them could see it.
+
+const HOOK_FILES = ["scripts/git-hooks/pre-commit", "scripts/git-hooks/lib/is-primary-checkout.sh", "packages/guards/src/piped-exit-status-guard.mjs"];
+const THIRTEEN_PACKAGES = Array.from({ length: 13 }, (_, i) => `packages/bump-${i + 1}/package.json`);
+
+/**
+ * A hooks directory holding the REAL, unmodified `pre-commit` (copied the way `pre-commit-hook.test.ts` does, so it
+ * resolves its guard script beside itself) and a recorder `pre-push` of this test's own. The recorder is how the test
+ * sees what the script's OTHER git calls carry in their environment: `git commit` is the only one with a hook of its
+ * own that matters, and `push` is the one that runs a hook the script never customises.
+ */
+function withHookTree<T>(fn: (hooksPath: string, pushSawCommitAll: () => string) => T): T {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "a11y-release-hooks-")));
+  try {
+    for (const rel of HOOK_FILES) {
+      mkdirSync(dirname(join(root, rel)), { recursive: true });
+      copyFileSync(join(REPO, rel), join(root, rel));
+    }
+    const hooksPath = join(root, "scripts/git-hooks");
+    const record = join(root, "push-saw-commit-all");
+    writeFileSync(join(hooksPath, "pre-push"), `#!/usr/bin/env bash\nprintf '%s' "\${A11Y_COMMIT_ALL:-unset}" > '${record}'\n`, { mode: 0o755 });
+    return fn(hooksPath, () => readFileSync(record, "utf8"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/** The sandbox with thirteen package manifests committed, then every one bumped: a version bump wider than the hook's limit of 12. */
+function plantWideBump(sandbox: GitSandbox, hooksPath: string): void {
+  for (const rel of THIRTEEN_PACKAGES) {
+    mkdirSync(dirname(join(sandbox.dir, rel)), { recursive: true });
+    writeFileSync(join(sandbox.dir, rel), '{ "version": "0.0.0" }\n');
+  }
+  sandbox.run(["add", "-A"]);
+  sandbox.commit("thirteen packages");
+  sandbox.run(["config", "core.hooksPath", hooksPath]);
+  for (const rel of THIRTEEN_PACKAGES) writeFileSync(join(sandbox.dir, rel), '{ "version": "0.1.0" }\n');
+}
+
+// `A11Y_COMMIT_ALL: "0"` in the env of every run below: the variable may be ambient (a hook, a CI step), and an ambient "1" would
+// let the unfixed script through and turn the failing-before assertion into a pass for the wrong reason.
+const WITHOUT_AMBIENT_BREADTH = { A11Y_COMMIT_ALL: "0" };
+
+test("#3346 THE FIX: a version bump of more than 12 files is committed THROUGH the real pre-commit hook and pushed", () => {
+  withHookTree((hooksPath) => withScriptSandbox((sandbox, remote) => {
+    plantWideBump(sandbox, hooksPath);
+    const headBefore = sandbox.run(["rev-parse", "HEAD"]).trim();
+
+    runScript(sandbox, WITHOUT_AMBIENT_BREADTH);
+
+    const committed = sandbox.run(["show", "--name-only", "--format=", "HEAD"]).trim().split("\n");
+    assert.deepEqual([...committed].sort(), [...THIRTEEN_PACKAGES].sort(),
+      "the commit holds all thirteen bumped manifests -- one more than the hook's limit of 12, or this proves nothing");
+    assert.notEqual(sandbox.run(["rev-parse", "HEAD"]).trim(), headBefore, "the hook refused the commit: HEAD did not move");
+    assert.equal(execFileSync("git", ["--git-dir", remote, "rev-parse", `refs/heads/${VERSION_BRANCH}`], { encoding: "utf8", env: sandboxGitEnv() }).trim(),
+      sandbox.run(["rev-parse", "HEAD"]).trim());
+  }));
+});
+
+test("#3346 THE HOOK STAYS IN FORCE: an ordinary 13-file commit without the variable is still refused, and the script's push never carried it", () => {
+  withHookTree((hooksPath, pushSawCommitAll) => withScriptSandbox((sandbox) => {
+    plantWideBump(sandbox, hooksPath);
+    // The positive control for the claim "the hook is live in this sandbox": the same 13 files, committed plainly, are refused.
+    sandbox.run(["add", "-A"]);
+    // Identity PER COMMAND, as `GitSandbox.commit` does: a runner has no global identity, and without one git refuses
+    // for "Author identity unknown" BEFORE the hook runs, so the regex below would never see the breadth refusal.
+    assert.throws(() => sandbox.run(["-c", "user.name=Git Sandbox Test", "-c", "user.email=git-sandbox-test@example.invalid",
+      "commit", "-q", "-m", "plain"], WITHOUT_AMBIENT_BREADTH),
+      (error: { stderr?: string }) => /13 files staged \(limit 12\)/.test(String(error.stderr)));
+    // Narrowed to ONE bumped manifest before the script runs, so this test depends on the push and not on the commit's
+    // breadth: dropping the variable must break the test above and no other.
+    sandbox.run(["reset", "-q"]);
+    sandbox.run(["checkout", "--", ...THIRTEEN_PACKAGES.slice(1)]);
+
+    runScript(sandbox, WITHOUT_AMBIENT_BREADTH);
+
+    assert.equal(pushSawCommitAll(), WITHOUT_AMBIENT_BREADTH.A11Y_COMMIT_ALL,
+      "the variable reached the push: it was widened past the one commit that needs it, and the breadth refusal is loosened for every git call here");
+  }));
 });

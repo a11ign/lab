@@ -587,45 +587,60 @@ function workspaceManifests(): { path: string; name: string; version: string; is
 const unwrapped = (text: string): string => text.replace(/\s+/g, " ");
 
 /**
- * #2159, reviewer's refusal at `ff88e9ea`: the document said "every `package.json` still reads `0.0.0`",
- * and two of them read `0.1.0`.
- *
- * THE EMPTINESS AND ITS POSITIVE CONTROL ARE THE TWO HALVES OF ONE PARTITION, COMPUTED IN ONE RUN.
- * `public and not 0.0.0` must be empty — that is the document's claim. `private and not 0.0.0` must be
- * exactly `@a11ign/control` and `@a11ign/lab` — a NON-EMPTY population produced by the same read of the
- * same files, so a walk that returned nothing, a narrowing that matched nothing, or a `version` field
- * this code failed to read turns the second assertion red rather than letting the first pass by vacuity.
- * That is the assertion this file can point at, and it is why the two live in one test rather than two.
- *
- * The private pair is pinned by NAME and not merely counted, because the defect being guarded is a
- * sentence that named the wrong SET: a count of two is satisfied by any two manifests drifting off
- * `0.0.0`, including a public one, which is the case that has to be loudest.
+ * The four packages the registry holds at `0.1.0` (`npm view <name> version`, 2026-10-03, #3347), and the three
+ * public ones that were never published and so still read `0.0.0` (#3126 owns whether and when they move).
  */
-test("#2159: the 0.0.0 claim is true of the set changesets versions, and the private pair is why it needs saying", () => {
+const PUBLISHED_AT_0_1_0 = ["@a11ign/evidence", "@a11ign/judge", "@a11ign/scorer", "a11ign"];
+const NEVER_PUBLISHED = ["@a11ign/documents", "@a11ign/screenreader-fleet", "@a11ign/screenreader-worker"];
+
+/**
+ * #2159, reviewer's refusal at `ff88e9ea`: the document said "every `package.json` still reads `0.0.0`",
+ * and two of them read `0.1.0`. #3347 then moved four public manifests to the registry's `0.1.0`, so
+ * the claim is now a PARTITION of the seven public manifests rather than one number.
+ *
+ * THE EMPTINESS AND ITS POSITIVE CONTROL ARE HALVES OF ONE PARTITION, COMPUTED IN ONE RUN.
+ * `public and not 0.0.0` must be exactly the four published packages, by NAME, each reading `0.1.0` — a
+ * fifth public manifest drifting off `0.0.0` is the case that has to be loudest. `private and not
+ * 0.0.0` must be exactly `@a11ign/control` and `@a11ign/lab`, and `public and 0.0.0` exactly the three
+ * never-published: each is a NON-EMPTY population produced by the same read of the same files, so a walk
+ * that returned nothing, a narrowing that matched nothing, or a `version` field this code failed to read
+ * turns an assertion red rather than letting another pass by vacuity.
+ */
+test("#2159/#3347: the versions claim is true of the set changesets versions, split as the registry holds it", () => {
   const manifests = workspaceManifests();
   assert.ok(manifests.length >= FEWEST_PLAUSIBLE_PACKAGES,
-    `only ${manifests.length} workspace manifests were read — the population is broken, and both halves `
+    `only ${manifests.length} workspace manifests were read — the population is broken, and every half `
     + "of the partition below would be empty for that reason rather than because the tree says so");
 
-  const notAtZero = manifests.filter((manifest) => manifest.version !== "0.0.0");
-  assert.deepEqual(notAtZero.filter((manifest) => !manifest.isPrivate).map((manifest) => manifest.path), [],
-    "docs/reliability-plan.md states that every manifest `changeset version` writes still reads 0.0.0, "
-    + "because the 2026-09-19 publish never committed its bump back. A public manifest above 0.0.0 means "
-    + "a version has landed since, and the successor decision's premise is stale");
-  assert.deepEqual(notAtZero.map((manifest) => manifest.name).sort(), ["@a11ign/control", "@a11ign/lab"],
-    "THE POSITIVE CONTROL for the emptiness above: these two private manifests are hand-set to 0.1.0 and "
+  const publicManifests = manifests.filter((manifest) => !manifest.isPrivate);
+  const namesOf = (list: { name: string }[]): string[] => list.map((manifest) => manifest.name).sort();
+  assert.deepEqual(namesOf(publicManifests.filter((manifest) => manifest.version !== "0.0.0")), PUBLISHED_AT_0_1_0,
+    "docs/reliability-plan.md states that exactly the four packages the registry holds read 0.1.0 and the rest of "
+    + "the set `changeset version` writes reads 0.0.0. Another public manifest off 0.0.0 means a version has "
+    + "landed since, and the successor decision's premise is stale");
+  assert.deepEqual(publicManifests.filter((manifest) => PUBLISHED_AT_0_1_0.includes(manifest.name))
+    .map((manifest) => manifest.version), ["0.1.0", "0.1.0", "0.1.0", "0.1.0"],
+    "a published package must read the version the registry holds, or the pending changesets bump from the "
+    + "wrong base and `plan` reads `nothing` rather than `publish` (#3130)");
+  assert.deepEqual(namesOf(publicManifests.filter((manifest) => manifest.version === "0.0.0")), NEVER_PUBLISHED,
+    "THE POSITIVE CONTROL for the partition above: these three were never published, and moving one is "
+    + "#3126's call, not a side effect of another row");
+  assert.deepEqual(namesOf(manifests.filter((manifest) => manifest.isPrivate && manifest.version !== "0.0.0")),
+    ["@a11ign/control", "@a11ign/lab"],
+    "THE POSITIVE CONTROL for the emptiness claims: these two private manifests are hand-set to 0.1.0 and "
     + "changesets never touches them, so this list is non-empty in any run where the manifests were "
-    + "actually read. If it is empty, the assertion above proved nothing");
-
-  const versioned = manifests.filter((manifest) => !manifest.isPrivate);
-  assert.equal(versioned.length, 7,
-    `the document says SEVEN versioned manifests and this tree has ${versioned.length} — a package added, `
+    + "actually read");
+  assert.equal(publicManifests.length, 7,
+    `the document says SEVEN versioned manifests and this tree has ${publicManifests.length} — a package added, `
     + "published or made private changes the sentence, and it is corrected here rather than left to rot");
 
   const list = unwrapped(decisionList());
-  assert.ok(list.includes("all seven versioned manifests still read `0.0.0`"),
+  assert.ok(list.includes("**Four of the seven versioned manifests read `0.1.0`**, the version the registry holds"),
     "the document must state the claim over the set it is true of — the reviewer refused the unqualified "
     + "form, and a narrowing that is not in the document narrows nothing");
+  for (const name of NEVER_PUBLISHED) {
+    assert.ok(list.includes(name), `the document must name ${name} as one of the three that still read 0.0.0`);
+  }
   assert.ok(!/every `package\.json`[^.]{0,40}reads `0\.0\.0`/.test(list),
     "the unqualified sentence must not come back. It was false in this tree from the day @a11ign/control "
     + "was extracted, and it read as verified because nothing had looked at the manifests");
