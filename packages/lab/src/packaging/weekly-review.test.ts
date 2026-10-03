@@ -1,3 +1,4 @@
+// no-token: TITLE_PREFIX -- every test drives pure functions over injected data; TITLE_PREFIX is only the expected title string, and nothing here spawns `gh`.
 /**
  * THE WEEKLY OUTSIDER REVIEW'S FILING (#3183): the judgement half of the V1 rehearsal, filed by a schedule and
  * never a gate.
