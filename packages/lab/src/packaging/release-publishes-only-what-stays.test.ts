@@ -5,8 +5,8 @@
  * `@a11ign/screenreader-fleet` and `@a11ign/documents` publish from their own repositories. Until each package has left,
  * `release.yml` still sees it as a non-private workspace package, and `changeset publish` would publish it from
  * `a11ign/a11ign`: exactly the binding the chairman rejected, and one a published `@a11ign/*` version cannot take back
- * after 72 hours. The typed `publish-for-real` confirmation stops an ACCIDENTAL release, not a deliberate one made before
- * the moves finish (ceo, #3126).
+ * after 72 hours. The typed `publish-for-real` confirmation stopped an ACCIDENTAL release, not a deliberate one made before
+ * the moves finish (ceo, #3126); #3131 removed the confirmation, which leaves this hold standing on the publishing push.
  *
  * ## Why this is a test and not a config entry
  *
@@ -21,7 +21,7 @@
  *
  * The three are publishable today, so asserting they are not would be red on `main` for as long as the moves take. The
  * held-set assertion therefore runs only under `A11Y_CHECK_RELEASE_HOLD=1` (the precedent is
- * `A11Y_CHECK_MAIN_RULESET=1`), which `release.yml` sets on a step guarded by `inputs.dry-run == false`. Ordinary CI and
+ * `A11Y_CHECK_MAIN_RULESET=1`), which `release.yml` sets on a step guarded by the plan's `publish` mode (#3131; it was `inputs.dry-run == false`). Ordinary CI and
  * the dry run stay green; a real publish goes red before any byte leaves, naming the package. What keeps that from
  * being a switch nobody throws is the last test here, which reads the PARSED workflow.
  *
@@ -172,8 +172,8 @@ test("release.yml runs this hold on the real path only, before the access read-b
   const holdAt = steps.findIndex((step) => step.env?.[HOLD_FLAG] === "1");
   assert.notEqual(holdAt, -1, `no release.yml step sets ${HOLD_FLAG}=1, so the hold would never bite`);
   const hold = steps[holdAt];
-  assert.equal(hold.if?.replace(/\s+/g, " ").trim(), "inputs.dry-run == false",
-    "the hold runs on the real path only: the dry run and ordinary CI stay green while the three are still here");
+  assert.equal(hold.if?.replace(/\s+/g, " ").trim(), "needs.plan.outputs.mode == 'publish'",
+    "the hold runs on the publishing push only: the rehearsal and ordinary CI stay green while the three are still here");
   assert.ok(hold.run?.includes(SELF), `the hold step must run ${SELF}`);
   assert.ok(hold.run?.includes("RELEASE HOLD PASS"),
     "a green exit is not a pass: the step must require the PASS line, or a run that asserted nothing would publish");

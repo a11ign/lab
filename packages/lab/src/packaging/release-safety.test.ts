@@ -14,10 +14,19 @@
  * failure, which is this repo's rule about a verification not sharing a failure mode with its action.
  * A change that removes one should be deliberate, and this test is what makes it deliberate.
  *
+ * #3131 REWROTE GUARDS 1 TO 3, DELIBERATELY, and the seven stay seven. Guard 1 was "dispatch only, no push trigger":
+ * the chairman's direction of 2026-10-03 (#928, ADR 0041) is that a merge that carries a changeset releases, so the
+ * push trigger is now required (`release-triggers-itself.test.ts` pins it) and guard 1 is the narrower claim that only
+ * ONE push can publish. Guard 2 was "dry-run defaults to true": it still does, and a dispatch that sets it false is
+ * now refused outright. DROPPED: guard 3, the typed `publish-for-real`. Its job was to stop an accident, and the
+ * approving review `main` requires (#2022) plus the queue do it now, checked by the platform; what replaces it as guard
+ * 3 is that nothing in the workflow writes `main`, so the version bump can only arrive through that review. `dist-tag`
+ * went with the confirmation: it only ever rode a typed, real dispatch, and no dispatch publishes.
+ *
  * Guards 5 and 6 changed shape 2026-09-06 (chairman's direction): `action-smoke`/`capture-regression`
  * used to run on a push to `main` and this workflow QUERIED whether that separately-triggered run had
  * passed for the exact sha. Both left `main`/PR entirely and declare `workflow_call`, so this workflow now
- * runs them as JOBS against the sha it was dispatched at, and `release`'s own `needs:` on both is the
+ * runs them as JOBS against the sha it runs at, and `release`'s own `needs:` on both is the
  * guard — no query, no race between "never ran" and "running right now".
  *
  * Guard 7 (`consumer-gate`) joined 2026-09-08 (#494): `action-smoke` runs `uses: ./` with full repository
@@ -35,42 +44,39 @@ const REPO = resolve(import.meta.dirname, "../../../..");
 const workflow = readFileSync(resolve(REPO, ".github/workflows/release.yml"), "utf8");
 const config = JSON.parse(readFileSync(resolve(REPO, ".changeset/config.json"), "utf8"));
 
-/**
- * The `on:` block ALONE, not the whole file.
- *
- * The first version of this test searched the file for `^  release:` and matched the JOB named `release`,
- * reporting a trigger that does not exist. A guard that fires on the wrong text is a guard that gets
- * disabled, so it reads the block it means.
- */
-const triggerBlock = (): string => {
-  const start = workflow.indexOf("\non:\n");
-  assert.notEqual(start, -1, "release.yml has no `on:` block at all");
-  const rest = workflow.slice(start + 5);
-  const end = rest.search(/^\S/m);            // the next top-level key, e.g. `jobs:`
-  return end === -1 ? rest : rest.slice(0, end);
+const parsed = parseYaml(workflow) as {
+  on: { push?: { branches?: string[] }; workflow_dispatch?: { inputs?: Record<string, { default?: unknown }> } };
+  jobs: Record<string, { needs?: string[]; if?: string; steps?: { name?: string; if?: string; run?: string; env?: Record<string, string> }[] }>;
 };
 
-test("guard 1: the release workflow has no automatic trigger", () => {
-  const on = triggerBlock();
-  assert.match(on, /^\s{2}workflow_dispatch:/m,
-    "release.yml must be dispatch-only — a push, tag or schedule trigger can fire it without a human");
-  for (const trigger of ["push", "schedule", "release", "pull_request", "repository_dispatch"]) {
-    assert.ok(!new RegExp(`^\\s{2}${trigger}:`, "m").test(on),
-      `release.yml declares a '${trigger}' trigger, so it can start without anyone deciding to release`);
+test("guard 1: only ONE push can publish -- the one where nothing is pending and a version is ahead of the registry", () => {
+  // The old guard said "no push trigger at all". The trigger is required now (#3131); what stays true is that a
+  // trigger alone starts nothing that publishes: `plan` decides the mode, and the publish step reads only the mode.
+  assert.deepEqual(parsed.on.push?.branches, ["main"], "the push trigger names main and nothing else");
+  for (const trigger of ["schedule", "release", "pull_request", "repository_dispatch"]) {
+    assert.ok(!(trigger in parsed.on), `release.yml declares a '${trigger}' trigger, so it can start on something that is not a merge`);
   }
+  const publish = parsed.jobs.release.steps?.find((step) => /^pnpm exec changeset publish\b/.test(step.run ?? ""));
+  assert.equal(publish?.if, "needs.plan.outputs.mode == 'publish'", "the publish step reads the plan's mode, never an input");
+  const plan = parsed.jobs.plan.steps?.find((step) => /mode=publish/.test(step.run ?? ""))?.run ?? "";
+  assert.match(plan, /\[ "\$pending" -gt 0 \]; then mode=version-pr\s+elif \[ "\$ahead" -gt 0 \]; then mode=publish/,
+    "publish is reached only when nothing is pending (the version-pr branch is tested first) AND a version is ahead");
 });
 
-test("guard 2: dry-run defaults to true, so the default path publishes nothing", () => {
-  assert.match(workflow, /dry-run:[\s\S]{0,200}?default:\s*true/,
+test("guard 2: a dispatch never publishes -- dry-run defaults to true, and false is refused", () => {
+  assert.equal(parsed.on.workflow_dispatch?.inputs?.["dry-run"]?.default, true,
     "the dry-run input must default to true; a default of false makes the safe path the opt-in one");
+  assert.ok(!("confirm" in (parsed.on.workflow_dispatch?.inputs ?? {})), "the typed confirmation was removed on purpose (#3131); its job is guard 3's");
+  const plan = parsed.jobs.plan.steps?.find((step) => /mode=rehearsal/.test(step.run ?? ""))?.run ?? "";
+  assert.match(plan, /DRY_RUN" != "true"[\s\S]{0,200}exit 1/, "a dispatch that sets dry-run false must be refused, not quietly rehearsed");
 });
 
-test("guard 3: publishing needs an exact typed string, not a click", () => {
-  assert.match(workflow, /confirm:/, "there must be a confirm input");
-  assert.match(workflow, /!=\s*"publish-for-real"/,
-    "the confirm value must be compared exactly — a boolean or dropdown can be clicked by mistake");
-  assert.match(workflow, /if:\s*inputs\.dry-run == false && inputs\.confirm == 'publish-for-real'/,
-    "the publish step itself must require both, not just the preceding check step");
+test("guard 3: nothing in the workflow writes main, so the version bump can only arrive through the required review", () => {
+  // The property itself is `release-triggers-itself.test.ts`'s `no-push-to-main`, with its positive controls. What this
+  // pins is the OTHER half: the typed-confirmation machinery is gone, so a leftover cannot read as a live guard.
+  assert.doesNotMatch(workflow, /inputs\.confirm|publish-for-real(?!`)/,
+    "release.yml still reads a typed confirmation that no input supplies");
+  assert.ok(!/^\s+- name: Commit the version bump back to main/m.test(workflow), "the direct commit-back step must stay gone");
 });
 
 test("guard 4: access is public now that the name is settled", () => {
@@ -105,46 +111,24 @@ test("guards 5, 6 and 7: action-smoke, capture-regression and consumer-gate run 
   }
 });
 
-test("guards 5, 6 and 7 are not skippable in dry run", () => {
+test("guards 5, 6 and 7 are not skippable: the publishing job needs all three, and they run on the publish and the rehearsal", () => {
   // The `release` job's OWN `needs:` is what enforces all three -- a job with an unsatisfied `needs:` is
-  // skipped/failed by GitHub regardless of any `if:` on its steps, so there is no per-step dry-run
-  // escape hatch to check for here (there was one for the old query-based step; there is none now,
-  // which this test proves by there being no `if:` anywhere near the `needs:` line).
-  const releaseJob = workflow.indexOf("\n  release:\n");
-  assert.notEqual(releaseJob, -1, "the release job must exist");
-  const nearby = workflow.slice(releaseJob, releaseJob + 400);
-  assert.match(nearby, /needs:\s*\[action-smoke,\s*capture-regression,\s*consumer-gate\]/,
-    "the release job must declare needs: [action-smoke, capture-regression, consumer-gate] -- "
-    + "unconditionally, so a dry run cannot proceed past a red consumer-path, capture-path or "
-    + "consumer-shaped-gate job either");
+  // skipped/failed by GitHub regardless of any `if:` on its steps. The guard jobs carry an `if:` of their own now
+  // (#3131: on a push that only opens a version pull request they have nothing to prove), and it must name BOTH of
+  // the modes that run the release job, or a rehearsal would skip the guards it exists to rehearse.
+  const needs = parsed.jobs.release.needs ?? [];
+  for (const job of ["action-smoke", "capture-regression", "consumer-gate"]) {
+    assert.ok(needs.includes(job), `the release job must need ${job}, so a red ${job} stops a publish and a rehearsal alike`);
+    const condition = parsed.jobs[job].if ?? "";
+    assert.match(condition, /== 'publish'/, `${job} must run on the publishing push`);
+    assert.match(condition, /== 'rehearsal'/, `${job} must run on a rehearsal`);
+  }
 });
 
-test("dist-tag (#326) is a CHANNEL, not a bypass of any of the seven guards", () => {
-  // Defaults empty, so an unattended or mistyped dispatch behaves exactly as before: no flag reaches
-  // `changeset publish`, which is changesets' own "latest" behaviour.
-  assert.match(workflow, /dist-tag:[\s\S]{0,600}?default:\s*['"]{2}/,
-    "the dist-tag input must default to empty, or an unattended dispatch could tag a release without "
-    + "anyone choosing to");
-
-  // The publish step itself, not just the input declaration -- a flag built somewhere `if:`-gated
-  // differently from the seven guards above would be an eighth, undocumented path to publishing.
-  const publishStep = workflow.indexOf("- name: Publish\n");
-  assert.notEqual(publishStep, -1, "the Publish step must exist");
-  const nearby = workflow.slice(publishStep, publishStep + 700);
-  assert.match(nearby, /if:\s*inputs\.dry-run == false && inputs\.confirm == 'publish-for-real'/,
-    "the Publish step's OWN if: must still require both dry-run and confirm -- dist-tag selects WHICH "
-    + "tag a real publish uses, it must never be a route to a publish the other six guards would refuse");
-  assert.match(nearby, /changeset publish.*inputs\.dist-tag/,
-    "the publish command must actually read inputs.dist-tag, or the input is decorative");
-});
-
-test("PROOF: the dist-tag flag expression omits --tag when empty and includes it when set", () => {
-  // The exact expression this file's Publish step uses, evaluated the way GitHub Actions would: string
-  // concatenation with a ternary. Proven here because the real workflow only runs on a dispatch.
-  const flag = (distTag: string): string =>
-    distTag !== "" ? ` --tag ${distTag}` : "";
-  assert.equal(flag(""), "", "an empty dist-tag must add nothing -- changesets' own default is latest");
-  assert.equal(flag("next"), " --tag next", "a real dist-tag must reach the command");
+test("a dispatch rehearses with every guard, and its dry-run publish hand-off still names provenance", () => {
+  const rehearsal = parsed.jobs.release.steps?.find((step) => /release-publish-rehearsal\.mjs/.test(step.run ?? ""));
+  assert.equal(rehearsal?.if, "inputs.dry-run == true", "the rehearsal runs on a dispatch, and a real publish does not also rehearse itself");
+  assert.equal(rehearsal?.env?.NPM_CONFIG_PROVENANCE, "true");
 });
 
 test("the gate runs, and is not allowed to fail softly", () => {

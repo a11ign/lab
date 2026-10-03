@@ -71,11 +71,11 @@ test("#2301: nothing in the release job runs npx, which would pick its own tool"
     "positive control: the changeset steps are still there, run through pnpm");
 });
 
-test("#2301: the Publish step runs `pnpm exec changeset publish`, gated as before, with provenance and NO token", () => {
+test("#2301: the Publish step runs `pnpm exec changeset publish`, on the publishing push only, with provenance and NO token", () => {
   const publish = stepNamed("Publish");
-  assert.match(publish.run ?? "", /^pnpm exec changeset publish/);
-  assert.match(publish.run ?? "", /inputs\.dist-tag/, "the dist-tag channel must still reach the command");
-  assert.equal(publish.if, "inputs.dry-run == false && inputs.confirm == 'publish-for-real'");
+  assert.match(publish.run ?? "", /^pnpm exec changeset publish$/, "no flag: a push publishes to `latest`, changesets' own default (#3131 removed the dist-tag input)");
+  assert.equal(publish.if, "needs.plan.outputs.mode == 'publish'",
+    "the plan's `publish` mode is the push where nothing is pending and a version is ahead; there is no typed confirmation (#3131)");
   assert.equal(publish.env?.NPM_CONFIG_PROVENANCE, "true");
   assert.equal("NODE_AUTH_TOKEN" in (publish.env ?? {}), false,
     "the trusted-publisher OIDC path is only exercised while no registry token is set");
