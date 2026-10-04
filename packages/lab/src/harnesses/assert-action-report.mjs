@@ -98,6 +98,34 @@ export function findingsFor(report, wcag) {
   return (report?.verdict?.findings ?? []).filter((/** @type {Record<string, any>} */ f) => String(f?.wcag ?? "").startsWith(wcag));
 }
 
+/**
+ * Does the report ACCUSE the page of failing `wcag`, as opposed to referring it to a person?
+ *
+ * FOUND 2026-10-04 (#3373): `--forbid-wcag` counted any finding for the criterion, and the trained scorer
+ * only TRIAGES: every one of its findings maps `cantTell`, so on the W3C conformant page it referred a
+ * 1.1.1 on two runs in three (`outcomes[1.1.1].outcome` was `cantTell`) and stopped the release each time.
+ * A referral is "worth a person's eyes", not a claim that the page fails. The per-criterion outcome is where
+ * the report says which it is, and `failed` is the only value that accuses (ACT's vocabulary; an axe-core
+ * `violated` lands there too, asserted by axe and attributed to it, ADR 0021).
+ *
+ * A report with no `outcomes` cannot be read either way, so it is refused by name: treating the absence
+ * as "nothing asserted" would let a report shape that lost its outcomes pass the smoke for the wrong reason.
+ *
+ * @param {Record<string, any>} report
+ * @param {string} wcag the bare criterion number, e.g. "1.1.1"
+ * @returns {string | null} the reason the report accuses the page, or null
+ */
+export function accusationFailure(report, wcag) {
+  if (!Array.isArray(report?.outcomes)) {
+    return `report has no outcomes, so an assertion of ${wcag} cannot be told from a referral of it`;
+  }
+  const asserted = report.outcomes.some((/** @type {Record<string, any>} */ o) =>
+    o?.criterion === wcag && o?.outcome === "failed");
+  if (!asserted) return null;
+  return `${wcag} claimed against a page published as conformant: ` +
+    JSON.stringify(findingsFor(report, wcag).map((f) => f.evidence));
+}
+
 /** @param {string[]} args @param {string} name */
 function flagValue(args, name) {
   const hit = args.find((a) => a.startsWith(`--${name}=`));
@@ -129,10 +157,11 @@ function main(argv) {
 
   const forbidden = flagValue(flags, "forbid-wcag");
   if (forbidden) {
-    const wrong = findingsFor(report, forbidden);
-    if (wrong.length) {
-      return fail(`${forbidden} claimed against a page published as conformant: ` +
-        JSON.stringify(wrong.map((f) => f.evidence)));
+    const accusation = accusationFailure(report, forbidden);
+    if (accusation) return fail(accusation);
+    // A referral passes but stays visible: it is the triage working, and a reader of the log should see it.
+    for (const f of findingsFor(report, forbidden)) {
+      process.stdout.write(`::notice::${forbidden} REFERRED, not asserted: ${JSON.stringify(f.evidence)}\n`);
     }
   }
 
