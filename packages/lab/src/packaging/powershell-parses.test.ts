@@ -56,8 +56,10 @@ const CONTROL = "packages/lab/src/packaging/fixtures/broken-continuation.ps1";
  *
  * 18 -> 21 with #3230: `a11y_wake_prereqs.ps1` and the two Pester files that pin the new reads
  * (`a11y_nic_power.Tests.ps1`, `a11y_wake_prereqs.Tests.ps1`).
+ *
+ * 21 -> 23 with #3387: `a11y_boot_order.ps1` and its Pester file `a11y_boot_order.Tests.ps1`.
  */
-const EXPECTED_FILES = 21;
+const EXPECTED_FILES = 23;
 
 /** Exactly one file is excluded, and it is the control. Asserted, so the exclusion cannot widen quietly. */
 const EXPECTED_EXCLUDED = 1;
