@@ -19,7 +19,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { advanceCaptures, captureTimes } from "../../../control/src/fleet-watch.mjs";
 import { orgHealthNow, readFleetCaptures, fleetWaitingFacts, stalledPrFacts, stallReasonOf } from "agent-org/src/work-gate.mjs";
-import { prNotProgressingReading } from "agent-org/src/org-health.mjs";
+import { overdueReading } from "agent-org/src/org-health.mjs";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -138,19 +138,19 @@ test("the gate's reader and control's `captureTimes` agree on a ledger built by 
 });
 
 /**
- * THE REVIEW'S FINDING ON #3000: a refused head-commit read must not be turned into a stale age. A conflicted draft CREATED nine hours ago and
- * PUSHED ten minutes ago has a listed floor (its creation) nine hours old; if the read of its head commit is refused, `stalledPrFacts` once
- * returned that floor, and `pr-not-progressing` tripped on a 403.
+ * THE OUTCOME CLOCK'S FACTS (#3486, which replaced #3000's quiet-time reading): a PR's age runs from its `createdAt`, costs NO read, and a push does not
+ * stop it. The head-commit read this test once pinned (a refused read is `null`, never a stale age) is gone with the quiet-time clock; what remains to
+ * pin is that a PR with no `createdAt` is an UNKNOWN, never young, and that a push to a nine-hour-old draft does not make it young.
  */
-test("a refused head-commit read is `lastActivityAt: null` (UNKNOWN), never the listed creation time as an age -- and the same PR, read, is not stale", () => {
+test("a PR's age starts at its creation and no read is made; a push does not restart it, and an undated PR is UNKNOWN, never clear", () => {
   const hash = "0123456789abcdef0123456789abcdef01234567";
   const pr = { number: 2950, isDraft: true, mergeStateStatus: "DIRTY", mergeable: "CONFLICTING", statusCheckRollup: [], headRefOid: hash,
     headRefName: "agent/some-row", labels: [{ name: "session:worker-2936" }], createdAt: new Date(NOW - 9 * HOUR_MS).toISOString(), comments: [], reviews: [] };
-  assert.equal(stallReasonOf(pr, ["gate"]), "conflicted", "the control: this PR is one the tick asks about");
-  const pushedTenMinutesAgo = stalledPrFacts([pr], ["gate"], { now: NOW, run: () => `${new Date(NOW - 600_000).toISOString()}\n` });
-  assert.equal(pushedTenMinutesAgo[0].lastActivityAt, NOW - 600_000, "read: the push is the newest activity");
-  assert.equal(prNotProgressingReading({ now: NOW, stalledPrs: pushedTenMinutesAgo }).status, "clear");
-  const refused = stalledPrFacts([pr], ["gate"], { now: NOW, run: () => { throw new Error("HTTP 403"); } });
-  assert.equal(refused[0].lastActivityAt, null, "refused: no age, not nine hours");
-  assert.equal(prNotProgressingReading({ now: NOW, stalledPrs: refused }).status, "unknown");
+  assert.equal(stallReasonOf(pr, ["gate"], NOW), "conflicted", "the control: this PR is one the tick asks about");
+  const [fact] = stalledPrFacts([pr], ["gate"], { now: NOW });
+  assert.equal(fact.since, NOW - 9 * HOUR_MS, "read: the clock starts at creation, whatever was pushed since");
+  assert.equal(overdueReading({ now: NOW, items: [fact] }).status, "tripped", "nine hours open is overdue -- a push does not stop this clock");
+  const [undated] = stalledPrFacts([{ ...pr, createdAt: undefined }], ["gate"], { now: NOW });
+  assert.equal(undated.since, null, "no createdAt: an unknown, not an age");
+  assert.equal(overdueReading({ now: NOW, items: [undated] }).status, "unknown", "and an unknown is never read as clear");
 });

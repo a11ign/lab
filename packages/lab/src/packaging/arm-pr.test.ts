@@ -681,6 +681,8 @@ function entryRun({ viewFails = false, state = "OPEN", mergeFails = false, editF
       return "";
     }
     if (args[0] === "issue" && args[1] === "view") return JSON.stringify({ labels: [{ name: rowLabel }] });
+    // #3487: the merge-queue history read before any write -- a PR with no queue event is not ejected, so it arms.
+    if (args[0] === "api" && args[1] === "graphql") return JSON.stringify({ mergeQueueEntry: null, timelineItems: { nodes: [] } });
     if (args[0] === "pr" && args[1] === "edit") {
       if (editFails) throw Object.assign(new Error("gh: HTTP 502 on pr edit"), { status: 1 });
       return "";
@@ -812,6 +814,10 @@ function jumpRun({ body, runs = RED_MAIN, pages, seats = [seat(), queuedAt(1)], 
       if (mutationFails) throw new Error(mutationFails);
       return JSON.stringify({ data: { enqueuePullRequest: { mergeQueueEntry: { position: 1 } } } });
     }
+    // #3487: the ejection read is a graphql call too, and it is not a seat read -- answering it from `seats` would spend one.
+    if (args.some((a) => a.startsWith("query=") && a.includes("timelineItems"))) {
+      return JSON.stringify({ mergeQueueEntry: null, timelineItems: { nodes: [] } });
+    }
     const answer = seats[Math.min(seatReads, seats.length - 1)];
     seatReads += 1;
     if (answer === "unreadable") throw new Error("gh: HTTP 502 on the seat read");
@@ -844,7 +850,9 @@ const UNMARKED = "Closes #725\n";
 const isMutation = (c: string[]) => c[1] === "api" && c.some((a) => a.startsWith("query=mutation"));
 const mutations = (calls: string[][]) => calls.filter(isMutation);
 const mergeCalls = (calls: string[][]) => calls.filter((c) => c[1] === "pr" && c[2] === "merge");
-const apiCalls = (calls: string[][]) => calls.filter((c) => c[1] === "api");
+/** #3487: every PR now pays ONE read of its merge-queue history before arming; it is not a probe for the jump privilege, so it is not counted here. */
+const isEjectionRead = (c: string[]) => c.some((a) => a.startsWith("query=") && a.includes("timelineItems"));
+const apiCalls = (calls: string[][]) => calls.filter((c) => c[1] === "api" && !isEjectionRead(c));
 
 test("#2391 ACCEPTANCE: a PR carrying the trunk-fix marker, while main is red, is armed with `jump: true` -- and one without it is not", () => {
   const marked = jumpRun({ body: MARKED });
