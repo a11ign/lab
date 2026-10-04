@@ -13,7 +13,7 @@
  *      sibling `@a11ign/` package but `evidence` (the allowed direction, a devDependency), and its runtime dependency is
  *      `@guidepup/guidepup` alone. THE CONTROL: a fixture with one relative import across the boundary is REFUSED, naming both ends.
  *   3. What still crosses is exactly what the guard (#2612) baselines, and nothing is left undecided: the OUT direction in the real
- *      tree is the three Windows launcher lines, each `owned-by:#2614`. THIS IS NOT "no edge in either direction", which the row's
+ *      tree is the three Windows launcher lines, each `owned-by:#3447`. THIS IS NOT "no edge in either direction", which the row's
  *      Acceptance asks for and which is false today (see the test's own comment).
  *   4. The first commit's leak scan: the tree and the paths' history carry nothing `scripts/history-purge-replacements.txt` would
  *      redact and no credential shape. THE CONTROL: an internal address and a token-shaped string each REFUSE.
@@ -218,19 +218,19 @@ test("control: a relative import across the boundary is REFUSED naming both ends
 
 /**
  * The three launcher lines (ADR 0039 item 6): cutting them is a re-provision of every worker box, which is the fleet's row and not
- * this one's. Two of them sit on the ONE declaration `launcher-reach.cmd` (#3397), owned by the move row (#2701); `run-server.cmd`
- * keeps its own copy because the provision stamp hashes it, so it stays #2614's until the stamp next moves.
+ * this one's. Two of them sit on the ONE declaration `launcher-reach.cmd` (#3397), owned by the delete step (#3447); `run-server.cmd`
+ * keeps its own copy because the provision stamp hashes it, so it too is #3447's, the step that takes the file out of the workspace.
  */
 const KNOWN_OUT_EDGES = [
-  ["packages/nvda-worker/src/launcher-reach.cmd", "packages/lab/src/harnesses/capture-check.mjs", "owned-by:#2701"],
-  ["packages/nvda-worker/src/launcher-reach.cmd", "packages/worker-fleet/src/provisioning/apply-foreground-lock-timeout.ps1", "owned-by:#2701"],
-  ["packages/nvda-worker/src/run-server.cmd", "packages/worker-fleet/src/provisioning/apply-foreground-lock-timeout.ps1", "owned-by:#2614"],
+  ["packages/nvda-worker/src/launcher-reach.cmd", "packages/lab/src/harnesses/capture-check.mjs", "owned-by:#3447"],
+  ["packages/nvda-worker/src/launcher-reach.cmd", "packages/worker-fleet/src/provisioning/apply-foreground-lock-timeout.ps1", "owned-by:#3447"],
+  ["packages/nvda-worker/src/run-server.cmd", "packages/worker-fleet/src/provisioning/apply-foreground-lock-timeout.ps1", "owned-by:#3447"],
 ] as const;
 
 test("the guard's OUT direction from the layer is exactly the three launcher lines, each baselined with its owner", () => {
   // The row's Acceptance says the guard "finds no edge in either direction". It cannot today, and the guard says why in its own
   // baseline: 3 out and 32 in (read with `node packages/guards/src/layer-edges.mjs --check`), every one given a disposition by
-  // #2612/#2613 (`owned-by:#2614`, `travels`, `by-name`). This test pins the part that decides whether the PACKAGES can leave
+  // #2612/#2613 (`owned-by:#<row>`, `travels`, `by-name`). This test pins the part that decides whether the PACKAGES can leave
   // (out), and the baseline test in layer-edges.test.ts pins the rest; it does not assert an emptiness the tree does not have.
   const edges = findEdges({ root: REPO_ROOT, tracked: trackedFiles(REPO_ROOT) });
   const out = edges.filter((edge) => edge.direction === "out" && LAYER.some((pkg) => edge.from.startsWith(`${pkg}/`)));
