@@ -23,11 +23,11 @@ const read = (relPath: string) => readFileSync(resolve(ROOT, relPath), "utf8");
 const BRIEF = ".agent-org/roles/liaison.md";
 const SESSIONS = ".agent-org/roles/sessions.json";
 
-/** B3's `PLACEHOLDER_NAMES`, restated (a11ign/agent-org `src/messaging/placeholders.mjs`, read at 38283bd). */
+/** B3's `PLACEHOLDER_NAMES`, restated (a11ign/agent-org `src/messaging/placeholders.mjs`, read at 6849076). */
 const VOCABULARY = [
   "issue:<number>.number", "issue:<number>.state", "issue:<number>.labels",
   "pr:<number>.number", "pr:<number>.state", "pr:<number>.review",
-  "run:<id>.conclusion",
+  "run:<id>.status", "run:<id>.conclusion",
   "ready.count",
   "last-merge.age",
   "unit:<unit>.state",
@@ -104,6 +104,26 @@ test("positive control: a placeholder outside the vocabulary added to a copy fai
   const removed = read(BRIEF).replaceAll("{{ready.count}}", "");
   assert.deepEqual(vocabularyProblems(removed), ["never teaches {{ready.count}}"]);
   assert.ok(placeholdersNamed(read(BRIEF)).length >= VOCABULARY.length, "the brief names the placeholders at all (the emptiness's control)");
+});
+
+/** What the brief must put in the liaison's hands for `chairman:watch` (a11ign/agent-org `docs/messaging.md`): each of its three verbs, the first spelled with the command. */
+const WATCH_TEACHING: Array<[string, string]> = [
+  ["add, with a thing and a message", "chairman:watch -- add <row|pr|run|unit> <id>\n   --message=<ref>"],
+  ["list", "`list` for what is being watched"],
+  ["remove", "`remove <row|pr|run|unit> <id>`"],
+];
+const missingWatchTeaching = (text: string): string[] => WATCH_TEACHING.filter(([, phrase]) => !text.includes(phrase)).map(([name]) => name);
+
+test("the brief teaches chairman:watch and its three verbs", () => {
+  assert.deepEqual(missingWatchTeaching(read(BRIEF)), []);
+});
+
+test("positive control: deleting any one part of the chairman:watch teaching from a copy fails that part", () => {
+  assert.equal(WATCH_TEACHING.length >= 3, true, "the table the controls run over is not empty");
+  for (const [name, phrase] of WATCH_TEACHING) {
+    assert.deepEqual(missingWatchTeaching(read(BRIEF).replace(phrase, "")), [name], `deleting "${name}" must fail exactly that part`);
+  }
+  assert.equal(read(BRIEF).includes("chairman:watch"), true, "the brief names the command at all");
 });
 
 test("the roster has a persistent liaison whose brief exists", () => {
