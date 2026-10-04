@@ -553,6 +553,29 @@ test("PLAN: a package the registry has never heard of is ahead at 0.1.0 and neve
   assert.equal(runPlan({ event: "push", packages: ONE_PACKAGE("0.0.0"), registry: {} }).mode, "nothing");
 });
 
+// ADR 0040 reserves each extracted package's name with `0.0.0-reserved.0`, so the registry's latest for one is not x.y.z.
+// The first push after the first version pull request merged (#3353) died on exactly that: `CANNOT_TELL: 0.0.0-reserved.0
+// is not a plain x.y.z version`, six pushes running, and the publish it was meant to lead to never started (#3131).
+test("PLAN: a registry holding only the name-reservation placeholder reads as never published, and 0.0.0 is not publishable over it", () => {
+  const reserved = { fleet: { name: "fleet", version: "0.0.0" }, cli: { name: "a11ign", version: "0.1.1" } };
+  const plan = runPlan({ event: "push", packages: reserved, registry: { fleet: "0.0.0-reserved.0", a11ign: "0.1.0" } });
+  assert.equal(plan.status, 0, plan.log);
+  assert.equal(plan.mode, "publish", "the reservation must not hide that a11ign is ahead");
+  assert.match(plan.log, /not ahead of the registry: fleet@0\.0\.0 \(latest there: 0\.0\.0\)/, "0.0.0 beside a placeholder is never ahead");
+  assert.match(plan.log, /AHEAD of the registry: a11ign@0\.1\.1/);
+  const first = runPlan({ event: "push", packages: { fleet: { name: "fleet", version: "0.1.0" } }, registry: { fleet: "0.0.0-reserved.0" } });
+  assert.equal(first.mode, "publish", "the first real release over a reservation is ahead");
+});
+
+test("PLAN: any OTHER prerelease on the registry is still CANNOT_TELL: only the one spelling the reservation uses is understood", () => {
+  for (const latest of ["0.1.0-beta.1", "1.0.0-reserved.0", "0.0.0-reserved", "0.0.0-rc.0"]) {
+    const plan = runPlan({ event: "push", packages: ONE_PACKAGE("0.1.1"), registry: { a11ign: latest } });
+    assert.notEqual(plan.status, 0, `${latest} must fail the job`);
+    assert.equal(plan.mode, null, `${latest} writes no mode`);
+    assert.match(plan.log, /CANNOT_TELL/);
+  }
+});
+
 test("PLAN: a private package is never a reason to publish", () => {
   const plan = runPlan({ event: "push", packages: { lab: { name: "lab", version: "9.9.9", private: true } }, registry: {} });
   assert.equal(plan.mode, "nothing", plan.log);
