@@ -280,6 +280,7 @@ function claimRunWithBody(body: string, labels: string[] = []) {
       if (jsonArg === "body") return JSON.stringify({ body });
       return JSON.stringify({ number: 707, title: "A row", labels: labels.map((name) => ({ name })) });
     }
+    if (args[1] === "list") return "[]"; // #3475: the claimed-rows read -- an empty list, so no Region overlaps
     return ""; // the `edit` call
   };
 }
@@ -602,16 +603,20 @@ test("#665/#987 ACCEPTANCE: claimRow given a worktree records it in the claim co
   assert.equal(claimRecordFrom([comment[comment.indexOf("--body") + 1]]).worktree, "/tmp/a11y-wt-665");
 });
 
-test("#987: a claim naming NEITHER a branch nor a worktree posts NO record -- a marker comment with no "
-  + "fields is how a RELEASE is spelled, and the two states must not share a spelling", () => {
+test("#987: a claim naming NEITHER a branch nor a worktree posts a record that is never a RELEASE's field-less marker "
+  + "(#3407: `Claimed-nothing:`) -- the two states must not share a spelling", () => {
   const calls: string[][] = [];
   const run = (cmd: string, args: string[]) => {
     calls.push(args);
     if (args[1] === "view") return JSON.stringify({ number: 665, title: "A row", labels: [] });
+    if (args[1] === "list") return "[]";
     return "";
   };
   claimRow(665, "worker-config", { run, moveStatus: () => ({ moved: true }) });
-  assert.equal(calls.filter((a) => a[1] === "comment").length, 0);
+  // #3407: the claim now writes ITS OWN record, spelled `Claimed-nothing:`, so it is never the field-less marker of a release.
+  const comments = calls.filter((a) => a[1] === "comment").map((a) => a[a.indexOf("--body") + 1]);
+  assert.equal(comments.length, 1);
+  assert.match(comments[0], /^<!-- row-claim: claim record -->\n.*claimed by `worker-config`\.\n\nClaimed-nothing: /s);
 });
 
 // --- #749: a label must EXIST before `gh` can add it, and the removal of `ready` must never apply while
@@ -1519,7 +1524,7 @@ test("#2101: `reportB4` PASSES THE ROW NUMBER DOWN -- dropping it is a silent di
   // The mutation this exists for: `b4Lines(mine(issueNumber), others())`. Every assertion above stays
   // green under it, because they call `b4Lines` directly; only the wiring changes, and only here.
   const said: string[] = [];
-  reportB4(2076, { write: (text: string) => said.push(text), mine: () => ["docs/"],
+  reportB4(2076, { write: (text: string) => said.push(text), mine: () => ["docs/"], claimed: () => [],
     others: () => [{ number: 2077, files: ["docs/guide.md"], changedFiles: 1, closes: [2076] }] });
   assert.match(said[0], /B4: no open pull request holds any file/);
   assert.doesNotMatch(said[0], /REFUSES/, "#2077 IS #2076 -- `claim` grants this, so `check` must not "
