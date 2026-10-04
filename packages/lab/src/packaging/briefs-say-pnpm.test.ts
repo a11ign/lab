@@ -53,7 +53,7 @@ const HISTORICAL: readonly Allowed[] = [
     why: "a systemd unit path, which is the units row's (#2892) to move, and /usr/bin/pnpm does not exist" },
   { file: ".agent-org/roles/migrate.md", line: 195, anchor: "ran clean after",
     why: "what the reconstitution drill ran on a date" },
-  { file: ".agent-org/roles/product-manager.md", line: 98, anchor: "Fifth instance, 2026-09-09",
+  { file: ".agent-org/roles/product-manager.md", line: 101, anchor: "Fifth instance, 2026-09-09",
     why: "a dated incident" },
   { file: ".agent-org/roles/reviewer.md", line: 273, anchor: "unavailable (0/4;",
     why: "a dated incident: `npx` failed before execution" },
