@@ -9,7 +9,7 @@
  *
  * POSITIVE CONTROLS, named where each emptiness or absence is asserted: the real `ci.yml` yields a non-empty set that
  * includes `ts` and `guardSweep` (1), the green stamp reads green (3), and `stepsToRun` of a docs-only diff still
- * names `guardSweep` (5). The staged agent-org copy is listed with two test files in the throwaway tool, so an empty
+ * names the agent-org suite (5). `guardSweep` is a CI-only job since #3572 (`verify-affected-set.test.ts`). The staged agent-org copy is listed with two test files in the throwaway tool, so an empty
  * listing cannot pass (6).
  */
 import { test } from "node:test";
@@ -172,11 +172,12 @@ test("`ts` runs every command through the non-blocking runner, in order, and sto
     seen.push([command, ...args].join(" "));
     return { status: seen.at(-1)?.includes(failing ?? "\0") ? 1 : 0 };
   };
-  assert.equal(await runTs({ base: "origin/main" }, run(null)), "pass");
+  const ranFiles = () => ({ testFiles: 1, tests: 1, failedFiles: 0, failedTests: 0 });
+  assert.equal(await runTs({ base: "origin/main" }, run(null), ranFiles), "pass");
   assert.equal(seen.length, TS_COMMANDS, "the positive control: all four commands were handed to the runner");
-  assert.match(seen.at(-1) ?? "", /^node scripts\/test-changed\.mjs --base=origin\/main$/);
+  assert.match(seen.at(-1) ?? "", / rstest run .*--changed=origin\/main$/);
   seen.length = 0;
-  assert.equal(await runTs({ base: "origin/main" }, run("lint")), "fail");
+  assert.equal(await runTs({ base: "origin/main" }, run("lint"), ranFiles), "fail");
   assert.equal(seen.length, 2, "docs:coverage and lint ran, and typecheck did not run after lint failed");
 });
 
@@ -282,11 +283,10 @@ test("probe", () => writeFileSync(${JSON.stringify(report)}, JSON.stringify({ cw
 });
 
 // 2. `verify` CALLS THE SELECTOR `ci.yml` CALLS, AND DOES NOT COPY IT.
-test("verify imports ci-changed.mjs and reaches select-changed-tests.mjs through test-changed.mjs, as ci.yml does", () => {
+// The tests the `ts` step runs are rstest's own `--changed` selection since #3572, pinned in `verify-affected-set.test.ts`.
+test("verify imports ci-changed.mjs's classify, as ci.yml does, and no longer reaches the hand-built selector", () => {
   assert.match(VERIFY, /^import \{[^}]*\bclassify\b[^}]*\} from "\.\/ci-changed\.mjs";$/m);
-  assert.match(VERIFY, /"scripts\/test-changed\.mjs"/);
-  assert.match(read("scripts/test-changed.mjs"), /select-changed-tests\.mjs/);
-  assert.match(read(".github/workflows/reusable-build-test.yml"), /node scripts\/select-changed-tests\.mjs/);
+  assert.doesNotMatch(VERIFY, /"scripts\/test-changed\.mjs"/);
 });
 
 test("verify defines none of the selection or classification logic it is meant to reuse", () => {
@@ -355,23 +355,23 @@ test("a failed or skipped step is red, and `not-needed` is green only for a step
   skippable.steps.python = { status: "not-needed", ms: 0 };
   assert.equal(stampVerdict({ stamp: skippable, head: HEAD, body: BODY }).green, true);
   const never = greenStamp();
-  never.steps.guardSweep = { status: "not-needed", ms: 0 };
+  never.steps.agentOrg = { status: "not-needed", ms: 0 };
   assert.equal(stampVerdict({ stamp: never, head: HEAD, body: BODY }).green, false,
-    "guardSweep reading not-needed is a step that never ran");
+    "agentOrg reading not-needed is a step that never ran");
 });
 
-// 5. A BARE DIFF OF A DOCS FILE STILL RUNS THE TREE-WIDE GUARDS (#2348).
-test("a diff of one docs file still runs the tree-wide guards, the agent-org suite and the body checks", () => {
+// 5. A BARE DIFF OF A DOCS FILE STILL RUNS THE AGENT-ORG SUITE AND THE BODY CHECKS (#2348); THE TREE-WIDE GUARDS LEFT IN #3572.
+test("a diff of one docs file still runs the agent-org suite and the body checks", () => {
   const root = new URL(".", ROOT).pathname;
   const classification = classify(["docs/backlog.md"], knownPackages(root), {}, { repoRoot: root });
   const run = new Map(stepsToRun(classification).map((step: { id: string; run: boolean }) => [step.id, step.run]));
-  for (const always of ["guardSweep", "agentOrg", "acceptance", "ownedPaths"]) {
+  for (const always of ["agentOrg", "acceptance", "ownedPaths"]) {
     assert.equal(run.get(always), true, `${always} did not run for a docs-only diff`);
   }
   assert.equal(run.get("python"), false, "python ran for a docs-only diff, so the selection is not CI's");
 });
 
-test("ci.yml's guardSweep job is not conditioned on `changed`'s outputs, which is what verify mirrors", () => {
+test("ci.yml's guardSweep job is not conditioned on `changed`'s outputs, which is why it is CI-only rather than a skippable step", () => {
   const block = CI.split("\n  guardSweep:\n")[1]?.split(/\n {2}[A-Za-z]+:\n/)[0] ?? "";
   assert.ok(block.length > 0, "guardSweep was not found in ci.yml");
   assert.doesNotMatch(block, /needs\.changed\.outputs/);
