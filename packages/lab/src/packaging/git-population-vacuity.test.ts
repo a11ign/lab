@@ -164,15 +164,6 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "(#1067): the count that is also a claim gets an equality, the vacuity guard gets the floor. "
       + "Measured at 132 walked and 11 sending when written.",
   },
-  "packages/lab/src/packaging/documents-extraction.test.ts": {
-    guard: "files.length > 1000",
-    note: "guarded -- #2705's walk spawns `git ls-files -z` for every tracked file and asks whether any outside "
-      + "`docs/` and Markdown still names the retired package. A clean result is the EXPECTED answer, so "
-      + "'nothing names it' and 'the listing came back empty' would be the same observation; the floor on the "
-      + "files read tells them apart, and a fixture beside it proves the predicate finds a planted mention. "
-      + "Its other git call, `git log -p -- packages/pdf`, asserts its output contains a `diff --git` header "
-      + "before scanning it, and skips by name on a shallow clone.",
-  },
   "packages/lab/src/packaging/screenreader-worker-extraction.test.ts": {
     guard: 'diffs.includes("diff --git")',
     note: "guarded -- #2701's history scan spawns `git log -p` over the two moving packages and expects NO credential "

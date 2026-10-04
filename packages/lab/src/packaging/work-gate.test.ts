@@ -1068,9 +1068,11 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // that is most worth doing, so a window must not withhold it.
   // #2845: `ready-row-unclaimable` is FINISH too. It starts no work -- it asks `product-manager` to unstick a row the claim keeps
   // refusing -- and a drain is when a stuck row most needs to be seen, since the pool's engineers are withheld anyway.
+  // #3390: `chairman-answered` is FINISH (agent-org v0.7.8's own class). It starts no work -- it tells `ceo` that a `needs:chairman` row's label is
+  // stale because the chairman has acted on it since, so the label comes off or is re-applied -- and the row is already filed.
   // #2936: `org-health` is FINISH, and a JUDGMENT cause. It starts no work -- it tells `ceo` that nothing is landing, a red PR is unattended, a row
   // is refused or the primary is stale -- and a drain is exactly when an org that is not landing anything should be told.
-  assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "backlog-aged-unpromoted", "blocker-cleared", "chairman-blocked",
+  assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "backlog-aged-unpromoted", "blocker-cleared", "chairman-answered", "chairman-blocked",
     "claim-stalled", "claimed-row-amended", "closes-unresolved-repo-wide", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale",
     "lab-job-finished", "org-health", "org-retrospective", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "primary-stale", "ready-row-incomplete", "ready-row-unclaimable", "repeating-log-line", "reviewer-auth-failed",
     "row-branch-unshipped", "row-call-count-signal", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
@@ -4631,9 +4633,7 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // row's Acceptance names it, so its pull request declares `History: full`.
   // #2867 added `shadow-window-arm.test.ts`: checked -- it imports `host-units.mjs` for the rendered shadow-window unit texts and the installer, the same
   // edge, and its pull request declares `History: full`.
-  // #2705 added `documents-extraction.test.ts`: checked -- it asks `--is-shallow-repository` before reading `git log -p` over `packages/pdf`
-  // (the history `filter-repo` carries across is part of the first commit's leak scan), so it genuinely needs history, and its pull request
-  // declares `History: full`.
+  // #3125 DELETED `documents-extraction.test.ts` with `packages/pdf`, the history it read: the set shrank by it and nothing joined it.
   // #3046 REMOVED `pre-push-stale-base.test.ts`: it reached a history reader only through its REAL ARTEFACT case (the shallow-checkout question
   // about a pinned sha), which went with the refusal it reproduced; the rewritten file has no such edge.
   // #2975 (cut-over 4 of 6) DELETED `host-project-paths.test.ts`, `host-tool-install.test.ts` and `host-units.test.ts` from this directory: each has a
@@ -4648,7 +4648,7 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // The pin's move to ^0.2.0 (#2905) is the "this file returns then" above: agent-org's walk follows the `agent-org/src/...` specifier, and THIS file
   // imports `shippedUnits` from `agent-org/src/host-units.mjs`, the same edge `host-units.test.ts` had. Checked rather than edited past: no import was
   // added, the walk got able to see one that was already here. No Acceptance names this file, so no pull request owes a `History: full` for it.
-  assert.deepEqual(charged, ["documents-extraction.test.ts", "pre-push-resolve-toward-main.test.ts", "screenreader-worker-extraction.test.ts", "work-gate.test.ts"],
+  assert.deepEqual(charged, ["pre-push-resolve-toward-main.test.ts", "screenreader-worker-extraction.test.ts", "work-gate.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
 });

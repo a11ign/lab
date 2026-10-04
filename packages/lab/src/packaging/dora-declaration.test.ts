@@ -42,8 +42,17 @@ type ReadManifest = (directory: string) => Manifest | null;
 
 const readText = (path: string) => readFileSync(`${REPO_ROOT}${path}`, "utf8");
 
+/**
+ * A package that has MOVED (#3125: `documents`) is no longer under `packages/` here, but its own repository keeps the layout
+ * `releasablePaths` names. Its manifest is read from the copy `cli` INSTALLED from the registry, which is the published one, so the
+ * name is still read from a real manifest and not assumed. The key is the declared prefix, the value where that manifest now is.
+ */
+const MOVED_TO_THE_REGISTRY: Record<string, string> = {
+  "packages/pdf/": "packages/cli/node_modules/@a11ign/documents/package.json",
+};
+
 const workspaceManifest: ReadManifest = (directory) => {
-  const file = `${directory}package.json`;
+  const file = MOVED_TO_THE_REGISTRY[directory] ?? `${directory}package.json`;
   return existsSync(`${REPO_ROOT}${file}`) ? (JSON.parse(readText(file)) as Manifest) : null;
 };
 

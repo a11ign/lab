@@ -17,7 +17,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tempDir } from "../../../guards/src/test-tmp.mjs";
 
 // Four levels up, to the REPO ROOT. The gate is monorepo tooling, not a package: it has to pack and install
 // every package including this one, so it cannot live inside any of them. Its tests live here because `lab` is
@@ -67,6 +70,24 @@ test("a package's unpublished siblings are resolved, so the gate can install the
   const resolved = internalDependencies(judge).map((dir: string) => dir.split("/").pop());
   assert.deepEqual(resolved.sort(), ["evidence", "scorer"],
     "judge depends on evidence and peers on scorer; both must be packed alongside it");
+});
+
+test("a caret range on an @a11ign package is the REGISTRY's: no sibling is packed for it, and an exact pin still must be a sibling (#3125)", () => {
+  // `cli` takes `@a11ign/documents` by `^0.1.0` since `documents` publishes from its own repository, so the gate must not look for
+  // `packages/documents`. The positive control is the SAME dependency spelled as an exact pin, which names a missing sibling and throws.
+  const cli = fileURLToPath(new URL("../../../../packages/cli", import.meta.url));
+  const resolved = internalDependencies(cli).map((dir: string) => dir.split("/").pop());
+  assert.ok(resolved.includes("evidence"), "the siblings cli pins exactly are still resolved, or the assertion below reads nothing");
+  assert.ok(!resolved.includes("documents") && !resolved.includes("pdf"), `a registry range was resolved to a sibling: ${resolved.join(", ")}`);
+  const dir = tempDir("registry-range-");
+  const consumer = (range: string) => {
+    mkdirSync(join(dir, "packages/consumer"), { recursive: true });
+    writeFileSync(join(dir, "packages/consumer/package.json"), JSON.stringify({ name: "@a11ign/consumer", dependencies: { "@a11ign/elsewhere": range } }));
+    return join(dir, "packages/consumer");
+  };
+  assert.deepEqual(internalDependencies(consumer("^1.2.3")), []);
+  assert.deepEqual(internalDependencies(consumer("~1.2.3")), []);
+  assert.throws(() => internalDependencies(consumer("1.2.3")), /not a package in this repo/);
 });
 
 test("a dependency on a sibling that does not exist is an ERROR, not a silent skip", () => {
