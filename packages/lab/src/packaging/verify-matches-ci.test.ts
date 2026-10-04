@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   CI_ONLY, agentOrgLayout, agentOrgSource, stageAgentOrg, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, linkNodeModules,
-  runAgentOrgInClone, stampVerdict, stepsToRun, unaccountedJobs,
+  pinTool, runAgentOrgInClone, runTs, shAsync, stampVerdict, stepsToRun, unaccountedJobs,
 } from "../../../../scripts/verify.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
@@ -146,6 +146,72 @@ test("agentOrgLayout puts every path the step writes under the scratch directory
   for (const path of paths) {
     assert.ok(path.startsWith(`${scratch}/`), `${path} is not under the scratch directory`);
     assert.ok(!path.startsWith(`${repo}/`), `${path} is under the author's tree`);
+  }
+});
+
+const TICK_MS = 20;
+const CHILD_MS = 400;
+const FREE_LOOP_TICKS = 5;
+const TS_COMMANDS = 4;
+
+test("shAsync leaves the event loop free while its child runs, which a spawnSync does not (#3333)", async () => {
+  let ticks = 0;
+  const timer = setInterval(() => { ticks += 1; }, TICK_MS);
+  try {
+    const { status } = await shAsync("node", ["-e", `setTimeout(() => {}, ${CHILD_MS})`], { cwd: tmpdir(), stdio: "ignore" });
+    assert.equal(status, 0, "the positive control: the child ran and exited 0");
+    assert.ok(ticks >= FREE_LOOP_TICKS, `only ${ticks} timer ticks ran during a ${CHILD_MS}ms child: the loop was blocked`);
+  } finally {
+    clearInterval(timer);
+  }
+});
+
+test("`ts` runs every command through the non-blocking runner, in order, and stops at the first that fails (#3333)", async () => {
+  const seen: string[] = [];
+  const run = (failing: string | null) => async (command: string, args: string[]) => {
+    seen.push([command, ...args].join(" "));
+    return { status: seen.at(-1)?.includes(failing ?? "\0") ? 1 : 0 };
+  };
+  assert.equal(await runTs({ base: "origin/main" }, run(null)), "pass");
+  assert.equal(seen.length, TS_COMMANDS, "the positive control: all four commands were handed to the runner");
+  assert.match(seen.at(-1) ?? "", /^node scripts\/test-changed\.mjs --base=origin\/main$/);
+  seen.length = 0;
+  assert.equal(await runTs({ base: "origin/main" }, run("lint")), "fail");
+  assert.equal(seen.length, 2, "docs:coverage and lint ran, and typecheck did not run after lint failed");
+});
+
+test("the tool is archived at the commit the fetch pinned, though another fetch has since rewritten FETCH_HEAD (#3333)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "verify-pin-"));
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, stdio: "pipe", env: sandboxGitEnv() });
+  try {
+    const origin = join(dir, "origin");
+    mkdirSync(origin);
+    git(origin, "init", "-q", "-b", "main");
+    writeAll(origin, { "src/current.test.ts": "" });
+    git(origin, "add", "."); git(origin, "commit", "-qm", "main");
+    git(origin, "checkout", "-q", "-b", "agent/old");
+    rmSync(join(origin, "src/current.test.ts"));
+    writeAll(origin, { "src/deleted-since.test.ts": "" });
+    git(origin, "add", "-A"); git(origin, "commit", "-qm", "old");
+    git(origin, "checkout", "-q", "main");
+    const tool = join(dir, "tool");
+    git(dir, "clone", "-q", origin, tool);
+    const log = openSync(join(dir, "pin.log"), "w");
+    const pinned = pinTool({ toolRepo: tool, ref: "main", log });
+    git(tool, "fetch", "-q", "origin", "agent/old"); // what another session's fetch does to the shared checkout
+    const staged = (commit: string | undefined) => {
+      const root = join(dir, `root-${commit ? "pinned" : "head"}`);
+      mkdirSync(join(root, "packages/lab/src/packaging"), { recursive: true });
+      writeFileSync(join(root, "packages/lab/src/packaging/board-document-chrome-resolver.test.ts"), "");
+      git(root, "init", "-q");
+      assert.equal(stageAgentOrg({ toolRepo: tool, scratch: dir, copied: ["src"], root, stdio: "ignore", ...(commit ? { commit } : {}) }).status, 0);
+      return readdirSync(join(root, "packages/agent-org/src")).filter((name) => name !== "packaging").sort(); // `packaging` is the lab's helpers laid beside
+    };
+    assert.deepEqual(staged(undefined), ["deleted-since.test.ts"], "the control: FETCH_HEAD alone WAS the other fetch's, so the clobber is real here");
+    assert.deepEqual(staged(pinned.commit), ["current.test.ts"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
