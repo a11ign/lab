@@ -23,7 +23,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -99,11 +100,10 @@ test("#1396 THE LIVE TREE: no pending major on a 0.x package, and every unpublis
   const versions = publicVersions();
   // THE POPULATION FIRST, so the empty list below cannot pass having read nothing: a WRITTEN list of the
   // seven public packages (#68's `@a11ign/documents` is the first ADDITION since #1396, not the original six --
-  // an eighth, or one gone private, is a decision about a first publish), and at least one pending release
-  // line actually read from `.changeset/`.
+  // an eighth, or one gone private, is a decision about a first publish). No pending release line is required
+  // of the live tree: with nothing pending (#3372 deleted the 67 private-only ones) the empty list is true, and
+  // the control for the READER is the planted-directory test below, which does read a release line.
   assert.deepEqual(Object.keys(versions).sort(), [...SEVEN].sort());
-  assert.ok(changesets.flatMap((c) => c.releases).length > 0,
-    "no pending release line was read -- the empty list below would be a claim about nothing");
   assert.deepEqual(zeroMajorViolations({ changesets, versions }), []);
 });
 
@@ -139,4 +139,16 @@ test("#1396 the frontmatter reader refuses a line it cannot read, and reads an e
   assert.throws(() => frontmatterReleases("typo.md", '---\n"a11ign": majr\n---\n'), /unreadable frontmatter line/,
     "a misspelled level skipped here is a major nobody checked");
   assert.throws(() => frontmatterReleases("none.md", "no frontmatter\n"), /has no frontmatter block/);
+});
+
+test("#3372 POSITIVE CONTROL for the live-tree reader: a planted .changeset/ is read, and README.md is not a changeset", () => {
+  const repo = mkdtempSync(join(tmpdir(), "zero-major-"));
+  try {
+    mkdirSync(join(repo, ".changeset"));
+    writeFileSync(join(repo, ".changeset", "README.md"), "# not a changeset\n");
+    writeFileSync(join(repo, ".changeset", "planted.md"), '---\n"a11ign": major\n---\nbody\n');
+    assert.deepEqual(pendingChangesets(repo), [{ file: "planted.md", releases: [{ name: "a11ign", type: "major" }] }]);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 });
