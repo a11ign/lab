@@ -14,9 +14,13 @@
  * "adaptive" }` and `content` blocks whose `type` is `"text"`. That snippet was compiled with `tsc --strict`
  * against the published type declarations of EVERY SDK release from 0.106.0 to 0.129.0 (30 versions, none skipped)
  * and compiled in each; a mutated copy (`"adaptive"` -> `"bogus"`) failed to compile, so the compile was not
- * vacuous. That is why the peer is `>=0.106.0 <0.130.0` and not `^0.106.0 || ^0.129.0`: nothing in it is a
+ * vacuous. That is why the peer is `>=0.106.0 <0.132.0` and not `^0.106.0 || ^0.129.0`: nothing in it is a
  * version nobody checked. 0.106.0 stays the floor because nothing older was measured. A TYPE check, not a call to
  * the API: runtime behaviour at each version was not exercised.
+ *
+ * #3473 (2026-10-04) extended the measurement to 0.130.0 and 0.131.0 with the same snippet and `tsc --strict`: the
+ * 0.129.0 control still compiled and the `"bogus"` mutant failed in all three, so the bound moved from `<0.130.0`
+ * to `<0.132.0`.
  *
  * ## READING THE RANGE
  *
@@ -65,19 +69,20 @@ function problems(peer: string | undefined, rootSpecifier: string | undefined): 
 
 test("POSITIVE CONTROL: a root version outside the peer fails, so a green run below is not vacuous", () => {
   assert.equal(problems("^0.106.0", "^0.129.0").length, 1, "the pair #3261 would have produced");
-  assert.equal(problems(">=0.106.0 <0.130.0", "^0.130.0").length, 1, "the next bump reopens it until the peer is re-checked");
-  assert.equal(problems(">=0.106.0 <0.130.0", "^0.105.0").length, 1, "below the floor");
+  assert.equal(problems(">=0.106.0 <0.132.0", "^0.132.0").length, 1, "the next bump reopens it until the peer is re-checked");
+  assert.equal(problems(">=0.106.0 <0.132.0", "^0.105.0").length, 1, "below the floor");
 });
 
 test("a root version inside the peer passes, so the guard is not merely always-failing", () => {
-  assert.deepEqual(problems(">=0.106.0 <0.130.0", "^0.129.0"), []);
-  assert.deepEqual(problems(">=0.106.0 <0.130.0", "^0.106.0"), []);
+  assert.deepEqual(problems(">=0.106.0 <0.132.0", "^0.129.0"), []);
+  assert.deepEqual(problems(">=0.106.0 <0.132.0", "^0.131.0"), [], "the version #3473 moved the root to");
+  assert.deepEqual(problems(">=0.106.0 <0.132.0", "^0.106.0"), []);
   assert.deepEqual(problems("^0.106.0", "^0.106.0"), []);
 });
 
 test("an UNREADABLE range or specifier is a failure, never a pass", () => {
   assert.match(problems("^0.106.0 || ^0.129.0", "^0.129.0")[0], /not a range this guard can read/);
-  assert.match(problems(">=0.106.0 <0.130.0", "workspace:*")[0], /no tested version can be read/);
+  assert.match(problems(">=0.106.0 <0.132.0", "workspace:*")[0], /no tested version can be read/);
   assert.match(problems(undefined, "^0.129.0")[0], /no .* peer/);
   assert.match(problems(">=0.106.0", undefined)[0], /no tested version/);
 });
