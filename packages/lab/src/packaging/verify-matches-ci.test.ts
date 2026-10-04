@@ -15,11 +15,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
-  CI_ONLY, agentOrgSource, stageAgentOrg, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, stampVerdict, stepsToRun, unaccountedJobs,
+  CI_ONLY, agentOrgLayout, agentOrgSource, stageAgentOrg, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, linkNodeModules,
+  pinTool, runAgentOrgInClone, runTs, shAsync, stampVerdict, stepsToRun, unaccountedJobs,
 } from "../../../../scripts/verify.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
@@ -118,6 +122,163 @@ test("CONTRIBUTING.md documents where the agent-org step finds the tool, includi
   const text = read("CONTRIBUTING.md");
   assert.match(text, /A11Y_AGENT_ORG_REPO/);
   assert.match(text, /clones `a11ign\/agent-org` once/);
+});
+
+// THE `agentOrg` STEP RUNS BESIDE `ts`, SO IT MUST WRITE NOTHING UNDER THE AUTHOR'S TREE (#3333).
+// Staged in place it laid the tool at `packages/agent-org` and edited a fixture there, which the tree-walking guards in `ts` read.
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync("git", args, { cwd, env: sandboxGitEnv({ GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" }), encoding: "utf8" }).trim();
+
+function writeAll(root: string, files: Record<string, string>) {
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+}
+
+const LAYOUT_PATHS = 3;
+
+test("agentOrgLayout puts every path the step writes under the scratch directory, and none under the author's tree", () => {
+  const repo = realpathSync(new URL(".", ROOT).pathname);
+  const scratch = join(tmpdir(), "verify-agent-org-layout");
+  const paths = Object.values(agentOrgLayout(scratch)) as string[];
+  assert.equal(paths.length, LAYOUT_PATHS, "the positive control: the layout names the clone, the tool's directory and the fixture");
+  for (const path of paths) {
+    assert.ok(path.startsWith(`${scratch}/`), `${path} is not under the scratch directory`);
+    assert.ok(!path.startsWith(`${repo}/`), `${path} is under the author's tree`);
+  }
+});
+
+const TICK_MS = 20;
+const CHILD_MS = 400;
+const FREE_LOOP_TICKS = 5;
+const TS_COMMANDS = 4;
+
+test("shAsync leaves the event loop free while its child runs, which a spawnSync does not (#3333)", async () => {
+  let ticks = 0;
+  const timer = setInterval(() => { ticks += 1; }, TICK_MS);
+  try {
+    const { status } = await shAsync("node", ["-e", `setTimeout(() => {}, ${CHILD_MS})`], { cwd: tmpdir(), stdio: "ignore" });
+    assert.equal(status, 0, "the positive control: the child ran and exited 0");
+    assert.ok(ticks >= FREE_LOOP_TICKS, `only ${ticks} timer ticks ran during a ${CHILD_MS}ms child: the loop was blocked`);
+  } finally {
+    clearInterval(timer);
+  }
+});
+
+test("`ts` runs every command through the non-blocking runner, in order, and stops at the first that fails (#3333)", async () => {
+  const seen: string[] = [];
+  const run = (failing: string | null) => async (command: string, args: string[]) => {
+    seen.push([command, ...args].join(" "));
+    return { status: seen.at(-1)?.includes(failing ?? "\0") ? 1 : 0 };
+  };
+  assert.equal(await runTs({ base: "origin/main" }, run(null)), "pass");
+  assert.equal(seen.length, TS_COMMANDS, "the positive control: all four commands were handed to the runner");
+  assert.match(seen.at(-1) ?? "", /^node scripts\/test-changed\.mjs --base=origin\/main$/);
+  seen.length = 0;
+  assert.equal(await runTs({ base: "origin/main" }, run("lint")), "fail");
+  assert.equal(seen.length, 2, "docs:coverage and lint ran, and typecheck did not run after lint failed");
+});
+
+test("the tool is archived at the commit the fetch pinned, though another fetch has since rewritten FETCH_HEAD (#3333)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "verify-pin-"));
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, stdio: "pipe", env: sandboxGitEnv() });
+  try {
+    const origin = join(dir, "origin");
+    mkdirSync(origin);
+    git(origin, "init", "-q", "-b", "main");
+    writeAll(origin, { "src/current.test.ts": "" });
+    git(origin, "add", "."); git(origin, "commit", "-qm", "main");
+    git(origin, "checkout", "-q", "-b", "agent/old");
+    rmSync(join(origin, "src/current.test.ts"));
+    writeAll(origin, { "src/deleted-since.test.ts": "" });
+    git(origin, "add", "-A"); git(origin, "commit", "-qm", "old");
+    git(origin, "checkout", "-q", "main");
+    const tool = join(dir, "tool");
+    git(dir, "clone", "-q", origin, tool);
+    const log = openSync(join(dir, "pin.log"), "w");
+    const pinned = pinTool({ toolRepo: tool, ref: "main", log });
+    git(tool, "fetch", "-q", "origin", "agent/old"); // what another session's fetch does to the shared checkout
+    const staged = (commit: string | undefined) => {
+      const root = join(dir, `root-${commit ? "pinned" : "head"}`);
+      mkdirSync(join(root, "packages/lab/src/packaging"), { recursive: true });
+      writeFileSync(join(root, "packages/lab/src/packaging/board-document-chrome-resolver.test.ts"), "");
+      git(root, "init", "-q");
+      assert.equal(stageAgentOrg({ toolRepo: tool, scratch: dir, copied: ["src"], root, stdio: "ignore", ...(commit ? { commit } : {}) }).status, 0);
+      return readdirSync(join(root, "packages/agent-org/src")).filter((name) => name !== "packaging").sort(); // `packaging` is the lab's helpers laid beside
+    };
+    assert.deepEqual(staged(undefined), ["deleted-since.test.ts"], "the control: FETCH_HEAD alone WAS the other fetch's, so the clobber is real here");
+    assert.deepEqual(staged(pinned.commit), ["current.test.ts"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("linkNodeModules links each entry to where the source gets it, and @a11ign/* with the same relative targets", () => {
+  const dir = mkdtempSync(join(tmpdir(), "verify-link-"));
+  try {
+    writeAll(dir, { "from/plain/index.js": "", "elsewhere/pkg/index.js": "" });
+    symlinkSync(join(dir, "elsewhere/pkg"), join(dir, "from/linked"));
+    mkdirSync(join(dir, "from/@a11ign"));
+    symlinkSync("../../packages/lab", join(dir, "from/@a11ign/lab"));
+    linkNodeModules({ from: join(dir, "from"), to: join(dir, "clone/node_modules") });
+    assert.equal(realpathSync(join(dir, "clone/node_modules/plain")), realpathSync(join(dir, "from/plain")));
+    assert.equal(realpathSync(join(dir, "clone/node_modules/linked")), realpathSync(join(dir, "elsewhere/pkg")));
+    assert.equal(readlinkSync(join(dir, "clone/node_modules/@a11ign/lab")), "../../packages/lab",
+      "a workspace link must stay relative, so the clone's resolves to the clone's own packages/");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the agentOrg suite runs in a clone of the head: the author's tree is clean DURING the run and after it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "verify-clone-test-"));
+  const [author, origin, tool, scratch] = ["author", "origin", "tool", "scratch"].map((name) => join(dir, name));
+  const fixture = "packages/lab/src/packaging/board-document-chrome-resolver.test.ts";
+  try {
+    mkdirSync(author); mkdirSync(origin); mkdirSync(scratch);
+    writeAll(author, { [fixture]: 'import "agent-org/src/board-document.mjs";\n', "packages/lab/src/packaging/sibling.mjs": "" });
+    git(author, "init", "-q", "-b", "main"); git(author, "add", "."); git(author, "commit", "-q", "-m", "author");
+    // The author's node_modules: the real one, which `tsx` is found through. Ignored, as in the real repository.
+    symlinkSync(realpathSync(new URL("node_modules", ROOT).pathname), join(author, "node_modules"));
+    writeFileSync(join(author, ".gitignore"), "node_modules\n");
+    git(author, "add", ".gitignore"); git(author, "commit", "-q", "-m", "ignore");
+    // The tool's one test reports, from INSIDE the suite, where it ran and whether the author's tree was clean then.
+    const report = join(dir, "report.json");
+    writeAll(origin, {
+      "src/probe.test.mjs": `import { writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { test } from "node:test";
+test("probe", () => writeFileSync(${JSON.stringify(report)}, JSON.stringify({ cwd: process.cwd(),
+  authorStatus: execFileSync("git", ["status", "--porcelain"], { cwd: ${JSON.stringify(author)}, encoding: "utf8" }) })));\n`,
+      "host/h": "", ".github/g": "", "CHANGELOG.md": "", "package.json": "{}", LICENSE: "", "README.md": "",
+    });
+    git(origin, "init", "-q", "-b", "main"); git(origin, "add", "."); git(origin, "commit", "-q", "-m", "tool");
+    git(dir, "clone", "-q", origin, tool);
+    const log = openSync(join(dir, "run.log"), "w");
+    let status: string;
+    // Run directly under `node --test`, the suite inside would inherit this marker and refuse to start ("run() called recursively").
+    const marker = process.env.NODE_TEST_CONTEXT;
+    delete process.env.NODE_TEST_CONTEXT;
+    try {
+      status = await runAgentOrgInClone({ repo: author, toolRepo: tool, ref: "main", copied: ["src", "host", ".github", "CHANGELOG.md", "package.json", "LICENSE", "README.md"], scratch, log });
+    } finally {
+      closeSync(log);
+      if (marker !== undefined) process.env.NODE_TEST_CONTEXT = marker;
+    }
+    assert.equal(status, "pass", readFileSync(join(dir, "run.log"), "utf8"));
+    const seen = JSON.parse(readFileSync(report, "utf8"));
+    assert.equal(realpathSync(seen.cwd.replace(/\/tree$/, "")) + "/tree", `${realpathSync(scratch)}/tree`, "the suite ran somewhere other than the clone");
+    assert.equal(seen.authorStatus, "", "the author's tree had a change while the suite ran");
+    assert.equal(git(author, "status", "--porcelain"), "");
+    assert.ok(!existsSync(join(author, "packages/agent-org")), "the tool was staged under the author's packages/");
+    assert.equal(readFileSync(join(author, fixture), "utf8"), 'import "agent-org/src/board-document.mjs";\n', "the fixture was edited in place");
+    assert.ok(!existsSync(agentOrgLayout(scratch).clone), "the clone was left behind");
+    assert.equal(git(author, "worktree", "list").split("\n").length, 1, "the clone's worktree entry was left behind");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // 2. `verify` CALLS THE SELECTOR `ci.yml` CALLS, AND DOES NOT COPY IT.
