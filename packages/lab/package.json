@@ -10,16 +10,16 @@
   },
   "dependencies": {
     "@a11ign/evidence": "0.2.0",
-    "@a11ign/judge": "0.2.0",
+    "@a11ign/judge": "0.2.1",
     "@a11ign/scorer": "0.2.0",
-    "@a11ign/screenreader-fleet": "0.1.0",
+    "@a11ign/screenreader-fleet": "0.1.1",
     "@a11ign/screenreader-worker": "0.1.0",
     "@a11ign/nvda-speech": "0.0.0"
   },
   "devDependencies": {
     "@a11ign/control": "0.1.0",
     "@guidepup/guidepup": "0.31.0",
-    "a11ign": "0.2.0",
+    "a11ign": "0.2.1",
     "serve": "14.2.6",
     "typescript": "^6.0.3",
     "yaml": "^2.9.1"
