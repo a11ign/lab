@@ -41,7 +41,7 @@ type Source = { file: string; text: string };
 
 /** Lines that record what was run, not what to run. Each anchor is a phrase from that line. */
 const HISTORICAL: readonly Allowed[] = [
-  { file: ".agent-org/roles/README.md", line: 440, anchor: "JS portion left none",
+  { file: ".agent-org/roles/README.md", line: 441, anchor: "JS portion left none",
     why: "the drill's own measurement of what `npm test` left behind" },
   { file: ".agent-org/roles/memory/local-worker-vms-deprecated.md", line: 14, anchor: "opened with",
     why: "what CLAUDE.md said on 2026-08-28, the contradiction this memory records" },
