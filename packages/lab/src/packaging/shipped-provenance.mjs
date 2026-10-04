@@ -29,6 +29,19 @@
 /** @typedef {{ name: string, text: string }} Changeset */
 
 /**
+ * `changeset version` renders a consumed entry as a NESTED list item, so every line of the provenance block
+ * reaches CHANGELOG.md indented two spaces (`packages/scorer/CHANGELOG.md`, entry 0d61149) while the block
+ * `provenanceLines` renders has none. Dropping the leading whitespace of each LINE makes the match
+ * indifferent to how deep an entry nests, and leaves the block whole: a stale encoder hash is still a
+ * different line, which is what the whole-block rule below exists to catch. Found by #3130: a verbatim
+ * match passed only while the promotion was still pending, so it refused the release that followed.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+const withoutLineIndent = (text) => text.replace(/^[ \t]+/gm, "");
+
+/**
  * @param {object} input
  * @param {{representation?: {schema?: string}, [k: string]: unknown}|null} input.shippedReport  the
  *   shipped model's
@@ -96,7 +109,7 @@ export function provenanceProblems({ shippedReport, changesets, changelog, rende
   // more misleading than no entry at all because it looks answered.
   const expected = renderProvenance(shippedReport);
   const stated = changesets.some((entry) => entry.text.includes(expected))
-    || Boolean(changelog && changelog.includes(expected));
+    || Boolean(changelog && withoutLineIndent(changelog).includes(withoutLineIndent(expected)));
   if (!stated) {
     problems.push("no pending changeset and no published CHANGELOG states the provenance of the weights "
       + `in packages/scorer/models/screenreader-scorer. They are:\n${expected}\n`

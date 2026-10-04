@@ -55,6 +55,44 @@ test("a PUBLISHED changelog satisfies it, so a released tree with nothing pendin
   assert.deepEqual(check([], `## 1.0.0\n\n${render(REPORT)}\n`), []);
 });
 
+// `changeset version` nests a consumed entry under its version heading, indenting every line two spaces.
+// This is the real rendering of packages/scorer/CHANGELOG.md's 0.1.0 entry (#3379), six lines wide.
+const CONSUMED_BLOCK = [
+  "- records: `3131`",
+  "- in-distribution floor: `0.641`",
+  "- derived floor: `0.641`",
+  "- floor source: `training-set-minimum`",
+  "- encoder: `53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db`",
+  "- feature schema: `screenreader-structured-v20`",
+].join("\n");
+const CONSUMED_REPORT = { dataset: { records: 3131 } };
+const renderConsumed = () => CONSUMED_BLOCK;
+const indented = (block: string) => block.split("\n").map((line) => `  ${line}`).join("\n");
+const consumedChangelog = (block: string) =>
+  `## 0.1.0\n\n### Major Changes\n\n- 0d61149: Retrained scorer weights.\n\n`
+  + `  Provenance, so a disputed finding can be traced to the model that produced it:\n\n${indented(block)}\n\n`
+  + `  Per-subtype thresholds:\n`;
+const checkConsumed = (changelog: string) =>
+  provenanceProblems({
+    shippedReport: CONSUMED_REPORT, changesets: [], changelog, renderProvenance: renderConsumed,
+  });
+
+test("a CONSUMED entry, rendered indented by `changeset version`, satisfies it", () => {
+  // THE LIVE DEFECT (#3379): the block is in CHANGELOG.md, every line indented, and a verbatim match could
+  // never find it -- so the gate passed only while the promotion was still pending and refused the release
+  // after it.
+  assert.deepEqual(checkConsumed(consumedChangelog(CONSUMED_BLOCK)), []);
+});
+
+test("an indented entry with ONE value changed is still refused", () => {
+  // Indifference to indent must not become indifference to content: the stale-encoder rule still binds.
+  const stale = CONSUMED_BLOCK.replace("53aa5117", "00000000");
+  assert.notEqual(stale, CONSUMED_BLOCK, "the mutation must change the block, or this asserts nothing");
+  const problems = checkConsumed(consumedChangelog(stale));
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /no pending changeset and no published CHANGELOG/);
+});
+
 test("an empty tree with nothing published anywhere is refused, not passed", () => {
   // A check that examines nothing must never report success. Here the weights exist and NOTHING accounts
   // for them, which is the strongest form of the defect rather than the absence of one.
