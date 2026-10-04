@@ -129,6 +129,14 @@ const CLASSIFICATION: Record<string, { guard: string; note: string }> = {
       + "checkout discards is ever unrecoverable by pulling. `-e remove=<path>` is the one deliberate "
       + "override, and it requires a human to have named the path having looked at it first.",
   },
+  "packages/control/ansible/tasks/lab-layer-reset.yml": {
+    guard: "Refuse to discard layer work origin does not have",
+    note: "SAFE — the layer half of the same reset (#3396), the same two steps. The discard runs only when "
+      + "`apply=true`, and AFTER the task quoted here, which diffs every dirty tracked file of the layer against "
+      + "`origin/<layer_refs[name]>` and FAILS the play (nothing after it runs) unless its content is already on "
+      + "origin; a dirty layer with no ref passed fails the assert before that. Tracked files only "
+      + "(`--untracked-files=no`), as the core's.",
+  },
 };
 
 test("the discovery finds a non-trivial population — vacuity guard for the walk itself", () => {
@@ -139,7 +147,7 @@ test("the discovery finds a non-trivial population — vacuity guard for the wal
 
 test("every discovered live site is classified, and its guard still exists", () => {
   const discovered = discoverCheckoutDashSites();
-  // The known census: 1 (packages/control/ansible/lab-reset.yml, #637). A floor, not a pin — a
+  // The known census: 2 (packages/control/ansible/lab-reset.yml, #637; tasks/lab-layer-reset.yml, #3396). A floor, not a pin — a
   // legitimate new destructive-checkout site raises it, and this same assertion is what catches one
   // arriving unclassified: an unclassified site fails the deepEqual below, named.
   assert.ok(discovered.length >= 1,

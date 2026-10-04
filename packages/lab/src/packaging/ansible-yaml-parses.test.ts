@@ -50,7 +50,10 @@ const committedYml = () =>
 // 56 with #3395's four task includes (`tasks/layer-checkouts.yml`, `layer-origins.yml`, `read-layer-checkouts.yml`,
 // `require-layer-origin-names.yml`): the guests' second-checkout block, a real addition to the population this
 // parses, moved deliberately as the message below asks.
-const EXPECTED_FILES = 56;
+// 58 with #3396's two task includes (`tasks/lab-layer-checkouts.yml`, `tasks/lab-layer-reset.yml`): the lab's
+// fetch and reset halves for a layer that lives in its own repository, a real addition to the population this
+// parses, moved deliberately as the message below asks.
+const EXPECTED_FILES = 58;
 const EXPECTED_VENDORED = 2;
 
 test("#1274: every committed Ansible .yml parses, and the file list is NAMED not globbed", () => {
