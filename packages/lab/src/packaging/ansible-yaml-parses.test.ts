@@ -47,7 +47,10 @@ const committedYml = () =>
 // addition to the population this parses, moved deliberately as the message below asks.
 // 52 with #2656's `auto-off-schedule.yml`: a new playbook (installs the fleet auto-off timer, disabled) is
 // a real addition to the population this parses, moved deliberately as the message below asks.
-const EXPECTED_FILES = 52;
+// 56 with #3395's four task includes (`tasks/layer-checkouts.yml`, `layer-origins.yml`, `read-layer-checkouts.yml`,
+// `require-layer-origin-names.yml`): the guests' second-checkout block, a real addition to the population this
+// parses, moved deliberately as the message below asks.
+const EXPECTED_FILES = 56;
 const EXPECTED_VENDORED = 2;
 
 test("#1274: every committed Ansible .yml parses, and the file list is NAMED not globbed", () => {
