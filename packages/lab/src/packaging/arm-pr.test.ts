@@ -589,7 +589,7 @@ test("#2505: `session:worker-capture`, `-judge` and `-tooling` are refused as RE
 // here is one line, and it makes the writer say which of the two it is.
 // #2403 added `family`: `{prefix, from}` says every `<prefix><n>` for n from `from` is an instance of the ROLE, so the
 // roster need not carry one entry per address. A fact about the role, like `spare`; it names no pane, pid or workspace.
-const ROLE_ENTRY_KEYS = ["name", "role", "brief", "started", "spare", "drain", "family"];
+const ROLE_ENTRY_KEYS = ["name", "role", "brief", "started", "spare", "drain", "family", "persistent"];
 
 /** The `live` entries carrying a key that is not a role fact, each with the keys that offend. */
 function processBoundEntries(live: SessionEntry[]): { name: unknown; keys: string[] }[] {
