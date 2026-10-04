@@ -231,6 +231,93 @@ test("#2630 mutation: removing the bullet, or any one clause of it, is caught", 
   }
 });
 
+// --- #3441: the three end-of-turn rules are said ONCE, in the brief a spawned engineer is told to read ----
+//
+// A spawned engineer's first order used to carry them (1,142 of its 1,711 bytes, paid at every wake) while
+// `engineer.md` carried none; the order stops repeating them only once the brief says them. Asserted BY
+// SHAPE inside the one section, and counted across the whole file so a second copy fails: the point of the
+// move is one place.
+
+const engineerBrief = readFileSync(
+  new URL("../../../../.agent-org/roles/engineer.md", import.meta.url), "utf8");
+
+const END_OF_TURN_HEADING = /^## Nobody is at the terminal\b.*$/gm;
+
+/** One clause the section must carry, with the pattern that recognises it. */
+interface EndOfTurnClause { clause: string; pattern: RegExp }
+
+const END_OF_TURN_CLAUSES: ReadonlyArray<EndOfTurnClause> = [
+  { clause: "when genuinely blocked, say so on the row and message `product-manager`, never wait on a human",
+    pattern: /message `product-manager`[^]*?never stop and wait on a human/ },
+  { clause: "ending a turn with a question is the same as stopping",
+    pattern: /Ending your turn with a question is the same as stopping/ },
+  { clause: "an action in your lane is taken and reported, not offered",
+    pattern: /If the action is in your lane, take it and report what you did/ },
+  { clause: "what is not yours is routed with `answer:<session>` on the row",
+    pattern: /`answer:<session>` on the row for a ruling/ },
+  { clause: "after routing, end the turn",
+    pattern: /route it, then end the turn/ },
+];
+
+/** The text from the section heading to the next `## ` heading, or `null` when no section carries it. */
+const endOfTurnSection = (brief: string): string | null => {
+  const heading = [...brief.matchAll(END_OF_TURN_HEADING)];
+  if (heading.length !== 1) return null;
+  const from = heading[0].index as number;
+  const next = brief.indexOf("\n## ", from + 1);
+  return brief.slice(from, next === -1 ? undefined : next);
+};
+
+const NO_SECTION = "the section headed \"Nobody is at the terminal\", exactly once";
+
+/** The clauses the brief lacks: the decider both the real read and every mutation call. */
+const missingEndOfTurnClauses = (brief: string): string[] => {
+  const section = endOfTurnSection(brief);
+  if (section === null) return [NO_SECTION];
+  return END_OF_TURN_CLAUSES.filter(({ pattern }) => !pattern.test(section)).map(({ clause }) => clause);
+};
+
+/** How many times a clause's wording appears anywhere in the brief; more than one is a second copy. */
+const copiesOf = (brief: string, { pattern }: EndOfTurnClause): number =>
+  [...brief.matchAll(new RegExp(pattern.source, "g"))].length;
+
+test("#3441: engineer.md carries each of the three end-of-turn rules, in one section", () => {
+  assert.deepEqual(missingEndOfTurnClauses(engineerBrief), [],
+    "roles/engineer.md must say, in its own section, when to stop, what a question costs and how to route");
+});
+
+test("#3441 mutation: removing the section, or any one clause, is red for exactly that clause", () => {
+  const section = endOfTurnSection(engineerBrief) as string;
+  const withoutSection = engineerBrief.replace(section, "");
+  assert.notEqual(withoutSection, engineerBrief, "the mutation must actually remove something");
+  assert.deepEqual(missingEndOfTurnClauses(withoutSection), [NO_SECTION]);
+  for (const { clause, pattern } of END_OF_TURN_CLAUSES) {
+    const hollowed = engineerBrief.replace(section, section.replace(pattern, ""));
+    assert.notEqual(hollowed, engineerBrief, `the mutation must remove the clause: ${clause}`);
+    assert.deepEqual(missingEndOfTurnClauses(hollowed), [clause]);
+  }
+});
+
+test("#3441: each clause appears ONCE in the file, and a second copy elsewhere fails", () => {
+  for (const entry of END_OF_TURN_CLAUSES) {
+    assert.equal(copiesOf(engineerBrief, entry), 1, `one copy only: ${entry.clause}`);
+  }
+  // The positive control for the count: a duplicated section is seen as a second copy, and not as a pass.
+  const section = endOfTurnSection(engineerBrief) as string;
+  const doubled = `${engineerBrief}\n${section.replace(/^## Nobody/, "Elsewhere: nobody")}`;
+  for (const entry of END_OF_TURN_CLAUSES) {
+    assert.equal(copiesOf(doubled, entry), 2, `a copy elsewhere must be counted: ${entry.clause}`);
+  }
+});
+
+test("#3441: engineer.md stays within the size it was last measured at, plus this section", () => {
+  // 17,226 bytes before this row; the section is ~1.3 KB and read once per instance. The ceiling is the
+  // measured size rounded up, so growth beyond this section has to move the number on purpose.
+  const ENGINEER_BRIEF_BYTE_CEILING = 18_800;
+  const bytes = Buffer.byteLength(engineerBrief);
+  assert.ok(bytes <= ENGINEER_BRIEF_BYTE_CEILING, `engineer.md is ${bytes} bytes; the ceiling is ${ENGINEER_BRIEF_BYTE_CEILING}`);
+});
+
 // --- #1157: the line that stands in for a guard the 64 call-derived assertions cannot have ------------
 //
 // `ceo` split 236 emptiness assertions three ways on 2026-09-12: a RULE where a rule can work (the 64
