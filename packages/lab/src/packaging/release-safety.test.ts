@@ -36,8 +36,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
@@ -201,4 +203,50 @@ test("#1251: every permission a called workflow's job requests is granted by its
       }
     }
   }
+});
+
+// #3369: `plan` counted a changeset that names ONLY private packages as pending. `privatePackages: { version: false }`
+// means `changeset version` consumes none of them, so 67 such files on `main` held `pending > 0` for ever and
+// `mode=publish` was unreachable. This RUNS the plan step's own script against a fixture tree rather than matching its
+// text: the defect was in what the script computes, and a regex over the source would pass a script that miscounts.
+// The registry is a stub `npm` that answers 0.1.0 for every name, so a manifest at 0.2.0 is ahead and one at 0.1.0 is level.
+test("guard 1 (reachability): a changeset naming only private packages is not pending, so a publish can be reached", () => {
+  const planScript = parsed.jobs.plan.steps?.find((step) => /mode=publish/.test(step.run ?? ""))?.run ?? "";
+  assert.notEqual(planScript, "", "the plan step that decides the mode must be found, or every reading below is of nothing");
+  const manifests = { "pub": { name: "@fix/pub", version: "0.2.0" }, "priv": { name: "@fix/priv", version: "0.0.0", private: true } };
+  const planWith = (changesets: Record<string, string>): { pending: number; mode: string } => {
+    const root = mkdtempSync(join(tmpdir(), "release-plan-"));
+    try {
+      for (const [dir, manifest] of Object.entries(manifests)) {
+        mkdirSync(join(root, "packages", dir), { recursive: true });
+        writeFileSync(join(root, "packages", dir, "package.json"), JSON.stringify(manifest));
+      }
+      mkdirSync(join(root, ".changeset"));
+      writeFileSync(join(root, ".changeset", "README.md"), "---\n\"@fix/pub\": major\n---\n");
+      for (const [file, body] of Object.entries(changesets)) writeFileSync(join(root, ".changeset", file), body);
+      mkdirSync(join(root, "bin"));
+      writeFileSync(join(root, "bin", "npm"), "#!/bin/sh\necho 0.1.0\n");
+      chmodSync(join(root, "bin", "npm"), 0o755);
+      const output = join(root, "github-output");
+      writeFileSync(output, "");
+      const log = execFileSync("bash", ["-c", planScript], {
+        cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, PATH: `${join(root, "bin")}:${process.env.PATH}`, EVENT: "push", GITHUB_OUTPUT: output },
+      });
+      return { pending: Number(/changesets naming a release: (\d+)/.exec(log)?.[1]), mode: /^mode=(.+)$/m.exec(log)?.[1] ?? "" };
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  const changeset = (...names: string[]) => `---\n${names.map((name) => `"${name}": patch`).join("\n")}\n---\n\nA note.\n`;
+  // The empty changeset the version pull request carries, and the private-only ones that were the defect.
+  const privateOnly = { "empty.md": "---\n---\n", "a.md": changeset("@fix/priv"), "b.md": changeset("@fix/priv") };
+  assert.deepEqual(planWith(privateOnly), { pending: 0, mode: "publish" },
+    "private-only changesets are not pending: nothing is left for `changeset version`, so the ahead package publishes");
+  // The positive control: the same tree with ONE public changeset must still be pending, or "0" above is a script that counts nothing.
+  assert.deepEqual(planWith({ ...privateOnly, "c.md": changeset("@fix/pub") }), { pending: 1, mode: "version-pr" },
+    "a changeset naming a public package is pending, and the version pull request comes before any publish");
+  assert.equal(planWith({ "mixed.md": changeset("@fix/priv", "@fix/pub") }).pending, 1, "one public name among private ones is pending");
+  assert.equal(planWith({ "unknown.md": changeset("@fix/nobody") }).pending, 1,
+    "a name no manifest answers to is not provably private, so it counts: `changeset version` is where it fails loudly");
 });
