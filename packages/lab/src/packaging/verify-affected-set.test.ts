@@ -12,8 +12,8 @@
  * the config names it, so this file is the list's maintainer.
  *
  * KNOWN RESIDUALS, named so nobody reads them as covered: (1) a test that reads a `.ts`/`.mjs` file BY PATH, as text or by
- * spawning it, is not in the population (206 targets at `040c643ba`, mostly sources: widening on them would be the whole suite on
- * any code change), so a change to such a file does not select that test locally; (2) a test that builds a path with `join`
+ * spawning it, is not in the population (205 targets at the commit this row landed, all sources: widening on them would be the
+ * whole suite on any code change), so a change to such a file does not select that test locally; (2) a test that builds a path with `join`
  * from parts names no literal. CI stays the authority for both, and the rule for widening is the next row's (c).
  *
  * POSITIVE CONTROLS, named where each absence is asserted: the derived population is non-empty and holds a known directory and
@@ -124,7 +124,7 @@ function uncovered(patterns: readonly string[], reads: Map<string, string[]>): s
 
 const READS = readsByPath();
 const TSCONFIG_FLOOR = 3;
-/** The derived population was 263 targets at `040c643ba`; half of that is a floor a broken walk cannot reach. */
+/** The derived population was 241 targets when this was written; under half of that is a floor a broken walk cannot reach. */
 const POPULATION_FLOOR = 100;
 
 // 1. EVERY INPUT THE GRAPH CANNOT SEE IS A TRIGGER, AND THE BY-PATH HALF IS DERIVED.
