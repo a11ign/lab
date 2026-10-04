@@ -26,12 +26,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { globSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { globSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, matchesGlob, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
 import { treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { underFloor } from "../../../guards/src/assert-glob-not-empty.mjs";
@@ -51,7 +51,6 @@ const SOURCE = /\.(ts|mjs|cjs|js|tsx)$/;
 const SELF = "packages/lab/src/packaging/verify-affected-set.test.ts";
 
 const DIRECTORY_TAIL = "/**";
-const GIT_LS_FILES_BUFFER = 2 ** 26;
 
 /** The config's trigger list, from the file on disk: the specifier is computed so rstest does not bundle its own config. */
 async function configTriggers(): Promise<string[]> {
@@ -69,8 +68,7 @@ function covers(patterns: readonly string[], path: string): boolean {
     || (pattern.endsWith(DIRECTORY_TAIL) && matchesGlob(path, withoutTail(pattern))));
 }
 
-const tracked = execFileSync("git", ["ls-files"], { cwd: ROOT, encoding: "utf8", env: sandboxGitEnv(), maxBuffer: GIT_LS_FILES_BUFFER })
-  .split("\n").filter(Boolean);
+const tracked = walkTree({ kind: "all", roots: [] }).map((file) => file.path);
 const trackedSet = new Set(tracked);
 const directories = new Set(tracked.flatMap((file) => {
   const parents: string[] = [];
@@ -219,14 +217,15 @@ test("a run with no record, a non-zero exit, or a failed test is not a pass", ()
 // THE PREMISE OF THE FLOOR, MEASURED ON THE REAL RSTEST: a broken include under `--changed` exits 0 with no files.
 test("rstest itself exits 0 with zero files for a broken include under --changed, which is why the floor is separate", () => {
   const dir = mkdtempSync(join(tmpdir(), "affected-premise-"));
+  const summary = join(dir, "summary.json");
   try {
     const { command, args } = pnpmCliInvocation(["exec", "rstest", "run", "--config", "scripts/rstest/rstest.config.mjs",
       "--include", "nothing-here/**/*.test.ts", "--changed=HEAD~1"]);
-    const env = { ...sandboxGitEnv({ A11Y_RSTEST_RECORD_DIR: dir }) } as Record<string, string | undefined>;
+    // This test runs inside an rstest worker, whose variable would make the child's config ignore the summary file.
+    const env = { ...sandboxGitEnv({ A11Y_RSTEST_RECORD_DIR: dir, A11Y_RSTEST_SUMMARY_FILE: summary }) } as Record<string, string | undefined>;
     delete env.RSTEST_WORKER_ID;
     execFileSync(command, args, { cwd: ROOT, env: env as NodeJS.ProcessEnv, stdio: "pipe" });
-    assert.equal(readdirSync(dir).length, 1, "rstest left no run record, so the reading below is of nothing");
-    assert.deepEqual(readRunSummary(dir)?.testFiles, 0);
+    assert.deepEqual(readRunSummary(summary)?.testFiles, 0, "rstest wrote no summary, so there is no reading of zero files");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
