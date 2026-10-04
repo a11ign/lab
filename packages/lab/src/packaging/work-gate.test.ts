@@ -4646,10 +4646,14 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // #2701 added `screenreader-worker-extraction.test.ts`: checked -- it asks `--is-shallow-repository` before reading `git log` over `packages/nvda-worker`
   // and `packages/nvda-speech` (the history `filter-repo` carries across, file contents AND commit messages, is part of the first commit's leak scan),
   // so it genuinely needs history, and its pull request declares `History: full`.
+  // #2702 added `screenreader-fleet-extraction.test.ts`: checked -- it asks `--is-shallow-repository` before reading `git log` over `packages/worker-fleet`
+  // (the history `filter-repo` carries across, file contents AND commit messages, is part of the first commit's leak scan), so it genuinely needs
+  // history, and its pull request declares `History: full`.
   // The pin's move to ^0.2.0 (#2905) is the "this file returns then" above: agent-org's walk follows the `agent-org/src/...` specifier, and THIS file
   // imports `shippedUnits` from `agent-org/src/host-units.mjs`, the same edge `host-units.test.ts` had. Checked rather than edited past: no import was
   // added, the walk got able to see one that was already here. No Acceptance names this file, so no pull request owes a `History: full` for it.
-  assert.deepEqual(charged, ["pre-push-resolve-toward-main.test.ts", "screenreader-worker-extraction.test.ts", "work-gate.test.ts"],
+  assert.deepEqual(charged, ["pre-push-resolve-toward-main.test.ts", "screenreader-fleet-extraction.test.ts", "screenreader-worker-extraction.test.ts",
+    "work-gate.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
 });
