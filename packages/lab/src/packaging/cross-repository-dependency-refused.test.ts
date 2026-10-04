@@ -159,7 +159,7 @@ test("control: DEPARTED is not empty, each entry says why, and each repository r
     dora: { repo: string; release: { kind: string; package?: string } }[];
   }).dora;
   for (const entry of DEPARTED) {
-    assert.ok(entry.reason.length > 0, `${entry.name} has no reason beside it`);
+    assert.notEqual(entry.reason.trim(), "", `${entry.name} has no reason beside it`);
     const declared = dora.find((row) => row.repo === entry.repository);
     assert.equal(declared?.release.package, entry.name, `${entry.name} is not the package project.json says ${entry.repository} releases`);
   }
