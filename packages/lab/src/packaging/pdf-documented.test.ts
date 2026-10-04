@@ -6,7 +6,7 @@
 //
 // WHAT IS CHECKED AGAINST WHAT. The sentence in each document is checked against the code, not against a copy of
 // the code's own comment: `looksLikePdfUrl` is CALLED on the URL forms the prose promises, the rule ids and the
-// success criteria the prose names are read from `packages/pdf/src/index.ts`, and the "needs no worker, browser or
+// success criteria the prose names are read from the installed `@a11ign/documents` (`dist/index.js`), and the "needs no worker, browser or
 // NVDA" claim is read off `runPdfLayer`'s body and off `main`'s ORDER (the PDF branch must come before
 // `leaseWorker`, or "no worker" is false however the comment reads).
 //
@@ -17,14 +17,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { looksLikePdfUrl } from "../../../pdf/src/index.js";
+import { looksLikePdfUrl } from "../../../cli/node_modules/@a11ign/documents/dist/index.js";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const read = (path: string) => readFileSync(resolve(REPO, path), "utf8");
 
 const DOCUMENTS = ["README.md", "docs/try-it.md", "docs/getting-started.md"];
 const CLI_SOURCE = "packages/cli/src/cli.ts";
-const PDF_SOURCE = "packages/pdf/src/index.ts";
+// The PUBLISHED package, as `cli` installed it (#3125: `documents` left this repository). Its compiled `dist` keeps the finding
+// literals' shape, so the rule ids are still read off the code the user runs, not off a copy of it.
+const PDF_SOURCE = "packages/cli/node_modules/@a11ign/documents/dist/index.js";
 
 /** The paragraph that IS the PDF sentence: about a PDF, the tag tree and a `.pdf` URL. Undefined when none is. */
 export function pdfParagraph(page: string): string | undefined {
