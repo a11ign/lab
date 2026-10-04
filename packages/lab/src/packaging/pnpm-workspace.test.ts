@@ -41,11 +41,15 @@ function internalEdges(): { edge: string; version: string }[] {
       .map(([name, { version }]) => ({ edge: `${importer} -> ${name}`, version }))));
 }
 
-test("EVERY INTERNAL DEPENDENCY IN pnpm-lock.yaml IS A LINK, never a registry copy", () => {
+/** Packages that publish from ANOTHER repository, so the registry is where `cli` reads them (#3125); `cli-documents-dependency.test.ts`
+ * pins that edge. Named, so a package that should be a `link:` and is not still fails here. */
+const CONSUMED_FROM_THE_REGISTRY = ["packages/cli -> @a11ign/documents"];
+
+test("EVERY INTERNAL DEPENDENCY IN pnpm-lock.yaml IS A LINK, never a registry copy, but the named packages that left", () => {
   const edges = internalEdges();
   // The positive control for the emptiness below: a parse that found none would pass over nothing.
   assert.ok(edges.length >= MIN_INTERNAL_EDGES, `only ${edges.length} internal edges read from pnpm-lock.yaml -- the parse broke`);
-  assert.deepEqual(edges.filter(({ version }) => !version.startsWith("link:")), [],
+  assert.deepEqual(edges.filter(({ edge, version }) => CONSUMED_FROM_THE_REGISTRY.includes(edge) !== !version.startsWith("link:")), [],
     "an @a11ign/* dependency resolved from the registry, not from packages/ -- check linkWorkspacePackages "
     + "in pnpm-workspace.yaml and that the pinned version matches the workspace package's own");
 });

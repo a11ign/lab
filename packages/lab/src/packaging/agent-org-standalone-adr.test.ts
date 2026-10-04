@@ -270,6 +270,10 @@ const RESERVED_BY_A_ROW: readonly RegExp[] = [
   /^packages\/lab\/src\/packaging\/(?:pr-open-region|reconstitution-drill|row-claim-one-row|wake-drain|wake)\.test\.ts$/,
   // #2975 PR 3 deletes the 67 further lab tests whose subject now lives in a11ign/agent-org and whose every test title is in
   // that repository's same-named test (and the two update-branch tests, whose module the tool no longer has).
+  // #3125 (move 6) DELETES `packages/pdf/` and `documents-extraction.test.ts`, which M5's Region named: `@a11ign/documents` publishes from
+  // a11ign/documents and `cli` takes it by range, so the Region that filed the move no longer finds either on disk.
+  /^packages\/pdf\/$/,
+  /^packages\/lab\/src\/packaging\/documents-extraction\.test\.ts$/,
   /^packages\/lab\/src\/packaging\/(?:acceptance-exit-code|acceptance-prose|arm-pr-labels-live|auto-arm-sweep-parity|auto-arm-token|board-appendix-gate-kind|board-appendix-gate-record|board-data-issues-paging|board-document-chrome-resolver|board-gate-source|board-liveness|board-report-smoke|board-reported-data-integrity|board-schedule-liveness|board-snapshot|board-status-health|board-summary-check|branch-inventory|closed-pr-answer-owed|closes-declaration|conflict-metrics|decision-declaration|enumeration-completeness|fleet-gated-nightly|hand-fix-ledger|host-state-dir-wiring|idle-claimant|keyed-repo-review|late-edition|merge-queue|merge-ref-staleness|org-health-queued-lab-jobs|pr-hold|pr-owner-total|pr-stall-reason|pr-template-acceptance|prompt-session|prompt-session-direct-record|prune-tmp|public-claim|queue-table|review-verdict|row-call-count-signal|row-claim-live|settle-closed-status|shadow-gate|shadow-reads|shadow-reads-round-trip|shared-stash-guard|stuck-escalation-goes-to-ceo|tracker-comment|tracker-writer-spawn-guard|update-branch-decision|update-branch-sweep|waiting-condition|wake-clear-settle|wake-engineer-brief|wake-escalation-answered|wake-followup-header|wake-limited-session|wake-no-clear-for-instances|wake-one-row|wake-rehand|wake-row-named-instance|wake-spare-family|wake-stranded-order|workflow-run-liveness)\.test\.ts$/,
 ];
 
