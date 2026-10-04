@@ -127,3 +127,58 @@ test("#3161: the version commit carries no empty changeset -- the script no long
   assert.doesNotMatch(source, /add\s+--empty|"add",\s*"--empty"/);
   assert.doesNotMatch(source, /writeFileSync|version-packages\.md/);
 });
+
+/**
+ * #3584: the generic step's BASE. A queue entry behind the version-packages entry contains that entry's consumed bumps, which
+ * `origin/main` does not yet hold, so diffing the entry against `origin/main` reads them as its own. The step's `run` is
+ * EVALUATED for each event (its `${{ }}` expressions resolved against contexts), never grepped.
+ */
+const QUEUE_PARENT = "1111111111111111111111111111111111111111";
+const MAIN = "origin/main";
+
+/** GitHub's lookup: a path that does not exist on this event is the empty string, not an error. */
+function lookup(path: string, context: unknown): string {
+  const value = path.split(".").reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], context);
+  return typeof value === "string" ? value : "";
+}
+
+/** Resolves every `${{ a.b || c.d }}` in a `run`; only dotted paths joined by `||` are modelled, and anything else is refused. */
+function interpolate(run: string, context: unknown): string {
+  return run.replace(/\$\{\{\s*(.+?)\s*\}\}/g, (_match, expression: string) => {
+    assert.match(expression, /^[\w.-]+(\s*\|\|\s*[\w.-]+)*$/, `\`${expression}\` is not modelled by this evaluator; extend it before trusting it`);
+    return expression.split("||").map((path) => lookup(path.trim(), context)).find((value) => value !== "") ?? "";
+  });
+}
+
+/** What `--since=` the enforcement step passes to `changeset status` on this event. */
+function sinceFor(run: string, eventName: "pull_request" | "merge_group"): string {
+  const event = eventName === "merge_group" ? { merge_group: { base_sha: QUEUE_PARENT } } : { pull_request: { number: 1 } };
+  const context = { github: { event_name: eventName, event }, needs: { changed: { outputs: { base: MAIN } } } };
+  const since = /changeset status --since=(\S*);/.exec(interpolate(run, context));
+  assert.ok(since, "the step no longer runs `changeset status --since=<ref>;` -- re-read this test");
+  return since[1];
+}
+
+/** True when `run` diffs a queue entry against its parent AND a pull request against the base. */
+function diffsEntryAgainstParent(run: string): boolean {
+  return sinceFor(run, "merge_group") === QUEUE_PARENT && sinceFor(run, "pull_request") === MAIN;
+}
+
+test("#3584: a queue entry is diffed against its parent and a pull request against the base", () => {
+  assert.ok(enforcement?.run, "the enforcement step lost its `run`; re-read this test");
+  assert.equal(sinceFor(enforcement.run, "merge_group"), QUEUE_PARENT, "an entry built on the version entry must not be diffed against origin/main");
+  assert.equal(sinceFor(enforcement.run, "pull_request"), MAIN, "`merge_group.base_sha` is empty on a pull request, so the base must still be used");
+  assert.equal(diffsEntryAgainstParent(enforcement.run), true);
+});
+
+test("#3584 POSITIVE CONTROLS: the step as it was is RED on merge_group, and a pull request diffed against base_sha is RED on pull_request", () => {
+  assert.ok(enforcement?.run, "the enforcement step lost its `run`; re-read this test");
+  const before = enforcement.run.replace("${{ github.event.merge_group.base_sha || needs.changed.outputs.base }}", "${{ needs.changed.outputs.base }}");
+  assert.notEqual(before, enforcement.run, "the mutation did not apply: the step's base expression changed shape; re-read this test");
+  assert.equal(sinceFor(before, "merge_group"), MAIN, "the old step diffs an entry against origin/main");
+  assert.equal(diffsEntryAgainstParent(before), false);
+
+  const wrong = enforcement.run.replace("${{ github.event.merge_group.base_sha || needs.changed.outputs.base }}", "${{ github.event.merge_group.base_sha }}");
+  assert.equal(sinceFor(wrong, "pull_request"), "", "base_sha is empty on a pull request");
+  assert.equal(diffsEntryAgainstParent(wrong), false);
+});
