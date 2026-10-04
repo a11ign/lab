@@ -236,7 +236,7 @@ test("the real baseline is NON-EMPTY and records the deploy path, so a guard tha
   assert.ok(existsSync(join(ROOT, BASELINE_PATH)));
   assert.ok(baseline.length > 0, "the baseline is empty: the scan or the baseline has broken");
   const froms: string[] = baseline.map((e: { from: string }) => e.from);
-  assert.ok(froms.includes("packages/nvda-worker/src/run-capture-check.cmd"), "the launcher that runs on the worker is recorded");
+  assert.ok(froms.includes("packages/nvda-worker/src/launcher-reach.cmd"), "the declaration of what the worker's launchers reach is recorded");
   assert.ok(froms.some((f) => f.startsWith("packages/control/ansible/")), "the Ansible files that place it are recorded");
   assert.ok(froms.some((f) => f.startsWith("packages/worker-fleet/src/")), "the fleet's own reaches are recorded");
 });

@@ -216,26 +216,31 @@ test("control: a relative import across the boundary is REFUSED naming both ends
 
 // ---- 3. what still crosses is what the guard baselines, and nothing is undecided -------------------------
 
-/** The three Windows launcher lines (ADR 0039 item 6): cutting them is a re-provision of every worker box, which is the fleet's row and not this one's. */
+/**
+ * The three launcher lines (ADR 0039 item 6): cutting them is a re-provision of every worker box, which is the fleet's row and not
+ * this one's. Two of them sit on the ONE declaration `launcher-reach.cmd` (#3397), owned by the move row (#2701); `run-server.cmd`
+ * keeps its own copy because the provision stamp hashes it, so it stays #2614's until the stamp next moves.
+ */
 const KNOWN_OUT_EDGES = [
-  ["packages/nvda-worker/src/run-capture-check.cmd", "packages/lab/src/harnesses/capture-check.mjs"],
-  ["packages/nvda-worker/src/run-capture-check.cmd", "packages/worker-fleet/src/provisioning/apply-foreground-lock-timeout.ps1"],
-  ["packages/nvda-worker/src/run-server.cmd", "packages/worker-fleet/src/provisioning/apply-foreground-lock-timeout.ps1"],
+  ["packages/nvda-worker/src/launcher-reach.cmd", "packages/lab/src/harnesses/capture-check.mjs", "owned-by:#2701"],
+  ["packages/nvda-worker/src/launcher-reach.cmd", "packages/worker-fleet/src/provisioning/apply-foreground-lock-timeout.ps1", "owned-by:#2701"],
+  ["packages/nvda-worker/src/run-server.cmd", "packages/worker-fleet/src/provisioning/apply-foreground-lock-timeout.ps1", "owned-by:#2614"],
 ] as const;
 
-test("the guard's OUT direction from the layer is exactly the three launcher lines, each baselined owned-by:#2614", () => {
+test("the guard's OUT direction from the layer is exactly the three launcher lines, each baselined with its owner", () => {
   // The row's Acceptance says the guard "finds no edge in either direction". It cannot today, and the guard says why in its own
   // baseline: 3 out and 32 in (read with `node packages/guards/src/layer-edges.mjs --check`), every one given a disposition by
   // #2612/#2613 (`owned-by:#2614`, `travels`, `by-name`). This test pins the part that decides whether the PACKAGES can leave
   // (out), and the baseline test in layer-edges.test.ts pins the rest; it does not assert an emptiness the tree does not have.
   const edges = findEdges({ root: REPO_ROOT, tracked: trackedFiles(REPO_ROOT) });
   const out = edges.filter((edge) => edge.direction === "out" && LAYER.some((pkg) => edge.from.startsWith(`${pkg}/`)));
-  assert.deepEqual(out.map((edge) => [edge.from, edge.to]), KNOWN_OUT_EDGES.map((edge) => [...edge]));
+  assert.deepEqual(out.map((edge) => [edge.from, edge.to]), KNOWN_OUT_EDGES.map(([from, to]) => [from, to]));
   assert.ok(out.every((edge) => edge.kind === "launcher"), "an out edge that is not a launcher line is code, which would leave with the layer");
   const baseline = readBaseline(REPO_ROOT) as { from: string; to: string; direction: string; disposition: string }[];
   for (const edge of out) {
     const entry = baseline.find((row) => row.from === edge.from && row.to === edge.to && row.direction === "out");
-    assert.equal(entry?.disposition, "owned-by:#2614", `${edge.from} -> ${edge.to} has no owner in the baseline`);
+    const owner = KNOWN_OUT_EDGES.find(([from, to]) => from === edge.from && to === edge.to)?.[2];
+    assert.equal(entry?.disposition, owner, `${edge.from} -> ${edge.to} has no owner in the baseline`);
   }
   const layerEdges = edges.filter((edge) => LAYER.some((pkg) => edge.from.startsWith(`${pkg}/`) || edge.to.startsWith(`${pkg}/`)));
   assert.ok(layerEdges.length > out.length, "no IN edge read: the guard looked at the wrong tree, so the out reading above is not evidence");
