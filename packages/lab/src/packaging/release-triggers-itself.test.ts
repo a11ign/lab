@@ -221,6 +221,50 @@ test("the version pull request is the only write: a branch, with a token that le
   assert.equal((text.match(/Acceptance:/g) ?? []).length, 1, "exactly one Acceptance section: a duplicated one cost four red runs");
 });
 
+// ---- #3131 done-when 5: the version pull request signs off the owned paths it always touches ----
+
+interface OwnedFact { id: string; states: string[] }
+const ownedFacts = (): OwnedFact[] => (JSON.parse(load("docs/owned-path-facts.json")) as { facts: OwnedFact[] }).facts;
+
+/** The body the `version-pr` job opens the pull request with: the heredoc between `<<'BODY'` and its terminator. */
+function versionPrBody(workflow: Workflow): string {
+  const run = (workflow.jobs["version-pr"].steps ?? []).map((step) => step.run ?? "").find((text) => text.includes("<<'BODY'")) ?? "";
+  return run.split("<<'BODY'\n")[1]?.split(/^\s*BODY\s*$/m)[0] ?? "";
+}
+
+/**
+ * The facts a body leaves unstated, read as `owned-path-signoff` reads them: some line names the fact and says one of its
+ * states as a whole word. The version pull request always touches `packages/nvda-worker/{CHANGELOG.md,package.json}`, which
+ * is owned, so a template that states none of them makes `ownedPaths` red on a pull request nobody may push to (#3353).
+ */
+function unstatedOwnedFacts(body: string, facts: OwnedFact[]): string[] {
+  const lines = body.split("\n");
+  return facts
+    .filter((fact) => !lines.some((line) => line.includes(fact.id) && fact.states.some((state) => new RegExp(`\\b${state}\\b`, "i").test(line))))
+    .map((fact) => fact.id);
+}
+
+test("the version pull request's body states every owned-path fact, so `ownedPaths` can pass on it", () => {
+  const facts = ownedFacts();
+  assert.ok(facts.length > 0, "the fact list is read: an empty one would make the assertion below pass over nothing");
+  const body = versionPrBody(liveWorkflow());
+  assert.ok(body.includes("Closes: none"), "the body was extracted: it is the template, not an empty string");
+  assert.deepEqual(unstatedOwnedFacts(body, facts), [], "every fact in docs/owned-path-facts.json is stated in the template");
+});
+
+test("POSITIVE CONTROL (#3131): a template that states no fact is refused naming all of them, and one missing a fact names that one", () => {
+  const facts = ownedFacts();
+  // Built from the fact list, not from the live template, so this control breaks only when the CHECK does.
+  const stating = (omit: (fact: OwnedFact) => string | null): string =>
+    ["Closes: none", ...facts.map((fact) => omit(fact) ?? "")].join("\n");
+  const stated = (fact: OwnedFact): string => `${fact.id}: ${fact.states[0]}`;
+  assert.deepEqual(unstatedOwnedFacts(stating(stated), facts), [], "the fixture is complete to begin with");
+  assert.deepEqual(unstatedOwnedFacts(stating(() => null), facts), facts.map((fact) => fact.id));
+  assert.deepEqual(unstatedOwnedFacts(stating((fact) => (fact.id === "provisionRevision" ? null : stated(fact))), facts), ["provisionRevision"]);
+  assert.deepEqual(unstatedOwnedFacts(stating((fact) => (fact.id === "environmentKey" ? fact.id : stated(fact))), facts), ["environmentKey"],
+    "naming a fact without saying one of its states does not state it");
+});
+
 // ---- the positive controls: each one removes ONE property from the live workflow and must be refused by NAME ----
 
 const clone = (): Workflow => structuredClone(liveWorkflow());

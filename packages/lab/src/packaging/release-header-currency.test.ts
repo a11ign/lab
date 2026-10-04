@@ -384,6 +384,16 @@ function changesetNames(): string[] {
 const countOf = (prefix: string): number => changesetNames().filter((name) => name.startsWith(prefix)).length;
 
 /**
+ * Which side of the first release this tree is on (#3131). `changeset version` writes a `CHANGELOG.md` into every
+ * package it versions and deletes the changesets it consumed, so a `CHANGELOG.md` anywhere is the release having
+ * been cut. THE RELEASE IS AUTOMATIC NOW: its version pull request carries the far-side tree while `main` still
+ * holds the near one, and that pull request must pass this file too (#3353 went red on four pins that described
+ * only the near side). So a claim about the tree BEFORE the release is asserted only before it, and what holds on
+ * both sides (the names, the registry split, "never more than one promotion") is asserted on both.
+ */
+const firstReleaseCut = (): boolean => filesNamed(REPO, "CHANGELOG.md").length > 0;
+
+/**
  * The decision list ITSELF, sliced out of the document — not the whole file.
  *
  * Measured while writing this: every phrase below appears a second time in the `B3 (as originally
@@ -418,11 +428,16 @@ test("#2058: the three-decisions list survives the correction, and each item say
 
 test("#2058: item 3's promotion count is today's, read from the directory it describes", () => {
   const list = decisionList();
-  assert.equal(countOf("promote-"), 1,
-    "the standing shape is one promotion changeset — if this is no longer 1, the sentence below is stale "
-    + "and the document must say what the new shape is");
-  assert.ok(list.includes("holds **one** promotion changeset today"),
-    "item 3 must state the count that is true now, not the five it was filed with");
+  assert.ok(countOf("promote-") <= 1,
+    "`promote:model` replaces the standing promotion changeset, so there is never more than one — on either "
+    + "side of the release");
+  if (!firstReleaseCut()) {
+    assert.equal(countOf("promote-"), 1,
+      "the standing shape is one promotion changeset — if this is no longer 1, the sentence below is stale "
+      + "and the document must say what the new shape is");
+    assert.ok(list.includes("holds **one** promotion changeset today"),
+      "item 3 must state the count that is true now, not the five it was filed with");
+  }
   assert.ok(!list.includes("five promotion changesets are pending"),
     "the 2026-08-31 count must not survive as a present-tense claim");
 });
@@ -509,17 +524,25 @@ test("#2159: the changelog walk returns a CHANGELOG.md that is there, and prunes
   }
 });
 
-test("#2058: the successor's own numbers are the tree's — six first-publish entries, no CHANGELOG", () => {
+test("#2058/#3131: the successor's own numbers are the tree's — six first-publish entries and no CHANGELOG before the release, none and only package CHANGELOGs after it", () => {
   const list = decisionList();
-  assert.equal(countOf("first-publish-"), 6,
-    "six first-publish entries were pending when #2058 measured; a different number makes the paragraph "
-    + "below wrong rather than merely old");
-  assert.ok(list.includes("**Six of the pending entries are `first-publish-*.md`**"),
-    "the successor decision must name how many of the pending entries announce a publish that happened");
+  const cut = firstReleaseCut();
+  if (!cut) {
+    assert.equal(countOf("first-publish-"), 6,
+      "six first-publish entries were pending when #2058 measured; a different number makes the paragraph "
+      + "below wrong rather than merely old");
+    assert.ok(list.includes("**Six of the pending entries are `first-publish-*.md`**"),
+      "the successor decision must name how many of the pending entries announce a publish that happened");
+  } else {
+    assert.equal(countOf("first-publish-"), 0,
+      "`changeset version` consumes the `first-publish-*` entries it publishes, and none can be written again for "
+      + "a package that has published, so a tree with a CHANGELOG that still holds one was versioned by hand");
+  }
 
-  // The document says the first CHANGELOG was never written. That is a live claim, and the release that
-  // falsifies it is the one this section exists to inform — so it fails here rather than misleading a
-  // reader at publish time.
+  // The document says the first CHANGELOG was never written. That is a live claim BEFORE the release. It used
+  // to fail here the moment the release falsified it, so a person publishing by hand met it; the release is
+  // automatic now (#3131) and its version pull request is that falsifying tree, so the claim is asserted only
+  // while no CHANGELOG exists, and the document's paragraph is rewritten by whoever reads it after the release.
   //
   // THE EMPTINESS HAS TWO CONTROLS AND THIS NAMES BOTH. The test above proves this walker returns a
   // `CHANGELOG.md` that exists; the loop below proves that in THIS run it reached every directory
@@ -529,17 +552,19 @@ test("#2058: the successor's own numbers are the tree's — six first-publish en
   // "anywhere in this tree" while the walk read the immediate children of one directory. The prune list
   // is part of what the reader is told, not an implementation detail of the guard, so a reversion to the
   // unscoped wording is red here rather than quietly re-opening the gap.
-  const flat = unwrapped(list);
-  assert.ok(flat.includes("a walk of this tree finds no `CHANGELOG.md` at all outside"),
-    "the document must state the scope this test actually walks");
-  // THE BOUNDARY IS DERIVED FROM THE PRUNE LIST, NOT RETYPED BESIDE IT. The sentence said "outside
-  // `node_modules`" while the walk skipped seven directories, so a `dist/CHANGELOG.md` left every
-  // assertion green while falsifying the sentence — reviewer's refusal of #2159 at `fa72a9bf`, whose
-  // mutant survived. Adding a directory to SKIP_DIRS without saying so in the document is red here.
-  for (const pruned of SKIP_DIRS) {
-    assert.ok(flat.includes(`\`${pruned}\``),
-      `the document's changelog sentence does not name \`${pruned}\`, which the walk skips — a `
-      + `CHANGELOG.md under it would leave this test green while the sentence reads as verified`);
+  if (!cut) {
+    const flat = unwrapped(list);
+    assert.ok(flat.includes("a walk of this tree finds no `CHANGELOG.md` at all outside"),
+      "the document must state the scope this test actually walks");
+    // THE BOUNDARY IS DERIVED FROM THE PRUNE LIST, NOT RETYPED BESIDE IT. The sentence said "outside
+    // `node_modules`" while the walk skipped seven directories, so a `dist/CHANGELOG.md` left every
+    // assertion green while falsifying the sentence — reviewer's refusal of #2159 at `fa72a9bf`, whose
+    // mutant survived. Adding a directory to SKIP_DIRS without saying so in the document is red here.
+    for (const pruned of SKIP_DIRS) {
+      assert.ok(flat.includes(`\`${pruned}\``),
+        `the document's changelog sentence does not name \`${pruned}\`, which the walk skips — a `
+        + `CHANGELOG.md under it would leave this test green while the sentence reads as verified`);
+    }
   }
 
   const manifests = filesNamed(REPO, "package.json");
@@ -555,10 +580,20 @@ test("#2058: the successor's own numbers are the tree's — six first-publish en
       + "so its absence from the changelog population says nothing");
   }
 
-  assert.deepEqual(filesNamed(REPO, "CHANGELOG.md"), [],
-    "docs/reliability-plan.md states that a walk of this tree finds no CHANGELOG.md outside node_modules "
-    + "and that the pending set has never been consumed; the tree now carries one, so that paragraph is "
-    + "wrong");
+  const changelogs = filesNamed(REPO, "CHANGELOG.md");
+  if (!cut) {
+    assert.deepEqual(changelogs, [],
+      "docs/reliability-plan.md states that a walk of this tree finds no CHANGELOG.md outside node_modules "
+      + "and that the pending set has never been consumed; the tree now carries one, so that paragraph is "
+      + "wrong");
+    return;
+  }
+  // After the release the claim above is the document's to update, not this file's to keep true: what holds is
+  // WHERE they are. `changeset version` writes one per package it versions and nowhere else, so a CHANGELOG
+  // outside `packages/<name>/` is somebody's hand-written file masquerading as a release record.
+  assert.ok(changelogs.length > 0, "`cut` means a CHANGELOG was found, so the population below is not empty by vacuity");
+  const outsidePackages = changelogs.filter((file) => !packageDirs.some((pkg) => file === join("packages", pkg, "CHANGELOG.md")));
+  assert.deepEqual(outsidePackages, [], "every CHANGELOG.md must sit beside a workspace package's manifest");
 });
 
 /**
@@ -593,6 +628,31 @@ const unwrapped = (text: string): string => text.replace(/\s+/g, " ");
 const PUBLISHED_AT_0_1_0 = ["@a11ign/evidence", "@a11ign/judge", "@a11ign/scorer", "a11ign"];
 const NEVER_PUBLISHED = ["@a11ign/documents", "@a11ign/screenreader-fleet", "@a11ign/screenreader-worker"];
 
+/** `version` is at least `floor`, both plain `major.minor.patch`: the only shapes a manifest here holds. */
+function versionAtLeast(version: string, floor: string): boolean {
+  const parts = (text: string): number[] => text.split(".").map(Number);
+  const [have, want] = [parts(version), parts(floor)];
+  const firstDifference = have.findIndex((n, i) => n !== want[i]);
+  return firstDifference === -1 || have[firstDifference] > want[firstDifference];
+}
+
+/**
+ * The near side of the release (#3131): `main` before `changeset version` has run reads `0.1.0` for the four
+ * published packages and `0.0.0` for the other three. The far side moves all seven, so these are not claims
+ * about the registry split (that is asserted on both sides, by name) but about the literals the document quotes.
+ */
+function assertVersionsAsTheNearSideHoldsThem(publicManifests: { name: string; version: string }[]): void {
+  assert.deepEqual(publicManifests.filter((manifest) => manifest.version !== "0.0.0").map((manifest) => manifest.name).sort(),
+    PUBLISHED_AT_0_1_0,
+    "docs/reliability-plan.md states that exactly the four packages the registry holds read 0.1.0 and the rest of "
+    + "the set `changeset version` writes reads 0.0.0. Another public manifest off 0.0.0 means a version has "
+    + "landed since, and the successor decision's premise is stale");
+  assert.deepEqual(publicManifests.filter((manifest) => PUBLISHED_AT_0_1_0.includes(manifest.name))
+    .map((manifest) => manifest.version), ["0.1.0", "0.1.0", "0.1.0", "0.1.0"],
+    "a published package must read the version the registry holds, or the pending changesets bump from the "
+    + "wrong base and `plan` reads `nothing` rather than `publish` (#3130)");
+}
+
 /**
  * #2159, reviewer's refusal at `ff88e9ea`: the document said "every `package.json` still reads `0.0.0`",
  * and two of them read `0.1.0`. #3347 then moved four public manifests to the registry's `0.1.0`, so
@@ -614,17 +674,16 @@ test("#2159/#3347: the versions claim is true of the set changesets versions, sp
 
   const publicManifests = manifests.filter((manifest) => !manifest.isPrivate);
   const namesOf = (list: { name: string }[]): string[] => list.map((manifest) => manifest.name).sort();
-  assert.deepEqual(namesOf(publicManifests.filter((manifest) => manifest.version !== "0.0.0")), PUBLISHED_AT_0_1_0,
-    "docs/reliability-plan.md states that exactly the four packages the registry holds read 0.1.0 and the rest of "
-    + "the set `changeset version` writes reads 0.0.0. Another public manifest off 0.0.0 means a version has "
-    + "landed since, and the successor decision's premise is stale");
-  assert.deepEqual(publicManifests.filter((manifest) => PUBLISHED_AT_0_1_0.includes(manifest.name))
-    .map((manifest) => manifest.version), ["0.1.0", "0.1.0", "0.1.0", "0.1.0"],
-    "a published package must read the version the registry holds, or the pending changesets bump from the "
-    + "wrong base and `plan` reads `nothing` rather than `publish` (#3130)");
-  assert.deepEqual(namesOf(publicManifests.filter((manifest) => manifest.version === "0.0.0")), NEVER_PUBLISHED,
-    "THE POSITIVE CONTROL for the partition above: these three were never published, and moving one is "
-    + "#3126's call, not a side effect of another row");
+  const published = publicManifests.filter((manifest) => PUBLISHED_AT_0_1_0.includes(manifest.name));
+  assert.deepEqual(namesOf(published), PUBLISHED_AT_0_1_0,
+    "the four packages the registry holds must all be workspace members, on either side of the release");
+  assert.deepEqual(namesOf(publicManifests.filter((manifest) => !PUBLISHED_AT_0_1_0.includes(manifest.name))), NEVER_PUBLISHED,
+    "THE POSITIVE CONTROL for the split: the other public manifests are exactly the three never published, and "
+    + "a new public package or a rename changes the registry split this file describes");
+  assert.ok(published.every((manifest) => versionAtLeast(manifest.version, "0.1.0")),
+    "a published package must read at least the version the registry holds, or `changeset publish` would send "
+    + "an older one and could move `latest` back (#3130, #3167)");
+  if (!firstReleaseCut()) assertVersionsAsTheNearSideHoldsThem(publicManifests);
   assert.deepEqual(namesOf(manifests.filter((manifest) => manifest.isPrivate && manifest.version !== "0.0.0")),
     ["@a11ign/control", "@a11ign/lab"],
     "THE POSITIVE CONTROL for the emptiness claims: these two private manifests are hand-set to 0.1.0 and "
@@ -635,9 +694,11 @@ test("#2159/#3347: the versions claim is true of the set changesets versions, sp
     + "published or made private changes the sentence, and it is corrected here rather than left to rot");
 
   const list = unwrapped(decisionList());
-  assert.ok(list.includes("**Four of the seven versioned manifests read `0.1.0`**, the version the registry holds"),
-    "the document must state the claim over the set it is true of — the reviewer refused the unqualified "
-    + "form, and a narrowing that is not in the document narrows nothing");
+  if (!firstReleaseCut()) {
+    assert.ok(list.includes("**Four of the seven versioned manifests read `0.1.0`**, the version the registry holds"),
+      "the document must state the claim over the set it is true of — the reviewer refused the unqualified "
+      + "form, and a narrowing that is not in the document narrows nothing");
+  }
   for (const name of NEVER_PUBLISHED) {
     assert.ok(list.includes(name), `the document must name ${name} as one of the three that still read 0.0.0`);
   }
