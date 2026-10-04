@@ -22,7 +22,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
-  CI_ONLY, agentOrgLayout, agentOrgSource, stageAgentOrg, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, linkNodeModules,
+  CI_ONLY, agentOrgLayout, ciLikeHome, agentOrgSource, stageAgentOrg, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, linkNodeModules,
   pinTool, runAgentOrgInClone, runTs, shAsync, stampVerdict, stepsToRun, unaccountedJobs,
 } from "../../../../scripts/verify.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
@@ -390,5 +390,55 @@ test("the engineer brief quotes no second copy of the stamp's fields", () => {
   const brief = read(".agent-org/roles/engineer.md");
   for (const field of ["bodyHash", "verify-stamp", "wallMs", "dirty"]) {
     assert.ok(!brief.includes(field), `the brief names the stamp field ${field}`);
+  }
+});
+
+// #3368: THE TOOL'S SUITE READS `~/.claude/projects`, WHICH A CI RUNNER DOES NOT HAVE AND THIS HOST HAS 3 GB OF.
+test("ciLikeHome links everything of the real home except the transcripts, so no test finds a different machine", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-like-home-"));
+  try {
+    const home = join(dir, "home");
+    mkdirSync(join(home, ".claude/projects"), { recursive: true });
+    writeFileSync(join(home, ".claude/projects/session.jsonl"), "{}\n");
+    writeFileSync(join(home, ".claude/settings.json"), "{}");
+    mkdirSync(join(home, ".cache/node"), { recursive: true });
+    writeFileSync(join(home, ".gitconfig"), "[user]\n");
+    const into = ciLikeHome({ home, into: join(dir, "into") });
+    assert.deepEqual(readdirSync(join(into, ".claude")), ["settings.json"], "the transcripts are not visible, the rest of ~/.claude is");
+    assert.deepEqual(readdirSync(into).sort(), [".cache", ".claude", ".gitconfig"], "every other entry of the home is there");
+    assert.equal(readFileSync(join(into, ".gitconfig"), "utf8"), "[user]\n", "and reads as the real one does");
+    assert.ok(existsSync(join(into, ".cache/node")), "a directory entry resolves through its link");
+    assert.ok(existsSync(join(home, ".claude/projects/session.jsonl")), "the real transcripts are untouched");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("ciLikeHome of a home with no ~/.claude is a home with no ~/.claude/projects, not an error", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-like-home-"));
+  try {
+    mkdirSync(join(dir, "home"));
+    writeFileSync(join(dir, "home/.bashrc"), "");
+    const into = ciLikeHome({ home: join(dir, "home"), into: join(dir, "into") });
+    assert.deepEqual(readdirSync(into).sort(), [".bashrc", ".claude"]);
+    assert.deepEqual(readdirSync(join(into, ".claude")), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the agentOrg suite is run with the transcript-free home, and a command's env reaches the child", async () => {
+  const source = read("scripts/verify.mjs");
+  assert.match(source, /shAsync\("node", \["--import", "tsx", "--test"[^\n]*\n[^\n]*\{ \.\.\.at\(clone\), env: \{ HOME: ciLikeHome\(/, "the suite's command no longer gets the home");
+  const dir = mkdtempSync(join(tmpdir(), "sh-env-"));
+  try {
+    const out = join(dir, "out");
+    const log = openSync(out, "w");
+    const { status } = await shAsync(process.execPath, ["-p", "process.env.HOME"], { cwd: dir, stdio: ["ignore", log, "ignore"], env: { HOME: "/x/y" } });
+    closeSync(log);
+    assert.equal(status, 0);
+    assert.equal(readFileSync(out, "utf8").trim(), "/x/y");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

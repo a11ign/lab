@@ -13,6 +13,7 @@
 // `serve` processes would test `npx` more than the rule.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { writeFileSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -29,8 +30,16 @@ function scratchRoot(): string {
 
 /** A pid that is certainly alive and certainly not us: init. `kill(1, 0)` raises EPERM, not ESRCH. */
 const OTHER_LIVE_PID = 1;
-/** Comfortably above any real pid, so it is certainly gone. */
-const DEAD_PID = 4_194_303;
+/**
+ * A pid that is gone: a child that has exited and been reaped. The fixed 4_194_303 this was is Linux's `pid_max` less one,
+ * "certainly gone" only until a host's counter reaches it -- a kernel worker held it on a host up six days, and this file
+ * failed `verify`'s `ts` step on it (#3368).
+ */
+const DEAD_PID = spawnSync(process.execPath, ["-e", ""]).pid;
+
+test("the pid these tests call dead is dead: signalling it finds no process", () => {
+  assert.throws(() => process.kill(DEAD_PID, 0), { code: "ESRCH" });
+});
 
 test("a starter that finishes first leaves the server up for a holder still using it", () => {
   const root = scratchRoot();
