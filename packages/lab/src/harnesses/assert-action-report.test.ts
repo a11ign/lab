@@ -11,12 +11,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { activationCount, contractFailure, findingsFor, ruleLayerFailure } from "./assert-action-report.mjs";
+import {
+  accusationFailure, activationCount, contractFailure, findingsFor, ruleLayerFailure,
+} from "./assert-action-report.mjs";
 
 const CONFORMANT = {
   url: "https://www.w3.org/WAI/demos/bad/after/survey.html",
   captureVerified: true,
   verdict: { findings: [] },
+  outcomes: [{ criterion: "1.1.1", outcome: "passed" }],
   interaction: { formChanges: [{ control: "submit, button", kind: "submit", after: "" }], stateChanges: [] },
 };
 
@@ -98,4 +101,44 @@ test("ruleBased holding real findings is correct too", () => {
 
 test("ruleBased missing entirely (an older report shape) is named, not confused with null", () => {
   assert.match(String(ruleLayerFailure({ ...CONFORMANT })), /neither an array of findings nor null/);
+});
+
+// The report a failing action-smoke run produced on the conformant page (#3373): the scorer's 1.1.1 finding
+// is present in `verdict.findings` and the criterion's outcome is `cantTell`.
+const REFERRED_ONLY = {
+  ...CONFORMANT,
+  verdict: { findings: [{ wcag: "1.1.1 Non-text Content (A)", evidence: "Sunny Spells, graphic" }] },
+  outcomes: [{ criterion: "1.1.1", outcome: "cantTell" }],
+};
+
+const ASSERTED = {
+  ...REFERRED_ONLY,
+  outcomes: [{ criterion: "1.1.1", outcome: "failed" }],
+};
+
+test("a REFERRED 1.1.1 is not an accusation, though it is a finding", () => {
+  assert.equal(findingsFor(REFERRED_ONLY, "1.1.1").length, 1);
+  assert.equal(accusationFailure(REFERRED_ONLY, "1.1.1"), null);
+});
+
+test("an ASSERTED 1.1.1 on a conformant page is refused, naming what was announced", () => {
+  assert.match(String(accusationFailure(ASSERTED, "1.1.1")), /1\.1\.1 claimed .*Sunny Spells, graphic/);
+});
+
+test("the accusation is read from the criterion asked about, not from any failure", () => {
+  const otherFailed = { ...REFERRED_ONLY, outcomes: [{ criterion: "2.5.8", outcome: "failed" }] };
+  assert.equal(accusationFailure(otherFailed, "1.1.1"), null);
+  // exact match: "1.4.1" must not be accused by "1.4.10"
+  assert.equal(accusationFailure({ outcomes: [{ criterion: "1.4.10", outcome: "failed" }] }, "1.4.1"), null);
+});
+
+test("a clean page and an inapplicable criterion are not accusations", () => {
+  assert.equal(accusationFailure(CONFORMANT, "1.1.1"), null);
+  assert.equal(accusationFailure({ outcomes: [{ criterion: "1.1.1", outcome: "inapplicable" }] }, "1.1.1"), null);
+});
+
+test("a report with no outcomes is refused, not read as 'nothing asserted'", () => {
+  // Absence is not proof: a report shape that lost `outcomes` must not pass the smoke for that reason.
+  assert.match(String(accusationFailure({ verdict: { findings: [] } }, "1.1.1")), /no outcomes/);
+  assert.match(String(accusationFailure({ outcomes: null }, "1.1.1")), /no outcomes/);
 });
