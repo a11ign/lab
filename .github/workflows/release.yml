@@ -5,7 +5,7 @@ name: release
 # consumer pins is a TAG of this repository, and this file cuts `v<version>`. So this workflow creates the tag `v<version>` and a GitHub Release carrying the CHANGELOG entry, and has no
 # npm, no OIDC and no registry token. If a registry is ever wanted that is a later decision under a name the chairman owns, and it is a different workflow.
 #
-# THE VERSION LIVES IN `packages/lab/package.json` and the entries in `packages/lab/CHANGELOG.md`, because the repository is a pnpm workspace of ONE package whose layout is
+# THE VERSION LIVES IN `packages/lab/package.json` and the entries in `packages/lab/CHANGELOG.md`, because the repository is a changesets monorepo of ONE package (`lerna.json`, not a pnpm workspace) whose layout is
 # the monorepo's (`packages/lab/`): its tests and scripts reach the core by relative path, which `ci.yml` lays beside it. A release here changes what a consumer that pins a tag takes, so
 # whoever decides to cut one is deciding that. THE FIRST TAG (`v0.1.0`) IS CUT BY HAND, once, on the merge of the pull request that added this file (README.md): this file reads what the
 # last tag consumed, so it needs one. Until a tag exists a push to `main` is NOT a failure (it says so and releases nothing), so that merge does not leave a red run.
@@ -125,8 +125,8 @@ jobs:
         if: steps.pending.outputs.count != '0'
         run: |
           npm install --global pnpm@10.34.5
-          # `--ignore-workspace`: the workspace file stays so `changeset` finds the package, but its dependencies cannot be installed here (`ci.yml` says why).
-          pnpm install --frozen-lockfile --ignore-workspace
+          # The root's own dev dependencies only: `packages/lab` is not a pnpm workspace member (README.md says why), so a plain frozen install is the whole install.
+          pnpm install --frozen-lockfile
       - name: The release commit, on top of this merge and on no branch
         if: steps.pending.outputs.count != '0'
         env:

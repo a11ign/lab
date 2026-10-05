@@ -28,7 +28,15 @@ pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packag
 ```
 
 Bumping `CORE_REF` is a pull request: the only way the core's changes reach this repository. `pnpm test` here runs only this repository's own checks (the workflows).
-Install it with `pnpm install --ignore-workspace`: the workspace file is only there so `changeset` finds the package.
+
+## How it installs, and why `packages/lab` is not a pnpm workspace member (a11ign/a11ign#3711)
+
+`pnpm install --frozen-lockfile` at the root installs the root's own dev dependencies and nothing else, and it passes on `main` and on any pull request that changes only `packages/lab/package.json`
+(a Dependabot bump, which is the usual one). **There is no `pnpm-workspace.yaml`, so `packages/lab` is not an importer in `pnpm-lock.yaml`, and that is the decision.** Its `@a11ign/*` dependencies
+are not on the public registry (`a11ign/a11ign#2703`: no registry, no token), so a lockfile entry for it could not be produced, and one that could would fail every pull request that edits that manifest.
+`lerna.json` is what lets `changeset` find the package instead: with no workspace file, pnpm sees no package, and changesets' tool detection falls through to lerna's `packages` glob
+(measured 2026-10-05 against `@changesets/cli` 3.0.3: `changeset status` lists `@a11ign/lab`). Dependencies of `packages/lab` are installed only in the core's workspace, where `ci.yml` lays it.
+**Consequence for a reviewer:** the review tree's install is the root's dev dependencies alone, which is all a reviewer of a pull request that changes no code it must run needs; running `packages/lab` is `ci.yml`'s recipe above.
 
 `main` takes pull requests only, each with one approving review, through the merge queue.
 
