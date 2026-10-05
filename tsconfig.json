@@ -1,0 +1,16 @@
+{
+  // This repository's OWN program: its scripts and nothing else, `noEmit`. `packages/lab` is type-checked by the CORE's program (`ci.yml` lays it into a checkout of the core and runs
+  // `tsc --noEmit` there), because the package reaches siblings that are not in this repository.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"],
+    "allowImportingTsExtensions": true
+  },
+  "include": ["scripts/**/*.ts"]
+}
