@@ -62,17 +62,17 @@ test("#1536: a manifest with no repository URL is refused, never passed for havi
   }
 });
 
-test("#1536 THE INCIDENT, on the real manifests: from run 34816466408's repository all six are refused; from the repository they name, none is", () => {
+test("#1536 THE INCIDENT, on the real manifests: from run 34816466408's repository all seven are refused; from the repository they name, none is", () => {
   const manifests = publishedManifests(REPO);
   assert.deepEqual(manifests.map((m) => m.name),
     ["a11ign", "@a11ign/evidence", "@a11ign/judge", "@a11ign/screenreader-worker", "@a11ign/scorer",
-      "@a11ign/screenreader-fleet"],
-    "the six packages Changesets publishes -- lab, control, guards, agent-org and nvda-speech are private "
+      "@a11ign/toolchain", "@a11ign/screenreader-fleet"],
+    "the seven packages Changesets publishes -- lab, control, guards, agent-org and nvda-speech are private "
       + "(@a11ign/documents publishes from its own repository since #3125)");
   const fromIncident = manifestRepositoryMismatches({ manifests, repository: INCIDENT_RUN_REPOSITORY });
   assert.equal(fromIncident.length, manifests.length, "run 34816466408's shape: every manifest names a different repository");
   const named = new Set(manifests.map((m) => repositorySlugOf(String((m.repository as { url?: string } | undefined)?.url ?? ""))));
-  assert.equal(named.size, 1, `the six manifests should name one repository between them: ${[...named].join(", ")}`);
+  assert.equal(named.size, 1, `the seven manifests should name one repository between them: ${[...named].join(", ")}`);
   const [theirs] = [...named];
   assert.ok(theirs, "the manifests' repository URL could not be read");
   assert.deepEqual(manifestRepositoryMismatches({ manifests, repository: theirs }), [],

@@ -22,7 +22,7 @@ import { promote, promotionLevel, publicPackageVersions } from "../../scripts/pr
 /** Every public package before version one, as the tree reads during the first publish. */
 const ALL_ZERO = { "a11ign": "0.0.0", "@a11ign/evidence": "0.0.0", "@a11ign/judge": "0.0.0",
   "@a11ign/screenreader-worker": "0.0.0", "@a11ign/scorer": "0.0.0",
-  "@a11ign/screenreader-fleet": "0.0.0" };
+  "@a11ign/screenreader-fleet": "0.0.0", "@a11ign/toolchain": "0.0.0" };
 
 /** The real `.changeset/`, because the name used to be computed from what is in it. */
 const CHANGESET_DIR = new URL("../../../../.changeset/", import.meta.url).pathname;
@@ -80,7 +80,7 @@ test("#1396 promotionLevel: the boundary is the first 1.x, and no versions at al
     "an empty read must not satisfy 'every version is below 1' and silently choose minor");
 });
 
-test("#1396 publicPackageVersions reads the real tree: exactly the six public packages, and today that is a minor", () => {
+test("#1396 publicPackageVersions reads the real tree: exactly the seven public packages, and today that is a minor", () => {
   const versions = publicPackageVersions();
   // A WRITTEN expectation, not the directory listing re-read: a seventh public package, or one that went
   // private, should make this fail so somebody decides what it means for the release level.

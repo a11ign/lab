@@ -1,5 +1,5 @@
 /**
- * #1383: the node:test shim (`scripts/rstest/node-test-shim.mjs`, #1318) REFUSES an option it cannot map, by name --
+ * #1383: the node:test shim (`packages/toolchain/src/node-test-shim.mjs`, #1318) REFUSES an option it cannot map, by name --
  * never drops it. From worker-judge's review of #1380: `describe(name, options, fn)` discarded its options, and the
  * test adapter mapped only `skip`, `todo` and `timeout` and dropped the rest. Unused in 553 test files today, each was
  * a pass-for-the-wrong-reason waiting for its first use: a dropped `describe("x", { skip: true }, …)` RUNS under
@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { adapt, describeOn, MAPPED_TEST_OPTIONS } from "../../../../scripts/rstest/node-test-shim.mjs";
+import { adapt, describeOn, MAPPED_TEST_OPTIONS } from "../../../../packages/toolchain/src/node-test-shim.mjs";
 
 type Call = { how: "test" | "skip" | "todo"; name: string; timeout?: unknown };
 
@@ -84,8 +84,8 @@ test("#1383 CONTROL: describe(name, fn) and describe(name, {}, fn) still registe
 });
 
 test("#1383: the resolve hook redirects node:test to the shim, and leaves a bare `test` to Node", () => {
-  const hook = fileURLToPath(new URL("../../../../scripts/rstest/register-node-test-alias.mjs", import.meta.url));
-  const shim = new URL("../../../../scripts/rstest/node-test-shim.mjs", import.meta.url).href;
+  const hook = fileURLToPath(new URL("../../../../packages/toolchain/src/register-node-test-alias.mjs", import.meta.url));
+  const shim = new URL("../../../../packages/toolchain/src/node-test-shim.mjs", import.meta.url).href;
   const resolveUnderHook = (specifier: string) => execFileSync(process.execPath, ["--import", hook, "--input-type=module", "-e",
     `try { process.stdout.write(import.meta.resolve(${JSON.stringify(specifier)})); } catch (e) { process.stdout.write("THREW " + e.code); }`],
   { encoding: "utf8" });
