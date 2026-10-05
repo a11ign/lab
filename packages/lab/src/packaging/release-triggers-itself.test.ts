@@ -30,7 +30,7 @@ const WORKFLOW_PATH = ".github/workflows/release.yml";
 const BUMP_SCRIPT_PATH = "scripts/release-commit-version-bump.mjs";
 
 interface Step { name?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown> }
-interface Job { needs?: string | string[]; if?: string; uses?: string; permissions?: Record<string, string>; env?: Record<string, string>; steps?: Step[] }
+interface Job { needs?: string | string[]; if?: string; environment?: string; uses?: string; permissions?: Record<string, string>; env?: Record<string, string>; steps?: Step[] }
 interface Workflow {
   on?: { push?: { branches?: string[] }; workflow_dispatch?: unknown } | Record<string, unknown>;
   concurrency?: { group?: string; "cancel-in-progress"?: unknown };
@@ -132,6 +132,24 @@ function publishRefusals(publishing: Job): string[] {
   return found;
 }
 
+/**
+ * The environment name is part of the OIDC claim npm checks against the package's trusted publisher (ADR 0043: every
+ * repository's publish job runs under `npm-publish`), so the publishing job names it and the jobs that publish nothing
+ * must not: an environment there would claim a deployment, and could hold the job for approval, for no reason.
+ */
+const PUBLISH_ENVIRONMENT = "npm-publish";
+
+function environmentRefusals(workflow: Workflow, publishing: Job): string[] {
+  const found: string[] = [];
+  if (publishing.environment !== PUBLISH_ENVIRONMENT) {
+    found.push(`environment: the publishing job's environment is ${JSON.stringify(publishing.environment)}, not ${PUBLISH_ENVIRONMENT}`);
+  }
+  for (const [name, job] of Object.entries(workflow.jobs)) {
+    if (name !== PUBLISHING_JOB && job.environment !== undefined) found.push(`environment-only-on-the-publishing-job: ${name} declares an environment`);
+  }
+  return found;
+}
+
 /** The step that upgrades npm: it installs `npm@^11.5.1`, the floor npm's trusted publishing documents (#3180). */
 const isNpmUpgrade = (step: Step): boolean => /^npm install -g\s+"?npm@\^11\.5\.1"?/m.test(step.run ?? "");
 
@@ -178,7 +196,7 @@ function refusals(workflow: Workflow, script: string): string[] {
   const publishing = workflow.jobs[PUBLISHING_JOB];
   const outside = [...triggerRefusals(workflow, script), ...concurrencyRefusals(workflow)];
   if (publishing === undefined) return [...outside, `publishing-job: no job named ${PUBLISHING_JOB}`];
-  return [...outside, ...publishRefusals(publishing), ...npmUpgradeRefusals(publishing), ...guardStepRefusals(publishing), ...calledGuardRefusals(workflow, publishing)];
+  return [...outside, ...publishRefusals(publishing), ...environmentRefusals(workflow, publishing), ...npmUpgradeRefusals(publishing), ...guardStepRefusals(publishing), ...calledGuardRefusals(workflow, publishing)];
 }
 
 test("guards are declared: the lists the checks loop over are not empty, which is the positive control for every loop", () => {
@@ -444,6 +462,31 @@ test("POSITIVE CONTROL: a registry token on the publishing job, and a missing id
   const noOidc = clone();
   delete noOidc.jobs[PUBLISHING_JOB].permissions?.["id-token"];
   assert.ok(refusals(noOidc, bumpScript()).some((name) => name.startsWith("oidc")));
+});
+
+test("POSITIVE CONTROL: the live publishing job is under the environment to begin with, so the controls below have something to break", () => {
+  assert.equal(liveWorkflow().jobs[PUBLISHING_JOB].environment, PUBLISH_ENVIRONMENT);
+});
+
+test("POSITIVE CONTROL: the environment removed from the publishing job, or renamed, is refused naming it, and only for that", () => {
+  const removed = clone();
+  delete removed.jobs[PUBLISHING_JOB].environment;
+  assert.deepEqual(refusals(removed, bumpScript()).map((name) => name.split(":")[0]), ["environment"]);
+  assert.match(refusals(removed, bumpScript())[0], /undefined|null|not npm-publish/);
+
+  const renamed = clone();
+  renamed.jobs[PUBLISHING_JOB].environment = "production";
+  assert.deepEqual(refusals(renamed, bumpScript()).map((name) => name.split(":")[0]), ["environment"]);
+});
+
+test("POSITIVE CONTROL: the environment on a job that publishes nothing is refused, naming that job, and only for that", () => {
+  for (const name of Object.keys(clone().jobs).filter((job) => job !== PUBLISHING_JOB)) {
+    const workflow = clone();
+    workflow.jobs[name].environment = PUBLISH_ENVIRONMENT;
+    const found = refusals(workflow, bumpScript());
+    assert.deepEqual(found.map((refusal) => refusal.split(":")[0]), ["environment-only-on-the-publishing-job"], name);
+    assert.ok(found[0].includes(name), `${name} is named`);
+  }
 });
 
 test("POSITIVE CONTROL: concurrency missing, or set to cancel, is refused", () => {
