@@ -989,6 +989,17 @@ test("drain OFF changes nothing, so the flag cannot cost anything when it is not
 });
 
 /**
+ * Causes the tool added AFTER the 0.22 pin, each classified FINISH by a decision and not by default. They are counted only when the installed
+ * tool declares them, so the partition test reads the same at the pin and at the newest tag; a cause missing from BOTH this list and the
+ * test's own still fails it, which is the point of the partition being total.
+ * #3632 (agent-org v0.43.0): `answer-given` is FINISH, and a JUDGMENT cause. Its subject is a row a session already holds and the answer to
+ * a question that session asked -- `answer-label-unexplained`'s own argument, read after the label comes off -- and it starts no work.
+ * #3567 (agent-org v0.36.0): `tick-overran` is FINISH, and a JUDGMENT cause. It starts no work -- it tells `ceo` the tick itself ran long or
+ * was killed, and a drain is when a tick that cannot finish most needs to be seen.
+ */
+const FINISH_ADDED_AFTER_PIN = ["answer-given", "tick-overran"].filter((cause) => CAUSES.includes(cause));
+
+/**
  * THE PARTITION MUST BE TOTAL, and this is the assertion that makes adding a cause a DECISION. A new
  * cause that nobody classifies defaults to surviving a drain -- so a future `claim-abandoned-row` would
  * quietly start new work inside a transfer window and nothing would say so. Spelling the other half out
@@ -1072,10 +1083,10 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // stale because the chairman has acted on it since, so the label comes off or is re-applied -- and the row is already filed.
   // #2936: `org-health` is FINISH, and a JUDGMENT cause. It starts no work -- it tells `ceo` that nothing is landing, a red PR is unattended, a row
   // is refused or the primary is stale -- and a drain is exactly when an org that is not landing anything should be told.
-  assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "backlog-aged-unpromoted", "blocker-cleared", "chairman-answered", "chairman-blocked",
+  assert.deepEqual(finish, [...FINISH_ADDED_AFTER_PIN, "answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "backlog-aged-unpromoted", "blocker-cleared", "chairman-answered", "chairman-blocked",
     "claim-stalled", "claimed-row-amended", "closes-unresolved-repo-wide", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale",
     "lab-job-finished", "org-health", "org-retrospective", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "primary-stale", "ready-row-incomplete", "ready-row-unclaimable", "repeating-log-line", "reviewer-auth-failed",
-    "row-branch-unshipped", "row-call-count-signal", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
+    "row-branch-unshipped", "row-call-count-signal", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"].sort());
   for (const cause of START_CAUSES) {
     assert.ok(CAUSES.includes(cause), `${cause} is withheld by a drain but no longer exists`);
   }
@@ -1221,8 +1232,15 @@ test("a red check that cannot block the merge wakes nobody", () => {
   const pr = { number: 1750, isDraft: false, headRefOid: "7a9d8340aaaaaaaa", author: { login: "x" },
     labels: [{ name: "session:worker-capture" }], comments: [],
     statusCheckRollup: rollupOf([["gate", "SUCCESS"], ["ts / run", "SUCCESS"], ["sweep", "FAILURE"]]) };
-  assert.deepEqual(decide({ prs: [pr], readyRows: [], required: ["gate"] }), [],
+  const orders = decide({ prs: [pr], readyRows: [], required: ["gate"] }) as { cause: string, session: string }[];
+  // WHAT THIS PINS IS THE WAKE OF THE PR'S OWN SESSION, and the tool's reading of a red check outside the required set moved under it.
+  // At agent-org 0.22 the red `sweep` kept the PR out of the review question too, so the answer was `[]`. Since a11ign#3597 (first
+  // in v0.26.2) a check outside the required set is not read at all, so `gate` green on a ready PR with no verdict asks `reviewer-1750`
+  // for one -- which is right: the PR can merge, so somebody should review it. Neither answer wakes `worker-capture` to "fix" `sweep`.
+  assert.deepEqual(orders.filter((order) => order.session === "worker-capture" || order.cause === "pr-checks-failing"), [],
     "sweep is in nobody's needs -- #1750 merged four minutes after this exact wake was sent");
+  assert.deepEqual(orders.filter((order) => order.session !== "reviewer-1750"), [],
+    "the only order a green required set may leave is the reviewer's, never another session's");
 });
 
 test("a red check that CAN block the merge still wakes its session", () => {
@@ -4696,6 +4714,11 @@ test("#2174: work-gate.mjs loads in a tree with NO node_modules, host-units edge
   // imports DYNAMICALLY, by a string `localImports`'s static walk cannot see -- so it is added here for the
   // identical reason `project.json` is a line above.
   closure.add(join(REPO, ".agent-org/plugins/causes.mjs"));
+  // #3569 (agent-org v0.30.5): `work-gate/org-health.mjs` imports `familyNumber` from `arm-pr.mjs`, which reads `.agent-org/roles/sessions.json` AT
+  // IMPORT through `roleBriefPath`, and that REFUSES (`project-roles.mjs`: `roles.dir` does not exist at the root) when the declared directory is
+  // absent. The refusal is the tool being right -- it will not default to another project's roster -- so the copy carries the one file it reads.
+  // (agent-org's own comments still say the gate "must load without `.agent-org/roles`" (#2174); that edge now contradicts them, see #3667.)
+  closure.add(join(REPO, ".agent-org/roles/sessions.json"));
   // The installed tool lives under `node_modules/agent-org/`, which would put a `node_modules` in the copy's ancestor chain and defeat the
   // premise, so its files are copied to `agent-org/` beside the project's own; the gate resolves nothing by that name.
   for (const file of closure) {

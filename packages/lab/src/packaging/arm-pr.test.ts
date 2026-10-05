@@ -54,6 +54,18 @@ import {
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
+/**
+ * What a fake `gh issue view <n> --json <fields>` answers. #3544 (agent-org 0.26.2) made `arm-pr` ask every closing row for
+ * `--json blockedBy` BEFORE it arms; a fake that answers a label list to that call gives no edge list, which the tool reads as
+ * `cannot-ask` -- a refusal to arm, so exit 2. A row with no blockers is the ordinary case these tests pin, so the edge list
+ * answers EMPTY (`totalCount: 0`, never an absent list, which the tool rightly reads as "did not say").
+ */
+function issueViewAnswer(args: string[], labels: string[]) {
+  const fields = args[args.indexOf("--json") + 1];
+  if (fields === "blockedBy") return JSON.stringify({ blockedBy: { nodes: [], totalCount: 0 } });
+  return JSON.stringify({ labels: labels.map((name) => ({ name })) });
+}
+
 /** A fake `run` recording every call it received and returning canned `gh issue view` output. */
 function fakeRun(rowLabelsByNumber: Record<string, string[]>) {
   const calls: string[][] = [];
@@ -61,8 +73,7 @@ function fakeRun(rowLabelsByNumber: Record<string, string[]>) {
     calls.push([cmd, ...args]);
     if (args[0] === "issue" && args[1] === "view") {
       const number = args[2];
-      const labels = rowLabelsByNumber[number] ?? [];
-      return JSON.stringify({ labels: labels.map((name) => ({ name })) });
+      return issueViewAnswer(args, rowLabelsByNumber[number] ?? []);
     }
     return "";
   };
@@ -680,7 +691,7 @@ function entryRun({ viewFails = false, state = "OPEN", mergeFails = false, editF
       if (mergeFails) throw Object.assign(new Error("GraphQL: Pull request is not mergeable"), { status: 1 });
       return "";
     }
-    if (args[0] === "issue" && args[1] === "view") return JSON.stringify({ labels: [{ name: rowLabel }] });
+    if (args[0] === "issue" && args[1] === "view") return issueViewAnswer(args, [rowLabel]);
     // #3487: the merge-queue history read before any write -- a PR with no queue event is not ejected, so it arms.
     if (args[0] === "api" && args[1] === "graphql") return JSON.stringify({ mergeQueueEntry: null, timelineItems: { nodes: [] } });
     if (args[0] === "pr" && args[1] === "edit") {
@@ -837,7 +848,7 @@ function jumpRun({ body, runs = RED_MAIN, pages, seats = [seat(), queuedAt(1)], 
     const route = `${args[0]} ${args[1]}`;
     if (route === "pr view") return JSON.stringify({ labels: [], body, state: "OPEN" });
     if (route === "pr edit") return editLabels();
-    if (route === "issue view") return JSON.stringify({ labels: [{ name: "session:worker-4" }] });
+    if (route === "issue view") return issueViewAnswer(args, ["session:worker-4"]);
     if (route === "api graphql") return graphql(args);
     if (args[0] === "api" && args[1].includes("actions/workflows/trunk.yml/runs")) return trunkRuns(args[1]);
     return "";
