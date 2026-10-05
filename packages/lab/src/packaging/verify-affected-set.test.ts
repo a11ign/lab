@@ -36,7 +36,7 @@ import { treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { underFloor } from "../../../guards/src/assert-glob-not-empty.mjs";
 import { knownPackages } from "../../../../scripts/ci-changed.mjs";
-import { packageIndex, sourceClosure } from "../../../../scripts/select-changed-tests.mjs";
+import { packageIndex, sourceClosure } from "../../../guards/src/walk-scope-discovery.mjs";
 import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import {
   AFFECTED_INCLUDE, AFFECTED_MIN_FILES, CI_ONLY, STEPS, affectedVerdict, jobsGateNeeds, readRunSummary, runAffectedSet, runTs,
