@@ -175,9 +175,9 @@ function relativeImportClosure(file: string, seen = new Set<string>()): Set<stri
 
 test("the rstest config, what it loads and what every worker preloads are triggers, none of them in any test's graph", async () => {
   const triggers = await configTriggers();
-  const entries = ["scripts/rstest/rstest.config.mjs", "scripts/rstest/register-node-test-alias.mjs", "packages/guards/src/walk-scope.mjs"];
+  const entries = ["scripts/rstest/rstest.config.mjs", "packages/toolchain/src/register-node-test-alias.mjs", "packages/guards/src/walk-scope.mjs"];
   const loaded = [...new Set(entries.flatMap((entry) => [...relativeImportClosure(entry)]))];
-  assert.ok(loaded.includes("scripts/rstest/verdict-reporter.mjs") && loaded.includes("packages/guards/src/walk-scope-declaration.mjs"),
+  assert.ok(loaded.includes("packages/toolchain/src/verdict-reporter.mjs") && loaded.includes("packages/guards/src/walk-scope-declaration.mjs"),
     `the walk found ${loaded.join(", ")}, so it did not follow the config's and the preload's own imports`);
   assert.deepEqual(loaded.filter((file) => !covers(triggers, file)), []);
 });

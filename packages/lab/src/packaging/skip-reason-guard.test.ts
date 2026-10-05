@@ -15,7 +15,7 @@
  * THE CALLS READ are those whose callee is bound to a TEST API by an import:
  *   - `node:test`, which is what the suite imports;
  *   - `@rstest/core`, rstest's own API, which the suite is moving to (#1317) and no test file imports today;
- *   - `scripts/rstest/node-test-shim.mjs`, the adapter rstest runs `node:test` through.
+ *   - `packages/toolchain/src/node-test-shim.mjs`, the adapter rstest runs `node:test` through.
  * Bound directly (`test(...)`), as a property (`test.describe(...)`, `nt.test(...)`), through a call
  * (`adapt(register)(...)`), or through a same-file `const` holding such a call (`const run = adapt(register)`).
  * A `skip` key in any other call -- `assert.deepEqual(result, { skip: true })` -- is data, not a test option.
@@ -60,7 +60,7 @@ type Declarations = Map<string, ts.Expression | null>;
 /** Which test API a module specifier names, or null. */
 function testApiOf(specifier: string): string | null {
   if (specifier === "node:test" || specifier === "@rstest/core") return specifier;
-  return specifier.endsWith("rstest/node-test-shim.mjs") ? "node-test-shim" : null;
+  return specifier.endsWith("toolchain/src/node-test-shim.mjs") ? "node-test-shim" : null;
 }
 
 /** Local names an import binds to a test API: `import { test as t }`, `import test from`, `import * as nt`. */
@@ -263,7 +263,7 @@ test("#1415 CONTROL: a skip through rstest's API or the node:test shim is read t
     'import { test, describe } from "@rstest/core";\ntest("r", { skip: true }, () => {});\ndescribe.skip("d", { skip: !ok }, () => {});');
   assert.deepEqual(refusedIn(rstest).map((site) => site.api), ["@rstest/core", "@rstest/core"]);
   const shimSource = [
-    'import { adapt, describeOn } from "../../../../scripts/rstest/node-test-shim.mjs";',
+    'import { adapt, describeOn } from "../../../../packages/toolchain/src/node-test-shim.mjs";',
     "const run = adapt(register);",
     'adapt(register)("a", { skip: true }, body); // REFUSED',
     'run("b", { skip: false }, body); // REFUSED',
