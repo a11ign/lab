@@ -230,3 +230,30 @@ test("ci-health.yml: `schedule` and `workflow_dispatch` only, `issues: write` an
   assert.ok(workflow.on.schedule.length >= 1, "POSITIVE CONTROL: the schedule is really there");
   assert.match(JSON.stringify(workflow.jobs), /scripts\/ci-health\.mjs --post/, "and it runs the script, posting");
 });
+
+/** The 5-field cron's day-of-week and hour fields, which are the two this pin reads. */
+const cronFields = (cron: string) => {
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = cron.trim().split(/\s+/);
+  return { minute, hour, dayOfMonth, month, dayOfWeek };
+};
+
+test("ci-health.yml: at least two schedule slots, every one on Monday and a distinct hour, because a dropped start has no second chance (#3678)", () => {
+  const workflow = parseYaml(readFileSync(resolve(REPO, ".github/workflows/ci-health.yml"), "utf8"));
+  const slots = workflow.on.schedule.map((entry: { cron: string }) => cronFields(entry.cron));
+  assert.ok(slots.length >= 2, "one slot is one chance: GitHub drops or delays scheduled starts here (#965, #3678)");
+  for (const slot of slots) {
+    assert.equal(slot.dayOfWeek, "1", "a slot on another DAY reads a different `weeklyWindow` and posts under a different heading");
+    assert.deepEqual([slot.dayOfMonth, slot.month], ["*", "*"]);
+    assert.match(slot.hour, /^\d+$/, "a single hour, so the slot count is the chance count");
+    assert.notEqual(slot.minute, "0", "OFF THE HOUR: the :00 starts were ~5 h late four days running (#965)");
+  }
+  assert.equal(new Set(slots.map((s: { hour: string }) => s.hour)).size, slots.length, "two slots in one hour are one chance");
+});
+
+test("weeklyWindow: every Monday instant reads the same window, so the extra slots post one heading and the second posts nothing (#3678)", () => {
+  const monday = ["2026-10-05T00:00:00Z", "2026-10-05T06:43:00Z", "2026-10-05T16:43:00Z", "2026-10-05T23:59:59Z"];
+  const windows = monday.map((instant) => JSON.stringify(weeklyWindow(new Date(instant))));
+  assert.equal(new Set(windows).size, 1);
+  assert.notEqual(JSON.stringify(weeklyWindow(new Date("2026-10-06T00:00:00Z"))), windows[0],
+    "POSITIVE CONTROL: Tuesday reads another window, which is why no slot may run on another day");
+});
