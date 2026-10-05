@@ -240,7 +240,9 @@ const fakeRun = (seen: string[], status: number | null = 0) => async (command: s
 test("the ts step's test command is `rstest run --changed=<base>` over the shared include, and not test-changed.mjs", async () => {
   const seen: string[] = [];
   const reaches = () => ({ testFiles: 2, tests: 5, failedFiles: 0, failedTests: 0 });
-  assert.equal(await runTs({ base: "origin/main" }, fakeRun(seen), reaches), "pass");
+  // #3574: no record, so the last command is the affected run whatever this worktree ran last.
+  const noRecord = () => ({ name: null, files: [], dropped: [] });
+  assert.equal(await runTs({ base: "origin/main" }, fakeRun(seen), reaches, noRecord), "pass");
   const last = seen.at(-1) ?? "";
   assert.match(last, / rstest run --config scripts\/rstest\/rstest\.config\.mjs --include packages\/\*\/src\/\*\*\/\*\.test\.ts --changed=origin\/main$/);
   assert.ok(last.includes(`--include ${AFFECTED_INCLUDE} `), "the include is not the constant the floor checks");
