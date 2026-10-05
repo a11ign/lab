@@ -113,6 +113,17 @@ test("ONE gated package among ungated ones keeps the whole release behind the fl
   assert.equal(decide([on(RELEASE, [])], { packages: ["cli", "lab"] }).outcome, "wait");
 });
 
+test("toolchain is runner-only: a release of it proceeds on the runner part alone, and lab still waits (the control)", () => {
+  const bare = [on(RELEASE, [])];
+  assert.equal(decide(bare, { packages: ["toolchain"] }).outcome, "proceed");
+  assert.match(decide(bare, { packages: ["toolchain"] }).reason, /runner part alone/);
+  assert.equal(decide(bare, { packages: ["lab"] }).outcome, "wait");
+  assert.deepEqual(
+    [FLEET_GATED_PACKAGES, RUNNER_ONLY_PACKAGES, PRIVATE_PACKAGES].map((list) => list.includes("toolchain")),
+    [false, true, false],
+  );
+});
+
 test("a package named in neither table is GATED, never released past the fleet part by omission", () => {
   assert.equal(isFleetGated("a-package-nobody-classified"), true);
   assert.equal(decide([on(RELEASE, [])], { packages: ["a-package-nobody-classified"] }).outcome, "wait");
