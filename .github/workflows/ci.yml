@@ -63,5 +63,5 @@ jobs:
       - run: pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
         working-directory: core
       # This repository's own checks: the workflows, the arming filter, the composition above.
-      - run: pnpm install --frozen-lockfile --ignore-workspace && pnpm run typecheck && pnpm test
+      - run: pnpm install --frozen-lockfile && pnpm run typecheck && pnpm test
         working-directory: lab
