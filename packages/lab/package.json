@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@a11ign/control": "0.1.0",
-    "@guidepup/guidepup": "0.31.0",
+    "@guidepup/guidepup": "0.35.0",
     "a11ign": "0.2.6",
     "serve": "14.2.6",
     "typescript": "^6.0.3",
