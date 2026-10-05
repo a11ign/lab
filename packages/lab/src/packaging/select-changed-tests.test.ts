@@ -616,6 +616,20 @@ test("testFilesToRun: #1695 REGRESSION -- the real shape PR #1695 hit: an uncove
     "every fallback glob this uncovered-change shape can name must resolve to at least one real file");
 });
 
+test("testFilesToRun: #3603 -- toolchain is tested from packages/lab/src/packaging/ (its own src/ holds no "
+  + "*.test.ts), so its fallback must resolve there or a toolchain-only diff is refused with 'matched 0'", () => {
+  const run = testFilesToRun({ selectedTests: [], alwaysRun: [], fallbackPackages: ["toolchain"] });
+  assert.deepEqual(run, ["packages/lab/src/packaging/**/*.test.ts"]);
+  assert.deepEqual(underFloor(run, 1), [], "the resolved glob must actually match something, not just be renamed");
+});
+
+test("testFilesToRun: #3603 -- toolchain beside guards returns the shared glob TWICE: the fallback globs are "
+  + "not deduplicated (only the files are), and reusable-build-test.yml hands the list on as it is", () => {
+  const run = testFilesToRun({ selectedTests: [], alwaysRun: [], fallbackPackages: ["toolchain", "guards"] });
+  assert.deepEqual(run, ["packages/lab/src/packaging/**/*.test.ts", "packages/lab/src/packaging/**/*.test.ts"]);
+  assert.deepEqual(underFloor(run, 1), []);
+});
+
 // --- #1527: a test that READS a changed file as text, or imports it DYNAMICALLY, is selected ---
 //
 // #1526 changed the real-page gate script. CI's selection skipped `capture-age-spread.test.ts`, which pins that
