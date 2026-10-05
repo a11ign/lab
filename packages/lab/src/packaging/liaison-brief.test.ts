@@ -134,6 +134,7 @@ const ROW_REPLY_TEACHING: Array<[string, string]> = [
   ["the working command, end to end", 'pnpm run chairman:reply -- "That work is {{issue:3542.state}}. Reference: #{{issue:3542.number}}."'],
   ["the --dry-run probe of it", 'pnpm run chairman:reply -- --dry-run "That work is {{issue:3542.state}}. Reference: #{{issue:3542.number}}."'],
   ["the refusal prints the corrected text", "`corrected, send this instead:` line"],
+  ["which placeholder carries which value", "`#{{issue:3542.number}}` reads `3542`; `{{issue:3542.state}}` reads `closed`"],
 ];
 const missingRowReplyTeaching = (text: string): string[] => ROW_REPLY_TEACHING.filter(([, phrase]) => !text.includes(phrase)).map(([name]) => name);
 
