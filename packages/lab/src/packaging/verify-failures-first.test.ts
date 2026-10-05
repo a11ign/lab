@@ -201,10 +201,11 @@ test("the newest record of this worktree is the one read, and a worktree whose n
   }
 });
 
-test("the directory and the name verify reads are the ones rstest.config.mjs writes", () => {
-  const config = readFileSync(join(ROOT, "scripts/rstest/rstest.config.mjs"), "utf8");
-  assert.ok(config.includes('join(root, "node_modules", ".cache", "rstest-run-records")'), "the config moved the record directory");
-  assert.ok(config.includes("`${worktree}-${now.toISOString().replaceAll(/[:.]/g, \"-\")}-${pid}.json`"), "the config changed the record's name");
+test("the directory and the name verify reads are the ones the toolchain's rstest config writes", () => {
+  // The record path is made by the package (#3578); `scripts/rstest/rstest.config.mjs` is a thin call into it.
+  const config = readFileSync(join(ROOT, "packages/toolchain/src/rstest-config.mjs"), "utf8");
+  assert.ok(config.includes('join(root, "node_modules", ".cache", "rstest-run-records")'), "the toolchain config moved the record directory");
+  assert.ok(config.includes("`${worktree}-${now.toISOString().replaceAll(/[:.]/g, \"-\")}-${pid}.json`"), "the toolchain config changed the record's name");
   assert.equal(runRecordDir({}), join(ROOT, "node_modules", ".cache", "rstest-run-records"));
   assert.equal(runRecordDir({ A11Y_RSTEST_RECORD_DIR: "/x" }), "/x");
 });
