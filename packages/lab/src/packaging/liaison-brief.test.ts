@@ -126,6 +126,30 @@ test("positive control: deleting any one part of the chairman:watch teaching fro
   assert.equal(read(BRIEF).includes("chairman:watch"), true, "the brief names the command at all");
 });
 
+/**
+ * What the brief must show for a reply about a row (a11ign/a11ign#3565): the whole working command, the `--dry-run` probe of it, and where the refusal's fix is printed.
+ * The example's placeholders are held to the vocabulary by the test above, so a renamed placeholder fails there and not silently here.
+ */
+const ROW_REPLY_TEACHING: Array<[string, string]> = [
+  ["the working command, end to end", 'pnpm run chairman:reply -- "That work is {{issue:3542.state}}. Reference: #{{issue:3542.number}}."'],
+  ["the --dry-run probe of it", 'pnpm run chairman:reply -- --dry-run "That work is {{issue:3542.state}}. Reference: #{{issue:3542.number}}."'],
+  ["the refusal prints the corrected text", "`corrected, send this instead:` line"],
+];
+const missingRowReplyTeaching = (text: string): string[] => ROW_REPLY_TEACHING.filter(([, phrase]) => !text.includes(phrase)).map(([name]) => name);
+
+test("the brief carries one working example of a reply about a row, its --dry-run probe, and where the refusal prints the fix", () => {
+  assert.deepEqual(missingRowReplyTeaching(read(BRIEF)), []);
+});
+
+test("positive control: deleting any one part of the row-reply teaching from a copy fails that part", () => {
+  assert.equal(ROW_REPLY_TEACHING.length > 0, true, "the table the controls run over is not empty");
+  for (const [name, phrase] of ROW_REPLY_TEACHING) {
+    // The --dry-run line contains the sending line's text only after its flag, so deleting the sending line alone is the one a naive `includes` could not tell from the probe.
+    const broken = read(BRIEF).replace(phrase, "");
+    assert.deepEqual(missingRowReplyTeaching(broken), [name], `deleting "${name}" must fail exactly that part`);
+  }
+});
+
 test("the roster has a persistent liaison whose brief exists", () => {
   const entry = liaisonEntry(JSON.parse(read(SESSIONS)) as Roster);
   assert.ok(entry, "sessions.json has a live entry named liaison");
