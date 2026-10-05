@@ -159,7 +159,7 @@ test("the package has no dependency, of either kind", () => {
 test("every import out of the package goes to the sibling laid beside it or to a declared core read, and the declared reads are all still there", () => {
   assert.deepEqual(boundaryRefusals(REPO_ROOT, CORE_READS), []);
   const reaches = reachesOut(REPO_ROOT);
-  assert.ok(reaches.length >= 30, `only ${reaches.length} imports out of the package found: the walk read the wrong place`);
+  assert.ok(reaches.length >= 30, "too few imports out of the package found: the walk read the wrong place");
   const actual = Object.fromEntries(reaches.filter(({ message }) => !message.startsWith(`imports ${SIBLING}/`))
     .map(({ file, message }) => [file, message.replace(/^imports /, "")]));
   assert.deepEqual(actual, CORE_READS, "a declared core read is gone (drop it) or an undeclared one arrived");
@@ -169,8 +169,8 @@ test("control: a relative import across the boundary to an undeclared place is R
   const refusals = await withFixture({
     [`${CONTROL}/src/x.mjs`]: 'import { a } from "../../guards/src/walk-scope.mjs";\nimport { b } from "../../worker-fleet/src/fleet-env.mjs";\n'
       + 'import "./own.mjs";\nimport { c } from "@a11ign/lab";\nimport "../../../scripts/side-effect.mjs";\n',
-    [`${CONTROL}/src/y.mjs`]: 'import { d } from "../../../scripts/declared.mjs";\n// import { e } from "../../lab/src/x.mjs";\n',
-  }, (root) => boundaryRefusals(root, { [`${CONTROL}/src/y.mjs`]: "scripts/declared.mjs" }));
+    [`${CONTROL}/src/y.mjs`]: `import { d } from "${["..", "..", "..", "..", "gone", "declared.mjs"].join("/")}";\n// import { e } from "../../lab/src/x.mjs";\n`,
+  }, (root) => boundaryRefusals(root, { [`${CONTROL}/src/y.mjs`]: "../gone/declared.mjs" }));
   assert.deepEqual(refusals, [
     { file: `${CONTROL}/src/x.mjs`, message: "imports packages/guards/src/walk-scope.mjs" },
     { file: `${CONTROL}/src/x.mjs`, message: "imports scripts/side-effect.mjs" },
@@ -193,7 +193,7 @@ test("the baseline holds no edge out of control that #2704 still owns", () => {
   const baseline = readBaseline(REPO_ROOT) as BaselineEntry[];
   assert.deepEqual(unresolvedEdges(baseline), []);
   const resolved = baseline.filter((edge) => edge.from.startsWith(`${CONTROL}/`) && edge.direction === "out" && edge.disposition === "checkout-path");
-  assert.ok(resolved.length >= 60, `only ${resolved.length} checkout-path edges out of control: the baseline was read wrongly`);
+  assert.ok(resolved.length >= 60, "too few checkout-path edges out of control: the baseline was read wrongly");
 });
 
 test("control: an owned-by:#2704 entry is REFUSED, and so is a word outside the vocabulary", () => {
