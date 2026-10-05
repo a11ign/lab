@@ -92,18 +92,18 @@ function zeroMajorViolations({ changesets, versions }: { changesets: Changeset[]
   return problems;
 }
 
-const SIX = ["@a11ign/evidence", "@a11ign/judge", "@a11ign/screenreader-worker", "@a11ign/scorer",
-  "@a11ign/screenreader-fleet", "a11ign"];
+const PUBLIC = ["@a11ign/evidence", "@a11ign/judge", "@a11ign/screenreader-worker", "@a11ign/scorer",
+  "@a11ign/screenreader-fleet", "@a11ign/toolchain", "a11ign"];
 
 test("#1396 THE LIVE TREE: no pending major on a 0.x package, and every unpublished package's first release is a minor", () => {
   const changesets = pendingChangesets();
   const versions = publicVersions();
   // THE POPULATION FIRST, so the empty list below cannot pass having read nothing: a WRITTEN list of the
-  // six public packages (#3125: `@a11ign/documents` left the workspace, so this is the original six of #1396 --
-  // a seventh, or one gone private, is a decision about a first publish). No pending release line is required
+  // seven public packages (#3125: `@a11ign/documents` left the workspace, so this is the original six of #1396 plus
+  // `@a11ign/toolchain`, #3578 -- an eighth, or one gone private, is a decision about a first publish). No pending release line is required
   // of the live tree: with nothing pending (#3372 deleted the 67 private-only ones) the empty list is true, and
   // the control for the READER is the planted-directory test below, which does read a release line.
-  assert.deepEqual(Object.keys(versions).sort(), [...SIX].sort());
+  assert.deepEqual(Object.keys(versions).sort(), [...PUBLIC].sort());
   assert.deepEqual(zeroMajorViolations({ changesets, versions }), []);
 });
 
