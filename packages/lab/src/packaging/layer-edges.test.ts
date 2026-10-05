@@ -22,10 +22,16 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
 import {
   BASELINE_PATH, LAYER_PACKAGES, countByDisposition, describeVerdict, findEdges, isScanned, judgeEdges, packageOf,
   readBaseline, trackedFiles,
 } from "../../../guards/src/layer-edges.mjs";
+
+// #3610: "the real tree agrees with the committed baseline" walks `trackedFiles()`, so this file's population is the whole
+// tracked tree and no import graph from a changed file reaches it -- the edge a new file adds is in the new file.
+// Declared so `--changed` does not pretend to select it and CI's `guardSweep` carries it once per pull request.
+declareTreeWideGuard();
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const GUARD = join(ROOT, "packages/guards/src/layer-edges.mjs");
