@@ -173,11 +173,13 @@ test("`ts` runs every command through the non-blocking runner, in order, and sto
     return { status: seen.at(-1)?.includes(failing ?? "\0") ? 1 : 0 };
   };
   const ranFiles = () => ({ testFiles: 1, tests: 1, failedFiles: 0, failedTests: 0 });
-  assert.equal(await runTs({ base: "origin/main" }, run(null), ranFiles), "pass");
+  // #3574: the default reads THIS worktree's newest run record, so a red run just before would add a first leg to the four commands.
+  const noRecord = () => ({ name: null, files: [], dropped: [] });
+  assert.equal(await runTs({ base: "origin/main" }, run(null), ranFiles, noRecord), "pass");
   assert.equal(seen.length, TS_COMMANDS, "the positive control: all four commands were handed to the runner");
   assert.match(seen.at(-1) ?? "", / rstest run .*--changed=origin\/main$/);
   seen.length = 0;
-  assert.equal(await runTs({ base: "origin/main" }, run("lint"), ranFiles), "fail");
+  assert.equal(await runTs({ base: "origin/main" }, run("lint"), ranFiles, noRecord), "fail");
   assert.equal(seen.length, 2, "docs:coverage and lint ran, and typecheck did not run after lint failed");
 });
 

@@ -24,8 +24,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import {
   AFFECTED_INCLUDE, bodyHash, failuresFirstPlan, newestRunRecord, runFailuresFirst, runRecordDir, runTs, stampVerdict,
 } from "../../../../scripts/verify.mjs";
@@ -218,11 +216,13 @@ test("the record rstest really writes for a red run is the one the reader and th
     writeFileSync(file, 'import { test } from "node:test";\nimport assert from "node:assert/strict";\ntest("deliberately false", () => { assert.equal(1, 2); });\n');
     const records = join(dir, "records");
     mkdirSync(records);
-    const { command, args } = pnpmCliInvocation(["exec", "rstest", "run", "--config", "scripts/rstest/rstest.config.mjs", "--include", file]);
+    // rstest's own entry point, not `pnpm exec`: this file then needs neither the pnpm helper nor the git sandbox (two layer edges fewer).
+    const rstest = join(ROOT, "node_modules", "@rstest", "core", "bin", "rstest.js");
+    const args = [rstest, "run", "--config", "scripts/rstest/rstest.config.mjs", "--include", file];
     // Started from inside an rstest worker, whose variable would keep the child's config from recording at all.
-    const env = { ...sandboxGitEnv({ A11Y_RSTEST_RECORD_DIR: records }) } as NodeJS.ProcessEnv;
+    const env = { ...process.env, A11Y_RSTEST_RECORD_DIR: records } as NodeJS.ProcessEnv;
     delete env.RSTEST_WORKER_ID;
-    assert.throws(() => execFileSync(command, args, { cwd: ROOT, env, stdio: "pipe" }), "a failing fixture exited 0, so the control is not red");
+    assert.throws(() => execFileSync(process.execPath, args, { cwd: ROOT, env, stdio: "pipe" }), "a failing fixture exited 0, so the control is not red");
     const last = newestRunRecord({ dir: records, worktree: WORKTREE });
     assert.equal(last?.record.status, "fail", "the reader found no red record where rstest wrote one");
     const plan = failuresFirstPlan({ last, exists: () => true, inInclude: () => true });
