@@ -10,28 +10,26 @@
  * be reachable, so a function that returned `failure` for everything would fail it, and one that returned
  * `success` for everything is refused by the exit-2 and missing-verdict rows.
  *
- * The poster is driven through an injected `fetch` and a temp token path, so it runs offline. The one live
- * post (done-when 4) is read back on the row and is gated on the token file existing; this file proves only
- * what fixtures can, and says so rather than standing for it.
+ * The poster is driven through an injected `gh`, so it runs offline and posts nothing. The one live post
+ * (done-when 4) is read back on the row from the host's own credential; this file proves only what fixtures
+ * can, and says so rather than standing for it.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   QUALIFICATION_CONTEXT, QUALIFICATION_GATE, qualificationStatus,
 } from "../gates/qualification-status.mjs";
 import { gateVerdict } from "../gates/verdict.mjs";
 import { QUALIFICATION_CONTEXT as READ_CONTEXT } from "../../../../scripts/release-reads-qualification.mjs";
 import {
-  EXIT, TOKEN_FILE_NAME, defaultTokenPath, parseArgs, postQualificationStatus, renderResult,
+  EXIT, parseArgs, postQualificationStatus, renderResult, requireFullSha,
 } from "../../../control/src/post-qualification-status.mjs";
 
 const SHA = "308b2de5bbd8a1f0c4e7d9b3a6f2e1d0c9b8a7f6";
 const GITHUB_DESCRIPTION_LIMIT = 140;
 const LONG_SOURCE = 400;
-const FORBIDDEN = 403;
 
 /** What the function accepts; malformed fixtures are cast through `unknown` so the casts are visible. */
 type Outcome = Parameters<typeof qualificationStatus>[0]["outcome"];
@@ -123,87 +121,78 @@ test("a malformed sha throws rather than yielding a payload for nothing", () => 
 
 // ---- the poster ------------------------------------------------------------------------------------
 
-function withToken(contents: string | undefined, run: (path: string) => Promise<void> | void) {
-  const dir = mkdtempSync(join(tmpdir(), "qual-status-"));
-  const path = join(dir, TOKEN_FILE_NAME);
-  if (contents !== undefined) writeFileSync(path, contents);
-  return Promise.resolve(run(path)).finally(() => rmSync(dir, { recursive: true, force: true }));
-}
+type GhAnswer = { status: number | null; stdout: string; stderr: string; missing: boolean };
+const answer = (over: Partial<GhAnswer> = {}): GhAnswer => ({ status: 0, stdout: "{}", stderr: "", missing: false, ...over });
 
-const recorder = (status = 201) => {
-  const calls: { url: string; init: { method: string; headers: Record<string, string>; body: string } }[] = [];
-  const fetchImpl = (async (url: string, init: (typeof calls)[number]["init"]) => {
-    calls.push({ url, init });
-    return { status, text: async () => "boom" };
-  }) as unknown as typeof fetch;
-  return { calls, fetchImpl };
+/** An injected `gh` that records the argv it was asked to run. */
+const recorder = (reply: GhAnswer = answer()) => {
+  const calls: string[][] = [];
+  const gh = (args: string[]) => {
+    calls.push(args);
+    return reply;
+  };
+  return { calls, gh };
 };
 
-test("the token is the SECOND file, never the read token", () => {
-  assert.match(defaultTokenPath("/home/x"), /\.config\/a11y-witness\/qualification-status-token$/);
-  assert.doesNotMatch(defaultTokenPath("/home/x"), /gh-token/);
+const POSTER_SOURCE = readFileSync(fileURLToPath(new URL("../../../control/src/post-qualification-status.mjs", import.meta.url)), "utf8");
+
+test("it posts the payload to the sha's statuses endpoint through `gh api`, as the host's own credential", () => {
+  const { calls, gh } = recorder();
+  const result = postQualificationStatus({ sha: SHA, outcome: { exitCode: 0 }, run: "a11y-job-gate-stability", gh });
+  assert.equal(result.posted, true);
+  assert.equal(calls.length, 1);
+  const payload = qualificationStatus({ sha: SHA, outcome: { exitCode: 0 }, run: "a11y-job-gate-stability" });
+  assert.deepEqual(calls[0], ["api", "--method", "POST", `repos/a11ign/a11ign/statuses/${SHA}`,
+    "-f", `state=${payload.state}`, "-f", `context=${payload.context}`, "-f", `description=${payload.description}`]);
+  assert.match(renderResult(result), /^POSTED qualification: success/);
 });
 
-test("with the token file ABSENT it posts nothing, says so, and exits 3 -- never success, never silent", async () => {
-  await withToken(undefined, async (tokenPath) => {
-    const { calls, fetchImpl } = recorder();
-    const result = await postQualificationStatus({
-      sha: SHA, outcome: { verdict: PASS }, tokenPath, fetchImpl });
-    assert.equal(result.posted, false);
-    assert.equal((result as { reason?: string }).reason, "no-token");
-    assert.equal(calls.length, 0, "no request may leave when there is no token");
+test("there is no token file and no second credential: the poster never names one", () => {
+  // The host's AMBIENT `gh`: it must not pick an account (`GH_CONFIG_DIR`, `GH_TOKEN`) or read a token file.
+  assert.doesNotMatch(POSTER_SOURCE, /GH_CONFIG_DIR\s*[:=]|GH_TOKEN\s*[:=]|process\.env\.GH_|qualification-status-token/);
+  assert.doesNotMatch(POSTER_SOURCE, /spawnSync\("gh", args, \{[^}]*\benv\b/, "the default runner must pass the environment through untouched");
+});
+
+test("with NO usable credential it posts nothing, says so, and is exit 3 -- never success, never silent", () => {
+  const cases: [string, GhAnswer][] = [
+    ["no `gh` on this host", answer({ status: null, stderr: "", missing: true })],
+    ["gh logged in as nobody (its own exit 4)", answer({ status: 4, stderr: "To get started with GitHub CLI, please run:  gh auth login" })],
+    ["GitHub answering 401", answer({ status: 1, stderr: "gh: Bad credentials (HTTP 401)" })],
+    ["GitHub answering 403, the token lacks statuses: write", answer({ status: 1, stderr: "gh: Resource not accessible by personal access token (HTTP 403)" })],
+  ];
+  for (const [name, reply] of cases) {
+    const { gh } = recorder(reply);
+    const result = postQualificationStatus({ sha: SHA, outcome: { verdict: PASS }, gh });
+    assert.equal(result.posted, false, name);
+    assert.equal((result as { reason?: string }).reason, "no-credential", name);
     const said = renderResult(result);
-    assert.match(said, /NOT POSTED/);
-    assert.match(said, new RegExp(TOKEN_FILE_NAME));
-    assert.match(said, /not yet/);
-    assert.notEqual(EXIT.NOT_YET, EXIT.POSTED);
-    assert.notEqual(EXIT.NOT_YET, EXIT.REFUSED);
-  });
+    assert.match(said, /NOT POSTED/, name);
+    assert.match(said, /no usable GitHub credential/, name);
+    assert.match(said, /not yet/, name);
+    assert.match(said, /Would have posted: success/, name);
+  }
+  assert.notEqual(EXIT.NOT_YET, EXIT.POSTED);
+  assert.notEqual(EXIT.NOT_YET, EXIT.REFUSED);
 });
 
-test("an EMPTY token file is absent, not a token", async () => {
-  await withToken("  \n", async (tokenPath) => {
-    const { calls, fetchImpl } = recorder();
-    const result = await postQualificationStatus({ sha: SHA, outcome: { started: true }, tokenPath, fetchImpl });
-    assert.equal((result as { reason?: string }).reason, "no-token");
-    assert.equal(calls.length, 0);
-  });
+test("GitHub refusing the post for another reason is a REFUSAL (exit 1), reported and not swallowed", () => {
+  for (const stderr of ["gh: Validation Failed (HTTP 422)", "gh: Not Found (HTTP 404)", "gh: Bad Gateway (HTTP 502)"]) {
+    const result = postQualificationStatus({ sha: SHA, outcome: { exitCode: 0 }, gh: recorder(answer({ status: 1, stderr })).gh });
+    assert.equal(result.posted, false, stderr);
+    assert.equal((result as { reason?: string }).reason, "rejected", stderr);
+    assert.match(renderResult(result), new RegExp(stderr.replace(/[()]/g, "\\$&")));
+  }
 });
 
-test("with a token it posts the payload to the sha's statuses endpoint, as a bearer", async () => {
-  await withToken("ghp_example\n", async (tokenPath) => {
-    const { calls, fetchImpl } = recorder();
-    const result = await postQualificationStatus({
-      sha: SHA, outcome: { exitCode: 0 }, run: "a11y-job-gate-stability", tokenPath, fetchImpl });
-    assert.equal(result.posted, true);
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, `https://api.github.com/repos/a11ign/a11ign/statuses/${SHA}`);
-    assert.equal(calls[0].init.method, "POST");
-    assert.equal(calls[0].init.headers.Authorization, "Bearer ghp_example");
-    assert.deepEqual(JSON.parse(calls[0].init.body), qualificationStatus({
-      sha: SHA, outcome: { exitCode: 0 }, run: "a11y-job-gate-stability" }));
-    assert.match(renderResult(result), /^POSTED qualification: success/);
-  });
+test("a malformed sha is refused even when this host has no credential, and `gh` is never asked", () => {
+  const { calls, gh } = recorder(answer({ missing: true, status: null }));
+  assert.throws(() => postQualificationStatus({ sha: "abc", outcome: { started: true }, gh }), /40-character/);
+  assert.equal(calls.length, 0);
+  assert.throws(() => requireFullSha("abc"), /40-character/);
+  assert.doesNotThrow(() => requireFullSha(SHA));
 });
 
-test("GitHub refusing the post is reported, not swallowed", async () => {
-  await withToken("ghp_example", async (tokenPath) => {
-    const { fetchImpl } = recorder(FORBIDDEN);
-    const result = await postQualificationStatus({ sha: SHA, outcome: { exitCode: 0 }, tokenPath, fetchImpl });
-    assert.equal(result.posted, false);
-    assert.equal((result as { reason?: string }).reason, "rejected");
-    assert.match(renderResult(result), /403/);
-  });
-});
-
-test("a malformed sha is refused even when there is no token yet", async () => {
-  await withToken(undefined, async (tokenPath) => {
-    await assert.rejects(postQualificationStatus({ sha: "abc", outcome: { started: true }, tokenPath }),
-      /40-character/);
-  });
-});
-
-test("argv: --started, --exit-code and an unreadable --verdict-file map to outcomes, the last to failure", async () => {
+test("argv: --started, --exit-code and an unreadable --verdict-file map to outcomes, the last to failure", () => {
   assert.deepEqual(parseArgs([`--sha=${SHA}`, "--started"]).outcome, { started: true });
   assert.deepEqual(parseArgs([`--sha=${SHA}`, "--exit-code=2"]).outcome, { exitCode: 2 });
   const unreadable = parseArgs([`--sha=${SHA}`, "--verdict-file=/nonexistent/verdict.json"]).outcome;
