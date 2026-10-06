@@ -5,7 +5,7 @@
  * Measured 2026-09-25: `npx rstest run --config scripts/rstest/rstest.config.mjs --include 'nothing-*.test.ts'` exits 1
  * and its markdown report says `"status": "pass"` over `"tests": 0`. `assert-glob-not-empty.mjs` refuses an empty glob
  * before the runner starts, but the direct form every Acceptance and every hand run uses does not go through it, so a
- * session read "pass" where nothing ran (#2165's false "the mutant survived"). `packages/toolchain/src/verdict-reporter.mjs` is
+ * session read "pass" where nothing ran (#2165's false "the mutant survived"). `@a11ign/toolchain/verdict-reporter` is
  * the last reporter, and this file pins what it and the config around it promise:
  *
  *   1. THE POSITIVE CONTROL. A run that matches no test prints `VERDICT REFUSED: 0 tests run`, and a run that matches one
@@ -31,7 +31,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.mjs";
-import { verdictLine } from "../../../../packages/toolchain/src/verdict-reporter.mjs";
+import { verdictLine } from "@a11ign/toolchain/verdict-reporter";
 // #492: every npx call site resolves npm's own CLI script through this helper (`npm-cli-windows-spawn.test.ts`).
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 

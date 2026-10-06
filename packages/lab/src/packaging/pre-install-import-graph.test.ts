@@ -134,7 +134,7 @@ export function preInstallScripts(workflowText: string): string[] {
 
 /**
  * Every script behind an npm lifecycle entry, for each `node scripts/…` invocation in it. ALL of a `&&` chain, not the first: `build` is
- * `node scripts/lay-layer.mjs … && node scripts/build-packages.mjs` since #3504, and a reading that stopped at the first dropped the build itself.
+ * `node scripts/lay-layer.mjs … && node scripts/pnpm.mjs -r run build` since #3580 (`build-packages.mjs` before it), and a reading that stopped at the first dropped the build itself.
  */
 function scriptsBehind(command: string | undefined): string[] {
   return [...(command ?? "").matchAll(/\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/g)].map((call) => call[1]);
@@ -195,7 +195,7 @@ export function preInstallEntries(): string[] {
   //
   // THE `prepare` REASON IS PRESERVED FROM `build-bootstrap-no-workspace-imports.test.ts`, the guard this
   // file replaced, and it is worth keeping verbatim because a derivation cannot express it: that script
-  // is "not reachable via build-packages.mjs's own import graph; carries the identical constraint by npm
+  // is "not reachable via build-packages.mjs's own import graph (the script #3580 deleted; `pnpm.mjs` is the lifecycle entry now); carries the identical constraint by npm
   // lifecycle timing rather than by being imported from the same entry point." The walk finds the file;
   // only that sentence says WHY it belongs.
   for (const lifecycle of ["build", "prepare"]) {
@@ -236,7 +236,7 @@ test("the entry discovery finds a real population — the vacuity guard that mat
     + "which is exactly how the previous version of this file missed the import its own PR added.");
   // Named because each is a DIFFERENT reason for being in the population, and losing any one silently
   // narrows the walk: a workflow step, a workflow that never installs at all, and a lifecycle script.
-  for (const expected of ["scripts/ci-changed.mjs", "scripts/build-packages.mjs"]) {
+  for (const expected of ["scripts/ci-changed.mjs", "scripts/pnpm.mjs"]) {
     assert.ok(entries.includes(expected),
       `${expected} must be discovered; found: ${entries.join(", ")}`);
   }

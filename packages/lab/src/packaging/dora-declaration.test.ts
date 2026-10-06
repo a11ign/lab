@@ -53,8 +53,8 @@ type ReadManifest = (directory: string) => Manifest | null;
 const readText = (path: string) => readFileSync(`${REPO_ROOT}${path}`, "utf8");
 
 /**
- * A package that has MOVED (#3125: `documents`, #3447: `screenreader-worker`, #3504: `screenreader-fleet`) is no longer under `packages/` here, but its own repository keeps the layout
- * `releasablePaths` names. Its manifest is read from the copy `cli` INSTALLED from the registry, which is the published one, so the
+ * A package that has MOVED (#3125: `documents`, #3447: `screenreader-worker`, #3504: `screenreader-fleet`, #3625: `toolchain`) is no longer under `packages/` here, but its own repository keeps the layout
+ * `releasablePaths` names. Its manifest is read from the copy this workspace INSTALLED from the registry, which is the published one, so the
  * name is still read from a real manifest and not assumed. The key is the declared prefix, the value where that manifest now is.
  */
 const MOVED_TO_THE_REGISTRY: Record<string, string> = {
@@ -62,6 +62,7 @@ const MOVED_TO_THE_REGISTRY: Record<string, string> = {
   // `nvda-speech/` has no entry: it is private and not in the published package, and the check reads only public manifests.
   "packages/nvda-worker/": "packages/lab/node_modules/@a11ign/screenreader-worker/package.json",
   "packages/worker-fleet/": "packages/lab/node_modules/@a11ign/screenreader-fleet/package.json",
+  "packages/toolchain/": "node_modules/@a11ign/toolchain/package.json",
 };
 
 const workspaceManifest: ReadManifest = (directory) => {
@@ -71,7 +72,7 @@ const workspaceManifest: ReadManifest = (directory) => {
 
 /**
  * Repositories ADR 0041's seven-row table predates. `toolchain` is the package ADR 0043 extracts (#3578) and publishes to npm from its
- * own repository, so it is `npm` and its manifest is `packages/toolchain/package.json` in this workspace as well as there.
+ * own repository, so it is `npm`; its manifest is the installed copy (#3625 deleted `packages/toolchain/` here), and `releasablePaths` names the directory in THAT repository.
  */
 const BEYOND_THE_ADR: AdrRepository[] = [{ repo: TOOLCHAIN, kind: "npm", source: "ADR 0043" }];
 

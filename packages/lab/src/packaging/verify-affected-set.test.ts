@@ -175,11 +175,14 @@ function relativeImportClosure(file: string, seen = new Set<string>()): Set<stri
 
 test("the rstest config, what it loads and what every worker preloads are triggers, none of them in any test's graph", async () => {
   const triggers = await configTriggers();
-  const entries = ["scripts/rstest/rstest.config.mjs", "packages/toolchain/src/register-node-test-alias.mjs", "packages/guards/src/walk-scope.mjs"];
+  // The toolchain is installed, not in the tree (#3625): the config's call into it is not a file this walk can follow, so the lockfile that
+  // pins its version is the trigger, asserted by name below.
+  const entries = ["scripts/rstest/rstest.config.mjs", "packages/guards/src/walk-scope.mjs"];
   const loaded = [...new Set(entries.flatMap((entry) => [...relativeImportClosure(entry)]))];
-  assert.ok(loaded.includes("packages/toolchain/src/verdict-reporter.mjs") && loaded.includes("packages/guards/src/walk-scope-declaration.mjs"),
-    `the walk found ${loaded.join(", ")}, so it did not follow the config's and the preload's own imports`);
+  assert.ok(loaded.includes("packages/guards/src/walk-scope-declaration.mjs"),
+    `the walk found ${loaded.join(", ")}, so it did not follow the preload's own imports`);
   assert.deepEqual(loaded.filter((file) => !covers(triggers, file)), []);
+  assert.ok(covers(triggers, "pnpm-lock.yaml"), "a new version of the installed toolchain changes what every run does, and the lockfile is where it shows");
 });
 
 // 2. THE FLOOR UNDER THE `--changed` RUN.

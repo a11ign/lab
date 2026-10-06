@@ -124,7 +124,6 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "npm-cli-windows-spawn.test.ts: touchingNpmCli.length",
   "pre-push-hook-scope.test.ts: sites.length",
   "pre-push-resolve-toward-main.test.ts: block.length",
-  "project-references.test.ts: projects.size",
   "python-ci-requirements.test.ts: ci.size",
   "python-ci-requirements.test.ts: full.size",
   "ready-label-audit.test.ts: statuses.size",

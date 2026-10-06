@@ -157,7 +157,7 @@ test("the walk really spans packages/ — a floor AND a spread across packages, 
     `only ${testFiles.length} test file(s) found under packages/ — the walk looks broken (626 at #1940)`);
 
   const packages = new Set(testFiles.map((path) => path.split("/")[1]));
-  const MIN_PACKAGES = 8;
+  const MIN_PACKAGES = 7;
   assert.ok(packages.size >= MIN_PACKAGES,
     `test files found in only ${packages.size} package(s) (${[...packages].join(", ")}) — a walk rooted `
     + "at one package answers a narrower question than this guard asks");

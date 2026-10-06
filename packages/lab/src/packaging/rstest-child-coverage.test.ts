@@ -15,8 +15,8 @@ import { join } from "node:path";
 import { CoverageProvider } from "@rstest/coverage-v8";
 import {
   childCoverageEntries, coverageOptionsFromC8rc, coverageTotals, foldByStart, mergeChildCoverage, rstestCoverageArgs,
-} from "../../../../packages/toolchain/src/merge-child-coverage.mjs";
-import type { FileData } from "../../../../packages/toolchain/src/merge-child-coverage.mjs";
+} from "@a11ign/toolchain/merge-child-coverage";
+import type { FileData } from "@a11ign/toolchain/merge-child-coverage";
 
 const FIXTURE = [
   "export function reached(n) { return n > 0 ? 'positive' : 'not positive'; }",

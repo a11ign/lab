@@ -113,14 +113,13 @@ test("ONE gated package among ungated ones keeps the whole release behind the fl
   assert.equal(decide([on(RELEASE, [])], { packages: ["cli", "lab"] }).outcome, "wait");
 });
 
-test("toolchain is runner-only: a release of it proceeds on the runner part alone, and lab still waits (the control)", () => {
+test("toolchain left the workspace (#3625): it is in no table, so a package of that name would be GATED, and lab still waits (the control)", () => {
   const bare = [on(RELEASE, [])];
-  assert.equal(decide(bare, { packages: ["toolchain"] }).outcome, "proceed");
-  assert.match(decide(bare, { packages: ["toolchain"] }).reason, /runner part alone/);
+  assert.equal(decide(bare, { packages: ["toolchain"] }).outcome, "wait");
   assert.equal(decide(bare, { packages: ["lab"] }).outcome, "wait");
   assert.deepEqual(
     [FLEET_GATED_PACKAGES, RUNNER_ONLY_PACKAGES, PRIVATE_PACKAGES].map((list) => list.includes("toolchain")),
-    [false, true, false],
+    [false, false, false],
   );
 });
 
@@ -202,7 +201,7 @@ test("every package directory is classified exactly once, so adding one fails HE
   // A PACKAGE is a directory with a manifest: `packages/worker-fleet/` is a layer checkout where `pnpm run build` laid it (#3504), with no manifest, untracked.
   const directories = readdirSync("packages", { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
     .filter((name) => !["node_modules"].includes(name) && existsSync(`packages/${name}/package.json`));
-  assert.ok(directories.length >= 8, "the discovery found the packages (positive control for the emptiness; ten until #3447 took nvda-speech out, with nvda-worker the eleventh, and nine until #3504 took worker-fleet)");
+  assert.ok(directories.length >= 7, "the discovery found the packages (positive control for the emptiness; ten until #3447 took nvda-speech out, with nvda-worker the eleventh, nine until #3504 took worker-fleet, and eight until #3625 took toolchain)");
   const classified = [...FLEET_GATED_PACKAGES, ...RUNNER_ONLY_PACKAGES, ...PRIVATE_PACKAGES];
   assert.deepEqual([...classified].sort(), [...directories].sort());
   assert.equal(new Set(classified).size, classified.length, "no package is in two tables");

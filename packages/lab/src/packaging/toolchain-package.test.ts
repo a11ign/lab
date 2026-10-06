@@ -1,44 +1,41 @@
 /**
- * #3578, ROW 4-0 OF ADR 0043: `@a11ign/toolchain` is a package, and a11ign's own test config is a thin call into it.
+ * #3625, ROW 5 OF ADR 0043 (#3550): `@a11ign/toolchain` is taken BY VERSION from the registry, and `packages/toolchain/` is gone from this repository.
+ * #3578 (row 4-0) put the package here and moved it to `a11ign/toolchain`, whose own tests pin its manifest, its entries helper and its base; this file
+ * kept only what is still a fact ABOUT THIS REPOSITORY. Each is pinned with a positive control, because an assertion that something is absent passes on an
+ * empty population (`.claude/rules/guards-and-assertions.md`):
  *
- * Five things are pinned, and each has a positive control in this file, because an assertion that something is absent passes
- * on an empty population (`.claude/rules/guards-and-assertions.md`):
- *
- * 1. THE MANIFEST. Every file a worker loads by path, the base, the presets and the entries helper are in `exports`, and `files`
- *    ships no `src/`. A worker loads the alias hook by `--import <path>` out of `node_modules`, where Node refuses to strip types,
- *    so a file loaded by path is a BUILT entry. Control: a manifest with `src` in `files` is RED.
- * 2. THE ENTRIES HELPER. One entry per built `exports` key, in both directions. Control: a fixture package with a subpath that has
- *    no entry is RED, and so is one with an entry that has no subpath.
- * 3. THE BASE. The package's `tsconfig.base.json` turns `declarationMap` and `sourceMap` off and carries no `composite`, `outDir`
- *    or `rootDir`; a11ign's root base still carries those three. Control: a base that carries `composite` is RED.
- * 4. THE PEERS. `@rstest/core` and `@rslib/core` are peers of the package and devDependencies of the root, with ranges that include
- *    the versions `pnpm-lock.yaml` resolved. Control: a range that excludes the locked version is RED.
- * 5. THE THIN CONFIG. `scripts/rstest/rstest.config.mjs` holds no run-record, reporter or alias logic, and the four files that moved
- *    are gone from `scripts/rstest/`, so a copy left beside the package cannot pass. Control: the old body's own lines are RED.
+ * 1. THE DEPENDENCY. The root, `lab` (its tests import the package) and the three packages that build with the presets pin one exact version, and `pnpm-lock.yaml` resolves it from the registry
+ *    (`pnpm-workspace.test.ts` pins the same edges as not `link:`). Control: a manifest range, a second version, or a `link:` is RED.
+ * 2. THE OLD HOME IS GONE. `packages/toolchain/` holds no manifest and no source (the row's own Acceptance reads git for the tracked listing). Control: the same read finds the thin config.
+ * 3. THE BASE. The root base extends the INSTALLED package's, and carries none of `composite`, `outDir`, `rootDir` (row 4c-a11ign, #3580, deleted the
+ *    references that needed them). Control: a base that carries `composite` is RED.
+ * 4. THE PEERS. `@rstest/core` and `@rslib/core` are peers of the installed package and devDependencies of the root, with ranges that include the versions
+ *    `pnpm-lock.yaml` resolved. Control: a range that excludes the locked version is RED.
+ * 5. THE THIN CONFIG. `scripts/rstest/rstest.config.mjs` holds no run-record, reporter or alias logic and imports the package by NAME, and the four files
+ *    that moved are gone from `scripts/rstest/`. Control: the old body's own lines are RED.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { parse as parseYaml } from "yaml";
 import { satisfies } from "../../../guards/src/isolation-gate.mjs";
-import { entriesFromExports, entryProblems, type PackageExports } from "../../../toolchain/src/entries.ts";
-import { libraryPreset } from "../../../toolchain/src/rslib-presets.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const PACKAGE = join(REPO, "packages/toolchain");
+const NAME = "@a11ign/toolchain";
 
-type Manifest = PackageExports & {
-  files?: string[];
+type Manifest = {
   peerDependencies?: Record<string, string>;
+  dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
+type Lock = { importers: Record<string, { devDependencies?: Record<string, { specifier: string; version: string }> }> };
 
 const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8")) as T;
-const manifest = readJson<Manifest>(join(PACKAGE, "package.json"));
+const lock = parseYaml(readFileSync(join(REPO, "pnpm-lock.yaml"), "utf8")) as Lock;
+const installed = readJson<Manifest & { version: string }>(join(REPO, "node_modules", NAME, "package.json"));
 
 /** A tsconfig's own `compilerOptions`, comments allowed, WITHOUT following `extends`: what this file itself says. */
 function ownCompilerOptions(path: string): Record<string, unknown> {
@@ -47,104 +44,50 @@ function ownCompilerOptions(path: string): Record<string, unknown> {
   return (config as { compilerOptions?: Record<string, unknown> }).compilerOptions ?? {};
 }
 
-// 1. THE MANIFEST ---------------------------------------------------------------------------------------------------------------
+// 1. THE DEPENDENCY -------------------------------------------------------------------------------------------------------------
 
-/** The `exports` subpaths a consumer needs, by name: what a worker loads by path, the base, the presets and the helper. */
-const REQUIRED_SUBPATHS = [
-  "./rstest-config", "./verdict-reporter", "./node-test-shim", "./register-node-test-alias", "./merge-child-coverage",
-  "./entries", "./rslib-presets", "./tsconfig.base.json",
-];
+/** Every importer that declares the package, as the lockfile records it. The packages build with its presets, `lab`'s tests import it, and the root runs its test config. */
+const CONSUMERS = [".", "packages/cli", "packages/judge", "packages/lab", "packages/scorer"];
 
-/** What is wrong with a manifest as a package that ships no source. Empty is agreement. */
-function manifestProblems(pkg: Manifest): string[] {
-  const exported = Object.keys(pkg.exports ?? {});
-  const missing = REQUIRED_SUBPATHS.filter((subpath) => !exported.includes(subpath)).map((subpath) => `exports has no ${subpath}`);
-  const shipsSource = (pkg.files ?? []).filter((entry) => entry === "src" || entry.startsWith("src/")).map((entry) => `files ships ${entry}`);
-  return [...missing, ...shipsSource];
+/** What is wrong with the way a set of importers takes the package: one exact registry version, the same everywhere, and never a link. */
+function dependencyProblems(consumers: Record<string, { specifier: string; version: string } | undefined>): string[] {
+  const entries = Object.entries(consumers);
+  const versions = new Set(entries.map(([, dep]) => dep?.specifier));
+  return [
+    ...entries.filter(([, dep]) => dep === undefined).map(([importer]) => `${importer} does not declare ${NAME}`),
+    ...entries.filter(([, dep]) => dep !== undefined && !/^\d+\.\d+\.\d+$/.test(dep.specifier)).map(([importer]) => `${importer} does not pin an exact version`),
+    ...entries.filter(([, dep]) => dep?.version.startsWith("link:")).map(([importer]) => `${importer} resolves ${NAME} to a workspace link`),
+    ...(versions.size > 1 ? [`the importers pin ${versions.size} different versions`] : []),
+  ];
 }
 
-test("the package's exports name each file a worker loads by path, the base, the presets and the helper, and its files ship no src/", () => {
-  assert.deepEqual(manifestProblems(manifest), []);
-  assert.ok(Object.keys(manifest.exports ?? {}).length >= REQUIRED_SUBPATHS.length, "the manifest exports nothing, so the check above proved nothing");
-});
+const lockedConsumers = () => Object.fromEntries(CONSUMERS.map((importer) => [importer, lock.importers[importer].devDependencies?.[NAME]]));
 
-test("control: a manifest with src in files is RED, and so is one missing the hook", () => {
-  assert.deepEqual(manifestProblems({ ...manifest, files: [...(manifest.files ?? []), "src"] }), ["files ships src"]);
-  const withoutHook = Object.fromEntries(Object.entries(manifest.exports ?? {}).filter(([subpath]) => subpath !== "./register-node-test-alias"));
-  assert.deepEqual(manifestProblems({ ...manifest, exports: withoutHook }), ["exports has no ./register-node-test-alias"]);
-});
-
-// 2. THE ENTRIES HELPER ---------------------------------------------------------------------------------------------------------
-
-/** The entries the package builds today (its seven built `exports` keys): the positive control that the comparison below is not over nothing. */
-const BUILT_ENTRY_FLOOR = 7;
-
-/** A throwaway package on disk: `sources` are the files under `src/`, `exports` its map. */
-function fixturePackage(sources: string[], exports: PackageExports["exports"]): { dir: string; pkg: PackageExports } {
-  const dir = mkdtempSync(join(tmpdir(), "toolchain-entries-"));
-  mkdirSync(join(dir, "src"));
-  for (const source of sources) writeFileSync(join(dir, "src", source), "export {};\n");
-  return { dir, pkg: { exports } };
-}
-
-test("the entries helper gives one entry per exports key of the real package, in both directions", () => {
-  const entries = entriesFromExports(manifest, { dir: PACKAGE });
-  assert.deepEqual(entryProblems(manifest, entries), []);
-  // `./tsconfig.base.json` is shipped as it is and is not built, so it has no entry.
-  const built = Object.keys(manifest.exports ?? {}).filter((subpath) => subpath !== "./tsconfig.base.json");
-  assert.equal(Object.keys(entries).length, built.length);
-  assert.ok(built.length >= BUILT_ENTRY_FLOOR, `the package builds fewer than ${BUILT_ENTRY_FLOOR} entries, so the count above is not the population`);
-  assert.deepEqual(libraryPreset(manifest, { dir: PACKAGE }).lib[0].source.entry, entries, "the preset hands Rslib other entries than the helper made");
-});
-
-test("control: a fixture with a subpath that has no entry is RED, and one with an entry that has no subpath is RED", () => {
-  const { dir, pkg } = fixturePackage(["index.ts", "verify.ts"], {
-    ".": { types: "./dist/index.d.ts", default: "./dist/index.mjs" },
-    "./verify": { types: "./dist/verify.d.ts", default: "./dist/verify.mjs" },
-    "./package.json": "./package.json",
-  });
-  try {
-    const entries = entriesFromExports(pkg, { dir });
-    assert.deepEqual(Object.keys(entries).sort(), ["index", "verify"], "a plain file target such as ./package.json is not an entry");
-    assert.deepEqual(entryProblems(pkg, entries), []);
-    const withoutVerify = Object.fromEntries(Object.entries(entries).filter(([name]) => name !== "verify"));
-    assert.deepEqual(entryProblems(pkg, withoutVerify), ['exports "./verify" builds "verify", which has no entry']);
-    assert.deepEqual(entryProblems(pkg, { ...entries, extra: "./src/extra.ts" }), ['entry "extra" is built but no exports subpath points at it']);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+test("the root, lab and the three building packages pin one exact registry version of the toolchain, and the lockfile resolves it without a link", () => {
+  assert.equal(CONSUMERS.length, 5, "the positive control for the loop below: five importers are read");
+  assert.deepEqual(dependencyProblems(lockedConsumers()), []);
+  for (const importer of CONSUMERS) {
+    const manifest = readJson<Manifest>(join(REPO, importer === "." ? "package.json" : `${importer}/package.json`));
+    assert.equal(manifest.devDependencies?.[NAME], lock.importers[importer].devDependencies?.[NAME]?.specifier, `${importer}'s manifest and lockfile disagree`);
   }
+  assert.ok(installed.version.length > 0 && lockedConsumers()["."]?.version.startsWith(installed.version), "the installed copy is not the version the lockfile resolved");
 });
 
-test("the helper refuses an exports key with no source file, rather than building nothing", () => {
-  const { dir, pkg } = fixturePackage(["index.ts"], {
-    ".": "./dist/index.mjs",
-    "./forgotten": "./dist/forgotten.mjs",
-  });
-  try {
-    assert.throws(() => entriesFromExports(pkg, { dir }), /no source for entry "forgotten"/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+test("control: a range, a second version, a link and a missing declaration are each RED", () => {
+  const sound = { a: { specifier: "0.1.2", version: "0.1.2(peers)" }, b: { specifier: "0.1.2", version: "0.1.2(peers)" } };
+  assert.deepEqual(dependencyProblems(sound), []);
+  assert.deepEqual(dependencyProblems({ ...sound, a: { specifier: "^0.1.2", version: "0.1.2" } }), ["a does not pin an exact version", "the importers pin 2 different versions"]);
+  assert.deepEqual(dependencyProblems({ ...sound, a: { specifier: "0.1.3", version: "0.1.3" } }), ["the importers pin 2 different versions"]);
+  assert.deepEqual(dependencyProblems({ ...sound, a: { specifier: "0.1.2", version: "link:../toolchain" } }), ["a resolves @a11ign/toolchain to a workspace link"]);
+  assert.deepEqual(dependencyProblems({ ...sound, a: undefined }), ["a does not declare @a11ign/toolchain", "the importers pin 2 different versions"]);
 });
 
-test("a source may be .mjs beside the .ts ones, the first extension that exists wins, and a nested target keeps its path", () => {
-  const { dir, pkg } = fixturePackage(["hook.mjs", "both.ts", "both.mjs"], {
-    "./hook": "./dist/hook.mjs",
-    "./both": "./dist/both.mjs",
-  });
-  try {
-    assert.deepEqual(entriesFromExports(pkg, { dir }), { hook: "./src/hook.mjs", both: "./src/both.ts" });
-    const nested = fixturePackage([], { "./deep/leaf": "./dist/deep/leaf.mjs" });
-    mkdirSync(join(nested.dir, "src", "deep"));
-    writeFileSync(join(nested.dir, "src", "deep", "leaf.ts"), "export {};\n");
-    try {
-      assert.deepEqual(entriesFromExports(nested.pkg, { dir: nested.dir }), { "deep/leaf": "./src/deep/leaf.ts" });
-    } finally {
-      rmSync(nested.dir, { recursive: true, force: true });
-    }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+// 2. THE OLD HOME IS GONE -------------------------------------------------------------------------------------------------------
+
+test("the package has no manifest under packages/toolchain/, and the same read finds one where a package lives", () => {
+  assert.ok(existsSync(join(REPO, "scripts/rstest/rstest.config.mjs")), "the positive control: the same read finds a file that is in the tree");
+  assert.equal(existsSync(join(REPO, "packages/toolchain/package.json")), false);
+  assert.equal(existsSync(join(REPO, "packages/toolchain/src")), false);
 });
 
 // 3. THE BASE -------------------------------------------------------------------------------------------------------------------
@@ -159,16 +102,17 @@ function baseProblems(options: Record<string, unknown>): string[] {
   return [...on, ...references];
 }
 
-test("the package's base turns declarationMap and sourceMap off and carries no composite, outDir or rootDir; the root base still carries the three", () => {
-  assert.deepEqual(baseProblems(ownCompilerOptions(join(PACKAGE, "tsconfig.base.json"))), []);
+test("the root base extends the installed package's and carries none of composite, outDir or rootDir", () => {
   const root = ownCompilerOptions(join(REPO, "tsconfig.base.json"));
-  for (const key of REFERENCES_ONLY) assert.ok(key in root, `the root base lost ${key}, which a11ign's project references still need until row 4c-a11ign`);
+  assert.deepEqual(baseProblems({ ...root, declarationMap: false, sourceMap: false }), [], "the root base carries an emit setting: nothing here builds with `tsc` any more (row 4c-a11ign)");
   const rootConfig = ts.readConfigFile(join(REPO, "tsconfig.base.json"), (file) => readFileSync(file, "utf8")).config as { extends?: string };
-  assert.equal(rootConfig.extends, "./packages/toolchain/tsconfig.base.json", "the root base does not extend the package's");
+  assert.equal(rootConfig.extends, `${NAME}/tsconfig.base.json`, "the root base does not extend the installed package's");
+  assert.deepEqual(baseProblems(ownCompilerOptions(join(REPO, "node_modules", NAME, "tsconfig.base.json"))), [], "the installed package's own base is not one a published package can extend");
 });
 
 test("control: a base that carries composite is RED, and so is one with declarationMap on", () => {
-  const sound = ownCompilerOptions(join(PACKAGE, "tsconfig.base.json"));
+  const sound = { declarationMap: false, sourceMap: false };
+  assert.deepEqual(baseProblems(sound), []);
   assert.deepEqual(baseProblems({ ...sound, composite: true }), ["composite is set"]);
   assert.deepEqual(baseProblems({ ...sound, declarationMap: true }), ["declarationMap is not false"]);
 });
@@ -179,9 +123,6 @@ const PEERS = ["@rstest/core", "@rslib/core"];
 
 /** The version `pnpm-lock.yaml` resolved for a root devDependency, without its peer suffix. */
 function lockedVersion(name: string): string {
-  const lock = parseYaml(readFileSync(join(REPO, "pnpm-lock.yaml"), "utf8")) as {
-    importers: Record<string, { devDependencies?: Record<string, { version: string }> }>;
-  };
   const locked = lock.importers["."].devDependencies?.[name]?.version;
   assert.ok(locked, `${name} is not a root devDependency in pnpm-lock.yaml`);
   return locked.split("(")[0];
@@ -197,16 +138,16 @@ function peerProblems(pkg: Manifest, root: Manifest, locked: (name: string) => s
   });
 }
 
-test("@rstest/core and @rslib/core are peers of the package and root devDependencies, with ranges that include the locked versions", () => {
-  assert.deepEqual(peerProblems(manifest, readJson<Manifest>(join(REPO, "package.json")), lockedVersion), []);
+test("@rstest/core and @rslib/core are peers of the installed package and root devDependencies, with ranges that include the locked versions", () => {
+  assert.deepEqual(peerProblems(installed, readJson<Manifest>(join(REPO, "package.json")), lockedVersion), []);
 });
 
 test("control: a range that excludes the locked version is RED, and so is a dependency the root does not hold", () => {
   const root = readJson<Manifest>(join(REPO, "package.json"));
-  const narrowed = { ...manifest, peerDependencies: { ...manifest.peerDependencies, "@rstest/core": "^0.11.0" } };
+  const narrowed = { ...installed, peerDependencies: { ...installed.peerDependencies, "@rstest/core": "^0.11.0" } };
   assert.equal(peerProblems(narrowed, root, lockedVersion).length, 1);
   const rootWithout = { ...root, devDependencies: { ...root.devDependencies, "@rslib/core": undefined as unknown as string } };
-  assert.deepEqual(peerProblems(manifest, rootWithout, lockedVersion), ["@rslib/core is not a root devDependency"]);
+  assert.deepEqual(peerProblems(installed, rootWithout, lockedVersion), ["@rslib/core is not a root devDependency"]);
 });
 
 // 5. THE THIN CONFIG ------------------------------------------------------------------------------------------------------------
@@ -227,11 +168,11 @@ function logicIn(source: string): string[] {
   return LOGIC_MARKERS.filter(([, pattern]) => pattern.test(code)).map(([label]) => label);
 }
 
-test("the thin config at the old path contains no run-record, reporter or alias logic, and calls the package's source", () => {
+test("the thin config at the old path contains no run-record, reporter or alias logic, and imports the package by name", () => {
   const source = readFileSync(join(REPO, "scripts/rstest/rstest.config.mjs"), "utf8");
   assert.deepEqual(logicIn(source), []);
-  assert.match(source, /from "\.\.\/\.\.\/packages\/toolchain\/src\/rstest-config\.mjs"/, "the thin config does not import the package's source by relative path");
-  assert.doesNotMatch(source, /@a11ign\/toolchain["']/, "a specifier that resolves to the package's dist turns a fresh tree red until it is built");
+  assert.match(source, /from "@a11ign\/toolchain\/rstest-config"/, "the thin config does not import the installed package");
+  assert.doesNotMatch(source.replace(/\/\*[\s\S]*?\*\//g, ""), /packages\/toolchain/, "the thin config still reads the old path in code");
 });
 
 test("the four other files are gone from scripts/rstest/, so a copy beside the package cannot pass", () => {
