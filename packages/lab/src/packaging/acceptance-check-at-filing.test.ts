@@ -37,14 +37,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { wholeSuiteAcceptanceReason } from "agent-org/src/row-claim/template-fields-rule.mjs";
-import { fileRefusalReason } from "agent-org/src/row-file.mjs";
+const { wholeSuiteAcceptanceReason } = await toolModule("src/row-claim/template-fields-rule.mjs");
+const { fileRefusalReason } = await toolModule("src/row-file.mjs");
 import { parse } from "yaml";
-import {
+import { toolModule, toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+const {
   acceptancePathTokens, acceptancePathsReason, labFetchArtifacts, labFetchPathHits, runsTheWholeSuite,
   testFileArgumentsResolve, unresolvedAcceptancePaths,
-} from "agent-org/src/acceptance-commands.mjs";
-import { trackedTopLevelDirs } from "agent-org/src/region-paths.mjs";
+} = await toolModule("src/acceptance-commands.mjs");
+const { trackedTopLevelDirs } = await toolModule("src/region-paths.mjs");
 
 // #1943: THE REGION DECLARES THE TEST FILE TOO, and that is not fixture housekeeping. This body used to
 // declare `packages/x/y.ts` while its Acceptance ran `packages/x/y.test.ts` — a row that names a file it
@@ -116,7 +117,7 @@ test("the refusal names the tool that refused, so two callers do not read as one
 
 test("the import is the SHARED function, not a second copy", () => {
   const rule = readFileSync(
-    resolve(import.meta.dirname, "../../../../node_modules/agent-org/src/row-claim/template-fields-rule.mjs"), "utf8");
+    toolPath("src/row-claim/template-fields-rule.mjs"), "utf8");
   assert.match(rule, /import \{[^}]*runsTheWholeSuite[^}]*\} from "\.\.\/acceptance-commands\.mjs"/,
     "template-fields-rule must IMPORT the whole-suite test; a local regex here would be the second "
     + "implementation this row exists to avoid");
@@ -173,7 +174,7 @@ const AS_FILED_1939 =
   "npx rstest run --config packages/lab/rstest.config.ts packages/lab/src/packaging/lab-job-params.test.ts";
 /** And as `product-manager` corrected it by hand while promoting. Both paths are real. */
 const CORRECTED_1939 = "npx rstest run --config scripts/rstest/rstest.config.mjs --include "
-  + "packages/worker-fleet/src/lab-job-params-reach-the-command.test.ts";
+  + "packages/control/src/fleet-layer/lab-job-params-reach-the-command.test.ts";
 
 test("THE POSITIVE CONTROL: #1939's Acceptance as filed is REFUSED, and its correction is FILED", () => {
   // THE CONTROL EXISTS BECAUSE THE CALIBRATION BELOW ASSERTS AN EMPTINESS. `assert.deepEqual(offenders,
@@ -309,7 +310,7 @@ test("CALIBRATION: the rule refuses ONE of the Acceptance sections on `main`'s o
 });
 
 test("the path check is the SHARED function in `row-file`, not a second copy", () => {
-  const tool = readFileSync(resolve(import.meta.dirname, "../../../../node_modules/agent-org/src/row-file.mjs"), "utf8");
+  const tool = readFileSync(toolPath("src/row-file.mjs"), "utf8");
   assert.match(tool, /import \{[^}]*acceptancePathsReason[^}]*\} from "\.\/acceptance-commands\.mjs"/s,
     "row-file must IMPORT the path check; a local `existsSync` loop here would be the second "
     + "implementation this row exists to avoid");
@@ -504,7 +505,7 @@ test("a playbook with no `lab_artifacts` map THROWS rather than reporting an emp
 });
 
 test("the lab-fetch check is the SHARED function in `row-file`, not a second copy", () => {
-  const tool = readFileSync(resolve(import.meta.dirname, "../../../../node_modules/agent-org/src/row-file.mjs"), "utf8");
+  const tool = readFileSync(toolPath("src/row-file.mjs"), "utf8");
   assert.match(tool, /import \{[^}]*labFetchPathReason[^}]*\} from "\.\/acceptance-commands\.mjs"/s,
     "row-file must IMPORT the check; a local copy of the fetch mapping here would be the third statement "
     + "of a path that already exists twice");

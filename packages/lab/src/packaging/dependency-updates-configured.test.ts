@@ -34,15 +34,18 @@ const read = (): Config => parseYaml(readFileSync(resolve(REPO, CONFIG), "utf8")
 const batchesEverything = (group: { patterns?: string[] }) =>
   !group.patterns?.length || group.patterns.some((p) => /^\*+$/.test(p));
 
-function violations(config: Config): string[] {
-  const npm = (config.updates ?? []).find((u) => u["package-ecosystem"] === "npm" && u.directory === "/");
-  if (!npm) return ["no `npm` update at directory `/`"];
+/** `npm` covers the registry; `github-actions` covers the sha pin of the reusable release workflow (#3775). */
+const ECOSYSTEMS = ["npm", "github-actions"] as const;
+
+function violations(config: Config, ecosystem: (typeof ECOSYSTEMS)[number] = "npm"): string[] {
+  const update = (config.updates ?? []).find((u) => u["package-ecosystem"] === ecosystem && u.directory === "/");
+  if (!update) return [`no \`${ecosystem}\` update at directory \`/\``];
   const found: string[] = [];
-  if (npm.schedule?.interval !== "daily") found.push(`schedule is ${npm.schedule?.interval}, not daily`);
-  for (const [name, group] of Object.entries(npm.groups ?? {})) {
+  if (update.schedule?.interval !== "daily") found.push(`schedule is ${update.schedule?.interval}, not daily`);
+  for (const [name, group] of Object.entries(update.groups ?? {})) {
     if (batchesEverything(group)) found.push(`group \`${name}\` batches every package into one pull request`);
   }
-  if (!npm["commit-message"]?.prefix) found.push("no commit-message prefix to recognise a dependency pull request by");
+  if (!update["commit-message"]?.prefix) found.push("no commit-message prefix to recognise a dependency pull request by");
   return found;
 }
 
@@ -59,7 +62,7 @@ const declared = () => manifests().flatMap((m) =>
   [m.dependencies, m.devDependencies, m.optionalDependencies].flatMap((d) => Object.entries(d ?? {})));
 
 test("#3133: the committed dependabot.yml is accepted", () => {
-  assert.deepEqual(violations(read()), []);
+  for (const ecosystem of ECOSYSTEMS) assert.deepEqual(violations(read(), ecosystem), [], ecosystem);
   assert.equal(read().version, 2);
 });
 
@@ -72,16 +75,21 @@ test("#3133 POSITIVE CONTROL: the checker REFUSES a config that breaks each choi
   assert.match(violations({ ...good, updates: [{ ...npm, groups: { all: { patterns: ["*"] } } }] })[0] as string, /every package/);
   assert.match(violations({ ...good, updates: [{ ...npm, groups: { all: {} } }] })[0] as string, /every package/);
   assert.match(violations({ ...good, updates: [{ ...npm, "commit-message": {} }] })[0] as string, /prefix/);
+  // #3775: the same refusals hold for the `github-actions` entry, and the file without it is refused NAMING it.
+  const withoutActions = { ...good, updates: good.updates?.filter((u) => u["package-ecosystem"] !== "github-actions") };
+  assert.match(violations(withoutActions, "github-actions")[0] as string, /no `github-actions` update/);
+  const actions = good.updates?.find((u) => u["package-ecosystem"] === "github-actions") as Update;
+  assert.match(violations({ ...good, updates: [{ ...actions, schedule: { interval: "weekly" } }] }, "github-actions")[0] as string, /not daily/);
+  assert.match(violations({ ...good, updates: [{ ...actions, groups: { all: { patterns: ["*"] } } }] }, "github-actions")[0] as string, /every package/);
+  assert.match(violations({ ...good, updates: [{ ...actions, "commit-message": {} }] }, "github-actions")[0] as string, /prefix/);
   // A per-package group is small and stays allowed, or "refuses every group" would pass the above.
   assert.deepEqual(violations({ ...good, updates: [{ ...npm, groups: { vitest: { patterns: ["vitest*"] } } }] }), []);
 });
 
-test("#3133 POSITIVE CONTROL: the manifests declare range dependencies and the `agent-org` git pin", () => {
+test("#3133 POSITIVE CONTROL: the manifests declare range dependencies", () => {
   const all = declared();
   assert.ok(all.length > 0, "the population this config serves is not empty");
   assert.ok(all.some(([, spec]) => /^[\^~]/.test(spec)), "and holds registry ranges");
-  const pin = all.find(([name]) => name === "agent-org");
-  assert.match(pin?.[1] ?? "", /^github:a11ign\/agent-org#semver:/, "and holds the git pin Dependabot must read");
 });
 
 test("#3133: `ignore` is exactly the workspace members the manifests depend on", () => {
@@ -92,12 +100,4 @@ test("#3133: `ignore` is exactly the workspace members the manifests depend on",
   assert.deepEqual(ignored, internal,
     "a workspace member is pinned and linked, so Dependabot must not offer the registry's copy over it; "
     + "a member that left the workspace is consumed by range and must come OFF this list");
-});
-
-test("#3244: `agent-org` is NOT in `ignore`, because `ignore` cannot stop its in-range lockfile move", () => {
-  const ignored = (read().updates?.[0]?.ignore ?? []).map((i) => i["dependency-name"]);
-  assert.ok(ignored.includes("@a11ign/evidence"), "POSITIVE CONTROL: the list is populated, so absence is a reading");
-  assert.ok(!ignored.includes("agent-org"),
-    "`ignore` only stops Dependabot proposing an `agent-org` bump; the lockfile still re-resolves it, and the "
-    + "reviewer accepts that (.agent-org/roles/reviewer.md); see the comment beside `ignore` in dependabot.yml");
 });

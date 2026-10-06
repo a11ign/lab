@@ -118,8 +118,10 @@ test("every declared export points at a path the package's own `files` list ship
 test("the most-imported subpath in the repo is one a consumer could actually import", () => {
   // Named specifically, because the general check above is only as good as its discovery and this is the
   // entry point 42 sites depend on. A regression here breaks every one of them from a tarball at once.
+  // READ FROM THE INSTALLED COPY since #3504 moved the package out of the workspace: that is the manifest a consumer receives, so the
+  // question "could a consumer import it" is asked of the published thing rather than of a source tree.
   const manifest = JSON.parse(
-    readFileSync(join(PACKAGES, "worker-fleet", "package.json"), "utf8")) as Manifest;
+    readFileSync(join(PACKAGES, "lab", "node_modules", "@a11ign", "screenreader-fleet", "package.json"), "utf8")) as Manifest;
   const target = exportTargets(manifest.exports).find((e) => e.subpath === "./cli-flags")?.target;
   assert.ok(target, "@a11ign/screenreader-fleet must still export ./cli-flags");
   assert.ok(shipped(manifest.files, target!), `./cli-flags points at ${target}, which is not shipped`);

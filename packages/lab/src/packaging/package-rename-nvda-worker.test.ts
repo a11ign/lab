@@ -6,11 +6,11 @@
  * so the trusted-publisher binding is made once, against the final name.
  *
  * THREE CLAIMS, each read from the real tree:
- *   1. the package's `name` is the new one;
+ *   1. the package's `name` is the new one (read, since #3447, from the REGISTRY copy this repository consumes: the workspace directory is gone);
  *   2. no NON-DOCUMENT file names the old one (`*.md` and `docs/` are the record, and keep it -- the deprecation
  *      note and the history live there; the pending changeset is a `.md` and is exempt by that rule);
- *   3. every workspace importer that declares the new name resolves it in `pnpm-lock.yaml` as a `link:` to the
- *      package's directory. The directory is still `packages/nvda-worker/`: M1 moves it, this row does not.
+ *   3. every workspace importer that declares the new name resolves it in `pnpm-lock.yaml` to a REGISTRY version, not a `link:`
+ *      (#3447 deleted `packages/nvda-worker/`; it was a link to that directory until then).
  *
  * THE OLD NAME IS BUILT, NOT WRITTEN: this file is itself a non-document file, and a literal would make the
  * walk refuse its own source. It is also excluded by name (`SELF`), so a reader meets the decision in code.
@@ -27,9 +27,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { parse } from "yaml";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { layerFile } from "../../../guards/src/layer-file.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
-const PACKAGE_DIR = "packages/nvda-worker";
 const NEW_NAME = "@a11ign/screenreader-worker";
 const OLD_NAME = ["@a11ign", "nvda-worker"].join("/");
 const SELF = relative(REPO, import.meta.filename);
@@ -64,7 +64,8 @@ const declaresNewName = (manifest: Manifest) => DEPENDENCY_SECTIONS.some((sectio
 type LockImporter = Partial<Record<(typeof DEPENDENCY_SECTIONS)[number], Record<string, { version: string }>>>;
 
 test("the package's name is the new one", () => {
-  assert.equal(readManifest(`${PACKAGE_DIR}/package.json`).name, NEW_NAME);
+  const manifest = layerFile(NEW_NAME, "package.json", { from: import.meta.dirname });
+  assert.equal((JSON.parse(readFileSync(manifest, "utf8")) as Manifest).name, NEW_NAME);
 });
 
 test("no non-document file names the old package", () => {
@@ -97,16 +98,16 @@ test("positive control: the walk finds the old name in a fixture and refuses it,
   }
 });
 
-test("every importer that declares the new name resolves it in pnpm-lock.yaml, as a link to the package", () => {
+test("every importer that declares the new name resolves it in pnpm-lock.yaml, to a registry version, never a link", () => {
   const lock = parse(readFileSync(join(REPO, "pnpm-lock.yaml"), "utf8")) as { importers: Record<string, LockImporter> };
   const declarers = workspaceManifests().filter((file) => declaresNewName(readManifest(file)));
   // Derived a second way: the three manifests `git grep` finds naming it, so a walk that lost one is not "enough".
-  assert.deepEqual(declarers, ["package.json", "packages/lab/package.json", "packages/worker-fleet/package.json"]);
+  assert.deepEqual(declarers, ["package.json", "packages/lab/package.json"]);
   for (const file of declarers) {
     const importer = dirname(file);
     const section = DEPENDENCY_SECTIONS.find((name) => lock.importers[importer]?.[name]?.[NEW_NAME]);
     const resolved = section === undefined ? undefined : lock.importers[importer]?.[section]?.[NEW_NAME]?.version;
-    const wanted = `link:${relative(importer, PACKAGE_DIR) || "."}`;
-    assert.equal(resolved, wanted, `${file} declares ${NEW_NAME}, and pnpm-lock.yaml resolves it to ${resolved ?? "nothing"}`);
+    assert.match(resolved ?? "", /^\d+\.\d+\.\d+$/,
+      `${file} declares ${NEW_NAME}, and pnpm-lock.yaml resolves it to ${resolved ?? "nothing"}, not a version the registry holds`);
   }
 });

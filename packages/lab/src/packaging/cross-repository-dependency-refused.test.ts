@@ -27,9 +27,9 @@ import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-gu
 // This file's population is the whole tracked tree, declared by a call rather than inferred from its source.
 declareTreeWideGuard();
 
-// Floors for "the walk read a real tree" (this repository has 11 manifests and several thousand sources); not an exact count.
+// Floors for "the walk read a real tree" (this repository has 9 manifests and 991 sources since #3447 took `nvda-worker` and `nvda-speech` out, over 1,000 before); not an exact count.
 const MANIFEST_FLOOR = 5;
-const SOURCE_FLOOR = 1000;
+const SOURCE_FLOOR = 900;
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 

@@ -164,6 +164,7 @@ function treeExport(): string {
   symlinkSync(join(REPO, "node_modules"), join(dir, "node_modules"), "dir");
   try {
     stageBuilds({ from: REPO, into: dir });
+    stageLayers({ from: REPO, into: dir });
   } catch (error) {
     rmSync(dir, { recursive: true, force: true });
     throw error;
@@ -192,6 +193,26 @@ function treeExport(): string {
  * A package is expected to be built when it has a `tsconfig.json` -- the rule `scripts/build-packages.mjs`
  * uses -- and a build that is absent or EMPTY is a named failure, not a compiler error about a path.
  */
+/**
+ * #3504: a layer that lives in its OWN repository is laid, untracked, at its monorepo path (`scripts/lay-layer.mjs`), so `git archive HEAD` does
+ * not carry it and `tsc` cannot resolve `control`'s relative imports into it (TS2307). It is COPIED in from the live tree for the reason `dist` is
+ * (#2250). A layer declared with a remote and not laid is a NAMED failure, not a compiler error about a path.
+ */
+function stageLayers({ from, into }: { from: string; into: string }): void {
+  const { layers } = JSON.parse(readFileSync(join(from, "packages/control/layers.json"), "utf8")) as { layers: Record<string, { path: string; remote?: string }> };
+  // The layers `pnpm run build` lays are the ones a missing copy is a failure for; a host-laid one (`nvda-worker`) is staged when it is there.
+  const { scripts } = JSON.parse(readFileSync(join(from, "package.json"), "utf8")) as { scripts: Record<string, string> };
+  const laidByBuild = [...scripts.build.matchAll(/lay-layer\.mjs\s+([\w-]+)/g)].map((match) => match[1]);
+  assert.ok(laidByBuild.length > 0, "`build` lays no layer: the scan of its script found nothing to require");
+  const unlaid = laidByBuild.filter((name) => !existsSync(join(from, layers[name].path)));
+  assert.deepEqual(unlaid, [], `the export has no laid layer for ${unlaid.join(", ")} -- run \`pnpm run build\` first (it lays them)`);
+  for (const layer of Object.values(layers)) {
+    if (layer.remote !== undefined && existsSync(join(from, layer.path)) && !existsSync(join(into, layer.path))) {
+      cpSync(join(from, layer.path), join(into, layer.path), { recursive: true });
+    }
+  }
+}
+
 function stageBuilds({ from, into }: { from: string; into: string }): void {
   const unbuilt: string[] = [];
   for (const name of readdirSync(join(from, "packages"))) {

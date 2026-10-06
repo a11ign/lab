@@ -50,8 +50,8 @@ const LEAK_GUARDS = [
 
 const PRODUCT_FACT_PINS = [
   "packages/judge/src/asserting-subtypes.test.ts",
-  "packages/worker-fleet/src/protocol-guard.test.ts",
-  "packages/worker-fleet/src/entry-points.test.ts",
+  "packages/control/src/fleet-layer/protocol-guard.test.ts",
+  "packages/control/src/fleet-layer/entry-points.test.ts",
   "packages/lab/src/referenced-scripts.test.ts",
   "packages/lab/src/packaging/generated-paths.test.ts",
 ];

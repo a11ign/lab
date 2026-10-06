@@ -8,7 +8,7 @@
  * trunk-guard.yml, trunk-sweep.yml and close-rows.yml collapsed into trunk.yml: thirteen, each named here so
  * a fourteenth arriving is a failure with a name rather than a number. The fourteenth arrived with #2519's
  * registry gate, named below with its reason. The fifteenth is `dependency-pr-body.yml` (#3137, ADR 0041 decision 4): the one narrow way
- * a dependency pull request passes the body checks. The sixteenth is `weekly-review.yml` (#3183): the schedule that files the weekly outsider review row. The seventeenth is `ci-health.yml` (#3212): the schedule that reads the chairman's CI targets and comments them on #928. The eighteenth is `mutation-comment.yml` (#3282, decided on #3213): the survivors of a pull request's own changed lines as a NON-BLOCKING comment, in two jobs so the one that runs the pull request's code holds no write token. The nineteenth is `agent-org-bump.yml` (#3450): the schedule that opens one `deps:` pull request per `agent-org` release, lockfile only, never approving or merging it. (A workflow once named `agent-org-extraction.yml`, ADR 0040 decision 6's one-time push of
+ * a dependency pull request passes the body checks. The sixteenth is `weekly-review.yml` (#3183): the schedule that files the weekly outsider review row. The seventeenth is `ci-health.yml` (#3212): the schedule that reads the chairman's CI targets and comments them on #928. The eighteenth is `mutation-comment.yml` (#3282, decided on #3213): the survivors of a pull request's own changed lines as a NON-BLOCKING comment, in two jobs so the one that runs the pull request's code holds no write token. The nineteenth is `token-reach.yml` (#3717): the probe that once lived in `release.yml`, moved out when the version pull request that held the bot token went. (`agent-org-bump.yml`, once named the nineteenth, #3450, was deleted by #3534: there is no pin to bump. A workflow once named `agent-org-extraction.yml`, ADR 0040 decision 6's one-time push of
  * `agent-org` into its own repository, left with the directory in #2976: it had done its one push.) A row that removes or
  * adds one moves this list in the same commit and says why.
  */
@@ -21,7 +21,6 @@ const WORKFLOWS_DIR = fileURLToPath(new URL("../../../../.github/workflows/", im
 
 const THE_NINETEEN = [
   "action-smoke.yml",
-  "agent-org-bump.yml",     // #3450: the `agent-org` pin follows each release by a `deps:` pull request, lockfile only; opened with the bot token, never approved or merged here
   "auto-arm.yml",           // arms drafts on ready_for_review; the arming sweep and the stalled report
   "board-report.yml",       // London-clock editions, kept by #901's ruling
   "board-summary-check.yml",
@@ -37,6 +36,7 @@ const THE_NINETEEN = [
   "reusable-acceptance.yml",
   "reusable-board.yml",
   "reusable-build-test.yml",
+  "token-reach.yml",        // #3710/#3717: the daily read of whether the bot token reaches the repository; moved out of release.yml with the version pull request, `permissions: {}`
   "trunk.yml",              // #909: gate, revert-on-red, close-rows and the watchdogs, on every push to main
   "weekly-review.yml",      // #3183: files ONE row a week for the outsider review; a schedule, never a gate, `issues: write` only
 ];

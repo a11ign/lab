@@ -147,7 +147,7 @@ const ENTERS_A_DIRECTORY = new RegExp([
  * ## #2189: AND THE HEADER PROMISED TWO WINDOWS SPELLINGS THE PATTERN NEVER HELD
  *
  * `%USERPROFILE%` and `$env:USERPROFILE` sat in the header from #585 and in no alternative, while three
- * tracked `.ps1` files under `packages/worker-fleet/src/provisioning/` name the Windows worker's checkout
+ * tracked `.ps1` files under `packages/worker-fleet/src/provisioning/` (which left with the fleet, #3504) named the Windows worker's checkout
  * through one (`Join-Path $env:USERPROFILE 'a11y-witness'`). Each new alternative is a decision about its
  * SEPARATOR, and the two are not alike:
  *
@@ -795,8 +795,6 @@ test("both consumers reach the checkout through the source of truth, and neither
   }
 });
 
-const PROVISIONING = "packages/worker-fleet/src/provisioning/";
-
 /**
  * Every spelling of "home" the header's second question names, and the ways a file writes a path under
  * it. `%USERPROFILE%` and `$env:USERPROFILE` sat in the header from #585 and in no alternative of the
@@ -862,23 +860,28 @@ test("the Windows spellings name a DIRECTORY only when a literal follows -- a va
 const psCode = (source: string): string =>
   source.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
 
-test("THE GUARD READS THE WINDOWS WORKER'S CHECKOUT LITERAL -- the three provisioning scripts name it through "
+/**
+ * THE THREE PROVISIONING SCRIPTS left with `worker-fleet` (#3504), so what they wrote is kept here as the shape itself: each named the Windows worker's
+ * checkout through `$env:USERPROFILE` (`bootstrap-windows-worker.ps1`, `diagnose-nvda-worker.ps1`, `provision-nvda-worker.ps1`), one `Join-Path` assignment
+ * and a header comment that repeats it with `%USERPROFILE%`. The fixture is those two lines, so the control still says what it said: the scan SEES the
+ * literal in code and does not count the comment.
+ */
+const WINDOWS_WORKER_SCRIPT = [
+  "# the checkout lives at %USERPROFILE%\\a11y-witness on the worker",
+  "$checkout = Join-Path $env:USERPROFILE 'a11y-witness'",
+].join("\n");
+
+test("THE GUARD READS THE WINDOWS WORKER'S CHECKOUT LITERAL -- a provisioning script names it through "
   + "`$env:USERPROFILE`, and a scan that finds nothing there is indistinguishable from one blind to it (#2189)", () => {
-  const scripts = ["bootstrap-windows-worker.ps1", "diagnose-nvda-worker.ps1", "provision-nvda-worker.ps1"];
-  for (const script of scripts) {
-    assert.ok(trackedSource().includes(`${PROVISIONING}${script}`), `${script} is in the walked population`);
-    assert.ok(homeRootSegmentsSeenIn(psCode(read(`${PROVISIONING}${script}`))).includes(CHECKOUT_NAME),
-      `${script} names the checkout under $env:USERPROFILE, and the guard must SEE it`);
-  }
+  assert.ok(homeRootSegmentsSeenIn(psCode(WINDOWS_WORKER_SCRIPT)).includes(CHECKOUT_NAME),
+    "the checkout is named under $env:USERPROFILE, and the guard must SEE it");
   // The decision, made where it can be argued with: today the literal EQUALS the source of truth's value,
   // exactly as `bootstrap-control-plane.sh`'s `$HOME/a11y-witness` does, so it is not reported. A RENAME is
-  // what changes that -- the stale literal then surfaces here, in every one of the three, and forces the
-  // call between "derive it" and "the Windows worker's checkout is its own fact".
-  // Code lines only (`psCode`): each script's header comment says `%USERPROFILE%\a11y-witness` too, and a
-  // prose mention would keep this test green with the `Join-Path` assignment beside it unread.
-  for (const script of scripts) {
-    const stale = homeRootSegmentsIn(psCode(read(`${PROVISIONING}${script}`)).split(CHECKOUT_NAME).join("a11ign"));
-    assert.ok(stale.length > 0 && stale.every((segment) => segment === "a11ign"),
-      `${script}: a stale checkout literal under $env:USERPROFILE must be reported, and was ${JSON.stringify(stale)}`);
-  }
+  // what changes that -- the stale literal then surfaces here, and forces the call between "derive it" and
+  // "the Windows worker's checkout is its own fact".
+  // Code lines only (`psCode`): the header comment says `%USERPROFILE%\a11y-witness` too, and a prose mention
+  // would keep this test green with the `Join-Path` assignment beside it unread.
+  const stale = homeRootSegmentsIn(psCode(WINDOWS_WORKER_SCRIPT).split(CHECKOUT_NAME).join("a11ign"));
+  assert.ok(stale.length > 0 && stale.every((segment) => segment === "a11ign"),
+    `a stale checkout literal under $env:USERPROFILE must be reported, and was ${JSON.stringify(stale)}`);
 });

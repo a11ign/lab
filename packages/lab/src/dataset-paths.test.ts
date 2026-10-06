@@ -67,6 +67,8 @@ function allSourceFiles(): string[] {
   };
   for (const pkg of readdirSync(join(REPO_ROOT, "packages"), { withFileTypes: true })) {
     if (!pkg.isDirectory()) continue;
+    // `packages/worker-fleet/` is a layer checkout laid by `pnpm run build` (#3504): untracked, another repository's code, not this walk's.
+    if (pkg.name === "worker-fleet") continue;
     walk(join(REPO_ROOT, "packages", pkg.name, "src"));
     walk(join(REPO_ROOT, "packages", pkg.name, "scripts"));
   }
@@ -114,18 +116,9 @@ const EXEMPT: Record<string, string> = {
   "packages/lab/src/dataset-paths.mjs": "It is the implementation. It cannot import itself.",
   "packages/lab/src/capture/evidence-diff.mjs":
     "It is the implementation of the capture-filename half (captureFilePath/rejectedCaptureFilePath).",
-  "packages/nvda-worker/src/capture-pure.corpus.test.ts":
-    "@a11ign/lab depends on @a11ign/screenreader-worker, so nvda-worker cannot import dataset-paths.mjs "
-    + "without a dependency cycle. Kept as its own cwd-anchored copy; see dataset-paths.mjs's own header.",
-  "packages/worker-fleet/src/doctor.mjs":
-    "@a11ign/lab depends on @a11ign/screenreader-fleet, so worker-fleet cannot import "
-    + "dataset-paths.mjs without a cycle. Resolves from its OWN module location instead of process.cwd() "
-    + "(the same fix, duplicated for the dependency-direction reason rather than left cwd-anchored).",
-  "packages/worker-fleet/src/compare-workers.mjs":
-    "Same cycle as doctor.mjs: worker-fleet cannot import @a11ign/lab.",
   "packages/judge/src/channel-tables-4.1.2.test.ts":
     "@a11ign/lab depends on @a11ign/judge, so judge cannot import dataset-paths.mjs "
-    + "without a cycle -- the same direction as nvda-worker and worker-fleet. Landed on main the "
+    + "without a cycle -- the same direction as nvda-worker and worker-fleet (both since moved out). Landed on main the "
     + "same night as this guard, from a branch that could not have known about it, and the guard "
     + "caught it at the merge. Re-anchored on its own module location rather than process.cwd(), so "
     + "only the cycle is duplicated and not the bug.",
@@ -150,11 +143,10 @@ const EXEMPT: Record<string, string> = {
   "packages/lab/scripts/lab-inventory.mjs":
     "The runs/ literal is inside a human-readable report line (\"no runs/model-* to speak of\") describing "
     + "what was NOT found, not a path this file resolves -- RUNS itself already comes from runsRoot().",
-  "packages/worker-fleet/src/lab-job.test.ts":
+  "packages/control/src/fleet-layer/lab-job.test.ts":
     "Asserts the ansible job catalogue's DECLARED default roots (lab-job.yml's own DATASET_ROOT/env "
     + "defaults) and a --describe help string naming an output file -- comparing against another file's "
-    + "content, not resolving a path itself. worker-fleet cannot import @a11ign/lab regardless (see "
-    + "doctor.mjs's entry).",
+    + "content, not resolving a path itself. (It was worker-fleet's own test until #3504 relocated it beside the control it reads.)",
   "packages/lab/scripts/explain-capture.mjs":
     "The runs/ literal is inside a human-readable error message naming where the search already looked "
     + "(findCaptures, a few lines above, builds those same roots through realCorpusRoot()/captureRoot()/ "
@@ -164,8 +156,8 @@ const EXEMPT: Record<string, string> = {
     "#199, chairman's ruling: a11ign (cli, published) and @a11ign/lab (private, never "
     + "published) depended on EACH OTHER -- this file used to import datasetRoot/captureRoot straight "
     + "from lab's source, and lab's own public-api.test.ts imports the published cli package the other "
-    + "way. A real boundary defect (ADR 0004), not merely a CI-scoping one. Fixed the same way doctor.mjs "
-    + "and compare-workers.mjs already fix the identical cycle in worker-fleet's direction: a local, "
+    + "way. A real boundary defect (ADR 0004), not merely a CI-scoping one. Fixed the same way `doctor.mjs` "
+    + "and `compare-workers.mjs` fixed the identical cycle in worker-fleet's direction (both left with #3504): a local, "
     + "duplicated computation rather than an import that would recreate it.",
   "packages/cli/src/cli.ts":
     "#431: the SOURCE now has the identical cycle its own test file was already exempted for -- "
@@ -205,7 +197,7 @@ test("the discovery walk finds a realistic slice of the repo's own source", () =
   // Spot-check the walk actually reaches both scan roots, per package, rather than one only.
   assert.ok(files.some((f) => f.startsWith("packages/lab/src/")), "did not reach packages/lab/src");
   assert.ok(files.some((f) => f.startsWith("packages/lab/scripts/")), "did not reach packages/lab/scripts");
-  assert.ok(files.some((f) => f.startsWith("packages/worker-fleet/src/")), "did not reach a sibling package");
+  assert.ok(files.some((f) => f.startsWith("packages/control/src/")), "did not reach a sibling package");
 });
 
 test("every file matching the runs/-resolution signature imports dataset-paths.mjs, or is exempt with a reason", () => {

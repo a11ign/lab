@@ -16,11 +16,11 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { decide, labJobRecordsOrSay, CAUSES, JUDGMENT_CAUSES, START_CAUSES } from "agent-org/src/work-gate.mjs";
-import { JUDGMENT_TTL_MS } from "agent-org/src/wake.mjs";
-import { labJobFinishedOrders, readLabJobRecords, recordOf, RECORD_WAKE_WINDOW_MS }
-  from "agent-org/src/work-gate/lab-job-orders.mjs";
+const { decide, labJobRecordsOrSay, CAUSES, JUDGMENT_CAUSES, START_CAUSES } = await toolModule("src/work-gate.mjs");
+const { JUDGMENT_TTL_MS } = await toolModule("src/wake.mjs");
+const { labJobFinishedOrders, readLabJobRecords, recordOf, RECORD_WAKE_WINDOW_MS } = await toolModule("src/work-gate/lab-job-orders.mjs");
 import { causeDeclarations } from "../../../../.agent-org/plugins/causes.mjs";
+import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const NOW = Date.parse("2026-09-30T12:00:00Z");
 const MINUTE = 60_000;

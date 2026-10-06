@@ -15,10 +15,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { classify, knownPackages, readWorkspaceDependencyGraph, dependentsOf, packedFiles, candidatePackedPaths,
+import { classify, knownPackages, packedFiles, candidatePackedPaths,
   reachesPacked, testDependencyMap, jobsFor, docsReadingTests }
   from "../../../../scripts/ci-changed.mjs";
-import { discoversFromTree } from "../../../../scripts/select-changed-tests.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -67,11 +66,11 @@ const fakePacked = (byPackage: Record<string, string[]>) =>
   (_repoRoot: string, pkgName: string) => new Set(byPackage[pkgName] ?? []);
 
 test("classify: a docs-only change fires docs and ts, and implicates NO package", () => {
-  // #2357: `ts: false` here was the defect. With no package implicated `testPackages` is empty, so the ts
-  // job's selector falls back to no package suite -- only the guards that read the tree run.
+  // #2357: `ts: false` here was the defect. With no package implicated no package suite runs for a docs
+  // diff -- only the guards that read the tree do.
   const result = classify(["docs/known-gaps.md", "README.md"], ["lab", "judge"]);
   assert.deepEqual(result, { ts: true, python: false, ansible: false, docs: true, board: false,
-    changeset: false, rulesFitness: false, packages: [], testPackages: [] });
+    changeset: false, rulesFitness: false, packages: [] });
 });
 
 // A fixture diff of the #2329 shape -- one new doc, nothing else -- through the REAL classify and the REAL
@@ -80,8 +79,8 @@ test("#2357: a docs-only diff of the #2329 shape selects the ts job, before the 
   const diff = ["docs/reviewer-instancing.md"];
   assert.ok(jobsFor(diff, REPO).includes("ts"), "#2329 merged ts=SKIPPED and broke main; a docs-only diff must "
     + "select the ts job, which is where the guards that read docs run");
-  const result = classify(diff, knownPackages(REPO), {}, { repoRoot: REPO });
-  assert.deepEqual(result.testPackages, [], "no package implicated: an implicated package falls back to its "
+  const result = classify(diff, knownPackages(REPO), { repoRoot: REPO });
+  assert.deepEqual(result.packages, [], "no package implicated: an implicated package would run its "
     + "WHOLE suite for a doc no test names, which is the cost this row must not add to a one-line doc edit");
 });
 
@@ -93,17 +92,6 @@ test("#2357: the docs-reading set is non-empty against the real tree, and holds 
     "the guard that turned main red on #2329 walks the tracked tree and must be in the set");
   const EXPECTED_AT_LEAST = 20;
   assert.ok(readers.length >= EXPECTED_AT_LEAST, `only ${readers.length} docs-reading tests derived -- expected dozens`);
-});
-
-test("#2357: every guard the ts selector treats as reading the tree is in the docs-reading set", () => {
-  // `select-changed-tests.mjs` cannot be imported by ci-changed.mjs (it needs `npm ci`, which the `changed`
-  // job runs before), so its detector is re-expressed there. This pins that the copy never falls behind.
-  const readers = new Set(docsReadingTests(REPO));
-  const tests = execFileSync("git", ["ls-files", "packages"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n").filter((f) => /\/src\/.*\.test\.ts$/.test(f));
-  const walkers = tests.filter((f) => discoversFromTree(readFileSync(`${REPO}${f}`, "utf8")));
-  assert.ok(walkers.length > 0, "positive control: the selector finds tree-walking guards");
-  assert.deepEqual(walkers.filter((f) => !readers.has(f)), []);
 });
 
 test("#2357: a test added tomorrow that reads docs/ joins the set with no edit to ci-changed.mjs", () => {
@@ -127,11 +115,11 @@ test("#2357: a test added tomorrow that reads docs/ joins the set with no edit t
 });
 
 test("#2357: with no docs-reading test at all, a docs-only diff runs no ts -- the gate is the derived set", () => {
-  const none = classify(["docs/known-gaps.md"], ["lab"], {}, { getDocsReadingTests: () => [] });
+  const none = classify(["docs/known-gaps.md"], ["lab"], { getDocsReadingTests: () => [] });
   assert.equal(none.ts, false, "nothing reads docs, so a docs-only diff has nothing for ts to run");
-  const some = classify(["docs/known-gaps.md"], ["lab"], {}, { getDocsReadingTests: () => ["x.test.ts"] });
+  const some = classify(["docs/known-gaps.md"], ["lab"], { getDocsReadingTests: () => ["x.test.ts"] });
   assert.equal(some.ts, true);
-  const notDocs = classify([".gitignore"], ["lab"], {}, { getDocsReadingTests: () => ["x.test.ts"] });
+  const notDocs = classify([".gitignore"], ["lab"], { getDocsReadingTests: () => ["x.test.ts"] });
   assert.equal(notDocs.ts, false, "the set is consulted only for a diff that touches docs");
 });
 
@@ -149,7 +137,7 @@ test("classify: a python file under a package fires python, and (bluntly) ts for
   // file under `packages/scorer/` marks `scorer` touched for the scoped unit-test run too. Harmless --
   // scorer's own TS-side tests simply run alongside the Python ones -- and consistent rather than a
   // second, narrower definition of "touched" living beside the one the pre-push hook already uses.
-  const result = classify(["packages/scorer/python/score.py"], ["lab", "scorer"], {},
+  const result = classify(["packages/scorer/python/score.py"], ["lab", "scorer"],
     { getPackedFiles: fakePacked({}) }); // scorer's changeset check runs too; no real npm pack needed here
   assert.equal(result.python, true);
   assert.equal(result.ts, true);
@@ -177,20 +165,20 @@ test("classify: a private package never demands a changeset, whatever it packs",
 /**
  * ISSUE #132, reproduced directly: a TEST FILE under a published package's `src/` must NOT fire
  * `changeset`, because `npm pack` never ships it -- measured on the real PR this blocked,
- * `packages/worker-fleet/src/lab-job.test.ts`. Injected `getPackedFiles`, so this proves `classify`'s OWN
+ * `packages/worker-fleet/src/lab-job.test.ts` (a package that has since moved to its own repository, so the fakes below name `cli`). Injected `getPackedFiles`, so this proves `classify`'s OWN
  * logic (asks the packed manifest, not the path) without needing a real `npm pack` per test.
  */
 test("classify: a file NOT in the packed manifest does not fire changeset, even under src/", () => {
-  const getPackedFiles = fakePacked({ "worker-fleet": ["dist/index.js", "src/local-worker/build-vm.sh"] });
-  const result = classify(["packages/worker-fleet/src/lab-job.test.ts"], ["worker-fleet"], {}, { getPackedFiles });
+  const getPackedFiles = fakePacked({ cli: ["dist/index.js", "src/local-worker/build-vm.sh"] });
+  const result = classify(["packages/cli/src/lab-job.test.ts"], ["cli"], { getPackedFiles });
   assert.equal(result.changeset, false,
     "src/lab-job.test.ts is not in the packed manifest (raw) and its built form (dist/lab-job.test.js) "
     + "is not either -- npm never ships it, so it cannot reach a consumer");
 });
 
 test("classify: a RAW-shipped file under a published package's own files entry fires changeset", () => {
-  const getPackedFiles = fakePacked({ "worker-fleet": ["dist/index.js", "src/provisioning/deploy.ps1"] });
-  const result = classify(["packages/worker-fleet/src/provisioning/deploy.ps1"], ["worker-fleet"], {}, { getPackedFiles });
+  const getPackedFiles = fakePacked({ cli: ["dist/index.js", "src/provisioning/deploy.ps1"] });
+  const result = classify(["packages/cli/src/provisioning/deploy.ps1"], ["cli"], { getPackedFiles });
   assert.equal(result.changeset, true, "this exact path is in the packed manifest -- it reaches a consumer");
 });
 
@@ -199,7 +187,7 @@ test("classify: a BUILT (tsc) source file fires changeset via its dist/ counterp
   // changed file's own path literally, this would report `changeset: false` for the single most common
   // real change a published TS package sees, which is the opposite of this row's intent.
   const getPackedFiles = fakePacked({ cli: ["dist/cli.js", "dist/cli.d.ts"] });
-  const result = classify(["packages/cli/src/cli.ts"], ["cli"], {}, { getPackedFiles });
+  const result = classify(["packages/cli/src/cli.ts"], ["cli"], { getPackedFiles });
   assert.equal(result.changeset, true);
 });
 
@@ -208,7 +196,7 @@ test("classify: a TEST FILE beside a BUILT source file does not fire changeset �
   // cli.test.ts -> dist/cli.test.js, which tsconfig's own `exclude` never produces, so `npm pack` never
   // ships it either. `classify` must tell these apart from the packed manifest alone, never by name.
   const getPackedFiles = fakePacked({ cli: ["dist/cli.js", "dist/cli.d.ts"] }); // note: no dist/cli.test.js
-  const result = classify(["packages/cli/src/cli.test.ts"], ["cli"], {}, { getPackedFiles });
+  const result = classify(["packages/cli/src/cli.test.ts"], ["cli"], { getPackedFiles });
   assert.equal(result.changeset, false);
 });
 
@@ -235,9 +223,9 @@ test("reachesPacked: prefix candidates match ANY packed file under that prefix, 
   assert.equal(reachesPacked(new Set(["src/provisioning/deploy.ps1"]), ["src/provisioning/deploy.ps1"]), true);
 });
 
-test("classify: a .mjs source file worker-fleet actually PACKS fires changeset — #720, was false before the fix", () => {
-  const getPackedFiles = fakePacked({ "worker-fleet": ["dist/deploy-worker.mjs"] });
-  const result = classify(["packages/worker-fleet/src/deploy-worker.mjs"], ["worker-fleet"], {}, { getPackedFiles });
+test("classify: a .mjs source file a package actually PACKS fires changeset — #720, was false before the fix", () => {
+  const getPackedFiles = fakePacked({ cli: ["dist/deploy-worker.mjs"] });
+  const result = classify(["packages/cli/src/deploy-worker.mjs"], ["cli"], { getPackedFiles });
   assert.equal(result.changeset, true);
 });
 
@@ -254,19 +242,9 @@ test("packedFiles + candidatePackedPaths against the REAL packages/cli: src/cli.
   assert.ok(hit, `none of src/cli.ts's candidate paths were packed; packed set was: ${[...packed].slice(0, 10).join(", ")}...`);
 });
 
-/**
- * #720: the REAL bug, against the REAL package -- worker-fleet actually ships `dist/deploy-worker.mjs`
- * via `tsc --build`'s `allowJs`, and the old `.tsx?`-only regex could never see it. This is what a naive
- * `git checkout lead/changeset-gate-asks-npm -- <file>` would have missed: that stranded branch predates
- * this file's `--precise`/`npm pack`-based architecture entirely (#132/#151), so re-deriving the fix here
- * -- against today's `classify()` -- is the right move, not reviving `consumer-visible.mjs`.
- */
-test("packedFiles + candidatePackedPaths against the REAL packages/worker-fleet: src/deploy-worker.mjs reaches a consumer", () => {
-  const packed = packedFiles(REPO.replace(/\/$/, ""), "worker-fleet");
-  assert.ok(packed.size > 0, "npm pack --dry-run reported an empty manifest for packages/worker-fleet -- broken build?");
-  const hit = reachesPacked(packed, candidatePackedPaths("src/deploy-worker.mjs"));
-  assert.ok(hit, `none of src/deploy-worker.mjs's candidate paths were packed; packed set was: ${[...packed].slice(0, 10).join(", ")}...`);
-});
+// #720's REAL-package control (`packedFiles` against `packages/worker-fleet`, which shipped `dist/deploy-worker.mjs` through `tsc --build`'s `allowJs`)
+// left with the package (#3504): no package published from this repository compiles an `.mjs` any more, so there is no real manifest to read it
+// from. What stays is the injected one above and `candidatePackedPaths`'s extension-agnostic mapping, which is the logic #720 fixed.
 
 test("classify: a root config file touches EVERY known package, never just the ones that happened to change", () => {
   const result = classify(["package.json"], ["lab", "judge", "cli", "scorer"]);
@@ -285,7 +263,7 @@ test("classify: a scripts/*.mjs change also touches EVERY known package, for the
 test("classify: an unrelated file changes nothing", () => {
   const result = classify([".gitignore"], ["lab"]);
   assert.deepEqual(result, { ts: false, python: false, ansible: false, docs: false, board: false,
-    changeset: false, rulesFitness: false, packages: [], testPackages: [] });
+    changeset: false, rulesFitness: false, packages: [] });
 });
 
 test("classify: a multi-package, multi-category diff sets every category it touches, independently", () => {
@@ -296,7 +274,7 @@ test("classify: a multi-package, multi-category diff sets every category it touc
     "docs/known-gaps.md",
     "packages/control/ansible/deploy.yml",
     "packages/scorer/tests/test_runtime_versions.py",
-  ], ["lab", "judge", "control", "scorer"], {}, { getPackedFiles });
+  ], ["lab", "judge", "control", "scorer"], { getPackedFiles });
   assert.equal(result.ts, true);
   // `control` is here too -- the ansible file sits inside `packages/control/`, same as the test above.
   assert.deepEqual(result.packages, ["control", "judge", "lab", "scorer"]);
@@ -313,8 +291,8 @@ test("knownPackages finds the real repo's workspace directories, and refuses a s
   assert.ok(packages.length >= 8, `found ${packages.length} package(s); the packages/* walk is broken`);
   assert.ok(packages.includes("lab") && packages.includes("judge"));
   // `packages/README.md` is a real tracked file directly under `packages/`, two path segments deep -- not
-  // a package directory. `readWorkspaceDependencyGraph` is the first consumer that ever tried to read
-  // `packages/<name>/package.json` for every returned name, and crashed on exactly this
+  // a package directory. The dependency-graph reader (since removed) was the first consumer that ever tried
+  // to read `packages/<name>/package.json` for every returned name, and crashed on exactly this
   // (`ENOTDIR: not a directory, open './packages/README.md/package.json'`) the first time it ran for real.
   assert.ok(!packages.includes("README.md"),
     "a bare file tracked directly under packages/ must not be reported as a package directory");
@@ -333,8 +311,8 @@ test("knownPackages finds the real repo's workspace directories, and refuses a s
 });
 
 // -------------------------------------------------------------------------------------------------------
-// TESTPACKAGES AND RULESFITNESS -- chairman's follow-up, 2026-09-06, cutting `ci/ts`'s measured 269s to a
-// sixty-second budget. `testPackages` is touched packages plus every workspace DEPENDENT, transitively;
+// RULESFITNESS -- chairman's follow-up, 2026-09-06, cutting `ci/ts`'s measured 269s to a sixty-second
+// budget. (`testPackages`, touched packages plus their transitive dependents, lived here until it was cut.)
 // `rulesFitness` fires the rules-fitness gate only when packages/judge or packages/evidence changed.
 // -------------------------------------------------------------------------------------------------------
 
@@ -403,7 +381,7 @@ const fakeTestDeps = (byFile: Record<string, string[]>) => () =>
 
 test("classify: a board-only diff also fires ts, because a NON-board test names the file", () => {
   const getTestDependencyMap = fakeTestDeps({ "docs/board/reported.json": ["lab"] });
-  const result = classify(["docs/board/reported.json"], ["lab"], {}, { getTestDependencyMap });
+  const result = classify(["docs/board/reported.json"], ["lab"], { getTestDependencyMap });
   assert.equal(result.board, true, "still routes to board -- this fix adds ts, it does not remove board");
   assert.equal(result.ts, true, "a non-board test names this file; ts must fire so SOME job actually "
     + "runs it");
@@ -417,11 +395,10 @@ test("classify: the fold is GATED on board, so an unrelated file's OTHER site do
   // `lab` and run its WHOLE suite for a one-line edit. #2357 runs ts for docs WITHOUT any package.
   const result = classify(["docs/known-gaps.md", "README.md"], ["lab", "judge"]);
   assert.deepEqual(result.packages, [], "the fold must not implicate a package for a non-board diff");
-  assert.deepEqual(result.testPackages, []);
 });
 
 test("classify: an injected empty test-dependency map reproduces the pre-#283 bug -- the guard BITES", () => {
-  const result = classify(["docs/board/reported.json"], ["lab"], {}, { getTestDependencyMap: () => new Map() });
+  const result = classify(["docs/board/reported.json"], ["lab"], { getTestDependencyMap: () => new Map() });
   assert.equal(result.board, true);
   assert.equal(result.ts, false, "with no test-dependency map, nothing tells classify() this file is "
     + "named elsewhere -- board fires alone, exactly like the diff that shipped #270");
@@ -430,7 +407,7 @@ test("classify: an injected empty test-dependency map reproduces the pre-#283 bu
 test("jobsFor: agrees with classify() on the same input, by construction", () => {
   const files = ["README.md"];
   const viaJobsFor = new Set(jobsFor(files, REPO));
-  const viaClassify = classify(files, knownPackages(REPO), {}, { repoRoot: REPO });
+  const viaClassify = classify(files, knownPackages(REPO), { repoRoot: REPO });
   const jobKeys = ["ts", "python", "ansible", "docs", "board", "changeset", "rulesFitness"] as const;
   for (const job of jobKeys) {
     assert.equal(viaJobsFor.has(job), Boolean(viaClassify[job]),
@@ -454,68 +431,6 @@ test("classify: rulesFitness fires on packages/judge or packages/evidence, and n
   assert.equal(classify(["package.json"], ["judge", "lab"]).rulesFitness, false,
     "unlike ts, a root config change does NOT imply rulesFitness -- it cannot move the rule engine's or "
     + "the announcement grammar's own behaviour");
-});
-
-test("classify: testPackages defaults to exactly packages when no dependency graph is supplied", () => {
-  // The default parameter -- every call site written before testPackages existed keeps working unchanged.
-  const result = classify(["packages/evidence/src/foo.ts"], ["evidence", "judge"]);
-  assert.deepEqual(result.testPackages, result.packages);
-});
-
-test("classify: testPackages is packages PLUS every transitive dependent, from a real dependency graph", () => {
-  const graph = { evidence: [], judge: ["evidence"], lab: ["judge"] };
-  const result = classify(["packages/evidence/src/foo.ts"], ["evidence", "judge", "lab"], graph);
-  assert.deepEqual(result.packages, ["evidence"]);
-  assert.deepEqual(result.testPackages, ["evidence", "judge", "lab"],
-    "lab depends on judge, which depends on evidence -- both must be pulled in, not just judge");
-});
-
-test("dependentsOf: a package with no dependents returns just itself", () => {
-  assert.deepEqual(dependentsOf(["standalone"], { evidence: [], judge: ["evidence"], standalone: [] }),
-    ["standalone"]);
-});
-
-test("dependentsOf: the closure is transitive, not merely direct", () => {
-  const graph = { a: [], b: ["a"], c: ["b"], d: ["c"] };
-  assert.deepEqual(dependentsOf(["a"], graph), ["a", "b", "c", "d"],
-    "d depends on c depends on b depends on a -- changing a must test the whole chain");
-});
-
-test("dependentsOf: two independently changed packages union their dependents", () => {
-  const graph = { a: [], b: [], x: ["a"], y: ["b"] };
-  assert.deepEqual(dependentsOf(["a", "b"], graph), ["a", "b", "x", "y"]);
-});
-
-test("readWorkspaceDependencyGraph: resolves by each package's REAL declared name, not by directory "
-  + "convention", () => {
-  // packages/cli's own package.json name is the UNSCOPED "a11ign", not "@a11ign/cli" -- and
-  // packages/lab genuinely depends on it. A graph builder that assumed the `@a11ign/<dir>` pattern
-  // would silently drop this edge.
-  const dir = mkdtempSync(join(tmpdir(), "ci-changed-graph-"));
-  try {
-    writeFileSync(join(dir, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }));
-    const pkgs: Record<string, object> = {
-      cli: { name: "a11ign", dependencies: {} },
-      lab: { name: "@a11ign/lab", dependencies: { "a11ign": "0.1.0", "@a11ign/evidence": "0.1.0" } },
-      evidence: { name: "@a11ign/evidence", dependencies: {} },
-      // an external, non-workspace dependency must be silently DROPPED, not crash or appear as a phantom
-      // package named after an npm package this repo does not own.
-      judge: { name: "@a11ign/judge", dependencies: { "@a11ign/evidence": "0.1.0", "typescript": "^6.0.0" } },
-    };
-    for (const [name, manifest] of Object.entries(pkgs)) {
-      const pkgDir = join(dir, "packages", name);
-      mkdirSync(pkgDir, { recursive: true });
-      writeFileSync(join(pkgDir, "package.json"), JSON.stringify(manifest));
-    }
-    const graph = readWorkspaceDependencyGraph(dir, ["cli", "lab", "evidence", "judge"]);
-    assert.deepEqual([...graph.lab].sort(), ["cli", "evidence"],
-      "lab must resolve BOTH its unscoped 'a11ign' dependency (-> cli) and its scoped one (-> "
-      + "evidence), by reading each package's real name rather than assuming a naming convention");
-    assert.deepEqual(graph.judge, ["evidence"], "typescript is not a workspace package and must be dropped");
-    assert.deepEqual(graph.cli, []);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 // -------------------------------------------------------------------------------------------------------
@@ -916,21 +831,3 @@ test("nightly.yml (coverage.yml until #901) reports its own failure on the track
     "nightly.yml must comment on #169 (the coverage tracking issue) when the nightly run fails");
 });
 
-test("PROOF: readWorkspaceDependencyGraph rendered from the REAL repo has no cycle -- cli and lab in "
-  + "particular", () => {
-  // #199, chairman's ruling: `a11ign` (cli, published) and `@a11ign/lab` (private, never
-  // published) used to depend on EACH OTHER -- a real boundary defect (ADR 0004), not merely a CI-scoping
-  // inconvenience. Closed by making `cli.test.ts` compute its own repo-root/captures-path locally instead
-  // of importing from `lab` (the same pattern worker-fleet/nvda-worker/judge already use for the identical
-  // reason) and dropping `@a11ign/lab` from `cli`'s `devDependencies` entirely. `lab -> cli` (one
-  // direction, via `public-api.test.ts` testing the published surface) is legitimate and stays -- a single
-  // edge is not a cycle. Driven against the REAL manifests, not a synthetic fixture, so a reintroduced
-  // `@a11ign/lab` dependency in `packages/cli/package.json` fails this test rather than silently
-  // widening every scoped CI run back to the pair.
-  const packages = knownPackages(REPO);
-  const graph = readWorkspaceDependencyGraph(REPO, packages);
-  assert.ok(!graph.cli.includes("lab"), "cli must not depend on lab -- that is the boundary #199 closed");
-  assert.deepEqual(dependentsOf(["lab"], graph), ["lab"],
-    "lab must have zero workspace dependents -- if this fails, something (most likely cli again) now "
-    + "depends on lab, and testPackages for a lab-only change would widen back to a pair or more");
-});

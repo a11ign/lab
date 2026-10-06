@@ -140,19 +140,17 @@ test("#2891/#3180: the exceptions are exactly the consumer gate's three and rele
   }
 });
 
-test("#2891/#3180: each exception carries its comment in the workflow, and so does release.yml's publish", () => {
+test("#2891/#3180: each exception carries its comment in the workflow", () => {
   const consumer = readFileSync(join(WORKFLOWS, CONSUMER_GATE), "utf8");
   assert.equal((consumer.match(/# STAYS `npx` \(#2891/g) ?? []).length, STAYS_NPM.filter((e) => e.file === CONSUMER_GATE).length, "one `STAYS npx` comment per exception");
   const release = readFileSync(join(WORKFLOWS, "release.yml"), "utf8");
-  assert.match(release, /# THE DELIBERATE npm HAND-OFF IN THIS FILE \(#2891/, "a reader seeing npm there must be told it is deliberate");
   assert.match(release, /# STAYS npm \(#3180/, "the upgrade step carries its own `STAYS npm` comment");
 });
 
-test("#2891: release.yml publishes through `pnpm exec changeset publish`, and no step there spells `npm publish`", () => {
+test("#2891/#3717: no step of release.yml publishes or spells `npm publish`: the called workflow's `changeset publish` does, and its npm hand-off is there", () => {
   const steps = realSteps().filter((s) => s.file === "release.yml");
-  const publish = steps.filter((s) => s.name === "Publish");
-  assert.equal(publish.length, 1, "positive control: the publish step is found");
-  assert.match(publish[0].lines.join("\n"), /^pnpm exec changeset publish/m);
-  assert.deepEqual(steps.flatMap((s) => s.lines.filter((l) => /\bnpm publish\b/.test(l))), [],
-    "the hand-off to npm happens inside pnpm; a step that spells it bypasses the rehearsed path");
+  assert.ok(steps.length > 0, "positive control: release.yml's run steps are found");
+  assert.deepEqual(steps.filter((s) => s.name === "Publish"), [], "the publish left this file with the version pull request (#3717)");
+  assert.deepEqual(steps.flatMap((s) => s.lines.filter((l) => /\bnpm publish\b|\bchangeset publish\b/.test(l))), [],
+    "a step here that publishes would bypass the called workflow's rehearsed path");
 });

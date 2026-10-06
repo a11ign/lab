@@ -48,6 +48,7 @@ const ALLOWED: Record<string, string> = {
   "scripts/registry-consumer-gate.mjs": "`npm install a11ign` is the consumer's experience; `npm view` reads the registry",
   "scripts/release-publish-rehearsal.mjs": "trusted publishing is bound to npm's OIDC, and `pnpm publish` shells out to `npm publish`",
   "packages/guards/src/isolation-gate.mjs": "the consumer half installs the packed tarballs with npm, outside any workspace",
+  "scripts/agent-org-newest-tag.mjs": "installs the tool's own dependencies in a clone of its repository, which declares them for npm (#3534)",
 };
 
 /** Every comment in an allowlisted file that says why, matched by this exact opening. */
@@ -163,9 +164,10 @@ test("positive control: the walk is not empty, and finds the spawns that ARE all
   }
 });
 
-test("the allowlist is EXACTLY these named files (the two registry gates and the isolation gate), so a fourth is a decision made here", () => {
+test("the allowlist is EXACTLY these named files (the two registry gates, the isolation gate and the tool resolver), so a fifth is a decision made here", () => {
   assert.deepEqual(Object.keys(ALLOWED).sort(), [
     "packages/guards/src/isolation-gate.mjs",
+    "scripts/agent-org-newest-tag.mjs",
     "scripts/registry-consumer-gate.mjs",
     "scripts/release-publish-rehearsal.mjs",
   ]);

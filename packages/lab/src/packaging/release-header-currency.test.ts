@@ -71,11 +71,11 @@ const SEVEN_GATES = Array.from({ length: GATE_COUNT }, (_unused, index) => index
 const FEWEST_PLAUSIBLE_MACHINERY_FILES = 10;
 
 /**
- * The same kind of floor for `packages/`, which the changelog walk below must be SEEN to reach. Twelve
- * package directories carry a manifest today; a run that enumerates fewer than this has lost the
+ * The same kind of floor for `packages/`, which the changelog walk below must be SEEN to reach. Eight
+ * package directories carry a manifest today (eleven before #3447 took `nvda-worker` and `nvda-speech` out of the workspace, nine before #3504 took `worker-fleet`); a run that enumerates fewer than this has lost the
  * directory, and the emptiness assertion it feeds would then be reporting a walk that never looked.
  */
-const FEWEST_PLAUSIBLE_PACKAGES = 10;
+const FEWEST_PLAUSIBLE_PACKAGES = 8;
 
 /**
  * The three files #2052 measured as carrying a stale claim, and therefore the three that must still be
@@ -622,12 +622,12 @@ function workspaceManifests(): { path: string; name: string; version: string; is
 const unwrapped = (text: string): string => text.replace(/\s+/g, " ");
 
 /**
- * The four packages the registry holds at `0.1.0` (`npm view <name> version`, 2026-10-03, #3347), and the three
- * public ones that were never published and so still read `0.0.0` (#3126 owns whether and when the first two move;
- * `@a11ign/toolchain` joined under #3578 and its first publish is that row's).
+ * The four packages the registry holds at `0.1.0` (`npm view <name> version`, 2026-10-03, #3347), and the one
+ * public one that was never published and so still reads `0.0.0` (`@a11ign/toolchain`, #3578: its first publish is that row's; the other
+ * never-published package, the fleet, left the workspace with #3504).
  */
 const PUBLISHED_AT_0_1_0 = ["@a11ign/evidence", "@a11ign/judge", "@a11ign/scorer", "a11ign"];
-const NEVER_PUBLISHED = ["@a11ign/screenreader-fleet", "@a11ign/screenreader-worker", "@a11ign/toolchain"];
+const NEVER_PUBLISHED = ["@a11ign/toolchain"];
 
 /** `version` is at least `floor`, both plain `major.minor.patch`: the only shapes a manifest here holds. */
 function versionAtLeast(version: string, floor: string): boolean {
@@ -639,7 +639,7 @@ function versionAtLeast(version: string, floor: string): boolean {
 
 /**
  * The near side of the release (#3131): `main` before `changeset version` has run reads `0.1.0` for the four
- * published packages and `0.0.0` for the other three. The far side moves all seven, so these are not claims
+ * published packages and `0.0.0` for the other one. The far side moves all five, so these are not claims
  * about the registry split (that is asserted on both sides, by name) but about the literals the document quotes.
  */
 function assertVersionsAsTheNearSideHoldsThem(publicManifests: { name: string; version: string }[]): void {
@@ -657,12 +657,12 @@ function assertVersionsAsTheNearSideHoldsThem(publicManifests: { name: string; v
 /**
  * #2159, reviewer's refusal at `ff88e9ea`: the document said "every `package.json` still reads `0.0.0`",
  * and two of them read `0.1.0`. #3347 then moved four public manifests to the registry's `0.1.0`, so
- * the claim is now a PARTITION of the seven public manifests rather than one number.
+ * the claim is now a PARTITION of the six public manifests rather than one number.
  *
  * THE EMPTINESS AND ITS POSITIVE CONTROL ARE HALVES OF ONE PARTITION, COMPUTED IN ONE RUN.
  * `public and not 0.0.0` must be exactly the four published packages, by NAME, each reading `0.1.0` — a
  * fifth public manifest drifting off `0.0.0` is the case that has to be loudest. `private and not
- * 0.0.0` must be exactly `@a11ign/control` and `@a11ign/lab`, and `public and 0.0.0` exactly the three
+ * 0.0.0` must be exactly `@a11ign/control` and `@a11ign/lab`, and `public and 0.0.0` exactly the two
  * never-published: each is a NON-EMPTY population produced by the same read of the same files, so a walk
  * that returned nothing, a narrowing that matched nothing, or a `version` field this code failed to read
  * turns an assertion red rather than letting another pass by vacuity.
@@ -679,7 +679,7 @@ test("#2159/#3347: the versions claim is true of the set changesets versions, sp
   assert.deepEqual(namesOf(published), PUBLISHED_AT_0_1_0,
     "the four packages the registry holds must all be workspace members, on either side of the release");
   assert.deepEqual(namesOf(publicManifests.filter((manifest) => !PUBLISHED_AT_0_1_0.includes(manifest.name))), NEVER_PUBLISHED,
-    "THE POSITIVE CONTROL for the split: the other public manifests are exactly the three never published, and "
+    "THE POSITIVE CONTROL for the split: the other public manifest is exactly the one never published, and "
     + "a new public package or a rename changes the registry split this file describes");
   assert.ok(published.every((manifest) => versionAtLeast(manifest.version, "0.1.0")),
     "a published package must read at least the version the registry holds, or `changeset publish` would send "
@@ -690,18 +690,18 @@ test("#2159/#3347: the versions claim is true of the set changesets versions, sp
     "THE POSITIVE CONTROL for the emptiness claims: these two private manifests are hand-set to 0.1.0 and "
     + "changesets never touches them, so this list is non-empty in any run where the manifests were "
     + "actually read");
-  assert.equal(publicManifests.length, 7,
-    `the document says SEVEN versioned manifests and this tree has ${publicManifests.length} — a package added, `
+  assert.equal(publicManifests.length, 5,
+    `the document says FIVE versioned manifests and this tree has ${publicManifests.length} — a package added, `
     + "published or made private changes the sentence, and it is corrected here rather than left to rot");
 
   const list = unwrapped(decisionList());
   if (!firstReleaseCut()) {
-    assert.ok(list.includes("**Four of the seven versioned manifests read `0.1.0`**, the version the registry holds"),
+    assert.ok(list.includes("**Four of the five versioned manifests read `0.1.0`**, the version the registry holds"),
       "the document must state the claim over the set it is true of — the reviewer refused the unqualified "
       + "form, and a narrowing that is not in the document narrows nothing");
   }
   for (const name of NEVER_PUBLISHED) {
-    assert.ok(list.includes(name), `the document must name ${name} as one of the three that still read 0.0.0`);
+    assert.ok(list.includes(name), `the document must name ${name} as the one that still reads 0.0.0`);
   }
   assert.ok(!/every `package\.json`[^.]{0,40}reads `0\.0\.0`/.test(list),
     "the unqualified sentence must not come back. It was false in this tree from the day @a11ign/control "
@@ -711,4 +711,28 @@ test("#2159/#3347: the versions claim is true of the set changesets versions, sp
       `the document must name ${name} as a manifest the claim does NOT cover — a narrowing that hides its `
       + "own exceptions is the same defect one step quieter");
   }
+});
+
+/**
+ * #3717: THE HEADER MUST NOT STILL DESCRIBE THE VERSION PULL REQUEST AS THE LIVE PATH. `release.yml` was rewritten as a caller of the
+ * per-merge workflow, and a header is the half a reader meets first: the old one said, in the present tense, that the file releases on
+ * the merge of a version pull request and opens one with the bot token. The phrasings below are the ones that header used, each matched
+ * by a real line of `scripts/fixtures/release-before-3717.yml`, so the tripwire is shown to notice what it looks for before it is trusted
+ * to find nothing in the live file (a marker that cannot recognise its own remedy, and its opposite, are both half a test).
+ */
+const STALE_VERSION_PR_CLAIMS: readonly RegExp[] = [
+  /RELEASES ON THE MERGE OF A VERSION PULL REQUEST/,
+  /opens or updates the ONE version pull/,
+  /`version-pr` opens/,
+  /VERSION PULL REQUEST'S MERGE made/,
+];
+
+test("#3717: the live header names no version pull request as the path, and every tripwire phrase is matched by the file it replaced", () => {
+  const before = read("scripts/fixtures/release-before-3717.yml");
+  const live = read(".github/workflows/release.yml");
+  for (const claim of STALE_VERSION_PR_CLAIMS) {
+    assert.match(before, claim, `POSITIVE CONTROL: today's workflow before the row says '${claim}', so the tripwire can notice it`);
+    assert.doesNotMatch(live, claim, `the live release.yml still says '${claim}', which was true only of the version pull request`);
+  }
+  assert.match(live, /release-per-merge\.yml/, "the header must name the workflow it calls, so a reader knows where the release itself is");
 });

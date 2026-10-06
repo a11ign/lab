@@ -56,13 +56,6 @@ const strips = (source: string): boolean =>
  * The reason must say why the claim has no code form. "It does not strip" is not a reason.
  */
 const EXEMPT: Record<string, string> = {
-  "packages/nvda-worker/src/census-read-moment.test.ts":
-    "asserts a JSDoc @typedef -- `sinceStart: () => number }} CaptureDiagnostics`. In a `.mjs` file the "
-    + "TYPE IS A COMMENT, so there is no code form of this claim to match. Stripping would delete the "
-    + "contract it exists to hold.",
-  "packages/nvda-worker/src/disclosure-after-is-focus.test.ts":
-    "slices from `// Activate a disclosure` as an ANCHOR -- the comment marks the region, and stripping "
-    + "removes the landmark rather than the subject.",
   "packages/lab/src/training/case-matrix.test.ts":
     "#1209: asserts that a specific PARAGRAPH still exists in case-matrix.mjs, because this file points "
     + "readers at it. The target is prose by design, and a pointer whose target is unpinned reads as "

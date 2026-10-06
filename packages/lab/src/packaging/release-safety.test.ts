@@ -23,6 +23,13 @@
  * 3 is that nothing in the workflow writes `main`, so the version bump can only arrive through that review. `dist-tag`
  * went with the confirmation: it only ever rode a typed, real dispatch, and no dispatch publishes.
  *
+ * #3717 REWROTE GUARDS 1 AND 2 AGAIN, AND THE SEVEN STAY SEVEN. `release.yml` is a caller of the one reusable per-merge workflow
+ * (a11ign/toolchain, #3712) and has no `plan` job and no version pull request. Guard 1 is now "a publish is reached only through the
+ * ONE call, on a push to `main`, and the called workflow refuses any other ref in its first job"; guard 2 is "a dispatch runs the guards
+ * and stops: the call's job is `if: push`" (the `dry-run` input went with the mode it chose). Guard 3 is unchanged in what it says and
+ * stronger in what backs it: no job here holds a write but the call's, and none holds `A11IGN_BOT_TOKEN`. Guard 4's read-back moved
+ * into the `guards` job and the called `publish` job reads it again. WHICH GUARD MOVED WHERE is in `release-triggers-itself.test.ts`.
+ *
  * Guards 5 and 6 changed shape 2026-09-06 (chairman's direction): `action-smoke`/`capture-regression`
  * used to run on a push to `main` and this workflow QUERIED whether that separately-triggered run had
  * passed for the exact sha. Both left `main`/PR entirely and declare `workflow_call`, so this workflow now
@@ -36,10 +43,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
@@ -47,38 +52,38 @@ const workflow = readFileSync(resolve(REPO, ".github/workflows/release.yml"), "u
 const config = JSON.parse(readFileSync(resolve(REPO, ".changeset/config.json"), "utf8"));
 
 const parsed = parseYaml(workflow) as {
-  on: { push?: { branches?: string[] }; workflow_dispatch?: { inputs?: Record<string, { default?: unknown }> } };
-  jobs: Record<string, { needs?: string[]; if?: string; steps?: { name?: string; if?: string; run?: string; env?: Record<string, string> }[] }>;
+  on: Record<string, unknown> & { push?: { branches?: string[]; paths?: string[] }; workflow_dispatch?: unknown };
+  jobs: Record<string, { needs?: string[]; if?: string; uses?: string; steps?: { name?: string; id?: string; if?: string; run?: string; env?: Record<string, string> }[] }>;
 };
 
-test("guard 1: only ONE push can publish -- the one where nothing is pending and a version is ahead of the registry", () => {
-  // The old guard said "no push trigger at all". The trigger is required now (#3131); what stays true is that a
-  // trigger alone starts nothing that publishes: `plan` decides the mode, and the publish step reads only the mode.
+test("guard 1: a publish is reached only through the ONE call, and only on a push to main", () => {
+  // The old guard read the plan's mode. There is no plan now: the called workflow refuses a ref that is not `main` in its first job and
+  // reads what the tags consumed, so what stays true HERE is that the call is the only way to a publish and a push is the only way to the call.
   assert.deepEqual(parsed.on.push?.branches, ["main"], "the push trigger names main and nothing else");
   for (const trigger of ["schedule", "release", "pull_request", "repository_dispatch"]) {
     assert.ok(!(trigger in parsed.on), `release.yml declares a '${trigger}' trigger, so it can start on something that is not a merge`);
   }
-  const publish = parsed.jobs.release.steps?.find((step) => /^pnpm exec changeset publish\b/.test(step.run ?? ""));
-  assert.equal(publish?.if, "needs.plan.outputs.mode == 'publish'", "the publish step reads the plan's mode, never an input");
-  const plan = parsed.jobs.plan.steps?.find((step) => /mode=publish/.test(step.run ?? ""))?.run ?? "";
-  assert.match(plan, /\[ "\$pending" -gt 0 \]; then mode=version-pr\s+elif \[ "\$ahead" -gt 0 \]; then mode=publish/,
-    "publish is reached only when nothing is pending (the version-pr branch is tested first) AND a version is ahead");
+  const callers = Object.entries(parsed.jobs).filter(([, job]) => /^a11ign\/toolchain\/\.github\/workflows\/release-per-merge\.yml@[0-9a-f]{40}$/.test(job.uses ?? ""));
+  assert.deepEqual(callers.map(([name]) => name), ["release"], "exactly one job calls the reusable workflow, pinned by full sha");
+  assert.match(callers[0][1].if ?? "", /github\.event_name == 'push'/, "the call runs on a push and on nothing else");
+  assert.ok(!Object.values(parsed.jobs).some((job) => (job.steps ?? []).some((step) => /changeset publish|npm publish|pnpm publish(?! --dry-run)/.test(step.run ?? ""))),
+    "no step in this file publishes: the publish is the called workflow's, where an `id-token` job under the `npm-publish` environment holds it");
 });
 
-test("guard 2: a dispatch never publishes -- dry-run defaults to true, and false is refused", () => {
-  assert.equal(parsed.on.workflow_dispatch?.inputs?.["dry-run"]?.default, true,
-    "the dry-run input must default to true; a default of false makes the safe path the opt-in one");
-  assert.ok(!("confirm" in (parsed.on.workflow_dispatch?.inputs ?? {})), "the typed confirmation was removed on purpose (#3131); its job is guard 3's");
-  const plan = parsed.jobs.plan.steps?.find((step) => /mode=rehearsal/.test(step.run ?? ""))?.run ?? "";
-  assert.match(plan, /DRY_RUN" != "true"[\s\S]{0,200}exit 1/, "a dispatch that sets dry-run false must be refused, not quietly rehearsed");
+test("guard 2: a dispatch never publishes -- it runs the guards, and the call's job does not run on it", () => {
+  assert.notEqual(parsed.on.workflow_dispatch, undefined, "the rehearsal is kept (#3717): the one non-merge trigger a person may start");
+  assert.ok(!("inputs" in ((parsed.on.workflow_dispatch as Record<string, unknown> | null) ?? {})),
+    "a dispatch takes no input: the `dry-run` input chose a mode, there is no mode, and an input that does nothing reads as a control");
+  assert.match(parsed.jobs.release.if ?? "", /^github\.event_name == 'push'$/, "the call's job is `if: push`, so a dispatch stops after the guards");
 });
 
-test("guard 3: nothing in the workflow writes main, so the version bump can only arrive through the required review", () => {
-  // The property itself is `release-triggers-itself.test.ts`'s `no-push-to-main`, with its positive controls. What this
-  // pins is the OTHER half: the typed-confirmation machinery is gone, so a leftover cannot read as a live guard.
+test("guard 3: nothing in the workflow writes main or opens a pull request, so a change can only arrive through the required review", () => {
+  // The property itself is `release-triggers-itself.test.ts`'s `no-branch-push` and `no-bot-token`, with their positive controls. What this
+  // pins is the OTHER half: the typed-confirmation machinery and the version pull request are gone, so a leftover cannot read as a live guard.
   assert.doesNotMatch(workflow, /inputs\.confirm|publish-for-real(?!`)/,
     "release.yml still reads a typed confirmation that no input supplies");
   assert.ok(!/^\s+- name: Commit the version bump back to main/m.test(workflow), "the direct commit-back step must stay gone");
+  assert.ok(!("version-pr" in parsed.jobs) && !("plan" in parsed.jobs), "the version pull request job and the plan job are gone");
 });
 
 test("guard 4: access is public now that the name is settled", () => {
@@ -113,28 +118,24 @@ test("guards 5, 6 and 7: action-smoke, capture-regression and consumer-gate run 
   }
 });
 
-test("guards 5, 6 and 7 are not skippable: the publishing job needs all three, and they run on the publish and the rehearsal", () => {
-  // The `release` job's OWN `needs:` is what enforces all three -- a job with an unsatisfied `needs:` is
-  // skipped/failed by GitHub regardless of any `if:` on its steps. The guard jobs carry an `if:` of their own now
-  // (#3131: on a push that only opens a version pull request they have nothing to prove), and it must name BOTH of
-  // the modes that run the release job, or a rehearsal would skip the guards it exists to rehearse.
+test("guards 5, 6 and 7 are not skippable: the call needs all three and the guards job, and none has an `if`", () => {
+  // The `release` job's OWN `needs:` is what enforces them -- a job with an unsatisfied `needs:` is skipped/failed by GitHub regardless of any `if:`
+  // on its steps. The guard jobs carry no `if:` (#3717: with no `plan` there is no mode to skip on), so a rehearsal runs the guards it exists to rehearse.
   const needs = parsed.jobs.release.needs ?? [];
-  for (const job of ["action-smoke", "capture-regression", "consumer-gate"]) {
-    assert.ok(needs.includes(job), `the release job must need ${job}, so a red ${job} stops a publish and a rehearsal alike`);
-    const condition = parsed.jobs[job].if ?? "";
-    assert.match(condition, /== 'publish'/, `${job} must run on the publishing push`);
-    assert.match(condition, /== 'rehearsal'/, `${job} must run on a rehearsal`);
+  for (const job of ["action-smoke", "capture-regression", "consumer-gate", "guards"]) {
+    assert.ok(needs.includes(job), `the call must need ${job}, so a red ${job} stops a publish`);
+    assert.equal(parsed.jobs[job].if, undefined, `${job} must run on a push and on a dispatch alike`);
   }
 });
 
-test("a dispatch rehearses with every guard, and its dry-run publish hand-off still names provenance", () => {
-  const rehearsal = parsed.jobs.release.steps?.find((step) => /release-publish-rehearsal\.mjs/.test(step.run ?? ""));
-  assert.equal(rehearsal?.if, "inputs.dry-run == true", "the rehearsal runs on a dispatch, and a real publish does not also rehearse itself");
+test("a dispatch rehearses with every guard, and the provenance request still names provenance, before anything publishes", () => {
+  const rehearsal = parsed.jobs.guards.steps?.find((step) => /release-publish-rehearsal\.mjs/.test(step.run ?? ""));
+  assert.equal(rehearsal?.if, undefined, "the provenance request runs on every run, a real one included: nothing else here can read the called workflow's publish");
   assert.equal(rehearsal?.env?.NPM_CONFIG_PROVENANCE, "true");
 });
 
 test("the gate runs, and is not allowed to fail softly", () => {
-  assert.match(workflow, /npm run release:gate/, "a release must run the full gate");
+  assert.match(workflow, /pnpm run release:gate:ci/, "a release must run the part of the gate a runner can prove");
   assert.ok(!/continue-on-error:\s*true/.test(workflow),
     "no step in the release path may continue on error — that is how a release ships past its own gate");
 });
@@ -150,8 +151,8 @@ test("the workspaces lockfile trap is handled", () => {
 
 test("every package Changesets would publish is one we mean to publish", () => {
   // A package that becomes public by accident is as bad as a publish by accident. `lab` ships nothing by
-  // design — what ships is its output — and `nvda-speech` is internal.
-  for (const name of ["lab", "nvda-speech"]) {
+  // design — what ships is its output. (`nvda-speech` left with the worker in #3447.)
+  for (const name of ["lab"]) {
     const pkg = JSON.parse(readFileSync(resolve(REPO, `packages/${name}/package.json`), "utf8"));
     assert.equal(pkg.private, true, `packages/${name} must stay private or Changesets will version it`);
   }
@@ -165,7 +166,7 @@ test("#1251: every permission a called workflow's job requests is granted by its
   // touching this file -- and nothing on the PR path dispatches release.yml, so the first dispatch found
   // it (run 34749848689). Parsed, not grepped: a permission block is structure, and the comparison is
   // per scope, per job, with `none < read < write`.
-  const GUARDS_RUN_AS_JOBS = 3;                 // guards 5, 6 and 7 in the file header
+  const GUARDS_RUN_AS_JOBS = 3;                 // guards 5, 6 and 7 in the file header; the reusable per-merge call is remote and has no file here
   const rank: Record<string, number> = { none: 0, read: 1, write: 2 };
   // `permissions:` has a scalar spelling too (`write-all`, `read-all`), which parses to a string. A
   // block this reader cannot expand must REFUSE, not read as "no block": the two look identical to a
@@ -178,7 +179,7 @@ test("#1251: every permission a called workflow's job requests is granted by its
     return perms as Record<string, string>;
   };
   const release = parseYaml(workflow) as { jobs: Record<string, { uses?: string; permissions?: unknown }> };
-  const calls = Object.entries(release.jobs).filter(([, job]) => typeof job.uses === "string");
+  const calls = Object.entries(release.jobs).filter(([, job]) => typeof job.uses === "string" && job.uses.startsWith("./"));
   assert.equal(calls.length, GUARDS_RUN_AS_JOBS, "release.yml calls three local workflows (guards 5, 6 and 7)");
   for (const [callerName, caller] of calls) {
     const path = (caller.uses as string).replace(/^\.\//, "");
@@ -203,50 +204,4 @@ test("#1251: every permission a called workflow's job requests is granted by its
       }
     }
   }
-});
-
-// #3369: `plan` counted a changeset that names ONLY private packages as pending. `privatePackages: { version: false }`
-// means `changeset version` consumes none of them, so 67 such files on `main` held `pending > 0` for ever and
-// `mode=publish` was unreachable. This RUNS the plan step's own script against a fixture tree rather than matching its
-// text: the defect was in what the script computes, and a regex over the source would pass a script that miscounts.
-// The registry is a stub `npm` that answers 0.1.0 for every name, so a manifest at 0.2.0 is ahead and one at 0.1.0 is level.
-test("guard 1 (reachability): a changeset naming only private packages is not pending, so a publish can be reached", () => {
-  const planScript = parsed.jobs.plan.steps?.find((step) => /mode=publish/.test(step.run ?? ""))?.run ?? "";
-  assert.notEqual(planScript, "", "the plan step that decides the mode must be found, or every reading below is of nothing");
-  const manifests = { "pub": { name: "@fix/pub", version: "0.2.0" }, "priv": { name: "@fix/priv", version: "0.0.0", private: true } };
-  const planWith = (changesets: Record<string, string>): { pending: number; mode: string } => {
-    const root = mkdtempSync(join(tmpdir(), "release-plan-"));
-    try {
-      for (const [dir, manifest] of Object.entries(manifests)) {
-        mkdirSync(join(root, "packages", dir), { recursive: true });
-        writeFileSync(join(root, "packages", dir, "package.json"), JSON.stringify(manifest));
-      }
-      mkdirSync(join(root, ".changeset"));
-      writeFileSync(join(root, ".changeset", "README.md"), "---\n\"@fix/pub\": major\n---\n");
-      for (const [file, body] of Object.entries(changesets)) writeFileSync(join(root, ".changeset", file), body);
-      mkdirSync(join(root, "bin"));
-      writeFileSync(join(root, "bin", "npm"), "#!/bin/sh\necho 0.1.0\n");
-      chmodSync(join(root, "bin", "npm"), 0o755);
-      const output = join(root, "github-output");
-      writeFileSync(output, "");
-      const log = execFileSync("bash", ["-c", planScript], {
-        cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, PATH: `${join(root, "bin")}:${process.env.PATH}`, EVENT: "push", GITHUB_OUTPUT: output },
-      });
-      return { pending: Number(/changesets naming a release: (\d+)/.exec(log)?.[1]), mode: /^mode=(.+)$/m.exec(log)?.[1] ?? "" };
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  };
-  const changeset = (...names: string[]) => `---\n${names.map((name) => `"${name}": patch`).join("\n")}\n---\n\nA note.\n`;
-  // The empty changeset the version pull request carries, and the private-only ones that were the defect.
-  const privateOnly = { "empty.md": "---\n---\n", "a.md": changeset("@fix/priv"), "b.md": changeset("@fix/priv") };
-  assert.deepEqual(planWith(privateOnly), { pending: 0, mode: "publish" },
-    "private-only changesets are not pending: nothing is left for `changeset version`, so the ahead package publishes");
-  // The positive control: the same tree with ONE public changeset must still be pending, or "0" above is a script that counts nothing.
-  assert.deepEqual(planWith({ ...privateOnly, "c.md": changeset("@fix/pub") }), { pending: 1, mode: "version-pr" },
-    "a changeset naming a public package is pending, and the version pull request comes before any publish");
-  assert.equal(planWith({ "mixed.md": changeset("@fix/priv", "@fix/pub") }).pending, 1, "one public name among private ones is pending");
-  assert.equal(planWith({ "unknown.md": changeset("@fix/nobody") }).pending, 1,
-    "a name no manifest answers to is not provably private, so it counts: `changeset version` is where it fails loudly");
 });

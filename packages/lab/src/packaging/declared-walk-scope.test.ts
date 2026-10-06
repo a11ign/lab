@@ -1,21 +1,16 @@
 /**
  * A TREE-WALKING GUARD MAY DECLARE THE SUBTREE IT WALKS, AND ITS OWN RUN MUST PROVE IT — #929.
  *
- * `alwaysRunTests` runs every guard whose population is discovered from the tree, on every pull request,
- * because a file added anywhere can join such a population. That is right for a guard whose population IS
- * the repository, and it stays exactly as it is. Measured by running all 131 always-run guards under the
- * observer: 38 walk the whole repository and 69 read inside a product package, but 24 read nothing a
- * product diff can touch — 6 of them nothing outside their own imports at all.
+ * A tree-walking guard's population IS the repository, so a file added anywhere can join it. A guard that reads only a subtree may
+ * say which, and `declareWalkScope` then checks its own run against that: the observer records every read the guard makes, and a
+ * read outside the declaration fails the guard. (The declaration used to let a hand-built test selector leave a guard out of a run
+ * whose diff touched none of its scope. The selector is deleted (#3573) and the full suite runs every guard, so what is left is the
+ * declaration and the check that it is true.) The properties this file pins:
  *
- * So a guard may declare its scope, and `narrowByDeclaredScope` leaves it out of a run whose diff touches
- * none of it. The three properties this file pins are the row's acceptance:
+ *   - a declaration is parsed exactly, and a name that is not THE declaration is refused rather than guessed;
+ *   - a declaration narrower than what the guard actually reads FAILS THE GUARD'S OWN RUN. Without this a declaration is a promise.
  *
- *   - a declared guard is left out of a diff outside its scope, and kept for one inside it — BOTH directions;
- *   - a guard that declares nothing is kept exactly as today — the safe default, asserted;
- *   - a declaration narrower than what the guard actually reads FAILS THE GUARD'S OWN RUN. Without this the
- *     row ships a promise.
- *
- * The third is tested by RUNNING a fixture guard, not by describing one: a declaration check that has never
+ * The second is tested by RUNNING a fixture guard, not by describing one: a declaration check that has never
  * been seen to fail is the canary that cannot express its fault.
  *
  * This file never declares a scope of its own — it walks every test file in the repository to find the
@@ -41,15 +36,10 @@ import {
   runnerOwnedPaths, readsSoFar,
   DECLARER_BUILTINS, ESM_UNSYNCED, NOT_WRAPPED, WHOLE_REPOSITORY, inScope, isObserved, parseWalkScope, readsDuring,
 } from "../../../guards/src/walk-scope.mjs";
-import { knownPackages } from "../../../../scripts/ci-changed.mjs";
+import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
+import { packageIndex, sourceClosure } from "../../../guards/src/walk-scope-discovery.mjs";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
-import {
-  alwaysRunTests, broadReasons, discoverTestFiles, narrowByDeclaredScope, packageIndex, sourceClosure,
-} from "../../../../scripts/select-changed-tests.mjs";
-// #939: the shared reader every "which paths changed" caller now imports.
-import { changedFiles } from "../../../guards/src/changed-files.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const W = "WALK" + "_SCOPE";
@@ -92,72 +82,81 @@ test("a scope entry covers itself and everything under it, and nothing that mere
 });
 
 // ---------------------------------------------------------------------------------------------------------
-// Selection.
+// The import closure `declareWalkScope` reads a guard's own scope from. It lived in the test selector and moved with its two functions
+// (#3573), so these are the selector's own sourceClosure tests, kept.
 // ---------------------------------------------------------------------------------------------------------
 
-const GUARDS = [
-  { test: "g/declares-scripts.test.ts", why: "walks the tree itself" },
-  { test: "g/declares-nothing.test.ts", why: "walks the tree itself" },
-  { test: "g/declares-empty.test.ts", why: "imports the tree walker x" },
-];
-const SOURCES: Record<string, string> = {
-  "g/declares-scripts.test.ts": declaring(`["scripts"]`),
-  "g/declares-nothing.test.ts": `const walk = 1;\n`,
-  "g/declares-empty.test.ts": declaring("[]"),
-};
-const readSource = (rel: string) => SOURCES[rel];
+type PackageSpec = { dir: string; name: string; exportsMap?: Record<string, unknown>; files: Record<string, string> };
 
-test("BOTH DIRECTIONS: a guard declaring scripts/ is left out of a judge diff and kept for a scripts diff", () => {
-  const product = narrowByDeclaredScope(GUARDS, ["packages/judge/src/rules.ts"], { readSource });
-  assert.ok(product.narrowed.some((n) => n.test === "g/declares-scripts.test.ts"));
-  const pipeline = narrowByDeclaredScope(GUARDS, ["scripts/merge-guard.mjs"], { readSource });
-  const kept = pipeline.kept.find((g) => g.test === "g/declares-scripts.test.ts");
-  assert.ok(kept, "a diff inside the declared scope must keep the guard");
-  assert.match(kept!.why, /declared walk scope \(scripts\) is touched/, "and say why it is running");
-});
-
-test("THE SAFE DEFAULT: a guard that declares nothing is kept on every diff, exactly as today", () => {
-  for (const diff of [["packages/judge/src/rules.ts"], ["scripts/x.mjs"], ["docs/y.md"], []]) {
-    const { kept } = narrowByDeclaredScope(GUARDS, diff, { readSource });
-    assert.ok(kept.some((g) => g.test === "g/declares-nothing.test.ts" && g.why === "walks the tree itself"),
-      `undeclared must be kept unchanged on ${JSON.stringify(diff)}`);
+/** A synthetic repo under `os.tmpdir()`, real files on disk: `sourceClosure` reads source text off the filesystem. */
+function fakeRepo(packages: PackageSpec[]): string {
+  const dir = mkdtempSync(join(tmpdir(), "walk-scope-discovery-"));
+  for (const pkg of packages) {
+    const pkgRoot = join(dir, "packages", pkg.dir);
+    mkdirSync(join(pkgRoot, "src"), { recursive: true });
+    writeFileSync(join(pkgRoot, "package.json"), JSON.stringify({ name: pkg.name, exports: pkg.exportsMap ?? {} }));
+    for (const [relPath, content] of Object.entries(pkg.files)) writeFileSync(join(pkgRoot, relPath), content);
   }
+  return dir;
+}
+
+/** The names `sourceClosure` reaches from `entry`, relative to the fixture repo, over the index `packageIndex` builds from its manifests. */
+function closureNames(packages: PackageSpec[], entry: string): { dir: string; names: string[] } {
+  const dir = fakeRepo(packages);
+  try {
+    const closure = sourceClosure(join(dir, entry), dir, packageIndex(dir, packages.map((pkg) => pkg.dir)));
+    return { dir, names: [...closure].map((f) => f.replace(`${dir}/`, "")) };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("packageIndex: every package's real declared name maps to its directory, and the unscoped `a11ign` is one of them", () => {
+  const index = packageIndex(REPO, knownPackages(REPO));
+  assert.equal(index.get("@a11ign/evidence")?.dir, "evidence");
+  assert.equal(index.get("a11ign")?.dir, "cli", "`packages/cli`'s own name is the UNSCOPED `a11ign`, which a convention-based map would miss");
 });
 
-test("a guard declaring an EMPTY scope is left out of every diff — its own imports still select it", () => {
-  // Precise selection by import closure is untouched by this, so a change to the guard or anything it
-  // imports still runs it. `[]` only removes it from the run it was never able to be affected by.
-  const { narrowed } = narrowByDeclaredScope(GUARDS, ["scripts/x.mjs", "docs/y.md"], { readSource });
-  assert.ok(narrowed.some((n) => n.test === "g/declares-empty.test.ts"));
+test("sourceClosure: THE MUTATION TARGET -- a THREE-HOP relative import chain is walked in full, not just the entry's own imports", () => {
+  const { names } = closureNames([{ dir: "pkg-a", name: "@fake/pkg-a", files: {
+    "src/far.test.ts": 'import { x } from "./middle.js";\n',
+    "src/middle.ts": 'import { y } from "./source.js";\n',
+    "src/source.ts": "export const y = 1;\n",
+  } }], "packages/pkg-a/src/far.test.ts");
+  assert.ok(names.includes("packages/pkg-a/src/middle.ts"), `one hop missing: ${names.join(", ")}`);
+  assert.ok(names.includes("packages/pkg-a/src/source.ts"),
+    `TWO hops missing -- the walk stopped at the first import instead of following it further: ${names.join(", ")}`);
 });
 
-test("with NO declarations anywhere, narrowing changes nothing at all", () => {
-  const undeclared = GUARDS.map((g) => ({ ...g }));
-  const plain = (rel: string) => (rel ? "const walk = 1;\n" : "");
-  const { kept, narrowed } = narrowByDeclaredScope(undeclared, ["packages/judge/src/rules.ts"], { readSource: plain });
-  assert.deepEqual(kept, undeclared);
-  assert.deepEqual(narrowed, []);
+test("sourceClosure: a bare WORKSPACE PACKAGE specifier resolves through `exports` back to SOURCE, never `dist/`, which does not exist on this fixture", () => {
+  const { names } = closureNames([
+    { dir: "pkg-a", name: "@fake/pkg-a", exportsMap: { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } },
+      files: { "src/index.ts": "export const shared = 1;\n" } },
+    { dir: "pkg-b", name: "@fake/pkg-b", files: { "src/consumer.test.ts": 'import { shared } from "@fake/pkg-a";\n' } },
+  ], "packages/pkg-b/src/consumer.test.ts");
+  assert.ok(names.includes("packages/pkg-a/src/index.ts"), `cross-package specifier did not resolve to source: ${names.join(", ")}`);
 });
 
-test("A RENAME OUT OF THE SCOPE keeps the guard: the diff names the side that LEFT, not only where it went", () => {
-  // `git diff --name-only` detects renames by default and prints only the destination. A PR moving
-  // `scripts/a.mjs` to `tools/a.mjs` listed `tools/a.mjs` alone, and a guard declared on `scripts` -- whose
-  // population had just lost a file -- was left out of the run that lost it.
-  withGitSandbox(({ dir, run, commit }) => {
-    mkdirSync(join(dir, "scripts"));
-    writeFileSync(join(dir, "scripts/a.mjs"), "export const a = 1;\n");
-    run(["add", "."]);
-    commit("base");
-    const base = run(["rev-parse", "HEAD"]).trim();
-    mkdirSync(join(dir, "tools"));
-    run(["mv", "scripts/a.mjs", "tools/a.mjs"]);
-    commit("move a script out of scripts/");
-    const files = changedFiles([`${base}...HEAD`], { repoRoot: dir });
-    assert.deepEqual(files, ["scripts/a.mjs", "tools/a.mjs"]);
-    const guard = [{ test: "g.test.ts", why: "walks the tree" }];
-    const { kept } = narrowByDeclaredScope(guard, files, { readSource: () => declaring(`["scripts"]`) });
-    assert.equal(kept.length, 1, "a guard over scripts/ must run on the PR that moved a file out of it");
-  });
+test("sourceClosure: a package shipping SRC RAW (ADR 0031's shape -- an export target with no dist/) is followed as a literal path", () => {
+  const { names } = closureNames([
+    { dir: "pkg-nobuild", name: "@fake/pkg-nobuild", exportsMap: { ".": "./src/index.mjs" }, files: { "src/index.mjs": "export const raw = 1;\n" } },
+    { dir: "pkg-b", name: "@fake/pkg-b", files: { "src/consumer.test.ts": 'import { raw } from "@fake/pkg-nobuild";\n' } },
+  ], "packages/pkg-b/src/consumer.test.ts");
+  assert.ok(names.includes("packages/pkg-nobuild/src/index.mjs"), `no-build package not reached: ${names.join(", ")}`);
+});
+
+test("sourceClosure: an ordinary npm dependency (no @fake/* match) is not a workspace file and is silently skipped, never crashing the walk", () => {
+  const { names } = closureNames([{ dir: "pkg-a", name: "@fake/pkg-a", files: { "src/uses-external.test.ts": 'import { z } from "some-real-npm-package";\n' } }],
+    "packages/pkg-a/src/uses-external.test.ts");
+  assert.deepEqual(names, ["packages/pkg-a/src/uses-external.test.ts"], "only the entry itself should be in the closure");
+});
+
+test("#1527 sourceClosure: a DYNAMIC import(\"...\") is walked like a static one", () => {
+  const { names } = closureNames([{ dir: "lab", name: "@fake/lab", files: {
+    "src/loads-late.test.ts": 'const { value } = await import("./late.ts");\ntest("x", () => {});\n',
+    "src/late.ts": "export const value = 1;\n",
+  } }], "packages/lab/src/loads-late.test.ts");
+  assert.ok(names.includes("packages/lab/src/late.ts"), `not walked: ${names.join(", ")}`);
 });
 
 // ---------------------------------------------------------------------------------------------------------
@@ -484,11 +483,13 @@ test("a path through a LINK is classified by where it leads", async () => {
   assert.deepEqual(await readsDuring(() => readFileSync(join(link, "package.json"))), expected);
 });
 
-test("THIRD-PARTY node_modules is excluded ONLY because a lockfile change is a broad diff -- the premise, pinned", async (t) => {
-  // A broad diff runs every guard before any narrowing, so what `npm ci` installed cannot differ on a run
-  // that left a guard out. If either of these stopped being broad, this exclusion would become a false pass.
-  assert.deepEqual(broadReasons(["pnpm-lock.yaml"]), ["pnpm-lock.yaml"]);
-  assert.deepEqual(broadReasons(["package.json"]), ["package.json"]);
+test("THIRD-PARTY node_modules is excluded ONLY because a lockfile change touches every package -- the premise, pinned", async (t) => {
+  // What `pnpm install` put under node_modules cannot differ on a run that left a guard out, because a lockfile or root
+  // manifest change is classified as touching EVERY package. If either of these stopped being so, this exclusion would become a false pass.
+  const every = [...knownPackages(REPO)].sort();
+  for (const file of ["pnpm-lock.yaml", "package.json"]) {
+    assert.deepEqual(classify([file], knownPackages(REPO), { repoRoot: REPO }).packages, every, `${file} no longer touches every package`);
+  }
   // A probe of our own, because a real package can be a LINK to another checkout's node_modules (a worktree
   // set up that way) -- where a read leads out of this checkout and the exclusion is never reached, and this
   // assertion first passed having tested nothing.
@@ -590,15 +591,9 @@ test("the findPackageJSON read-set check still fails a read outside the director
 // The repository as it is.
 // ---------------------------------------------------------------------------------------------------------
 
-type Guard = { test: string, why: string };
-let repoGuards: Guard[];
 let declarers: string[];
 before(() => {
-  // The selector's own index, not a third copy of it -- this file checks what the selector acts on.
-  const dirs = knownPackages(REPO);
-  const packages = packageIndex(REPO, dirs);
-  const every = discoverTestFiles(REPO, dirs);
-  repoGuards = alwaysRunTests(every, { closureOf: (t: string) => sourceClosure(join(REPO, t), REPO, packages), repoRoot: REPO });
+  const every = spawnSync("git", ["ls-files", "packages"], inRepo).stdout.split("\n").filter((f) => /^packages\/[^/]+\/src\/.*\.test\.ts$/.test(f));
   declarers = every.filter((t: string) => parseWalkScope(readFileSync(join(REPO, t), "utf8")) !== null);
 });
 
@@ -694,33 +689,6 @@ test("...and that refusal can fire: each unseen route is found, and a plain fs i
     assert.deepEqual(unseenRoutesIn(harmless), [], `${harmless} binds nothing unsynced`);
   }
   assert.deepEqual(unseenRoutesIn(`import { readFileSync } from "node:fs";\nconst m = await import("./x.mjs");`), []);
-});
-
-test("THE FAILURE SIGNATURE: on the four measured product diffs, only DECLARING guards are left out", () => {
-  // A drop larger than the declared population would mean something other than a declaration narrowed the
-  // run. Measured on the same four diffs that refuted #904.
-  const readReal = (rel: string) => readFileSync(join(REPO, rel), "utf8");
-  for (const diff of ["packages/judge/src/rules.ts", "packages/evidence/src/conformance.ts",
-    "packages/nvda-worker/src/capture-probes.mjs", "packages/scorer/src/index.ts"]) {
-    const { kept, narrowed } = narrowByDeclaredScope(repoGuards, [diff], { readSource: readReal });
-    assert.equal(kept.length + narrowed.length, repoGuards.length, "every guard is kept or narrowed, never lost");
-    for (const n of narrowed) assert.ok(declarers.includes(n.test), `${n.test} was narrowed without declaring a scope`);
-  }
-});
-
-test("THE SELECTOR DOES NOT INSTALL THE OBSERVER -- it reads declarations through the parser module alone", () => {
-  // It once imported `walk-scope.mjs` to parse, which wrapped fs, child_process, process and node:test in the
-  // CI selector's own process for nothing. Asked in a fresh process, since this file's own is observed.
-  // The observer must not be imported to ask, so this reads the wrapper's own marker symbol instead.
-  const run = spawnSync(process.execPath, ["--input-type=module", "-e", [
-    `await import(${JSON.stringify(pathToFileURL(join(REPO, "scripts/select-changed-tests.mjs")).href)});`,
-    `const fs = await import("node:fs");`,
-    `const marked = Object.getOwnPropertySymbols(fs.readFileSync).map(String).filter((s) => s.includes("walk-scope"));`,
-    `console.log(JSON.stringify(marked));`,
-  ].join("\n")], { cwd: REPO, encoding: "utf8" });
-  assert.equal(run.status, 0, run.stderr);
-  assert.deepEqual(JSON.parse(run.stdout.trim().split("\n").pop() ?? "null"), [],
-    "fs.readFileSync carries the observer's marker in a process that only imported the selector");
 });
 
 test("this file declares no scope of its own — it walks every test file to find the ones that do", () => {

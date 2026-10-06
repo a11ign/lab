@@ -142,6 +142,6 @@ test("the REAL tree: the layer resolves by name from here, to a file that is the
   const found = layerFile(REAL_LAYER, "src/capture-core.mjs", { from: dirname(fileURLToPath(import.meta.url)) });
   assert.ok(existsSync(found), `${found} is not a file`);
   // The layer's directory name, not a path into it: this test names the package, which is the point of it.
-  assert.match(realpathSync(found), /nvda-worker[\\/]src[\\/]capture-core\.mjs$/);
+  assert.match(realpathSync(found), /screenreader-worker[\\/]src[\\/]capture-core\.mjs$/);
   assert.match(readFileSync(found, "utf8"), /export /, "resolved a file with no exports: not the layer's capture-core");
 });

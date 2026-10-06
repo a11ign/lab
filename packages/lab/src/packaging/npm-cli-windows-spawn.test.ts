@@ -31,11 +31,11 @@
  * structurally cannot catch a real `EINVAL`, only a real `windows-2022` dispatch can, and this file is the
  * former, not the latter.
  *
- * TWO CANONICAL COPIES, ONE PUBLISH BOUNDARY. `packages/worker-fleet/src/npm-cli-executable.mjs` is a
+ * TWO CANONICAL COPIES, ONE PUBLISH BOUNDARY. `packages/worker-fleet/src/npm-cli-executable.mjs` (now in `a11ign/screenreader-fleet`, laid here for the test) is a
  * deliberate, disclosed duplicate of the repo-root file (see its own header): `doctor.mjs` ships inside
  * `@a11ign/screenreader-fleet`'s published `bin` entries and cannot import outside the package, the identical
  * constraint `git-safe-env.mjs` already carries for the same reason. `npm-cli-executable.test.ts` beside
- * it pins the two behaviourally equal, this repo's own remedy #3 ("pin them equal with a test") for the
+ * it (relocated to `packages/control/src/fleet-layer/`, #3504) pins the two behaviourally equal, this repo's own remedy #3 ("pin them equal with a test") for the
  * one case remedy #1 ("delete a copy") cannot reach.
  *
  * DISCOVERED, never hand-listed, the identical shape `git-spawn-classification.test.ts` already uses and
@@ -90,7 +90,7 @@ const SPAWNS_NPM_CLI = /\b(\w+)\(\s*["'](npx|npm)["']/g;
 const NPM_CLI_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
   "packages/lab/src/gates/gate-partial-corpus-contract.test.ts":
     '`tokens[0]?.includes("npm")` -- a string-membership check on an already-captured argv token, not a spawn',
-  "packages/worker-fleet/src/lab-job.test.ts":
+  "packages/control/src/fleet-layer/lab-job.test.ts":
     '`argv[0]?.endsWith("npm")` and `tokens[0]?.includes("npm")` -- string-membership checks on captured '
     + "argv, not a spawn (two occurrences)",
   // THIS FILE'S OWN MUTATION/CONTROL FIXTURES, caught by its own discovery on the first real run --
@@ -110,7 +110,7 @@ const NPM_CLI_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
   "packages/lab/src/packaging/no-npm-spawn.test.ts":
     "its fixtures are STRINGS containing `spawnSync(\"npm\", ...)`-shaped source text, fed to refusals() as the DATA "
     + "under test -- never code this file itself executes. The same trap as this file's own fixtures above.",
-  "packages/worker-fleet/src/npm-cli-executable.test.ts":
+  "packages/control/src/fleet-layer/npm-cli-executable.test.ts":
     "imports npmCliScriptCandidates/resolveNpmCliScript/npmCliInvocation under aliases (root*/local*) to "
     + "compare the root and worker-fleet copies side by side -- the call site's identifier is the alias, "
     + "not the literal name this file's classifier matches, though both resolve to the real, safe functions",

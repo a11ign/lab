@@ -115,16 +115,32 @@ function sourceFilesUnder(root: string, dir = CONTROL): string[] {
 
 /**
  * The core files `control` reads by a relative import, which the new repository's CI lays beside it. Declared, and compared both ways with
- * what the text says. `lab`'s two are #3396's (the layer checkouts); the other four are the test helpers `guards` and `scripts/test-support`
- * hold, in no package a by-name import could reach.
+ * what the text says. `lab`'s two are #3396's (the layer checkouts); the others are the test helpers `guards` and `scripts/test-support`
+ * hold, in no package a by-name import could reach. The `fleet-layer/` tests (#3504) are the fleet's own tests, relocated beside the checkout
+ * they read, so each names what it reads of the core, and `evidence`'s `source-text` by PATH because `control` imports no package (ADR 0012).
+ * A file reads a LIST, since one test may reach several helpers.
  */
-const CORE_READS: Record<string, string> = {
-  "packages/control/src/lab-pipeline.test.ts": "packages/lab/src/training/real-page-corpus.mjs",
-  "packages/control/src/lab-reset-removal.test.ts": "scripts/test-support/git-sandbox.ts",
-  "packages/control/src/layer-checkouts.test.ts": "scripts/test-support/git-sandbox.ts",
-  "packages/control/src/layer-launchers.test.ts": "scripts/test-support/stamp-files.ts",
-  "packages/control/src/post-qualification-status.mjs": "packages/lab/src/gates/qualification-status.mjs",
-  "packages/control/src/pve-key-has-no-default.test.ts": "packages/guards/src/walk-scope.mjs",
+const CORE_READS: Record<string, string[]> = {
+  "packages/control/src/fleet-layer/capture-body-owner.test.ts": ["packages/guards/src/walk-scope.mjs"],
+  "packages/control/src/fleet-layer/cli-flags.test.ts": ["packages/evidence/src/source-text.ts"],
+  "packages/control/src/fleet-layer/entry-points.test.ts": ["packages/evidence/src/source-text.ts", "packages/guards/src/files-under.mjs", "packages/guards/src/layer-file.mjs", "packages/guards/src/tree-wide-guard.mjs"],
+  "packages/control/src/fleet-layer/fleet-consistency.test.ts": ["packages/guards/src/layer-file.mjs"],
+  "packages/control/src/fleet-layer/fleet-scripts.test.ts": ["packages/guards/src/walk-scope.mjs"],
+  "packages/control/src/fleet-layer/git-safe-env.test.ts": ["packages/guards/src/git-env.mjs"],
+  "packages/control/src/fleet-layer/lab-job.test.ts": ["packages/guards/src/local-import-closure.mjs"],
+  "packages/control/src/fleet-layer/no-win32-imports.test.ts": ["packages/guards/src/files-under.mjs"],
+  "packages/control/src/fleet-layer/npm-cli-executable.test.ts": ["scripts/npm-cli-executable.mjs"],
+  "packages/control/src/fleet-layer/profile-origin-writer.test.ts": ["packages/guards/src/layer-file.mjs"],
+  "packages/control/src/fleet-layer/protocol-guard.test.ts": ["packages/guards/src/files-under.mjs", "packages/guards/src/tree-wide-guard.mjs"],
+  "packages/control/src/fleet-layer/provision-stamp-inputs.test.ts": ["packages/guards/src/walk-scope.mjs", "scripts/test-support/stamp-files.ts"],
+  "packages/control/src/fleet-layer/provision-stamp.test.ts": ["scripts/test-support/stamp-files.ts"],
+  "packages/control/src/fleet-layer/worker-fleet-does-not-read-control.test.ts": ["packages/guards/src/layer-file.mjs"],
+  "packages/control/src/lab-pipeline.test.ts": ["packages/lab/src/training/real-page-corpus.mjs"],
+  "packages/control/src/lab-reset-removal.test.ts": ["scripts/test-support/git-sandbox.ts"],
+  "packages/control/src/layer-checkouts.test.ts": ["scripts/test-support/git-sandbox.ts"],
+  "packages/control/src/layer-launchers.test.ts": ["scripts/test-support/stamp-files.ts"],
+  "packages/control/src/post-qualification-status.mjs": ["packages/lab/src/gates/qualification-status.mjs"],
+  "packages/control/src/pve-key-has-no-default.test.ts": ["packages/guards/src/walk-scope.mjs"],
 };
 
 /** Every relative import in `control` that lands outside it, as `{file, message: "imports <resolved path>"}`. */
@@ -141,10 +157,10 @@ function reachesOut(root: string): Refusal[] {
 }
 
 /** Reaches that are neither into the sibling laid beside `control` nor one of `declared`, and any `@a11ign/` package-name import. */
-function boundaryRefusals(root: string, declared: Record<string, string>): Refusal[] {
+function boundaryRefusals(root: string, declared: Record<string, string[]>): Refusal[] {
   const undeclared = reachesOut(root).filter(({ file, message }) => {
     const reached = message.replace(/^imports /, "");
-    return !(reached.startsWith(`${SIBLING}/`) || declared[file] === reached);
+    return !(reached.startsWith(`${SIBLING}/`) || declared[file]?.includes(reached) === true);
   });
   const byName = sourceFilesUnder(root).flatMap((file) => [...codeOf(readFileSync(join(root, file), "utf8")).matchAll(IMPORT)]
     .filter(([, specifier]) => specifier.startsWith("@a11ign/")).map(([, specifier]) => ({ file, message: `imports ${specifier} by name (ADR 0012)` })));
@@ -160,8 +176,12 @@ test("every import out of the package goes to the sibling laid beside it or to a
   assert.deepEqual(boundaryRefusals(REPO_ROOT, CORE_READS), []);
   const reaches = reachesOut(REPO_ROOT);
   assert.ok(reaches.length >= 30, "too few imports out of the package found: the walk read the wrong place");
-  const actual = Object.fromEntries(reaches.filter(({ message }) => !message.startsWith(`imports ${SIBLING}/`))
-    .map(({ file, message }) => [file, message.replace(/^imports /, "")]));
+  const actual: Record<string, string[]> = {};
+  for (const { file, message } of reaches.filter(({ message }) => !message.startsWith(`imports ${SIBLING}/`))) {
+    const reached = message.replace(/^imports /, "");
+    if (!(actual[file] ??= []).includes(reached)) actual[file].push(reached);
+  }
+  for (const list of Object.values(actual)) list.sort();
   assert.deepEqual(actual, CORE_READS, "a declared core read is gone (drop it) or an undeclared one arrived");
 });
 
@@ -170,7 +190,7 @@ test("control: a relative import across the boundary to an undeclared place is R
     [`${CONTROL}/src/x.mjs`]: 'import { a } from "../../guards/src/walk-scope.mjs";\nimport { b } from "../../worker-fleet/src/fleet-env.mjs";\n'
       + 'import "./own.mjs";\nimport { c } from "@a11ign/lab";\nimport "../../../scripts/side-effect.mjs";\n',
     [`${CONTROL}/src/y.mjs`]: `import { d } from "${["..", "..", "..", "..", "gone", "declared.mjs"].join("/")}";\n// import { e } from "../../lab/src/x.mjs";\n`,
-  }, (root) => boundaryRefusals(root, { [`${CONTROL}/src/y.mjs`]: "../gone/declared.mjs" }));
+  }, (root) => boundaryRefusals(root, { [`${CONTROL}/src/y.mjs`]: ["../gone/declared.mjs"] }));
   assert.deepEqual(refusals, [
     { file: `${CONTROL}/src/x.mjs`, message: "imports packages/guards/src/walk-scope.mjs" },
     { file: `${CONTROL}/src/x.mjs`, message: "imports scripts/side-effect.mjs" },

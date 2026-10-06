@@ -44,27 +44,12 @@ const READER = "inventoryWorkerUrls";
  * receives it, derived from the inventory on the control plane where the file actually lives.
  */
 const NON_CONTROL_READERS: Record<string, string> = {
-  "packages/worker-fleet/src/fleet-env.mjs":
-    "IT IS the reader — `inventoryWorkerUrls` is defined here. A library, not a caller: it runs wherever "
-    + "its importer runs, so the obligation is on them, and it takes `inventoryPath` injected so a test "
-    + "can point it at the example file.",
   "packages/lab/src/gates/fleet.mjs":
     "Reads A11Y_WORKERS FIRST and falls back to the inventory, so it works on the lab where the file is "
     + "gone. This is the module that broke; the fallback is the fix.",
   "packages/lab/src/training/capture-real-pages.mjs":
     "UNVERIFIED — runs on the lab and reaches the reader. Must gain the same A11Y_WORKERS-first fallback; "
     + "until it does this entry records a known exposure rather than a cleared one.",
-  "packages/worker-fleet/src/check-worker-code.mjs":
-    "UNVERIFIED, and the most exposed of them. This is `assertFleetRunsThisCheckout`, called at the "
-    + "boundary of BOTH capture entry points, so it runs on the lab. If the inventory is absent there it "
-    + "resolves an empty pool — and this guard's job is to REFUSE a stale fleet, so an empty pool is the "
-    + "one failure it must never have: nothing to compare means nothing to refuse. Found by THIS TEST on "
-    + "its first run, not by the hand-written list above, which is the whole argument for it.",
-  "packages/worker-fleet/src/local-vm.ts":
-    "Local UTM VM support, which runs on a developer's Mac and nowhere else — the deprecated local-worker "
-    + "path. That machine is the control plane, so the file is present. Classified rather than exempted "
-    + "because 'runs where the file lives' is a claim that stops being true if this is ever imported by "
-    + "something the lab runs.",
   "packages/lab/src/training/capture-screenreader-dataset.mjs":
     "UNVERIFIED — same exposure as its sibling above, and it is the corpus capture path, so a silent "
     + "empty fleet here is the most expensive version of this defect.",

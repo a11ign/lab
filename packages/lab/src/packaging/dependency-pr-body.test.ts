@@ -24,7 +24,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parse as parseYaml } from "yaml";
-import { checkBody } from "agent-org/src/pr-open.mjs";
+import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
+const { checkBody } = await toolModule("src/pr-open.mjs");
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const WORKFLOW = ".github/workflows/dependency-pr-body.yml";

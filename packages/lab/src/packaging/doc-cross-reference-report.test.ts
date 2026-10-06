@@ -21,10 +21,6 @@ import { dirname, join, resolve } from "node:path";
 import {
   CHECKS, COMMENT_LIMIT, fitToComment, headline, renderReport, runChecks,
 } from "../../../../scripts/doc-cross-reference-report.mjs";
-import {
-  alwaysRunTests, discoverTestFiles, packageIndex, sourceClosure,
-} from "../../../../scripts/select-changed-tests.mjs";
-import { knownPackages } from "../../../../scripts/ci-changed.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const REPORT = join(REPO, "scripts/doc-cross-reference-report.mjs");
@@ -103,65 +99,6 @@ test("the registry is the fifteen, and each surviving pull-request test asserts 
       `${testFile} does not import the module the report runs for ${name} -- a second copy can drift`);
   }
 });
-
-/**
- * #954: THE SELECTOR'S DOC-CHECK EXEMPTION IS GONE, and this is the test that was pinning it.
- *
- * #905 made `scripts/doc-checks/` modules judged by the TEST's rule in `alwaysRunTests`, so the wrappers
- * stayed always-run. The wrappers are what #954 deleted, and the eight files that remain assert fixture
- * logic rather than the tree, so the exemption became a rule about files that no longer exist. What is
- * asserted instead is that it is really gone -- a rule left behind quietly re-selects tests nobody meant.
- */
-test("#954: a test whose ONLY tree walk is inside an imported doc-check is no longer always-run", () => {
-  // BEHAVIOURAL, not a grep. The first version of this test looked for the deleted constant's NAME, and
-  // worker-capture's review put the exemption back as an inline string: all twelve tests stayed green
-  // while three guards rejoined the always-run set. So this drives `alwaysRunTests` itself, with a
-  // synthetic test file that walks nothing of its own and imports a real `scripts/doc-checks/` module
-  // that walks `docs/adr/`. Under the #905 exemption it was selected; it must not be now.
-  const probe = "packages/lab/src/packaging/__probe-954.test.ts";
-  const docCheck = "scripts/doc-checks/adr-index.mjs";
-  const selected = (source: string, closure: string[]) => alwaysRunTests([probe], {
-    closureOf: () => new Set(closure.map((rel) => join(REPO, rel))),
-    repoRoot: REPO,
-    readSource: (rel: string) => (rel === probe ? source : readFileSync(join(REPO, rel), "utf8")),
-  }).map((guard) => guard.test);
-
-  assert.deepEqual(selected('import { check } from "../../../../scripts/doc-checks/adr-index.mjs";\ncheck();\n',
-    [probe, docCheck]), [],
-    "a doc check's module is judged as a HELPER again; if it is not, the #905 exemption is still in force");
-  // THE POSITIVE CONTROL, so this cannot pass by the selector being broken for everything: a test whose
-  // OWN source walks the tree is still always-run, which is the rule the exemption was an exception to.
-  assert.deepEqual(selected('import { readdirSync } from "node:fs";\nreaddirSync("packages");\n', [probe]), [probe]);
-});
-
-test("#954: no retired guard is selected, and the selector still finds the guards that walk for themselves", () => {
-  const packages = knownPackages(REPO);
-  const index = packageIndex(REPO, packages);
-  const guards = new Set(alwaysRunTests(discoverTestFiles(REPO, packages), {
-    closureOf: (testFile: string) => sourceClosure(join(REPO, testFile), REPO, index), repoRoot: REPO,
-  }).map((guard) => guard.test));
-  for (const name of RETIRED_TO_THE_NIGHTLY_REPORT) {
-    assert.equal(guards.has(`packages/lab/src/packaging/${name}.test.ts`), false,
-      `${name} is retired and still selected as an always-run guard`);
-  }
-  // #907 RETIRED THIS ASSERTION, AND IT IS NOT A STALE REFERENCE -- it is one row's decision undone by
-  // another, so the reason is recorded rather than the line quietly removed.
-  //
-  // #954/worker-capture moved `adr-index`'s prose-count half into `claude-md-counts.test.ts` and asserted
-  // here that it stays ALWAYS-RUN, because an ADR added in a PR touching no packaging file would otherwise
-  // pass with the count stale. That was right while a count existed.
-  //
-  // #907 deleted the count itself: CLAUDE.md and `docs/README.md` now say "the decision records" and
-  // "architecture decision records, indexed" with no number in either, so there is nothing to go stale and
-  // nothing to keep always-run. **The population #954 protected no longer exists** -- and the guard that
-  // held it is one of the six prose pins #907 removes, because a test that fails when a sentence is
-  // reworded teaches people not to edit the docs.
-  //
-  // WHAT WOULD BRING IT BACK: a transcribed count returning to either file. `reported-counts.test.ts`
-  // (#1067) is the ratchet for that class now, and the nightly report reads the links.
-  assert.ok(guards.size > 10, `only ${guards.size} always-run guards found; the selector is not reading the tree`);
-});
-
 
 test("a disagreement is named by the file it is in and the reference that dangles", async () => {
   await withTree({

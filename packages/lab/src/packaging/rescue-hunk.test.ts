@@ -39,9 +39,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { conflictRegions, decide, linesGained, mergeThreeWay }
-  from "agent-org/src/rescue-hunk.mjs";
+const { conflictRegions, decide, linesGained, mergeThreeWay } = await toolModule("src/rescue-hunk.mjs");
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 

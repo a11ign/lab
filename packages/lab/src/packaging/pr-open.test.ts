@@ -18,15 +18,15 @@
 
 /**
  * `pr:open`/`pr:edit` (#746) -- check a PR body's Acceptance/Closes with the tree's OWN parser
- * (`node_modules/agent-org/src/acceptance-commands.mjs`) BEFORE `gh pr create`/`gh pr edit` ever sends it, refusing with the
+ * (`agent-org/src/acceptance-commands.mjs`) BEFORE `gh pr create`/`gh pr edit` ever sends it, refusing with the
  * parser's own message. Four real PRs went red on the body in one day, four authors, four modes, none of
- * them a defect in the change -- see `node_modules/agent-org/src/pr-open.mjs`'s own header for the full account.
+ * them a defect in the change -- see `agent-org/src/pr-open.mjs`'s own header for the full account.
  *
  * THE FOUR FIXTURES BELOW ARE RECONSTRUCTED, not archived verbatim -- #708/#723/#727/#736 were each
  * edited to fix the body after the fact (confirmed via `gh api graphql`'s `userContentEdits`, which does
  * not cleanly hand back the exact pre-fix text through consecutive diffs), so each fixture here reproduces
  * the SHAPE #746's own summary table names, verified against the REAL, unmodified
- * `node_modules/agent-org/src/acceptance-commands.mjs` (never guessed): a duplicate Acceptance header (#708), prose under
+ * `agent-org/src/acceptance-commands.mjs` (never guessed): a duplicate Acceptance header (#708), prose under
  * `Acceptance:` with no `Closes` at all (#723), a piped command the file pre-check cannot parse (#727),
  * and the section living under `## Verified` instead of `## Acceptance` (#736).
  */
@@ -37,10 +37,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { acceptanceEnv, checkBody, bodyFromArgs, armAfterCreate, labelAfterCreate, sendToGitHub,
+import { toolModule, toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+const { acceptanceEnv, checkBody, bodyFromArgs, armAfterCreate, labelAfterCreate, sendToGitHub,
   headTreeRefusal, editTreeRefusal, mutationReport,
-  main as prOpenMain,
-  EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED } from "agent-org/src/pr-open.mjs";
+  main: prOpenMain,
+  EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED } = await toolModule("src/pr-open.mjs");
 
 const NEVER_RUN = () => { throw new Error("checkBody must never RUN a command for a body this test expects to refuse"); };
 
@@ -134,7 +135,7 @@ test("--body wins when both are given, matching gh's own last-flag-wins conventi
 
 test("checkBody's own source imports its reports from acceptance-commands.mjs and calls them there -- never a "
   + "local regex re-implementing the question", () => {
-  const dir = fileURLToPath(new URL("../../../../node_modules/agent-org/src/", import.meta.url));
+  const dir = toolPath("src/");
   const source = stripComments(readFileSync(`${dir}pr-open.mjs`, "utf8"));
   assert.match(source, /from\s+["']\.\/acceptance-commands\.mjs["']/);
   // agent-org 0.2.4 (#3209) composes the reports through `runCiBodyReports`, so the two named functions are called
@@ -392,7 +393,7 @@ test("#1344 case 3: an unpushed B (origin/B unreadable) refuses and says to push
 });
 
 test("#1344 WIRING: main() refuses a mismatched head BEFORE checkBody runs any Acceptance command", () => {
-  const source = stripComments(readFileSync(fileURLToPath(new URL("../../../../node_modules/agent-org/src/pr-open.mjs", import.meta.url)), "utf8"));
+  const source = stripComments(readFileSync(toolPath("src/pr-open.mjs"), "utf8"));
   const start = source.indexOf("function main(");
   const main = source.slice(start, source.indexOf("\n}\n", start));
   const refusal = main.indexOf("headTreeRefusal(mode, rest,");
@@ -478,7 +479,7 @@ test("#1446: edit must be given a PR NUMBER first, and create asks nothing here"
 });
 
 test("#1446 WIRING: main() refuses an edit off PR N's head BEFORE checkBody runs any Acceptance command", () => {
-  const source = stripComments(readFileSync(fileURLToPath(new URL("../../../../node_modules/agent-org/src/pr-open.mjs", import.meta.url)), "utf8"));
+  const source = stripComments(readFileSync(toolPath("src/pr-open.mjs"), "utf8"));
   const start = source.indexOf("function main(");
   const main = source.slice(start, source.indexOf("\n}\n", start));
   const refusal = main.indexOf("editTreeRefusal(mode, rest,");
@@ -556,7 +557,7 @@ test("#1479 CONTROL: a create that FAILS still exits EXIT_NOTHING_SENT and never
 });
 
 test("#1479: the script's header documents every exit code main returns, each on its own line", () => {
-  const text = readFileSync(fileURLToPath(new URL("../../../../node_modules/agent-org/src/pr-open.mjs", import.meta.url)), "utf8");
+  const text = readFileSync(toolPath("src/pr-open.mjs"), "utf8");
   const header = text.slice(0, text.indexOf("\nimport "));
   for (const code of [0, EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED]) {
     assert.match(header, new RegExp(`^//\\s+${code}\\s+\\S`, "m"), `exit ${code} has its own line in the header`);

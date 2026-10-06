@@ -26,6 +26,7 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 import { TRACKER_WRITERS, TRACKER_WRITER_DIRS, sendsABody, bodyFromArgv, assertNoLeakInArgv }
   from "../../../../packages/lab/src/packaging/leak-patterns.mjs";
@@ -45,14 +46,14 @@ const trackedScripts = () =>
     { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
     .split("\n").filter((f) => f.endsWith(".mjs"));
 
-// #2975: a script here now takes the tool by the dependency (`from "agent-org/src/board-data.mjs"`), a bare specifier `localImports`
-// does not follow, so `scripts/npm-token-liveness.mjs` read as reaching no guard though it reaches the very one it did. The walk follows
-// that one specifier into the INSTALLED copy, and the guard is the installed one.
-const INSTALLED_TOOL = resolve(REPO, "node_modules/agent-org");
+// #3534: a script here takes the tool by PATH (`toolModule("src/board-data.mjs")`), a call `localImports` does not follow, so
+// `scripts/npm-token-liveness.mjs` would read as reaching no guard though it reaches the very one it did. The walk follows
+// that one call into the tool's own checkout (`toolRoot()`), and the guard is that checkout's.
+const INSTALLED_TOOL = toolRoot();
 const INSTALLED_GUARD = resolve(INSTALLED_TOOL, "src/lib/leak-patterns.mjs");
 const importsThroughDependency = (file: string): string[] => [
   ...localImports(file),
-  ...[...stripComments(readFileSync(file, "utf8")).matchAll(/from\s+["']agent-org\/(src\/[^"']+)["']/g)]
+  ...[...stripComments(readFileSync(file, "utf8")).matchAll(/toolModule\(\s*["'](src\/[^"']+)["']/g)]
     .map((m) => resolve(INSTALLED_TOOL, m[1])),
 ];
 

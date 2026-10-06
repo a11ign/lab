@@ -21,6 +21,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   CI_ONLY, agentOrgLayout, ciLikeHome, agentOrgSource, stageAgentOrg, STEPS, agentOrgStaging, bodyHash, jobsGateNeeds, linkNodeModules,
   pinTool, runAgentOrgInClone, runTs, shAsync, stampVerdict, stepsToRun, unaccountedJobs,
@@ -365,7 +366,7 @@ test("a failed or skipped step is red, and `not-needed` is green only for a step
 // 5. A BARE DIFF OF A DOCS FILE STILL RUNS THE AGENT-ORG SUITE AND THE BODY CHECKS (#2348); THE TREE-WIDE GUARDS LEFT IN #3572.
 test("a diff of one docs file still runs the agent-org suite and the body checks", () => {
   const root = new URL(".", ROOT).pathname;
-  const classification = classify(["docs/backlog.md"], knownPackages(root), {}, { repoRoot: root });
+  const classification = classify(["docs/backlog.md"], knownPackages(root), { repoRoot: root });
   const run = new Map(stepsToRun(classification).map((step: { id: string; run: boolean }) => [step.id, step.run]));
   for (const always of ["agentOrg", "acceptance", "ownedPaths"]) {
     assert.equal(run.get(always), true, `${always} did not run for a docs-only diff`);
@@ -443,4 +444,53 @@ test("the agentOrg suite is run with the transcript-free home, and a command's e
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// #2348: A DOCS-ONLY PR STILL REACHES THE TREE-WIDE GUARDS. #2329 merged with `ts` SKIPPED and turned `main` red, because a guard
+// whose population is `docs/` first ran in trunk-guard. ceo's ruling is to run the sweep on every PR rather than select guards by
+// the paths each reads (a path-to-guard table is a second list that drifts), so the property pinned here is that the sweep job is NOT
+// conditional on any diff classification. These four lived in `select-changed-tests.test.ts` and moved when it was deleted (#3573):
+// they pin `ci.yml`, not the selector.
+const REPO_ROOT = fileURLToPath(ROOT).replace(/\/$/, "");
+
+/** A job's own block in `ci.yml` text, from its key to the next job at the same indent (or EOF). */
+function jobBlockOf(workflow: string, name: string): string {
+  const start = workflow.indexOf(`\n  ${name}:\n`);
+  assert.notEqual(start, -1, `ci.yml has no \`${name}\` job`);
+  const rest = workflow.slice(start + 1);
+  const next = rest.slice(1).search(/\n {2}[A-Za-z][\w-]*:\n/);
+  return next === -1 ? rest : rest.slice(0, next + 1);
+}
+
+/** Does the job carry an `if:` reading `needs.changed.outputs.*`, i.e. is it selected by what the diff touched? */
+function selectedByTheDiff(block: string): boolean {
+  return /\n {4}if: .*needs\.changed\.outputs\./.test(block);
+}
+
+test("#2357: a docs-only diff now SELECTS `ts` (a test reads docs), yet #2348's sweep stays unselected by the diff", () => {
+  // #2348 pinned the opposite premise -- a docs-only diff skips `ts` -- to justify the unconditional sweep. #2357 moved it: `ts` now runs
+  // for a docs diff when a test reads docs. The sweep keeps its own reason (a path-to-guard table is a second list that drifts), pinned
+  // by the two tests below, so it is NOT made conditional on this.
+  const result = classify(["docs/known-gaps.md"], knownPackages(REPO_ROOT));
+  assert.equal(result.ts, true, "a docs-only diff skips `ts` again, which is #2329 -- re-read #2357");
+});
+
+test("#2348: the guard sweep job runs `pnpm run guards:sweep` and is not selected by the diff", () => {
+  const block = jobBlockOf(CI, "guardSweep");
+  assert.match(block, /run: pnpm run guards:sweep\n/, "the job no longer runs the sweep");
+  assert.equal(selectedByTheDiff(block), false,
+    "guardSweep is conditional on needs.changed.outputs.* -- a docs-only PR would skip it, which is #2329");
+});
+
+test("#2348 CONTROL: the detector fires on a sweep made conditional on `ts`, and on the real `ts` job", () => {
+  const conditional = jobBlockOf(CI, "guardSweep")
+    .replace("    needs: changed\n", "    needs: changed\n    if: needs.changed.outputs.ts == 'true'\n");
+  assert.equal(selectedByTheDiff(conditional), true, "the mutation did not change the block, so the detector proves nothing");
+  assert.equal(selectedByTheDiff(jobBlockOf(CI, "ts")), true, "`ts` is the job a docs-only diff skips; the detector must see it");
+});
+
+test("#2348: `gate` waits for the sweep and reads its result", () => {
+  const gate = jobBlockOf(CI, "gate");
+  assert.match(gate, /needs: \[[^\]]*\bguardSweep\b/, "gate does not need guardSweep, so a red sweep would not block a merge");
+  assert.ok(gate.includes("needs.guardSweep.result"), "gate names guardSweep in `needs` but never reads its result");
 });

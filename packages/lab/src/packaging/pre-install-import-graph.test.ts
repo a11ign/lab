@@ -132,10 +132,12 @@ export function preInstallScripts(workflowText: string): string[] {
   return found;
 }
 
-/** The script behind an npm lifecycle entry, when it is a plain `node scripts/…` invocation. */
-function scriptBehind(command: string | undefined): string | null {
-  const call = /\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/.exec(command ?? "");
-  return call ? call[1] : null;
+/**
+ * Every script behind an npm lifecycle entry, for each `node scripts/…` invocation in it. ALL of a `&&` chain, not the first: `build` is
+ * `node scripts/lay-layer.mjs … && node scripts/build-packages.mjs` since #3504, and a reading that stopped at the first dropped the build itself.
+ */
+function scriptsBehind(command: string | undefined): string[] {
+  return [...(command ?? "").matchAll(/\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/g)].map((call) => call[1]);
 }
 
 /**
@@ -197,8 +199,7 @@ export function preInstallEntries(): string[] {
   // lifecycle timing rather than by being imported from the same entry point." The walk finds the file;
   // only that sentence says WHY it belongs.
   for (const lifecycle of ["build", "prepare"]) {
-    const script = scriptBehind(pkg.scripts[lifecycle]);
-    if (script) entries.add(script);
+    for (const script of scriptsBehind(pkg.scripts[lifecycle])) entries.add(script);
   }
   return [...entries].filter((script) => existsSync(join(REPO, script))).sort();
 }

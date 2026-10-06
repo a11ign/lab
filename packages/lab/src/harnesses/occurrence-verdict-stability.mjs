@@ -18,8 +18,9 @@
  * run against anyone's production sign-up form — repeated real submissions create records and send mail.
  */
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { layerRoot } from "@a11ign/control/layer-checkouts";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
@@ -55,10 +56,19 @@ const PAGES = fileURLToPath(new URL("../../../../runs/screenreader-dataset/pages
  * guess at it — the one place the oracle spike earns its keep here. An announcement made only of role
  * and state chrome ("edit", "button", "invalid entry") names a control; it does not tell you what to do.
  */
-// BY PACKAGE NAME (#2612): `nvda-speech` is a layer that is to leave for its own repository, so this names the package and
-// not where it sits in this checkout. The package declares no `exports`, so any file in it resolves.
-const LABELS = readFileSync(createRequire(import.meta.url).resolve("@a11ign/nvda-speech/nvda_speech/labels.py"), "utf8");
-const VOCAB = new Set([...LABELS.matchAll(/:\s*'([^']+)'/g)].map((m) => m[1].toLowerCase()));
+// THROUGH THE LAYER CHECKOUT (#3447): `nvda-speech` left this workspace with the worker and is not a package a registry
+// serves (it is private), so it is found where its repository's checkout puts it: INSIDE the clone `layers.json` declares for
+// `nvda-worker`, at `packages/nvda-speech` (the layer repository's root holds `src/` for the worker and `packages/` for the speech
+// package, #3748). The resolver REFUSES where the checkout is not there, rather than guessing a monorepo path, so a host with no
+// layer checkout stops here saying so and not on a vocabulary read from nowhere.
+const LABELS_PATH = ["packages", "nvda-speech", "nvda_speech", "labels.py"];
+/** @type {Set<string> | undefined} */
+let vocabulary;
+/** The words NVDA's labels use, read on first need so that importing this module never touches the checkout. */
+function nvdaVocabulary() {
+  vocabulary ??= new Set([...readFileSync(join(layerRoot("nvda-worker"), ...LABELS_PATH), "utf8").matchAll(/:\s*'([^']+)'/g)].map((m) => m[1].toLowerCase()));
+  return vocabulary;
+}
 
 /** Enough non-chrome words to count as an instruction rather than a label. */
 const ACTIONABLE_WORDS = 3;
@@ -71,7 +81,7 @@ function verdict(capture) {
     .toLowerCase()
     .split(/[\s,.]+/)
     .filter(Boolean)
-    .filter((/** @type {string} */ word) => !VOCAB.has(word));
+    .filter((/** @type {string} */ word) => !nvdaVocabulary().has(word));
   return { informed: words.length >= ACTIONABLE_WORDS, spoken: deltas.join(" | ").slice(0, 88) };
 }
 
@@ -93,6 +103,7 @@ async function capture(base, variant) {
 
 async function main() {
   if (!WORKER) throw new Error("usage: npm run verdict:stability -- http://<guest-ip>:8765");
+  nvdaVocabulary(); // refuses here, before a worker is woken and a page server leased, when the layer checkout is absent
   // Run BY HAND, this positional worker never goes through `lab:job`'s own wake -- #2655's table, row 11.
   // #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
   // safe as-is, because this positional argument names exactly ONE worker -- refusing IS the down worker,

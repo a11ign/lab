@@ -30,7 +30,7 @@
  *
  *   - **guarded** — it calls `corpusReadable`.
  *   - **unguarded-by-cycle** — it is outside `packages/lab` and CANNOT call it. `packages/lab` depends on
- *     evidence, judge, scorer, worker-fleet, nvda-worker and control, so every one of these would be a
+ *     evidence, judge, scorer, worker-fleet and control, so every one of these would be a
  *     dependency cycle. Not a missing `exports` field — a direction problem, which no export list fixes.
  *   - **not-a-corpus-read** — the scan matched a literal or a prose path, not a read of the corpus.
  *
@@ -106,9 +106,6 @@ const UNGUARDED_BY_CYCLE: Record<string, string> = {
   "packages/judge/src/channel-tables-4.1.2.test.ts":
     "@a11ign/lab depends on @a11ign/judge, so judge cannot import corpus-settled.mjs without a "
     + "cycle -- the same direction its own dataset-paths EXEMPT entry already records.",
-  "packages/nvda-worker/src/capture-pure.corpus.test.ts":
-    "@a11ign/lab depends on @a11ign/screenreader-worker; same cycle, same direction as its existing "
-    + "dataset-paths EXEMPT entry.",
   "packages/cli/src/cli.test.ts":
     "Reads the corpus through an accessor and skips honestly when it is absent, but sits outside lab, so it "
     + "cannot consult the guard. Found by THIS scan rather than by any hand-written list, which is the "
@@ -137,7 +134,7 @@ const NOT_A_CORPUS_READ: Record<string, string> = {
     + "its own header says so, and it excludes itself from its own walk for the identical reason. Note it "
     + "is the guard that polices corpus readers for age-reporting, so wiring it would have been a reader "
     + "exempting itself from a guard it does not need; the classification is what keeps that visible.",
-  "packages/worker-fleet/src/lab-job.test.ts":
+  "packages/control/src/fleet-layer/lab-job.test.ts":
     "Reads the lab-job.yml catalogue and asserts on the argv it declares; the runs/ paths it matches are "
     + "job arguments in that YAML, not a corpus this test opens.",
   "packages/lab/src/gates/exit-code-contract.test.ts":

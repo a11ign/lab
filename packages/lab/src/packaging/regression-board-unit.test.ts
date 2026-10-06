@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const UNITS = join(ROOT, ".agent-org/units");
@@ -27,7 +28,7 @@ interface UnclassifiedFinding { unit: string; problem: string }
 interface HostUnits {
   unclassifiedEntries(deps: { projectUnitsDir: string; units: { own: string[] } }): UnclassifiedFinding[];
 }
-const { unclassifiedEntries } = await import(pathToFileURL(join(ROOT, "node_modules/agent-org/src/host-units.mjs")).href) as HostUnits;
+const { unclassifiedEntries } = await import(pathToFileURL(toolPath("src/host-units.mjs")).href) as HostUnits;
 
 const SERVICE = "a11ign-regression-board.service";
 const TIMER = "a11ign-regression-board.timer";

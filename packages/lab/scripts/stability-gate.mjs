@@ -43,7 +43,7 @@ import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
 import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "../src/gates/stability-canary.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
+import { assertWorkerUrl } from "@a11ign/screenreader-fleet/worker-http";
 import { datasetRoot, repeatCapturesRoot } from "../src/dataset-paths.mjs";
 import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 

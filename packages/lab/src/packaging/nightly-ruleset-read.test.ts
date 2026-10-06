@@ -1,3 +1,5 @@
+// no-token: gh -- nothing here calls GitHub: the workflow's shell is run under `bash -e` with `node` and `pnpm` stubbed,
+// and `A11IGN_BOT_TOKEN` appears only as an obvious non-secret handed to the stub, so the acceptance job needs none.
 /**
  * #2120: THE NIGHTLY THAT MAKES `branch-protection.test.ts`'s LIVE RULESET READ ACTUALLY HAPPEN.
  *
@@ -62,8 +64,8 @@ const JOB = "mainRulesetBinds";
 /** The hourly cron the nightly jobs skip; this job skips it too, so it runs once a day, not 24 times. */
 const HOURLY_CRON = "37 * * * *";
 
-type Step = { name?: string; uses?: string; run?: string; env?: Record<string, string> };
-type Job = { if?: string; steps?: Step[]; permissions?: Record<string, string> };
+type Step = { name?: string; uses?: string; run?: string; if?: string; env?: Record<string, string> };
+type Job = { if?: string; env?: Record<string, string>; steps?: Step[]; permissions?: Record<string, string> };
 
 function nightlyJobs(): Record<string, Job> {
   return (parseYaml(readFileSync(join(REPO, NIGHTLY), "utf8")) as { jobs: Record<string, Job> }).jobs;
@@ -113,9 +115,9 @@ function commands(run: string): string[] {
 const RUNNER_INVOCATION = /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*pnpm\s+exec\s+rstest\s+run\b/;
 
 function runnerLine(): string {
-  const mentions = commands(readStep().run ?? "").filter((line) => line.includes("rstest run"));
+  const mentions = commands(readStep().run ?? "").filter((line) => line.includes("rstest run") && line.includes(GUARD));
   assert.equal(mentions.length, 1,
-    `expected exactly one command in \`${JOB}\` to run rstest, found ${mentions.length}`);
+    `expected exactly one command in \`${JOB}\` to run rstest on ${GUARD}, found ${mentions.length}`);
   const [runner] = mentions as [string];
   assert.match(runner, RUNNER_INVOCATION,
     "the rstest command must be EXECUTED, not quoted. MEASURED at `e81497e6`: `echo '<the same tokens>' | "
@@ -204,11 +206,11 @@ test("#2120: the step ASSERTS the `LIVE PASS` line was printed -- a green exit i
 /**
  * The step's refusal arms, named so the count is a statement rather than a number: the missing secret, an
  * unreadable runner config, an unreadable (or empty) repository list, a runner that FAILED for a repository,
- * a run that never printed its `LIVE PASS` line for one, and the closing summary naming every repository that
- * did not certify. An EXACT count, not a floor, because a seventh arm added without a reason to expect it is
+ * a run that never printed its `LIVE PASS` line for one, the settings table failing (#3708), the settings table
+ * exiting green without its output (#3708), and the closing summary naming everything that did not certify. An EXACT count, not a floor, because a seventh arm added without a reason to expect it is
  * the kind of thing to notice, and each is exercised end to end against the committed shell below.
  */
-const REFUSAL_ARMS = 6;
+const REFUSAL_ARMS = 8;
 
 test("#2120: a failure is CANNOT_TELL and LOUD, and names where to look for which read was unavailable", () => {
   // `ceo`'s 2026-09-22 rule: a verdict that cannot read the exemption surface is CANNOT_TELL, loudly --
@@ -216,7 +218,7 @@ test("#2120: a failure is CANNOT_TELL and LOUD, and names where to look for whic
   const run = readStep().run ?? "";
   const errors = codeLines(run).filter((line) => line.includes("::error::"));
   assert.equal(errors.length, REFUSAL_ARMS, "every refusal arm -- the missing secret, an unreadable runner config or "
-    + "repository list, a failed runner, the missing LIVE PASS line and the closing summary -- must be loud");
+    + "repository list, a failed runner, the missing LIVE PASS line, the settings table's two and the closing summary -- must be loud");
   for (const line of errors) {
     assert.match(line, /CANNOT_TELL/, "a refusal must say which verdict it is, not merely that something went wrong");
     assert.match(line, /^echo ["']::error::/, "and it must be an executed `echo`, not a line of prose about one");
@@ -448,6 +450,8 @@ type StepOptions = {
   repoList?: string | null;
   /** A repository for which the stub runner prints the skip line instead of the pass line. */
   skipFor?: string; failFor?: string;
+  /** What the stub runner prints for the settings table, and its exit status. Default: a green table over the listed repositories. */
+  tableSays?: string; tableExit?: number;
 };
 
 /**
@@ -469,14 +473,17 @@ function writeStubs(dir: string, record: string, { config = STUB_CONFIG, repoLis
     + `  printf 'A11Y_PROTECTION_REPO=%s\\n' "$A11Y_PROTECTION_REPO"\n`
     + `  printf 'GH_TOKEN=%s\\n' "$GH_TOKEN"\n`
     + `} >> ${shellQuote(record)}\n`
+    + `case "$*" in *${TABLE_GUARD}*) printf '%s\\n' "$STUB_TABLE_SAYS"; exit "$STUB_TABLE_EXIT" ;; esac\n`
     + `if [ "$A11Y_PROTECTION_REPO" = "$STUB_FAIL_REPO" ]; then echo "stub: runner failed"; exit 1; fi\n`
     + `if [ "$A11Y_PROTECTION_REPO" = "$STUB_SKIP_REPO" ]; then printf '%s\\n' ${shellQuote(NOT_RUN_OUTPUT)}; exit 0; fi\n`
     + `printf '%s\\n' "$STUB_RSTEST_SAYS" | sed "s#%REPO%#$A11Y_PROTECTION_REPO#"\nexit ${rstestExit}\n`);
 }
 
-function stepEnv(dir: string, { token = STUB_TOKEN, says = LIVE_PASS_OUTPUT, skipFor = "", failFor = "" }: StepOptions): NodeJS.ProcessEnv {
+function stepEnv(dir: string, options: StepOptions): NodeJS.ProcessEnv {
+  const { token = STUB_TOKEN, says = LIVE_PASS_OUTPUT, skipFor = "", failFor = "", tableExit = 0 } = options;
+  const tableSays = options.tableSays ?? tableOutput((options.repoList ?? TWO_REPOS.join(" ")).split(" "));
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}`,
-    STUB_RSTEST_SAYS: says, STUB_SKIP_REPO: skipFor || "-", STUB_FAIL_REPO: failFor || "-", A11IGN_BOT_TOKEN: token ?? "" };
+    STUB_TABLE_SAYS: tableSays, STUB_TABLE_EXIT: String(tableExit), STUB_RSTEST_SAYS: says, STUB_SKIP_REPO: skipFor || "-", STUB_FAIL_REPO: failFor || "-", A11IGN_BOT_TOKEN: token ?? "" };
   if (token === null) delete env.A11IGN_BOT_TOKEN;
   return env;
 }
@@ -492,7 +499,7 @@ function runReadStep(options: StepOptions = {}): StepOutcome {
       { cwd: dir, encoding: "utf8", env: stepEnv(dir, options), timeout: STEP_TIMEOUT_MS });
     const ran = existsSync(record) ? readFileSync(record, "utf8") : null;
     return { status: result.status, output: `${result.stdout}${result.stderr}`, ranRstest: ran,
-      repos: [...(ran ?? "").matchAll(/^A11Y_PROTECTION_REPO=(.*)$/gm)].map((m) => m[1] as string) };
+      repos: [...(ran ?? "").matchAll(/^A11Y_PROTECTION_REPO=(.+)$/gm)].map((m) => m[1] as string) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -605,4 +612,118 @@ test("#2120 EXECUTED: `set -o pipefail` -- a runner that FAILS is red even with 
   assert.notEqual(run.status, 0, "a failing runner must fail the step even though its output was captured");
   assert.ok(run.ranRstest, "POSITIVE CONTROL: the runner ran and failed, rather than never starting");
   assert.match(run.output, /read FAILED for/, "and it is the runner's own status that is read, not the log's content");
+});
+
+// --- #3708: THE SETTINGS TABLE, run once a night in the same step, as the same identity -----------------------
+//
+// `layer-repository-protection.test.ts` reads every declared repository against `docs/new-code-repository.md`
+// (#3705's table) and was opt-in, so nothing ran it unattended. It is the second runner of the step above and
+// not a step of its own, because the secret would then be named a third time in `nightly.yml` and `agent-org`'s
+// own test (#2358) pins that count at two. It reads ALL repositories in one run, so it follows the loop.
+
+/** The test the table runs. Not reserved by this row's Region -- read here, never written. */
+const TABLE_GUARD = "packages/lab/src/packaging/layer-repository-protection.test.ts";
+
+/** The table's runner, as a command rather than as tokens (the shape `RUNNER_INVOCATION` demands of the first). */
+function tableRunnerLine(): string {
+  const mentions = commands(readStep().run ?? "").filter((line) => line.includes(TABLE_GUARD));
+  assert.equal(mentions.length, 1, `expected exactly one command in \`${JOB}\` naming ${TABLE_GUARD}, found ${mentions.length} -- `
+    + "#3705's table is read by nothing on a schedule without it, and a repository that drifts is found by the release that fails on it");
+  assert.match(mentions[0] as string, RUNNER_INVOCATION, "the rstest command must be EXECUTED, not quoted in an `echo`");
+  return mentions[0] as string;
+}
+
+/** The two literals the step requires in the table's output, read OUT of the step rather than re-typed here. */
+function tableLiterals(): { pass: string, rowOf: (repo: string) => string } {
+  const lines = commands(readStep().run ?? "");
+  const pass = lines.map((l) => /^grep -qF "(LIVE PASS[^"$]+)" "\$TABLE_LOG"/.exec(l)?.[1]).find((m) => m !== undefined);
+  const row = lines.map((l) => /^grep -qF "([^"$]+)\$\{repo\}([^"$]*)" "\$TABLE_LOG"/.exec(l)).find((m) => m !== null && m !== undefined);
+  assert.ok(pass, "the step must grep the table's log for the protection read's LIVE PASS line, as an executed command");
+  assert.ok(row, "and for each repository's own `release-shape` row, as an executed command");
+  return { pass, rowOf: (repo) => `${row[1]}${repo}${row[2]}` };
+}
+
+test("#3708: the table is run after the ruleset read, with the flag, interception off and the derived config", () => {
+  const run = readStep().run ?? "";
+  assert.ok(run.indexOf(TABLE_GUARD) > run.indexOf(GUARD), "the table follows the per-repository loop, which it must not stop or skip");
+  const runner = tableRunnerLine();
+  assert.match(runner, /^A11Y_CHECK_MAIN_RULESET=1\s+pnpm\b/, "without the flag the test prints NOT RUN and exits 0");
+  assert.match(runner, /--disableConsoleIntercept\b/, "rstest drops the test's printed output without it, so the greps could never match");
+  assert.match(runner, /--config "\$RSTEST_CONFIG"/);
+  assert.match(runner, /\|\s*tee\s+"\$TABLE_LOG"$/, "the output is captured to the file the greps read");
+  assert.doesNotMatch(runner, /A11Y_PROTECTION_REPO/, "the table reads every declared repository; the narrowing variable does not apply to it");
+});
+
+test("#3708: the table adds NO second reference to the secret -- agent-org's own pin (#2358) counts it at two", () => {
+  // A step of its own would name `secrets.A11IGN_BOT_TOKEN` a third time and turn that test red in the tool's repository,
+  // which a PR here cannot fix. The count is of the whole file, comments included, as that test reads it.
+  const text = readFileSync(join(REPO, NIGHTLY), "utf8");
+  assert.equal(text.match(/secrets\.A11IGN_BOT_TOKEN/g)?.length, 2, "ready-audit's and this job's, and no third");
+  assert.equal(nightlyJobs()[JOB]?.env, undefined, "and not as a job-level `env`, which would hand the token to install, build and clone");
+});
+
+test("#3708: the literals the step greps the table's output for are ones the table test actually prints", () => {
+  // The cross-file link, in the direction that matters: a reworded print makes the nightly red every night, and a
+  // loosened grep could match `NOT RUN`. Both literals are checked against the test's own source.
+  const source = readFileSync(join(REPO, TABLE_GUARD), "utf8");
+  const { pass, rowOf } = tableLiterals();
+  assert.ok(source.includes(pass), `${TABLE_GUARD} never prints ${JSON.stringify(pass)}`);
+  assert.ok(pass.length > "LIVE PASS".length, "narrower than the bare words, which a reworded skip message could also carry");
+  assert.ok(source.includes('const RELEASE_COLUMN = "release-shape"'), "the column the row line names is the one the test prints");
+  assert.ok(source.includes("`  ${RELEASE_COLUMN} ${r.repo}: ${"), "and it prints one such line per repository");
+  assert.equal(rowOf("a11ign/x"), "release-shape a11ign/x: OK", "the row literal names the repository, so one repository's row cannot stand for another's");
+  assert.ok(source.indexOf("NOT RUN: the live settings table") < source.indexOf("${RELEASE_COLUMN} ${r.repo}"),
+    "the row line is printed only on the far side of the opt-in return, which is why its presence says the table was read");
+});
+
+/** What the table test prints on a green run over `repos`, in the shape its source prints it (derived from that source, pinned above, not captured live). */
+function tableOutput(repos: string[], { skipRow = "", pass = true } = {}): string {
+  return [
+    "repository  protection  token  release-shape",
+    ...repos.map((r) => `${r}  OK  OK  OK`),
+    ...repos.filter((r) => r !== skipRow).map((r) => `  release-shape ${r}: OK a per-merge caller`),
+    ...(pass ? [`  LIVE PASS (per-repository) over ${repos.length} repository(ies): ${repos.join(", ")}`] : []),
+  ].join("\n");
+}
+
+test("#3708 EXECUTED: the step runs the table with the flag, the derived config and the merging identity's token", () => {
+  const run = runReadStep();
+  assert.equal(run.status, 0, run.output);
+  const invocation = (run.ranRstest ?? "").split("ARGV: ").find((block) => block.includes(TABLE_GUARD));
+  assert.ok(invocation, "the table runner was never invoked: an `echo` carrying these tokens would have passed every scan above");
+  assert.ok(invocation.includes(`--config ${STUB_CONFIG}`));
+  assert.match(invocation, /^A11Y_CHECK_MAIN_RULESET=1$/m);
+  assert.match(invocation, new RegExp(`^GH_TOKEN=${STUB_TOKEN}$`, "m"));
+  assert.deepEqual(run.repos, TWO_REPOS, "and the per-repository loop still ran once per repository beside it");
+});
+
+test("#3708 EXECUTED: a green exit that printed NO table is RED -- the skip the opt-in flag exists to end", () => {
+  const run = runReadStep({ tableSays: NOT_RUN_OUTPUT });
+  assert.equal(run.status, 1, "the test exits 0 on every skip, so only the printed output can tell a skip from a read");
+  assert.match(run.output, /::error::CANNOT_TELL: the settings table exited green but never printed its output for:/);
+  assert.match(run.output, /did not certify: <the-settings-table>\./, "and the closing summary names it");
+  assert.equal(run.repos.length, TWO_REPOS.length, "POSITIVE CONTROL: the loop ran and certified, so the red is the table's alone");
+});
+
+test("#3708 EXECUTED: a table missing ONE declared repository's row is red and names it; the other's row cannot stand in", () => {
+  const missing = TWO_REPOS[1] as string;
+  const run = runReadStep({ tableSays: tableOutput(TWO_REPOS, { skipRow: missing }) });
+  assert.equal(run.status, 1);
+  assert.match(run.output, new RegExp(`never printed its output for: ${missing},`));
+  assert.doesNotMatch(run.output, new RegExp(`output for:[^,]*${TWO_REPOS[0]}`), "and the repository whose row is there is not blamed");
+});
+
+test("#3708 EXECUTED: a table without the protection read's LIVE PASS line is red, because both live tests must have run", () => {
+  const run = runReadStep({ tableSays: tableOutput(TWO_REPOS, { pass: false }) });
+  assert.equal(run.status, 1);
+  assert.match(run.output, /never printed its output for: <the-protection-read>/);
+});
+
+test("#3708 EXECUTED: a table run that FAILS is red even with its output present, and does not hide the loop's own failure", () => {
+  const failed = runReadStep({ tableExit: 1 });
+  assert.equal(failed.status, 1, "`set -o pipefail`: the lines a failing run printed must not certify it");
+  assert.match(failed.output, /::error::CANNOT_TELL: the settings table FAILED \(exit 1\)/);
+  const both = runReadStep({ tableExit: 1, skipFor: TWO_REPOS[1] as string });
+  assert.match(both.output, /the run for a11ign\/second-repo exited green but never printed its LIVE PASS line/);
+  assert.match(both.output, /did not certify: a11ign\/second-repo <the-settings-table>\./, "both are named: neither hides the other");
 });

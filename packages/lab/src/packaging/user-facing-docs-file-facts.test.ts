@@ -16,7 +16,6 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
-import { layerFile } from "../../../guards/src/layer-file.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const README = readFileSync(join(REPO, "README.md"), "utf8");
@@ -71,17 +70,17 @@ test("packages/control has a README, because it did not for a while", () => {
     + "the exact gap this test exists to catch");
 });
 
-test("nvda-speech is marked private everywhere it is described", () => {
-  // BY PACKAGE NAME (#2613). `nvda-speech` is PRIVATE and publishes nothing, so this resolves only while it is installed
-  // beside this package (a workspace link): once the layer leaves, the resolver refuses it BY NAME and this test says so.
-  // That is the truth about a private package, and it is #69's open question for `nvda-speech`, not a fallback to hide.
-  const pkg = JSON.parse(readFileSync(
-    layerFile("@a11ign/nvda-speech", "package.json", { from: import.meta.dirname }), "utf8"));
-  assert.equal(pkg.private, true,
-    "packages/nvda-speech/package.json is no longer private -- if it was deliberately published, the "
-    + "PRIVATE markers in README.md and packages/README.md need removing, not just this test");
-  assert.match(README, /nvda-speech\/\s+PRIVATE\./,
-    "root README's repository map no longer marks nvda-speech PRIVATE");
+test("the repository map lists no package that left the workspace, and says where they went (#3447)", () => {
+  // `nvda-speech` is PRIVATE and its package.json now lives in the layer repository, so its `private: true` is no longer
+  // readable from here by any name (#2613's resolver refuses it, rightly). What this repository CAN be held to is the map:
+  // a directory entry for a package that is not under `packages/` is a false statement to a stranger.
+  const present = new Set(realPackages());
+  for (const left of ["nvda-worker", "nvda-speech"]) {
+    assert.ok(!present.has(left), `packages/${left} is back in the workspace -- the map below is about to be wrong`);
+    assert.doesNotMatch(README, new RegExp(`^  ${left}/`, "m"),
+      `the root README's repository map still lists ${left}/ as a directory of this repository`);
+  }
+  assert.match(README, /a11ign\/screenreader-worker/, "the map no longer says where the worker went");
 });
 
 test("README.md does not hardcode docs/coverage.md's generated criterion count", () => {

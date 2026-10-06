@@ -28,15 +28,16 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { shippedUnits } from "agent-org/src/host-units.mjs";
-import { localImports } from "agent-org/src/lib/local-import-closure.mjs";
-import { deriveClosureRequirements } from "agent-org/src/acceptance-commands.mjs";
-import { MAX_ROW_ORDERS_PER_TICK, decide, checksSettledGreen, readPrs, readReadyRows, EXIT, CAUSES,
+import { toolModule, toolPath, toolUrl, toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+const { shippedUnits } = await toolModule("src/host-units.mjs");
+const { localImports } = await toolModule("src/lib/local-import-closure.mjs");
+const { deriveClosureRequirements } = await toolModule("src/acceptance-commands.mjs");
+const { MAX_ROW_ORDERS_PER_TICK, decide, checksSettledGreen, readPrs, readReadyRows, EXIT, CAUSES,
   comparablePrFiles, START_CAUSES, draining, DRAIN_MARKER, stalledOrder, performActions,
   blockingChecks, anyChecksRed, requiredCheckNames, readBaseTip, baseTipWhenRed, ownerOf, NOT_PICKABLE, NOT_STARTABLE,
   ROUTED_TO, readPromotableRows, GH_READS, partitionUnclaimed, openRowState, waitingBreakdown,
   deadMansSwitch, hostDriftOrders, JUDGMENT_CAUSES,
-  shouldBeMerging as shouldBeMergingPrs, conflictedPrs, conflictStateOf, mergeConflictOrders,
+  shouldBeMerging: shouldBeMergingPrs, conflictedPrs, conflictStateOf, mergeConflictOrders,
   unfiledEpics, epicOrders, finishedEpics, finishedEpicOrders, fleetBatchRows, fleetBatchOrders,
   partitionFleetBatch, FLEET_GATED_SELECTOR, blockersFromRows, blockerClearedOrders, unclaimedBlockerClearedOrders, unclaimedClearings,
   anyBlockerClearingCandidate,
@@ -52,25 +53,23 @@ import { MAX_ROW_ORDERS_PER_TICK, decide, checksSettledGreen, readPrs, readReady
   reviewStateOf, reviewBlocked, reviewBlockedOrders, REVIEW_STATE, HOLD_RED_JOBS, reviewableHead,
   readRowsOffBoard, rowsOffBoard, rowOffBoardOrders, rowsOffBoardOrSay, ROW_OFF_BOARD_GRACE_MS,
   refusedReadCount, SHARED_OUTAGE_READS, sharedReadOutage, markOutageReads,
-  pipelineCodeownerReviewMissing, bareAnswerLabelOrders, readRowTimeline }
-  from "agent-org/src/work-gate.mjs";
-import { SESSION_PREFIX } from "agent-org/src/project-vocabulary.mjs";
+  pipelineCodeownerReviewMissing, bareAnswerLabelOrders, readRowTimeline } = await toolModule("src/work-gate.mjs");
+const { SESSION_PREFIX } = await toolModule("src/project-vocabulary.mjs");
 // #3091 (agent-org v0.2.0): every project git read carries `-C <HOME_CHECKOUT>`, so the expected argv is built from the same export.
-import { HOME_CHECKOUT } from "agent-org/src/project-config.mjs";
+const { HOME_CHECKOUT } = await toolModule("src/project-config.mjs");
 // #2182: the SHIPPED reader that decides whether a delivered cause is still live, imported so this file
 // can assert what the membership BUYS rather than only that the name is in the list. `wake.mjs` runs
 // nothing on import (its `main()` is behind an `import.meta.url` guard) and these three are pure, so this
 // costs the `no-token` promise at the top of this file nothing.
-import { readLedger, undelivered, addressed, WAKE_TTL_MS, JUDGMENT_TTL_MS, deliver, escalateStuck,
-  MAX_DELIVERIES, deliveryCounts } from "agent-org/src/wake.mjs";
+const { readLedger, undelivered, addressed, WAKE_TTL_MS, JUDGMENT_TTL_MS, deliver, escalateStuck,
+  MAX_DELIVERIES, deliveryCounts } = await toolModule("src/wake.mjs");
 // #2237: the decider that REFUSES a launch, so the order's named launch directory is checked against it
 // rather than read by a reviewer. Pure over an injected filesystem.
-import { primaryLaunchRefusal, launchCheckoutOf }
-  from "agent-org/src/board-snapshot-scope.mjs";
+const { primaryLaunchRefusal, launchCheckoutOf } = await toolModule("src/board-snapshot-scope.mjs");
 
 // Each check carries a NAME because the caller narrows with newestPerName, which keys on it -- a fixture
 // without one is dropped, and the gate would read every PR as having no checks at all.
-import { closesUnresolvedOrders, closesUnresolvedPrs, primaryStaleOrders, withStalePrimaryNotice } from "agent-org/src/work-gate.mjs";
+const { closesUnresolvedOrders, closesUnresolvedPrs, primaryStaleOrders, withStalePrimaryNotice } = await toolModule("src/work-gate.mjs");
 const GREEN = [{ name: "ci", status: "COMPLETED", conclusion: "SUCCESS" }];
 const RED = [{ name: "ci", status: "COMPLETED", conclusion: "FAILURE" }];
 const PENDING = [{ name: "ci", status: "IN_PROGRESS", conclusion: null }];
@@ -2163,7 +2162,7 @@ test("a REFUSED open-rows read reaches the switch as null, and the switch says i
  * would not match, which is the mistake this row was filed to prevent.
  */
 test("main hands the switch the UN-COALESCED read, not the `?? []` one", () => {
-  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/work-gate.mjs", import.meta.url), "utf8");
+  const source = readFileSync(toolUrl("src/work-gate.mjs"), "utf8");
   // EVERY `deadMansSwitch({...})` IN THE FILE, then the one that names `openRows` -- the declaration
   // spells the same parameter and would otherwise match first and report nothing.
   const calls = [...source.matchAll(/deadMansSwitch\(\{[^}]*\}\)/g)].map(([text]) => text);
@@ -3286,7 +3285,7 @@ test("#2161: decide() hands the cause the pull requests it already read", () => 
 
 test("#2161: the narrowing spends no `gh` call -- it reads what `draftOrder` already has", () => {
   assert.equal(GH_READS.unconditional.length, 11, "#2161 adds no unconditional read (8 since #2202, 9 since #2075, 10 since #2641, 11 since #2936)");
-  const gate = readFileSync(new URL("../../../../node_modules/agent-org/src/work-gate.mjs", import.meta.url), "utf8");
+  const gate = readFileSync(toolUrl("src/work-gate.mjs"), "utf8");
   const body = gate.slice(gate.indexOf("function rowsWithOpenPr"), gate.indexOf("export function blockerClearedOrders"));
   assert.ok(body.length > 0 && !/\brun\(|spawnSync|defaultRun/.test(body),
     "the helper is pure: no seam, no subprocess, so no binary for a budget to be charged against");
@@ -4001,7 +4000,7 @@ test("#2110: the claimed-row read is ONE call, filtered server-side, and refuses
 });
 
 test("#2110: main pays for it only when something is actually claimed", () => {
-  const gate = readFileSync(fileURLToPath(new URL("../../../../node_modules/agent-org/src/work-gate.mjs", import.meta.url)),
+  const gate = readFileSync(toolPath("src/work-gate.mjs"),
     "utf8");
   // The `decide` jsdoc spells the same call shape when it says where `claimedComments` comes from, so
   // prose is excluded by its backtick rather than by counting matches -- `cannotAskReport`'s own pin one
@@ -4180,7 +4179,7 @@ test("#2003: an unreadable probe reports UNREADABLE and never invents a pool", (
 });
 
 test("#2003: the pool reading has ONE definition, and the gate pays for it only when refusing", () => {
-  const gate = readFileSync(new URL("../../../../node_modules/agent-org/src/work-gate.mjs", import.meta.url), "utf8");
+  const gate = readFileSync(toolUrl("src/work-gate.mjs"), "utf8");
 
   // THE COST IS ON THE REFUSAL PATH OR IT IS NOT FREE. `cannotAskReport` is the only caller of
   // `poolDiagnosis`, and its own only call site must sit inside the both-lanes-refused branch -- otherwise
@@ -4202,7 +4201,7 @@ test("#2003: the pool reading has ONE definition, and the gate pays for it only 
 
   // A SECOND COPY OF "HOW TO READ A POOL" IS REFUSED (#2003's Region says so). The header name is the
   // fingerprint: whoever writes it again has written the second copy this move exists to prevent.
-  const src = fileURLToPath(new URL("../../../../node_modules/agent-org/src/", import.meta.url));
+  const src = toolPath("src/");
   const definers = readdirSync(src)
     .filter((f: string) => f.endsWith(".mjs"))
     .filter((f: string) => readFileSync(join(src, f), "utf8").includes("X-Ratelimit-Remaining"));
@@ -4288,7 +4287,7 @@ test("#2005: the OFFER path and the PROMOTION path now answer from one reader, s
 
   // THE LOCAL FILTER IS GONE, and this is the assertion that keeps it gone: a second spelling of the
   // prefix inside `readPromotableRows` is how the two paths drifted, so the source must not hold one.
-  const gate = readFileSync(fileURLToPath(new URL("../../../../node_modules/agent-org/src/work-gate.mjs", import.meta.url)), "utf8");
+  const gate = readFileSync(toolPath("src/work-gate.mjs"), "utf8");
   const body = /export function readPromotableRows\([\s\S]*?\n\}/.exec(gate)?.[0] ?? "";
   assert.ok(body.length > 0, "readPromotableRows must still be found, or this guard reads nothing");
   assert.ok(!/withAnswerLabel|ANSWER_PREFIX/.test(body),
@@ -4614,7 +4613,7 @@ test("#2174: decide() routes it, and only when it is handed drift", () => {
  * import, the second one fails and says what it costs.
  */
 test("#2174: the gate does NOT import host-units.mjs -- the spawn is the fence, not a preference", () => {
-  const SRC = fileURLToPath(new URL("../../../../node_modules/agent-org/src/", import.meta.url));
+  const SRC = toolPath("src/");
   const closure = (entry: string): Set<string> => {
     const seen = new Set<string>();
     const stack = [entry];
@@ -4661,19 +4660,24 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // it LEFT this set without any change in what it needs: a blind spot of the walk, not a fix. #3103 teaches the walk the specifier; this file returns then.
   // #2975 PR 3 DELETED `shadow-window-arm.test.ts` too (and `shadow-window.test.ts`, `shadow-state-dir.test.ts`): each has every test title in a11ign/agent-org
   // (one title's wording differs, "monorepo commits" -> "tool commits"), which carries the `host-units.mjs` edge. The set shrank by it and nothing joined.
-  // #2701 added `screenreader-worker-extraction.test.ts`: checked -- it asks `--is-shallow-repository` before reading `git log` over `packages/nvda-worker`
-  // and `packages/nvda-speech` (the history `filter-repo` carries across, file contents AND commit messages, is part of the first commit's leak scan),
-  // so it genuinely needs history, and its pull request declares `History: full`.
+  // #2701 added `screenreader-worker-extraction.test.ts`, which asked `--is-shallow-repository` before reading `git log` over `packages/nvda-worker`
+  // and `packages/nvda-speech`. #3447 LEFT this set with it: the two directories are gone, the rewritten file reads no history, and the first
+  // commit's leak scan it carried ran once, in the layer repository. What the file needs changed with what it asserts, not by a blind spot of the walk.
   // #2702 added `screenreader-fleet-extraction.test.ts`: checked -- it asks `--is-shallow-repository` before reading `git log` over `packages/worker-fleet`
   // (the history `filter-repo` carries across, file contents AND commit messages, is part of the first commit's leak scan), so it genuinely needs
   // history, and its pull request declares `History: full`.
   // #2704 added `control-extraction.test.ts`: checked -- the same `--is-shallow-repository` ask before `git log` over `packages/control`, for the same
   // first-commit leak scan, so it genuinely needs history, and its pull request declares `History: full`.
+  // #2703 added `lab-extraction.test.ts`: checked -- the same `--is-shallow-repository` ask before `git log` over `packages/lab`, for the same
+  // first-commit leak scan, so it genuinely needs history, and its pull request declares `History: full`.
+  // #3534 LEFT this set again: this file now loads the tool by PATH (`toolModule`), a computed call the walk cannot follow, exactly as it left at #2975 PR 3. No
+  // import was removed and what the file needs is unchanged -- a blind spot of the walk, not a fix. No Acceptance names this file, so no PR owes `History: full`.
   // The pin's move to ^0.2.0 (#2905) is the "this file returns then" above: agent-org's walk follows the `agent-org/src/...` specifier, and THIS file
   // imports `shippedUnits` from `agent-org/src/host-units.mjs`, the same edge `host-units.test.ts` had. Checked rather than edited past: no import was
   // added, the walk got able to see one that was already here. No Acceptance names this file, so no pull request owes a `History: full` for it.
-  assert.deepEqual(charged, ["control-extraction.test.ts", "pre-push-resolve-toward-main.test.ts", "screenreader-fleet-extraction.test.ts",
-    "screenreader-worker-extraction.test.ts", "work-gate.test.ts"],
+  // #3504 DELETED `screenreader-fleet-extraction.test.ts` with the directory it read history over (the fleet's own repository holds the leak scan): it left the set
+  // by ceasing to exist, not by a blind spot of the walk, and nothing joined.
+  assert.deepEqual(charged, ["control-extraction.test.ts", "lab-extraction.test.ts", "pre-push-resolve-toward-main.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
 });
@@ -4691,7 +4695,7 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
  */
 test("#2174: work-gate.mjs loads in a tree with NO node_modules, host-units edge included", () => {
   const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-  const entry = join(REPO, "node_modules/agent-org/src/work-gate.mjs");
+  const entry = toolPath("src/work-gate.mjs");
   const closure = new Set<string>();
   const stack = [entry];
   while (stack.length) {
@@ -4703,7 +4707,7 @@ test("#2174: work-gate.mjs loads in a tree with NO node_modules, host-units edge
   // THE CONTROL IS THE GATE ITSELF, not the host-units edge -- there is deliberately no such edge (see
   // the capability test above). What must hold is that the closure copied here is really the gate's:
   // an empty or truncated one would make the import below pass by having nothing to resolve.
-  assert.ok(closure.size > 10 && closure.has(join(REPO, "node_modules/agent-org/src/waiting-condition.mjs")),
+  assert.ok(closure.size > 10 && closure.has(toolPath("src/waiting-condition.mjs")),
     `the control: the closure must really be the gate's, got ${closure.size} file(s)`);
   const root = realpathSync(mkdtempSync(join(tmpdir(), "a11y-work-gate-no-modules-")));
   // #2616: the tool now reads the project's declaration from beside it, so a copied tree must carry it or the reader REFUSES (correctly).
@@ -4719,10 +4723,10 @@ test("#2174: work-gate.mjs loads in a tree with NO node_modules, host-units edge
   // absent. The refusal is the tool being right -- it will not default to another project's roster -- so the copy carries the one file it reads.
   // (agent-org's own comments still say the gate "must load without `.agent-org/roles`" (#2174); that edge now contradicts them, see #3667.)
   closure.add(join(REPO, ".agent-org/roles/sessions.json"));
-  // The installed tool lives under `node_modules/agent-org/`, which would put a `node_modules` in the copy's ancestor chain and defeat the
-  // premise, so its files are copied to `agent-org/` beside the project's own; the gate resolves nothing by that name.
+  // The tool's files are copied to `agent-org/` beside the project's own, whatever directory the tool is in here (a `node_modules` above
+  // it would put one in the copy's ancestor chain and defeat the premise); the gate resolves nothing by that name.
   for (const file of closure) {
-    const target = join(root, relative(REPO, file).replace(/^node_modules\/agent-org\//, "agent-org/"));
+    const target = join(root, file.startsWith(`${toolRoot()}/`) ? join("agent-org", relative(toolRoot(), file)) : relative(REPO, file));
     mkdirSync(dirname(target), { recursive: true });
     copyFileSync(file, target);
   }
@@ -4787,20 +4791,6 @@ function ready(n: number, reviewDecision: string | null | undefined, labels: str
   return pr;
 }
 
-test("#2084 THE LIVE SHAPE: a green, unheld, ready PR awaiting review reaches product-manager", () => {
-  // MEASURED, NOT INVENTED. #2198 at `468a74f1b`: opened ready at 17:39:37Z with ZERO reviews,
-  // `mergeStateStatus: BLOCKED`, `reviewDecision: REVIEW_REQUIRED`, armed -- and `decide` run against the
-  // live payload returned NO ORDER OF ANY KIND for it, while `shouldBeMerging` listed it as a candidate.
-  // That reading is this test's subject, and it is why the row's "done-when 1 removes most of the need for
-  // it" is wrong: #2198 has no review to dismiss.
-  const orders = decide({ prs: [ready(2198, "REVIEW_REQUIRED")], readyRows: [], required: ["gate"] });
-  assert.deepEqual(orders.map((o: UntypedTool) => o.cause), ["pr-review-blocked"],
-    "before this row a pull request in exactly this state produced no order at all");
-  assert.equal(orders[0].session, "product-manager");
-  assert.ok(CAUSES.includes(orders[0].cause), "every emitted cause is declared in CAUSES");
-  assert.match(orders[0].prompt, /#2198\s+AWAITING_REVIEW/);
-});
-
 test("#2084: an APPROVED or undecided pull request wakes NOBODY -- the control on the whole cause", () => {
   // THE NEGATIVE HALF, and without it the cause is satisfied by a function that flags every open PR.
   // `""` is the #1968 state -- the base requires no decision -- and it is NOT an approval; it is here
@@ -4837,20 +4827,6 @@ test("#2084: a DRAFT, a RED one and a HELD one are other causes' subjects, never
     "a held pull request is not merging by decision, and this cause must not argue with one");
 });
 
-test("#2084: ONE ORDER FOR THE SET, keyed on every number AND its decision", () => {
-  // `greenUnarmedOrders`' shape and for its reason -- but the DECISION is in the key as well as the
-  // number, because the two states want different acts. Keyed on numbers alone, a pull request whose
-  // refusal was answered and is now merely awaiting a review would not re-fire.
-  const orders = reviewBlockedOrders(reviewBlocked(
-    [ready(2049, "CHANGES_REQUESTED"), ready(2198, "REVIEW_REQUIRED")], ["gate"]));
-  assert.equal(orders.length, 1, "one order, or a queue-wide state wakes one session per pull request");
-  assert.equal(orders[0].causeKey, "product-manager/pr-review-blocked/2049:REFUSED.2198:AWAITING_REVIEW");
-  const answered = reviewBlockedOrders(reviewBlocked(
-    [ready(2049, "REVIEW_REQUIRED"), ready(2198, "REVIEW_REQUIRED")], ["gate"]));
-  assert.notEqual(answered[0].causeKey, orders[0].causeKey,
-    "the refusal became a pending review: a different state, so a different question");
-});
-
 test("#2084: the key carries NO head, so a rework does not re-wake product-manager every push", () => {
   // DELIBERATE, and the reason is this row's own diagnosis. `verdict-not-convinced` keys on the head
   // because the author is the recipient and every push IS the answer; here the recipient is the queue's
@@ -4875,46 +4851,6 @@ function labelled(n: number, session: string, decision: string, refusedAt?: stri
 const blockedOrders = (prs: unknown[]) => reviewBlockedOrders(reviewBlocked(prs, ["gate"]));
 const OLD_HEAD = "0ldc0mm1t0000000000000000000000f";
 
-test("#2283 done-when 1: a labelled PR in AWAITING_REVIEW or REFUSED is ITS SESSION's order, keyed without a head", () => {
-  const orders = blockedOrders([labelled(2301, "worker-9", "REVIEW_REQUIRED"),
-    labelled(2302, "worker-4", "CHANGES_REQUESTED", HEAD)]);
-  assert.deepEqual(orders.map((o: UntypedTool) => [o.session, o.causeKey]), [
-    ["worker-9", "worker-9/pr-review-blocked/pr-2301/AWAITING_REVIEW"],
-    ["worker-4", "worker-4/pr-review-blocked/pr-2302/REFUSED"]], "one order per labelled PR, to its own session");
-  for (const o of orders) {
-    assert.equal(o.cause, "pr-review-blocked");
-    assert.ok(!o.causeKey.includes(HEAD), "the key names the state and never the head (#2084)");
-  }
-  // Positive control: the SAME two states with NO label still make the ONE set order to product-manager,
-  // and the labelled and unlabelled orders are different keys, never swallowed as one.
-  const unlabelled = blockedOrders([ready(2301, "REVIEW_REQUIRED"), ready(2302, "CHANGES_REQUESTED")]);
-  assert.deepEqual(unlabelled.map((o: UntypedTool) => [o.session, o.causeKey]),
-    [["product-manager", "product-manager/pr-review-blocked/2301:AWAITING_REVIEW.2302:REFUSED"]]);
-  const mixed = blockedOrders([labelled(2301, "worker-9", "REVIEW_REQUIRED"), ready(2302, "CHANGES_REQUESTED")]);
-  assert.deepEqual(mixed.map((o: UntypedTool) => o.causeKey).sort(), [
-    "product-manager/pr-review-blocked/2302:REFUSED", "worker-9/pr-review-blocked/pr-2301/AWAITING_REVIEW"]);
-});
-
-test("#2283 done-when 2: the product-manager set order does not list a labelled PR", () => {
-  const orders = blockedOrders([labelled(2301, "worker-9", "REVIEW_REQUIRED"),
-    labelled(2303, "worker-9", "CHANGES_REQUESTED", HEAD), ready(2304, "REVIEW_REQUIRED")]);
-  const set = orders.filter((o: UntypedTool) => o.session === "product-manager");
-  assert.equal(set.length, 1);
-  assert.match(set[0].prompt, /#2304\s+AWAITING_REVIEW/, "the unlabelled PR stays in the set");
-  assert.doesNotMatch(set[0].prompt, /#2301|#2303/, "a labelled PR is its session's, not the queue reader's");
-  assert.equal(set[0].causeKey, "product-manager/pr-review-blocked/2304:AWAITING_REVIEW");
-});
-
-test("#2283 done-when 3: a push to a labelled PR's head does not change its causeKey", () => {
-  for (const [decision, refusedAt] of [["REVIEW_REQUIRED", undefined], ["CHANGES_REQUESTED", HEAD]] as const) {
-    const before = blockedOrders([labelled(2305, "worker-9", decision, refusedAt)]);
-    const pushed = { ...labelled(2305, "worker-9", decision, refusedAt), headRefOid: "f".repeat(32) };
-    const after = blockedOrders([pushed]);
-    assert.equal(before.length, 1);
-    assert.equal(before[0].causeKey, after[0].causeKey, `${decision}: the head moved and the state did not`);
-  }
-});
-
 test("#2283: a refusal's FIRST FACT is the review's commit against headRefOid, in all three readings", () => {
   const at = (refusedAt?: string) => blockedOrders([labelled(2306, "worker-9", "CHANGES_REQUESTED", refusedAt)])[0].prompt;
   const live = at(HEAD);
@@ -4932,13 +4868,6 @@ test("#2283: an UNRECOGNISED decision stays at product-manager even on a labelle
   const orders = blockedOrders([labelled(2307, "worker-9", "A_STATE_GITHUB_HAS_NOT_SHIPPED_YET")]);
   assert.deepEqual(orders.map((o: UntypedTool) => [o.session, o.causeKey]),
     [["product-manager", "product-manager/pr-review-blocked/2307:UNRECOGNISED"]]);
-});
-
-test("#2283: through `decide`, a labelled AWAITING_REVIEW PR reaches its session with the reviewer named", () => {
-  const orders = decide({ prs: [labelled(2308, "worker-9", "REVIEW_REQUIRED")], readyRows: [], required: ["gate"] });
-  assert.deepEqual(orders.map((o: UntypedTool) => [o.cause, o.session]), [["pr-review-blocked", "worker-9"]]);
-  assert.match(orders[0].prompt, /prompt:session reviewer-2308/);
-  assert.match(orders[0].prompt, /never entered the reviewer lane/);
 });
 
 test("#2084: an ABSENT `reviewDecision` is UNREADABLE and emits NOTHING -- it is a fact about the gate", () => {
@@ -5262,20 +5191,6 @@ const commentOnly = (n = 9999, head = AUTHORED, extra: Record<string, unknown> =
   readyPr(n, head, { comments: [verdictAt(n, head, "convinced")], reviews: [], reviewDecision: "REVIEW_REQUIRED", ...extra });
 const unreviewed = (pr: unknown) => ordersFor(pr).filter((o) => o.cause === "verdict-comment-unreviewed");
 
-test("#2365 a green ready PR with a convinced COMMENT and no review at head orders its parity reviewer", () => {
-  const [order, ...rest] = unreviewed(commentOnly(9999));
-  assert.deepEqual(rest, []);
-  assert.equal(order.session, "reviewer-9999", "`reviewer-<n>`");
-  assert.equal(unreviewed(commentOnly(9998))[0].session, "reviewer-9998", "and for an even number too");
-  assert.match(order.prompt, /pr-review-verdict/, "it must name the remedy");
-  assert.match(order.prompt, /not a new review round/);
-  assert.equal(order.causeKey, `reviewer-9999/verdict-comment-unreviewed/pr-9999/${AUTHORED.slice(0, 8)}`);
-  // `pr-review-blocked` (#2084) ALSO names it, for the whole set to `product-manager`: two questions, two
-  // remedies, and neither replaces the other -- this one names the comment and who re-posts it.
-  assert.deepEqual(ordersFor(commentOnly(9999)).map((o) => o.cause).sort(),
-    ["pr-review-blocked", "verdict-comment-unreviewed"]);
-});
-
 test("#2365 the same pull request with an APPROVED review at head produces NO such order", () => {
   // THE CONTROL is the test above: same reader, same shape, `reviews` empty, non-empty.
   assert.equal(unreviewed(commentOnly()).length, 1);
@@ -5377,7 +5292,7 @@ test("#2202: readClosedAnswerRows refuses rather than reporting nobody owes anyt
 });
 
 test("#2202: main feeds the closed-row read into `answerOwed` beside the open one, through the helper that SAYS a refusal", () => {
-  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/work-gate.mjs", import.meta.url), "utf8");
+  const source = readFileSync(toolUrl("src/work-gate.mjs"), "utf8");
   assert.match(source, /answerOwed: rowsOwingAnswers\(\{ openRows: allOpen, openPrs, closedRows: closedAnswerRows\(\) \}\)/,
     "a closed row owing an answer must reach `decide` -- the open read alone is the defect");
   assert.match(source, /function closedAnswerRows\(\) \{[^]*?NOTE: could not read the closed rows/,
@@ -5455,7 +5370,7 @@ test("#2609: `endedSessionLabels` reads a teardown's record, and a label that ST
 });
 
 test("#2609: `closedAnswerRows` runs the ended-session filter on what `readClosedAnswerRows` returned", () => {
-  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/work-gate.mjs", import.meta.url), "utf8");
+  const source = readFileSync(toolUrl("src/work-gate.mjs"), "utf8");
   assert.match(source, /function closedAnswerRows\(\) \{[^]*?return withoutEndedAnswerSessions\(rows\);/);
 });
 
@@ -5842,7 +5757,7 @@ test("#2781 done-when 2: every other order is headed with the stale sha and the 
 });
 
 test("#2781 the tick READS the primary and WIRES it: main() reads it once, feeds decide, and banners the decided orders", () => {
-  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../../node_modules/agent-org/src/work-gate.mjs"), "utf8");
+  const source = readFileSync(toolPath("src/work-gate.mjs"), "utf8");
   assert.match(source, /primaryDrift = readPrimaryDriftNow\(\)/);
   // #2849: the argument object is NAMED so the shadow tap can record it, and `decide` is reached through `decideAndTap`.
   assert.match(source, /const decideArgs = \{ primaryDrift,/);

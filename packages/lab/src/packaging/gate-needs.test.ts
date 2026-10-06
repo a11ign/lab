@@ -113,9 +113,9 @@ test("#902: the three deliberate refusals are all in one job the gate needs", ()
   // `merge-guard.mjs --ci-gate` anywhere in the job, and the comment above the step says those words too:
   // deleting the step left the test green on its own explanation. A guard satisfied by prose about itself
   // is the shape this repo has paid for more than once.
-  assert.match(job, /run: pnpm exec agent-org merge-guard --ci-gate/,
+  assert.match(job, /run: agent-org merge-guard --ci-gate/,
     "the hold refusal left this job; no other workflow in this repo reads a `hold:` label");
-  assert.match(job, /run: pnpm exec agent-org closes-mismatch-check/,
+  assert.match(job, /run: agent-org closes-mismatch-check/,
     "#549's comparison left this job, and only it has a token");
   // The lane check was the third refusal here and is RETIRED: docs/lane-ownership.json set its own end
   // date (#916's CODEOWNERS, 2026-09-15) and that passed unbuilt, and it was the only guard in `gate` an

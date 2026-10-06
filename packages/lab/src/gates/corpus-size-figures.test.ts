@@ -98,10 +98,17 @@ import { REPO_ROOT } from "../dataset-paths.mjs";
 const GUARDED_2155 = [
   "packages/lab/src/training/README.md",
   "packages/lab/src/training/capture-cache.mjs",
-  "packages/nvda-worker/CLAUDE.md",
   "packages/cli/src/cli.ts",
   "packages/control/src/fleet-status.mjs",
 ];
+
+/**
+ * #2155's Region as it stood at `d9521699e`: the four above plus `packages/nvda-worker/CLAUDE.md`, which left this
+ * repository with the worker (#3447) and so cannot be GUARDED any more. `CONTROL ON REAL HISTORY` reads the old text out of
+ * git, where that file still exists, so the control keeps its ten figures and its 9-of-10 reading rather than being quietly
+ * weakened to nine. A population the guard no longer owns is still the population the control was measured on.
+ */
+const REGION_AT_BASE_2155 = [...GUARDED_2155, "packages/nvda-worker/CLAUDE.md"];
 
 /**
  * #2244: THE DEPLOY GUARDS AND THEIR NEIGHBOURS -- what #2155's five files did not reach. Eight files, each
@@ -119,7 +126,7 @@ const GUARDED_2155 = [
  * asked for files that did not carry the figure there, and so that each list's length is pinned by the
  * row that added it.
  */
-const GUARDED_2244 = [
+const REGION_AT_BASE_2244 = [
   "packages/worker-fleet/src/protocol-guard.mjs",
   "packages/worker-fleet/src/protocol-guard.test.ts",
   "packages/worker-fleet/src/deploy-worker.mjs",
@@ -127,6 +134,18 @@ const GUARDED_2244 = [
   "packages/worker-fleet/src/worker-code-check.mjs",
   "packages/worker-fleet/src/lab-job.test.ts",
   "packages/worker-fleet/src/provisioning/stamp-provision-revision.ps1",
+  "packages/cli/src/cli.test.ts",
+];
+
+/**
+ * What of #2244's eight is STILL guarded after `worker-fleet` left (#3504): the two tests that moved with their reading to
+ * `packages/control/src/fleet-layer/` and `cli.test.ts`. The other five left this repository with the fleet's code, so they cannot be
+ * GUARDED any more; `CONTROL ON REAL HISTORY` reads the old text out of git under `REGION_AT_BASE_2244`, where those files still exist, so
+ * the control keeps the population it was measured on rather than being quietly weakened (the same shape as `REGION_AT_BASE_2155`).
+ */
+const GUARDED_2244 = [
+  "packages/control/src/fleet-layer/protocol-guard.test.ts",
+  "packages/control/src/fleet-layer/lab-job.test.ts",
   "packages/cli/src/cli.test.ts",
 ];
 
@@ -291,13 +310,14 @@ test("the guarded list reaches no dated record -- nothing under docs/, and nothi
     "#2155's Region deliberately excludes docs/ and the ADRs: their 2,122s are records of what a past "
     + "decision cost, and a guard that demanded an as-of date on them would be asking history to restate "
     + `itself. Found: ${strays.join(", ")}`);
-  const REGION_FILES_2155 = 5;
+  const REGION_FILES_2155 = 4;
   assert.equal(GUARDED_2155.length, REGION_FILES_2155,
-    "#2155's Region names five existing files; a sixth is a deliberate edit here, not a glob's doing");
-  const REGION_FILES_2244 = 8;
+    "#2155's Region names four files that still exist (its fifth, nvda-worker/CLAUDE.md, left in #3447); a fifth is a deliberate edit here, not a glob's doing");
+  const REGION_FILES_2244 = 3;
   assert.equal(GUARDED_2244.length, REGION_FILES_2244,
-    "#2244's Region adds eight existing files (its ninth is this one, which is not self-scanned); a ninth "
+    "#2244's Region still guards three existing files (five left with the fleet's code, #3504, and are read from history instead); a fourth "
     + "is a deliberate edit here, with the reason it is guarded written above the list");
+  assert.equal(REGION_AT_BASE_2244.length, 8, "the population the history control was measured on is #2244's eight, and is not edited when a file leaves");
   assert.equal(GUARDED.length, REGION_FILES_2155 + REGION_FILES_2244);
 });
 
@@ -327,7 +347,7 @@ test("CONTROL ON REAL HISTORY: 9 of d9521699e's 10 figures are flagged", (t) => 
     t.skip(`${BASE} is not in this checkout (a shallow clone). Not run, and not counted as a pass.`);
     return;
   }
-  const blobs = GUARDED_2155.map((rel) => ({ rel, text: git("show", `${BASE}:${rel}`) }));
+  const blobs = REGION_AT_BASE_2155.map((rel) => ({ rel, text: git("show", `${BASE}:${rel}`) }));
   const found = blobs.flatMap(({ rel, text }) => flagged(rel, text));
   const count = population(blobs);
   assert.equal(count, FIGURES_AT_BASE, "the population at that commit is 10 corpus-size figures");
@@ -355,7 +375,7 @@ test("CONTROL ON REAL HISTORY (#2244): the figures this row removed ARE flagged 
     t.skip(`${BASE} is not in this checkout (a shallow clone). Not run, and not counted as a pass.`);
     return;
   }
-  const blobs = GUARDED_2244.map((rel) => ({ rel, text: git("show", `${BASE}:${rel}`) }));
+  const blobs = REGION_AT_BASE_2244.map((rel) => ({ rel, text: git("show", `${BASE}:${rel}`) }));
   const found = blobs.flatMap(({ rel, text }) => flagged(rel, text));
   // Every file this row edited for a figure, by name: a per-file assertion, so one file's flags cannot
   // stand in for another's, and an eighth flag in a single file does not read as eight files covered.
@@ -369,7 +389,7 @@ test("CONTROL ON REAL HISTORY (#2244): the figures this row removed ARE flagged 
   const WRAPPED = "packages/worker-fleet/src/lab-job.test.ts";
   assert.equal(flaggedIn.has(WRAPPED), false,
     `${WRAPPED} is now flagged at ${BASE}: the scan crosses a wrapped comment, so drop WRAPPED from this test`);
-  for (const rel of GUARDED_2244.filter((r) => r !== WRAPPED)) {
+  for (const rel of REGION_AT_BASE_2244.filter((r) => r !== WRAPPED)) {
     assert.ok(flaggedIn.has(rel), `${rel} carried a stale corpus figure at ${BASE} and the widened scan `
       + `did not flag it; flagged: ${[...flaggedIn].join(", ")}`);
   }

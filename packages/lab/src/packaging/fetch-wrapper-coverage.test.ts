@@ -70,19 +70,6 @@ function sourceFiles(dir: string): string[] {
  */
 const EXEMPT: { file: string; count: number; reason: string }[] = [
   {
-    file: "packages/nvda-worker/src/browser-session.mjs", count: 2,
-    reason: "talks to the LOCAL Chromium DevTools protocol (CDP's own /json/version and /json/list "
-      + "endpoints on 127.0.0.1:9222), not a capture worker's JSON API -- and worker-fleet depends on "
-      + "nvda-worker, never the reverse, so this package could not import requestJson even if the target "
-      + "matched.",
-  },
-  {
-    file: "packages/nvda-worker/src/auth-flow.mjs", count: 1,
-    reason: "the same target as browser-session.mjs above: the LOCAL Chromium DevTools `/json/list` on 127.0.0.1, read to "
-      + "find the page target the login is driven on (ADR 0038). Not a capture worker's JSON API, and the same "
-      + "package-graph reason applies: worker-fleet depends on nvda-worker, never the reverse.",
-  },
-  {
     file: "packages/worker-fleet/src/doctor.mjs", count: 1,
     reason: "the dataset PAGE SERVER (a titleOf() probe at a fixed local port), not a worker -- the "
       + "worker probe in this same file (httpJson) is the one that was converted; see "

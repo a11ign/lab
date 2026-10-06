@@ -48,10 +48,12 @@ const LAYER_FILE = "packages/nvda-worker/src/x.mjs";
 const FIRST_LAYERS = ["nvda-worker", "nvda-speech", "agent-org"];
 /** The three the fence of #3501 adds, for moves 2-4 of #69. */
 const SPLIT_LAYERS = ["worker-fleet", "lab", "control"];
+/** The layers whose directory is not in the tree at all: no tracked file is inside one, so no baseline entry may be FROM one. (`worker-fleet` is laid there at build time, untracked, #3504.) */
+const DEPARTED_LAYERS = [...FIRST_LAYERS, "worker-fleet"];
 /** One x.mjs and one own.mjs per layer, and the other package's x.mjs. */
 const THREE_LAYERS_CLEAN_FILES = 7;
-/** The row counts 12 code back edges; the tree has at least that many, and a reason shorter than a sentence is a tag. */
-const BACK_EDGES_AT_LEAST = 12;
+/** The row counted 12 code back edges when `worker-fleet` was in the tree and 11 of them were its own; #3504 took the 11 with the code, so the one left is lab's. */
+const BACK_EDGES_AT_LEAST = 1;
 const REASON_AT_LEAST_CHARS = 40;
 const BASELINE_AT_LEAST = 100;
 const DIRECTED_PAIRS_AMONG_THREE = 6;
@@ -304,17 +306,23 @@ test("the real baseline is NON-EMPTY and records the deploy path, so a guard tha
   assert.ok(existsSync(join(ROOT, BASELINE_PATH)));
   assert.ok(baseline.length > 0, "the baseline is empty: the scan or the baseline has broken");
   const froms: string[] = baseline.map((e: { from: string }) => e.from);
-  assert.ok(froms.includes("packages/nvda-worker/src/launcher-reach.cmd"), "the declaration of what the worker's launchers reach is recorded");
+  // The layer's own `launcher-reach.cmd` left with it (#3447); the stand-in beside the stamp's walk is what records that reach until the layer carries one.
+  assert.ok(froms.includes("scripts/test-support/launcher-reach.stand-in.cmd"), "the declaration of what the worker's launchers reach is recorded");
   assert.ok(froms.some((f) => f.startsWith("packages/control/ansible/")), "the Ansible files that place it are recorded");
-  assert.ok(froms.some((f) => f.startsWith("packages/worker-fleet/src/")), "the fleet's own reaches are recorded");
+  // The fleet's own reaches left with it (#3504); what is recorded now is the reaches INTO the directory it is laid at, by control and by the tests of both.
+  const intoTheFleet = baseline.filter((e: { to: string }) => e.to.startsWith("packages/worker-fleet"));
+  assert.ok(intoTheFleet.some((e: { from: string }) => e.from.startsWith("packages/control/src/")), "control's reaches into the laid fleet are recorded");
+  assert.ok(intoTheFleet.some((e: { from: string }) => e.from.startsWith("package.json")), "the root scripts that run it by path are recorded");
 });
 
-test("done-when 1: no file inside a layer that left first reaches out by path unless a named row owns the edge", () => {
-  const out = readBaseline(ROOT).filter((e: { direction: string; from: string }) => e.direction === "out" && FIRST_LAYERS.includes(packageOf(e.from) ?? ""));
-  assert.ok(out.length > 0, "POSITIVE CONTROL: the launchers are recorded as leaving edges, so this loop has entries to refuse");
-  for (const entry of out) {
-    assert.match(entry.disposition, /^owned-by:#\d+$/, `${entry.from} -> ${entry.to} leaves a layer and is owned by no row`);
-  }
+/** The baseline entries whose `from` is a file INSIDE one of the layers that left first. */
+const insideALayerThatLeft = (entries: { from: string }[]) => entries.filter((e) => DEPARTED_LAYERS.includes(packageOf(e.from) ?? ""));
+
+test("done-when 1, after #3447 and #3504: no file inside a layer that left is in the baseline, because none is in the tree", () => {
+  // THE CONTROL, over the same function: before the delete this loop refused every launcher the worker reached out by, so it is shown to SEE one.
+  const planted = [{ from: "packages/nvda-worker/src/launcher-reach.cmd" }, { from: "packages/nvda-speech/nvda_speech/x.py" }, { from: "packages/worker-fleet/src/doctor.mjs" }, { from: "packages/lab/src/a.ts" }];
+  assert.deepEqual(insideALayerThatLeft(planted).map((e) => e.from), ["packages/nvda-worker/src/launcher-reach.cmd", "packages/nvda-speech/nvda_speech/x.py", "packages/worker-fleet/src/doctor.mjs"]);
+  assert.deepEqual(insideALayerThatLeft(readBaseline(ROOT)), []);
 });
 
 // ------------------------------------------------------------------ the fence for moves 2-4 (#3501): the real baseline
@@ -328,12 +336,13 @@ const pairsOf = (entries: { from: string; to: string }[]) => {
   return counts;
 };
 
-test("the real baseline names all six directed pairs among worker-fleet, lab and control, and is not empty", () => {
+test("the real baseline names the four directed pairs that remain among worker-fleet, lab and control, and is not empty", () => {
   const baseline = readBaseline(ROOT);
   assert.ok(baseline.length > BASELINE_AT_LEAST, `POSITIVE CONTROL: the fence is a baseline of hundreds of edges, not ${baseline.length}`);
   const pairs = pairsOf(baseline);
-  const expected = SPLIT_LAYERS.flatMap((a) => SPLIT_LAYERS.filter((b) => b !== a).map((b) => `${a} -> ${b}`));
-  assert.equal(expected.length, DIRECTED_PAIRS_AMONG_THREE);
+  // Of the six, the two FROM worker-fleet went with its code (#3504); control and lab still read INTO the directory it is laid at.
+  const expected = SPLIT_LAYERS.flatMap((a) => SPLIT_LAYERS.filter((b) => b !== a).map((b) => `${a} -> ${b}`)).filter((pair) => !pair.startsWith("worker-fleet -> "));
+  assert.equal(expected.length, DIRECTED_PAIRS_AMONG_THREE - 2);
   assert.deepEqual([...pairs.keys()].sort(), expected.sort(), "a directed pair with no edge, or an edge outside the six, means the scan or the baseline broke");
   assert.ok([...pairs.values()].every((n) => n > 0));
 });
@@ -358,7 +367,7 @@ test("`moves-with` is a TEST's disposition: it names a path a test lives at, and
 test("done-when 4: each code edge that leaves worker-fleet for control, lab or nvda-worker, or lab for control, is a cut, a checkout path or a row", () => {
   const back = readBaseline(ROOT).filter((e: { from: string; to: string }) => !TEST_PATH.test(e.from) && (
     (packageOf(e.from) === "worker-fleet" && ["control", "lab", "nvda-worker"].includes(packageOf(e.to) ?? "")) || (packageOf(e.from) === "lab" && packageOf(e.to) === "control")));
-  assert.ok(back.length >= BACK_EDGES_AT_LEAST, `POSITIVE CONTROL: the row counts 12 back edges and the tree has ${back.length}`);
+  assert.ok(back.length >= BACK_EDGES_AT_LEAST, `POSITIVE CONTROL: the tree keeps at least the one back edge (lab to control) and has ${back.length}`);
   for (const entry of back) {
     assert.match(entry.disposition, /^(?:cut|checkout-path|owned-by:#\d+)$/, `${entry.from} -> ${entry.to}: a back edge is not resolved by the package name or by moving a test`);
   }

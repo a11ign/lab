@@ -35,14 +35,14 @@ import { probeStates } from "@a11ign/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { guestReachableUrl } from "@a11ign/screenreader-fleet";
 import { assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
-  from "../../worker-fleet/src/worker-http.mjs";
+  from "@a11ign/screenreader-fleet/worker-http";
 import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { datasetRoot } from "../src/dataset-paths.mjs";
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
+import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
 
 refuseUnknownFlags(["--worker=", "--pages=", "--json", LOCAL_FLAG],
   { entry: import.meta.url, command: "npm run gate:probe-order" });

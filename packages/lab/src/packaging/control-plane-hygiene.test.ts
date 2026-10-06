@@ -24,11 +24,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import {
+const {
   linkState, workspacePackages, packagesImportedByName, distTrapReport, rootPrepareBuildsEverything,
   undecidedRefusal, classifyTmpQuota, readTmpQuota, tmpQuotaRow, QUOTACTL_PY,
-} from "agent-org/src/control-plane-hygiene.mjs";
+} = await toolModule("src/control-plane-hygiene.mjs");
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { toolModule, toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 test("the real repo's dist-trap check finds every package it claims to check, protected by the root's "
   + "own prepare (#168), and none currently exposed", () => {
@@ -190,8 +191,10 @@ test("undecidedRefusal returns null when every row has a real decision", () => {
 // seconds, and both places that state the rule -- this page and the script that regenerates it -- said the
 // opposite until then. Each is read as TEXT, because the rows are built inside `main()` and printing them would
 // need the live host's worktrees.
-const HYGIENE_SOURCES = ["docs/control-plane-hygiene.md", "node_modules/agent-org/src/control-plane-hygiene.mjs"]
-  .map((rel) => ({ rel, text: readFileSync(fileURLToPath(new URL(`../../../../${rel}`, import.meta.url)), "utf8") }));
+const HYGIENE_SOURCES = [
+  { rel: "docs/control-plane-hygiene.md", path: fileURLToPath(new URL("../../../../docs/control-plane-hygiene.md", import.meta.url)) },
+  { rel: "agent-org/src/control-plane-hygiene.mjs", path: toolPath("src/control-plane-hygiene.mjs") },
+].map(({ rel, path }) => ({ rel, text: readFileSync(path, "utf8") }));
 
 test("#2300: neither the hygiene page nor its report calls the symlink deliberate, or pnpm post-publish", () => {
   for (const { rel, text } of HYGIENE_SOURCES) {
@@ -206,7 +209,7 @@ test("#2300: both name the pnpm install, and the page carries a MEASURED residua
   for (const { rel, text } of HYGIENE_SOURCES) assert.match(text, /pnpm install --frozen-lockfile/, rel);
   const page = HYGIENE_SOURCES[0].text;
   assert.match(page, /MEASURED: \d+ of \d+ registered worktrees\*\*, read at `[0-9a-f]{7,}`/);
-  assert.match(page, /npm run hygiene:report/);
+  assert.match(page, /agent-org hygiene:report/);
 });
 
 // #2220: `/tmp` on the agent host is a `usrquota` tmpfs, and `df` said 80% / 3.1 GB free while a 50 MB write

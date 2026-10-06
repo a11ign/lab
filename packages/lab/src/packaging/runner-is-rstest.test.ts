@@ -1,9 +1,9 @@
 /**
  * #1319, STEP 3 OF THE RSTEST ADOPTION (#1317): CI's `ts` job and trunk's unscoped step run rstest, not `tsx --test`.
  *
- * Both jobs run through `reusable-build-test.yml`. Its scoped step ran `npx tsx --test` on the files
- * `select-changed-tests.mjs` picked, and its unscoped step runs `npm run test:all`, which reaches the runner through
- * `assert-glob-not-empty.mjs --run`. So the switch lives in those files, and this one pins it with comments stripped,
+ * Both jobs run through `reusable-build-test.yml`. Its one test step runs `pnpm run test:all`, which reaches the runner
+ * through `assert-glob-not-empty.mjs --run` (before #3573 a second, scoped step ran `npx tsx --test` on the files a
+ * selector picked; it is deleted). So the switch lives in those files, and this one pins it with comments stripped,
  * because a runner named only in a comment runs nothing.
  *
  * The floor `assert-glob-not-empty.mjs` exists for (#355) must still hold under the new runner: a glob or a selected
@@ -70,8 +70,8 @@ function floor(args: string[], extraEnv: Record<string, string> = {}):
   }
 }
 
-const SCOPED = "Unit tests of the changed test files";
-const UNSCOPED = "Unit tests, unscoped";
+// #3573: ONE test step, the whole suite. The step that ran a selected slice of test files is gone with the selectors.
+const TESTS = "Unit tests";
 const CACHE_ASSERTION = "rstest build cache must hold files";
 
 // --- the runner --------------------------------------------------------------------------------------------------
@@ -87,29 +87,23 @@ test("#1319 ACCEPTANCE: no step of reusable-build-test.yml runs `tsx --test`, co
   assert.equal(tsxTestLines(before).length, 2);
 });
 
-test("#1319: both branches of the scoped step go through the floor to rstest", () => {
-  const lines = codeLines(STEPS[stepNamed(SCOPED)].run ?? "");
-  const floorLine = (variable: string, flags: string) => lines.filter((line) => new RegExp(
-    `\\bnode packages/guards/src/assert-glob-not-empty\\.mjs\\s+"\\$\\{${variable}\\[@\\]\\}"\\s+${flags}\\s*$`).test(line));
-  // The broad branch passes one glob per implicated PACKAGE, and a package can legitimately have no tests:
-  // `nvda-speech` has none under src, and #1469's first two CI runs were refused on exactly that glob. So that branch
-  // names and drops an empty package glob. The selected-files branch keeps the strict floor: a selected file that
-  // matches nothing is a real fault.
-  assert.equal(floorLine("globs", "--min=1 --drop-empty --run --runner=rstest").length, 1,
-    `the broad-glob branch:\n${lines.join("\n")}`);
-  assert.equal(floorLine("files", "--min=1 --run --runner=rstest").length, 1, `the selected-files branch:\n${lines.join("\n")}`);
+test("#3573: the workflow has ONE test step, and no step runs a selected slice of test files", () => {
+  const testSteps = STEPS.filter((step) => /^Unit tests\b/.test(step.name ?? ""));
+  assert.equal(testSteps.length, 1, "POSITIVE CONTROL: the one step is found, so the emptiness below reads a real workflow");
+  const selecting = STEPS.flatMap((step) => codeLines(step.run ?? "")).filter((line) => /\bglobs\[@\]|\bfiles\[@\]|--drop-empty/.test(line));
+  assert.deepEqual(selecting, []);
 });
 
-test("#1319: the unscoped step runs `pnpm run test:all`, and it asks the floor for rstest over every package", () => {
+test("#1319, #3573: the test step runs `pnpm run test:all`, and it asks the floor for rstest over every package", () => {
   // `test:all`, not `test:ts`: since the package split `test:ts` is the PRODUCT suite and the org's tests
   // live in agent-org/guards/lab. "Unscoped" means every merge to main gets the full answer regardless of
   // the diff, so it must be the glob that covers every package -- `test:ts` here would run a third of the
   // suite and still read green, which is the defect this whole file exists to pin.
-  assert.deepEqual(codeLines(STEPS[stepNamed(UNSCOPED)].run ?? "").map((line) => line.trim()), ["pnpm run test:all"]);
+  assert.deepEqual(codeLines(STEPS[stepNamed(TESTS)].run ?? "").map((line) => line.trim()), ["pnpm run test:all"]);
   // The whole-package glob and its floor live on `test:all` now; `test:ts` carries the product brace list.
   assert.match(SCRIPTS["test:all"],
     /assert-glob-not-empty\.mjs "packages\/\*\/src\/\*\*\/\*\.test\.ts" --min=500 --run --runner=rstest /);
-  assert.match(SCRIPTS["test:ts"], /assert-glob-not-empty\.mjs "packages\/\{[a-z,-]+\}\/src\/\*\*\/\*\.test\.ts" --min=180 --run --runner=rstest /);
+  assert.match(SCRIPTS["test:ts"], /assert-glob-not-empty\.mjs "packages\/\{[a-z,-]+\}\/src\/\*\*\/\*\.test\.ts" --min=95 --run --runner=rstest /);
 });
 
 test("#1319: `test:nightly` stays on tsx -- it is nightly-only and out of #1320's scope", () => {
@@ -269,9 +263,7 @@ test("#1319: the cache is restored and its HIT or MISS printed before both test 
   assert.equal(printed.length, 1, "one step prints HIT or MISS");
   assert.match(STEPS[printed[0]].run ?? "", /HIT/);
   assert.match(STEPS[printed[0]].run ?? "", /MISS/);
-  for (const testStep of [stepNamed(SCOPED), stepNamed(UNSCOPED)]) {
-    assert.ok(cache[0] < printed[0] && printed[0] < testStep, "restore, then print, then the tests");
-  }
+  assert.ok(cache[0] < printed[0] && printed[0] < stepNamed(TESTS), "restore, then print, then the tests");
 });
 
 test("#1319, #2298: no OTHER step restores node_modules, so nothing can bring back an rstest cache that the rstest step then reports as a MISS", () => {
@@ -283,9 +275,9 @@ test("#1319, #2298: no OTHER step restores node_modules, so nothing can bring ba
   assert.equal(STEPS.filter((step) => step.id === "node-modules-cache").length, 0);
 });
 
-test("#1319: after both test steps, an EMPTY rstest cache fails the job -- the assertion's own script, executed", () => {
+test("#1319, #3573: after the test step, an EMPTY rstest cache fails the job -- the assertion's own script, executed", () => {
   const index = stepNamed(CACHE_ASSERTION);
-  assert.ok(index > stepNamed(SCOPED) && index > stepNamed(UNSCOPED), "it runs after the tests that fill the cache");
+  assert.ok(index > stepNamed(TESTS), "it runs after the tests that fill the cache");
   assert.match(STEPS[index].if ?? "", /inputs\.run-ts-tests/);
   const script = STEPS[index].run ?? "";
   assert.doesNotMatch(script, /\$\{\{/, "free of workflow expressions, so this test runs exactly what CI runs");

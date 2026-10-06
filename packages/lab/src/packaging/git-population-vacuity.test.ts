@@ -173,23 +173,14 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "when written). Its message scan asserts more than 300 lines came back before scanning. Both skip by name on a shallow "
       + "clone, and its fixtures prove each predicate refuses a planted address and token.",
   },
-  "packages/lab/src/packaging/screenreader-fleet-extraction.test.ts": {
+  "packages/lab/src/packaging/lab-extraction.test.ts": {
     guard: 'diffs.includes("diff --git")',
-    note: "guarded -- #2702's history scan spawns `git log -p` over the moving package and expects NO credential shape and "
-      + "nothing the purge rules redact. A clean result is the EXPECTED answer, so 'the history is clean' and 'the log read "
-      + "nothing' would be the same observation; the assertion that the output contains a `diff --git` header tells them "
-      + "apart. Its message scan asserts more than 300 lines came back before scanning, and carries a positive control that "
-      + "the raw messages still need `--replace-message`. Both skip by name on a shallow clone, and its fixtures prove each "
-      + "predicate refuses a planted address and token.",
-  },
-  "packages/lab/src/packaging/screenreader-worker-extraction.test.ts": {
-    guard: 'diffs.includes("diff --git")',
-    note: "guarded -- #2701's history scan spawns `git log -p` over the two moving packages and expects NO credential "
-      + "shape and nothing the purge rules redact. A clean result is the EXPECTED answer, so 'the history is clean' "
-      + "and 'the log read nothing' would be the same observation; the assertion that the output contains a "
-      + "`diff --git` header tells them apart. Its message scan asserts more than 300 lines came back before scanning, "
-      + "and carries a positive control that the raw messages still need `--replace-message`. Both skip by name on a "
-      + "shallow clone, and its fixtures prove each predicate refuses a planted address and token.",
+    note: "guarded -- #2703's history scan spawns `git log -p` over the moving package and expects no credential shape once the purge "
+      + "rules have run. A clean result is the EXPECTED answer, so 'the history is clean' and 'the log read nothing' would be the "
+      + "same observation; the assertion that the output contains a `diff --git` header tells them apart. Its message scan asserts "
+      + "more than 3000 lines came back before scanning, and carries a positive control that the raw messages still need "
+      + "`--replace-message`. Its `git ls-files` population (the first commit's tree) asserts more than 700 files before scanning. "
+      + "Both log reads skip by name on a shallow clone, and its fixtures prove each predicate refuses a planted address and token.",
   },
   "packages/lab/src/packaging/reported-counts.test.ts": {
     guard: 'assert.deepEqual(found, ["reported.test.ts: walked.length"]',
@@ -318,11 +309,17 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "the question 'does anything on the lab read inventory.yml?' was answered correctly about three "
       + "directories and wrongly about the repository.",
   },
-  "packages/worker-fleet/src/protocol-guard.test.ts": {
+  "packages/guards/src/worker-fleet-delete.test.ts": {
+    guard: "length > 100",
+    note: "guarded -- #3504's by-name scan walks `git ls-files -- packages scripts` and the floor asserts it saw more than a hundred "
+      + "by-name sources. The tracked-fleet-directory check is the EMPTINESS claim, and its positive control is the fixture "
+      + "lockfile and fixture tree in the same file that must be refused.",
+  },
+  "packages/control/src/fleet-layer/protocol-guard.test.ts": {
     guard: "clients.length >= 2",
     note: "guarded — the two known deploy call sites (check-worker-code.mjs, deploy-worker.mjs)",
   },
-  "packages/worker-fleet/src/lab-job.test.ts": {
+  "packages/control/src/fleet-layer/lab-job.test.ts": {
     guard: "referenced.length >= 5",
     note: "guarded — `git grep` for job= references across the tree; comment explicitly names the vacuity risk",
   },
@@ -408,7 +405,7 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "controls drive the detector against sources built in the test, so the shape is pinned even if "
       + "the repository population were to empty entirely.",
   },
-  "packages/worker-fleet/src/entry-points.test.ts": {
+  "packages/control/src/fleet-layer/entry-points.test.ts": {
     guard: "declared.length >= 85",
     note: "guarded — #211's FORM population, walked via `git ls-files`: every tracked source declaring "
       + "`import.meta.url ===`. Floored at 85 against 93 today, and deliberately a DIFFERENT population "
@@ -509,14 +506,12 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "call sites are pinned by name as the non-empty complement.",
   },
   "packages/lab/src/packaging/ci-changed.test.ts": {
-    guard: "walkers.length > 0",
-    note: "guarded -- #2357's drift test spawns `git ls-files packages` and asks whether every test the ts "
-      + "selector's own detector finds walking the tree is in `docsReadingTests`. A clean result is the "
-      + "EXPECTED answer (the two sets agree), so 'no drift' and 'the walk found no walkers' would otherwise "
-      + "be the same observation. The floor is on the population the assertion ranges over -- the walkers "
-      + "`discoversFromTree` finds -- not on the listing, because an empty listing empties it too. The same "
-      + "file's set-non-empty test holds the OTHER population, `docsReadingTests` itself, to a floor and "
-      + "to the #2329 breaker by name.",
+    guard: null,
+    note: "NOT A POPULATION: the only spawn this detector reads is a FIXTURE STRING (`execFileSync(\"git\", [\"ls-files\"])` "
+      + "written into a throwaway repo as the body of a test file whose job is to be one that walks the tree), and the assertion "
+      + "beside it names the three members the fixture's `docsReadingTests` must return, so it cannot pass over an empty "
+      + "set. The test that asked the real tree a git question here, whether the ts selector's own detector and "
+      + "`docsReadingTests` agree, was deleted with the selector (#3573); this entry used to carry its guard, `walkers.length > 0`.",
   },
 };
 
