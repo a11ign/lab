@@ -21,9 +21,11 @@ test("the core is laid at a full commit sha, never a branch", () => {
 test("this repository's package replaces the core's own before anything runs", () => {
   const lay = ci.indexOf("rm -rf core/packages/lab");
   assert.ok(lay > 0, "positive control: the laying step is found");
-  assert.ok(lay < ci.indexOf("pnpm install --no-frozen-lockfile"), "laid before the install");
+  // After the build, not before the install: the core's own `prepare` and `build` lay `packages/lab` from its pinned tag, tests-less (a11ign/a11ign#3505), and would replace an earlier copy.
+  assert.ok(lay > ci.indexOf("pnpm install --no-frozen-lockfile"), "laid after the install, which lays the pinned tag's source");
+  assert.ok(lay > ci.indexOf("pnpm run build"), "laid after the build, which lays it again");
   assert.ok(lay < ci.indexOf("pnpm exec rstest run"), "laid before the tests");
-  assert.match(ci, /pnpm exec eslint packages\/lab/);
+  assert.match(ci, /pnpm exec eslint --no-ignore packages\/lab/);
   assert.match(ci, /pnpm exec tsc --noEmit\n/);
 });
 
