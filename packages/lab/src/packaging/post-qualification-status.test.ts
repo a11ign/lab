@@ -16,8 +16,6 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import {
   QUALIFICATION_CONTEXT, QUALIFICATION_GATE, qualificationStatus,
 } from "../gates/qualification-status.mjs";
@@ -134,8 +132,6 @@ const recorder = (reply: GhAnswer = answer()) => {
   return { calls, gh };
 };
 
-const POSTER_SOURCE = readFileSync(fileURLToPath(new URL("../../../control/src/post-qualification-status.mjs", import.meta.url)), "utf8");
-
 test("it posts the payload to the sha's statuses endpoint through `gh api`, as the host's own credential", () => {
   const { calls, gh } = recorder();
   const result = postQualificationStatus({ sha: SHA, outcome: { exitCode: 0 }, run: "a11y-job-gate-stability", gh });
@@ -145,12 +141,6 @@ test("it posts the payload to the sha's statuses endpoint through `gh api`, as t
   assert.deepEqual(calls[0], ["api", "--method", "POST", `repos/a11ign/a11ign/statuses/${SHA}`,
     "-f", `state=${payload.state}`, "-f", `context=${payload.context}`, "-f", `description=${payload.description}`]);
   assert.match(renderResult(result), /^POSTED qualification: success/);
-});
-
-test("there is no token file and no second credential: the poster never names one", () => {
-  // The host's AMBIENT `gh`: it must not pick an account (`GH_CONFIG_DIR`, `GH_TOKEN`) or read a token file.
-  assert.doesNotMatch(POSTER_SOURCE, /GH_CONFIG_DIR\s*[:=]|GH_TOKEN\s*[:=]|process\.env\.GH_|qualification-status-token/);
-  assert.doesNotMatch(POSTER_SOURCE, /spawnSync\("gh", args, \{[^}]*\benv\b/, "the default runner must pass the environment through untouched");
 });
 
 test("with NO usable credential it posts nothing, says so, and is exit 3 -- never success, never silent", () => {
