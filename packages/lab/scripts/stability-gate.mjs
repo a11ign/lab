@@ -171,21 +171,40 @@ const CANARIES = [
       "when the probes were permuted; nothing in this list could have seen that",
   },
   {
-    // THE PLAN'S OWN SUCCESS MEASURE — determinism-plan D5, and the row that made the plan exist:
+    // REPLACES the National Library of Scotland's join page (nls.uk, #3905), which was the plan's own
+    // success measure:
     //
-    //     nls.uk/join/   one run: 7 distinct stops of 7 tabbable, SILENT
+    //     nls.uk join    one run: 7 distinct stops of 7 tabbable, SILENT
     //                    another run, same commit: ACCUSED
     //
-    // Same page, same code, two answers. Every other canary is a static page on localhost, so the single
-    // observation that started all of this could not be reproduced by the gate that exists to catch it.
+    // That page cannot be a canary, because it is first-visit-only BY CONSTRUCTION: it loads Civic Cookie
+    // Control through Google Tag Manager with `initialState: notify, notifyOnce: true`, so the consent panel
+    // opens on a profile's FIRST visit and never again. On a cold profile capture 1 was a different page
+    // from captures 2-5 (no "English" in the transcript, 24 events, first focus event "Close Cookie Control")
+    // and the gate read UNSTABLE for a reason that is the page's, not the pipeline's. The gate is NOT taught
+    // to throw that first capture away (ceo, #3130): the first visit IS a reader's visit, and the panel is the
+    // first thing a screen-reader user meets. That difference is recorded in docs/known-gaps.md instead.
+    //
+    // THIS ONE IS CHOSEN FOR HAVING NO FIRST-VISIT-ONLY STATE. Read 2026-10-07 off the page's own served
+    // files: the HTML and its six scripts (examples.js, app.js, disclosureMenu.js, skipto.js,
+    // details4everybody.js, svg4everybody.js) contain no `localStorage`, `sessionStorage`, `document.cookie`
+    // or `indexedDB`, and no consent, banner or onboarding markup. The only cookie the server sets is
+    // Cloudflare's `__cf_bm`, HttpOnly and never read by the page, so it cannot change what a reader meets.
+    //
+    // It is a LIVE page, as the old entry was: the determinism plan's headline claim is a real site repeating
+    // identically, and the other canaries are localhost fixtures. Its disclosure menus are what `probeFocus`
+    // exists for (the sweep opens panels and the focus walk then sees a different page, the mechanism that made
+    // nls.uk move). It does NOT reproduce nls.uk's consent state, which is the point of replacing it.
     //
     // A live site can also change on its own, and that would read as instability. The repeats run back to
     // back, and `repeat-capture` reports WHICH FIELD varies — a page edit moves content, our fault empties
     // a channel. A confounder to read for, not a reason to test only pages that cannot surprise us.
-    url: "https://www.nls.uk/join/",
+    url: "https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-navigation/",
     probeFocus: true,
-    reason: "the page the determinism plan is named for: it gave two different verdicts at the same " +
-      "commit, and until it repeats identically the plan's headline claim is unmet",
+    reason: "the live page with no first-visit-only state (no consent panel, banner or onboarding; no " +
+      "client storage in any script it serves) that replaced the nls.uk join page, whose Civic `notifyOnce` panel " +
+      "made a cold profile's first capture a different page; its disclosure menus are what `probeFocus` " +
+      "exercises, and a real site repeating identically is the determinism plan's headline claim",
   },
 ];
 
