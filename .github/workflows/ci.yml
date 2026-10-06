@@ -28,7 +28,7 @@ concurrency:
 
 env:
   # a11ign/a11ign at the commit `packages/lab` was last synced from (a66b1ae39, 2026-10-06; first cut from d533ad216136, 2026-10-05). A sha and never a branch: a branch moves under a pull request that did not touch it.
-  CORE_REF: a66b1ae3998baab0b7550a408a55844d546ba84a
+  CORE_REF: 78a3fae48ab8f1aed3ae8c9266e9ddcfb789ea8b
 
 jobs:
   gate:
