@@ -27,8 +27,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # a11ign/a11ign at the commit `packages/lab` was cut from (2026-10-05). A sha and never a branch: a branch moves under a pull request that did not touch it.
-  CORE_REF: d533ad216136e1dc68fb8a2b3ac447dd552fbea6
+  # a11ign/a11ign at the commit `packages/lab` was last synced from (eae7806ca, 2026-10-06; first cut from d533ad216136, 2026-10-05). A sha and never a branch: a branch moves under a pull request that did not touch it.
+  CORE_REF: eae7806ca688c609c183565c0143d49d41e2f483
 
 jobs:
   gate:
