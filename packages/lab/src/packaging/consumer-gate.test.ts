@@ -348,8 +348,17 @@ test("buildConsumerGateWorkflow: check-pin checks ANCESTRY, not exact equality a
   assert.match(workflow, /git merge-base --is-ancestor/,
     "check-pin must ask whether the pin is an ancestor of github.sha, which a regenerate-then-commit "
     + "sequence can actually satisfy");
-  assert.match(workflow, /git diff --name-only/,
-    "check-pin must also confirm nothing that would change the generated output has landed since the pin");
+  assert.match(workflow, /node scripts\/generate-consumer-gate\.mjs --check/,
+    "check-pin must also confirm the committed file still matches what the generator produces now");
+});
+
+test("#3788: check-pin asks whether the CONTENT is stale, not whether a path that feeds it was touched -- "
+  + "a README edit outside the fence re-staled the pin three times and cannot be satisfied in one PR", () => {
+  const jobsYaml = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
+  const workflow = buildConsumerGateWorkflow(jobsYaml);
+  const checkPinBlock = workflow.slice(workflow.indexOf("  check-pin:"), workflow.indexOf("  a11y:"));
+  assert.doesNotMatch(checkPinBlock, /git diff/, "a path-touched proxy refuses prose edits that change nothing");
+  assert.match(checkPinBlock, /pnpm install --frozen-lockfile/, "--check imports the workspace, so it must be installed first");
 });
 
 test("buildConsumerGateWorkflow: check-pin's refusal names the ref and how the run was triggered, "

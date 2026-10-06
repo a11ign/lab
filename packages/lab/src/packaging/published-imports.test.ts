@@ -13,7 +13,7 @@
  *
  * That boundary HELD when this was written — measured across all 6 published packages, zero violations —
  * which is exactly when it is worth pinning. A boundary that holds by luck is one nobody notices breaking:
- * `licence-boundary.test.ts` covers copyleft direction and `project-references.test.ts` covers that a
+ * `licence-boundary.test.ts` covers copyleft direction and `rslib-build-packages.test.ts` covers that a
  * cross-package import is declared, but NOTHING covered this direction, and adding one import to `cli`
  * would have gone unremarked.
  *
@@ -96,7 +96,7 @@ test("the discovery is real, so this cannot pass having examined nothing", () =>
   // The count assertion this repo puts on every discovery walk. Both halves must be non-empty, or the
   // test above is comparing an empty list to an empty list and reporting success.
   const all = packages();
-  assert.ok(all.filter((p) => !p.private).length >= 5,
+  assert.ok(all.filter((p) => !p.private).length >= 4,
     `only ${all.filter((p) => !p.private).length} published package(s) found; the walk is broken`);
   assert.ok(all.filter((p) => p.private).length >= 2,
     `only ${all.filter((p) => p.private).length} private package(s) found; nothing to violate`);

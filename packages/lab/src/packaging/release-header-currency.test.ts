@@ -71,11 +71,11 @@ const SEVEN_GATES = Array.from({ length: GATE_COUNT }, (_unused, index) => index
 const FEWEST_PLAUSIBLE_MACHINERY_FILES = 10;
 
 /**
- * The same kind of floor for `packages/`, which the changelog walk below must be SEEN to reach. Eight
- * package directories carry a manifest today (eleven before #3447 took `nvda-worker` and `nvda-speech` out of the workspace, nine before #3504 took `worker-fleet`); a run that enumerates fewer than this has lost the
+ * The same kind of floor for `packages/`, which the changelog walk below must be SEEN to reach. Seven
+ * package directories carry a manifest today (eleven before #3447 took `nvda-worker` and `nvda-speech` out of the workspace, nine before #3504 took `worker-fleet`, eight before #3625 took `toolchain`); a run that enumerates fewer than this has lost the
  * directory, and the emptiness assertion it feeds would then be reporting a walk that never looked.
  */
-const FEWEST_PLAUSIBLE_PACKAGES = 8;
+const FEWEST_PLAUSIBLE_PACKAGES = 7;
 
 /**
  * The three files #2052 measured as carrying a stale claim, and therefore the three that must still be
@@ -622,12 +622,11 @@ function workspaceManifests(): { path: string; name: string; version: string; is
 const unwrapped = (text: string): string => text.replace(/\s+/g, " ");
 
 /**
- * The four packages the registry holds at `0.1.0` (`npm view <name> version`, 2026-10-03, #3347), and the one
- * public one that was never published and so still reads `0.0.0` (`@a11ign/toolchain`, #3578: its first publish is that row's; the other
- * never-published package, the fleet, left the workspace with #3504).
+ * The four packages the registry holds at `0.1.0` (`npm view <name> version`, 2026-10-03, #3347), and the public ones that were never published
+ * and so still read `0.0.0`: NONE today (`@a11ign/toolchain` published from its own repository and left the workspace with #3625, the fleet with #3504).
  */
 const PUBLISHED_AT_0_1_0 = ["@a11ign/evidence", "@a11ign/judge", "@a11ign/scorer", "a11ign"];
-const NEVER_PUBLISHED = ["@a11ign/toolchain"];
+const NEVER_PUBLISHED: string[] = [];
 
 /** `version` is at least `floor`, both plain `major.minor.patch`: the only shapes a manifest here holds. */
 function versionAtLeast(version: string, floor: string): boolean {
@@ -679,7 +678,7 @@ test("#2159/#3347: the versions claim is true of the set changesets versions, sp
   assert.deepEqual(namesOf(published), PUBLISHED_AT_0_1_0,
     "the four packages the registry holds must all be workspace members, on either side of the release");
   assert.deepEqual(namesOf(publicManifests.filter((manifest) => !PUBLISHED_AT_0_1_0.includes(manifest.name))), NEVER_PUBLISHED,
-    "THE POSITIVE CONTROL for the split: the other public manifest is exactly the one never published, and "
+    "no public manifest is outside the four the registry holds (the emptiness is controlled by the non-empty `published` list just above), and "
     + "a new public package or a rename changes the registry split this file describes");
   assert.ok(published.every((manifest) => versionAtLeast(manifest.version, "0.1.0")),
     "a published package must read at least the version the registry holds, or `changeset publish` would send "
@@ -690,13 +689,13 @@ test("#2159/#3347: the versions claim is true of the set changesets versions, sp
     "THE POSITIVE CONTROL for the emptiness claims: these two private manifests are hand-set to 0.1.0 and "
     + "changesets never touches them, so this list is non-empty in any run where the manifests were "
     + "actually read");
-  assert.equal(publicManifests.length, 5,
-    `the document says FIVE versioned manifests and this tree has ${publicManifests.length} — a package added, `
+  assert.equal(publicManifests.length, 4,
+    `the document says FOUR versioned manifests and this tree has ${publicManifests.length} — a package added, `
     + "published or made private changes the sentence, and it is corrected here rather than left to rot");
 
   const list = unwrapped(decisionList());
   if (!firstReleaseCut()) {
-    assert.ok(list.includes("**Four of the five versioned manifests read `0.1.0`**, the version the registry holds"),
+    assert.ok(list.includes("**All four versioned manifests read `0.1.0`**, the version the registry holds"),
       "the document must state the claim over the set it is true of — the reviewer refused the unqualified "
       + "form, and a narrowing that is not in the document narrows nothing");
   }

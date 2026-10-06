@@ -37,6 +37,23 @@ const batchesEverything = (group: { patterns?: string[] }) =>
 /** `npm` covers the registry; `github-actions` covers the sha pin of the reusable release workflow (#3775). */
 const ECOSYSTEMS = ["npm", "github-actions"] as const;
 
+/**
+ * #3804: `consumer-gate.yml` is generated and holds its `a11ign/a11ign` pin at four sites a check compares, so the
+ * `github-actions` entry ignores exactly that and nothing else: `a11ign/toolchain` and the `actions/*` pins stay moving.
+ */
+const GENERATED_PIN = "a11ign/a11ign";
+
+const ignoredNames = (update: Update) => (update.ignore ?? []).map((i) => i["dependency-name"]).sort();
+
+function actionsIgnoreViolations(update: Update): string[] {
+  const ignored = ignoredNames(update);
+  const found: string[] = [];
+  if (!ignored.includes(GENERATED_PIN)) found.push(`\`${GENERATED_PIN}\` is not ignored: Dependabot would rewrite one of the four sites of the generated pin`);
+  const others = ignored.filter((name) => name !== GENERATED_PIN);
+  if (others.length) found.push(`ignores ${others.join(", ")}, which must keep moving`);
+  return found;
+}
+
 function violations(config: Config, ecosystem: (typeof ECOSYSTEMS)[number] = "npm"): string[] {
   const update = (config.updates ?? []).find((u) => u["package-ecosystem"] === ecosystem && u.directory === "/");
   if (!update) return [`no \`${ecosystem}\` update at directory \`/\``];
@@ -46,6 +63,7 @@ function violations(config: Config, ecosystem: (typeof ECOSYSTEMS)[number] = "np
     if (batchesEverything(group)) found.push(`group \`${name}\` batches every package into one pull request`);
   }
   if (!update["commit-message"]?.prefix) found.push("no commit-message prefix to recognise a dependency pull request by");
+  if (ecosystem === "github-actions") found.push(...actionsIgnoreViolations(update));
   return found;
 }
 
@@ -82,6 +100,13 @@ test("#3133 POSITIVE CONTROL: the checker REFUSES a config that breaks each choi
   assert.match(violations({ ...good, updates: [{ ...actions, schedule: { interval: "weekly" } }] }, "github-actions")[0] as string, /not daily/);
   assert.match(violations({ ...good, updates: [{ ...actions, groups: { all: { patterns: ["*"] } } }] }, "github-actions")[0] as string, /every package/);
   assert.match(violations({ ...good, updates: [{ ...actions, "commit-message": {} }] }, "github-actions")[0] as string, /prefix/);
+  // #3804: the generated pin is ignored, and ONLY it. Each refusal is shown on a fixture that breaks that one choice.
+  assert.match(violations({ ...good, updates: [{ ...actions, ignore: undefined }] }, "github-actions")[0] as string, /`a11ign\/a11ign` is not ignored/);
+  assert.match(violations({ ...good, updates: [{ ...actions, ignore: [{ "dependency-name": "a11ign/toolchain" }] }] }, "github-actions").join("\n"), /not ignored/);
+  const overBroad = { ...actions, ignore: [GENERATED_PIN, "a11ign/toolchain", "actions/checkout"].map((name) => ({ "dependency-name": name })) };
+  assert.match(violations({ ...good, updates: [overBroad] }, "github-actions")[0] as string, /ignores a11ign\/toolchain, actions\/checkout, which must keep moving/);
+  // And the `npm` entry is not asked for it, or the check above would be an `npm` rule in disguise.
+  assert.deepEqual(violations({ ...good, updates: [{ ...npm, ignore: [] }] }), []);
   // A per-package group is small and stays allowed, or "refuses every group" would pass the above.
   assert.deepEqual(violations({ ...good, updates: [{ ...npm, groups: { vitest: { patterns: ["vitest*"] } } }] }), []);
 });

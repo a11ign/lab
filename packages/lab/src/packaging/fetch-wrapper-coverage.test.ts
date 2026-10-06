@@ -42,7 +42,7 @@ function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      return ["dist", "node_modules", "__pycache__", "isolation-fixtures", "tsconfig-fixtures"].includes(entry.name)
+      return ["dist", "node_modules", "__pycache__", "isolation-fixtures"].includes(entry.name)
         ? [] : sourceFiles(full);
     }
     // Test files are excluded: they exercise `fetch` (real or mocked) for reasons that have nothing to do

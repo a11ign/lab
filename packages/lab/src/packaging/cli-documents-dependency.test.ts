@@ -7,6 +7,11 @@
  * declared `0.1.0` exactly since #3347, which a workspace copy at `0.1.0` satisfies, and `linkWorkspacePackages: true`
  * (`pnpm-workspace.yaml`) links any range the workspace copy satisfies, so the manifest alone never showed the defect.
  *
+ * WHERE IT IS DECLARED MOVED IN ROW 4c-a11ign (#3580): the CLI is a bundle that INLINES `@a11ign/documents` (and the `pdf-lib` behind it), so the
+ * package is a `devDependency`: a consumer must not install 23 MB of `pdf-lib` for code the bundle already holds. The range and the registry
+ * resolution below are unchanged, and `packages/cli/rslib.config.ts` is what makes a `devDependency` get bundled (`autoExternal` leaves only
+ * `dependencies` external).
+ *
  * Everything is read as TEXT or off the installed tree: this file must not import `cli.ts`, whose closure needs the `corpus`
  * capability the acceptance job lacks (the row's note of 2026-10-03).
  *
@@ -35,11 +40,11 @@ const IMPORTS: readonly { file: string; names: readonly string[]; typeOnly: bool
   { file: "packages/cli/src/report.ts", names: ["PdfFinding"], typeOnly: true },
 ];
 
-interface Lockfile { importers: Record<string, { dependencies?: Record<string, { specifier: string; version: string }> }> }
+interface Lockfile { importers: Record<string, { devDependencies?: Record<string, { specifier: string; version: string }> }> }
 
 /** Why `cli`'s manifest does not declare the package by a range, or null when it does. */
 function manifestRefusal(manifestText: string): string | null {
-  const declared = (JSON.parse(manifestText) as { dependencies?: Record<string, string> }).dependencies?.[PACKAGE];
+  const declared = (JSON.parse(manifestText) as { devDependencies?: Record<string, string> }).devDependencies?.[PACKAGE];
   if (declared === undefined) return `cli does not declare ${PACKAGE}`;
   if (declared.startsWith("workspace:")) return `cli declares ${PACKAGE} as ${declared}: the workspace protocol, not a published range`;
   if (!SEMVER_RANGE.test(declared)) return `cli declares ${PACKAGE} as "${declared}", which is not a ^ or ~ range over a version (an exact pin or "0.0.0" is the workspace's spelling)`;
@@ -48,7 +53,7 @@ function manifestRefusal(manifestText: string): string | null {
 
 /** Why the lockfile's `cli` importer does not resolve the package from the registry, or null when it does. */
 function lockfileRefusal(lockText: string, specifier: string): string | null {
-  const entry = (parse(lockText) as Lockfile).importers[CLI_IMPORTER]?.dependencies?.[PACKAGE];
+  const entry = (parse(lockText) as Lockfile).importers[CLI_IMPORTER]?.devDependencies?.[PACKAGE];
   if (entry === undefined) return `the lockfile's ${CLI_IMPORTER} importer has no ${PACKAGE}`;
   if (entry.version.startsWith("link:")) return `cli resolves ${PACKAGE} to ${entry.version}: the workspace copy, never the registry`;
   if (entry.specifier !== specifier) return `the lockfile records specifier "${entry.specifier}" for cli and its manifest says "${specifier}": the lockfile is stale`;
@@ -67,8 +72,8 @@ function importRefusal(source: string, spec: { file: string; names: readonly str
 
 // ---- positive controls: each refusal fires on the input that breaks it, and names `cli` ------------------------------------
 
-const manifestWith = (range: string | undefined) => JSON.stringify({ dependencies: range === undefined ? {} : { [PACKAGE]: range } });
-const lockWith = (specifier: string, version: string) => `importers:\n  ${CLI_IMPORTER}:\n    dependencies:\n      '${PACKAGE}':\n        specifier: ${specifier}\n        version: ${version}\n`;
+const manifestWith = (range: string | undefined) => JSON.stringify({ devDependencies: range === undefined ? {} : { [PACKAGE]: range } });
+const lockWith = (specifier: string, version: string) => `importers:\n  ${CLI_IMPORTER}:\n    devDependencies:\n      '${PACKAGE}':\n        specifier: ${specifier}\n        version: ${version}\n`;
 
 test("control: a manifest declaring the workspace `0.0.0` is REFUSED, naming cli", () => {
   assert.match(manifestRefusal(manifestWith("0.0.0")) ?? "", /^cli declares @a11ign\/documents as "0\.0\.0"/);
@@ -90,7 +95,7 @@ test("control: a lockfile linking the workspace copy is REFUSED, naming cli, wha
 
 test("control: a lockfile with a stale specifier, or with no entry for the package, is REFUSED", () => {
   assert.match(lockfileRefusal(lockWith("0.1.0", "0.1.0"), "^0.1.0") ?? "", /lockfile is stale/);
-  assert.match(lockfileRefusal("importers:\n  packages/cli:\n    dependencies: {}\n", "^0.1.0") ?? "", /has no @a11ign\/documents/);
+  assert.match(lockfileRefusal("importers:\n  packages/cli:\n    devDependencies: {}\n", "^0.1.0") ?? "", /has no @a11ign\/documents/);
 });
 
 test("control: an import naming the wrong names, a missing import and a type imported as a value are each REFUSED", () => {
@@ -108,7 +113,7 @@ test("cli declares @a11ign/documents by a semver range", () => {
 });
 
 test("the lockfile's cli importer resolves @a11ign/documents from the registry, with the manifest's specifier", () => {
-  const specifier = (JSON.parse(read(CLI_MANIFEST)) as { dependencies: Record<string, string> }).dependencies[PACKAGE];
+  const specifier = (JSON.parse(read(CLI_MANIFEST)) as { devDependencies: Record<string, string> }).devDependencies[PACKAGE];
   assert.equal(lockfileRefusal(read(LOCKFILE), specifier), null);
 });
 

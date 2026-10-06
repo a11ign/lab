@@ -288,7 +288,7 @@ test("knownPackages finds the real repo's workspace directories, and refuses a s
   const packages = knownPackages(REPO);
   // A floor, not a target -- matches the same convention `control-plane-hygiene.test.ts` uses for the
   // same reason: adding or retiring a package must not itself break this guard.
-  assert.ok(packages.length >= 8, `found ${packages.length} package(s); the packages/* walk is broken`);
+  assert.ok(packages.length >= 7, `found ${packages.length} package(s); the packages/* walk is broken`);
   assert.ok(packages.includes("lab") && packages.includes("judge"));
   // `packages/README.md` is a real tracked file directly under `packages/`, two path segments deep -- not
   // a package directory. The dependency-graph reader (since removed) was the first consumer that ever tried

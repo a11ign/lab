@@ -122,8 +122,8 @@ test("every PUBLISHED copyleft package ships its licence text", () => {
   // The filter is the risk, not the loop. Both halves of it are derived — `published` from `private !== true`
   // and the licence from a regex — so one inverted read yields an empty list and this test reports success
   // having examined nothing, while the repo ships copyleft code with no licence text. A compliance check
-  // that cannot fail is worse than none, because it is cited. Measured 5 when this was added.
-  assert.ok(obliged.length >= 4,
+  // that cannot fail is worse than none, because it is cited. Measured 5 when this was added, 3 once #3625 took `toolchain` out of the workspace (read from the manifests, 2026-10-06).
+  assert.ok(obliged.length >= 3,
     `only ${obliged.length} published copyleft package(s) found of ${packages().length} — the licence or `
     + "`private` detection has broken, so the obligation below is being asserted over an empty list");
 

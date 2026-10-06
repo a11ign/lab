@@ -34,7 +34,7 @@ function realPackages(): string[] {
 
 test("the real package count and private/public split", () => {
   const names = realPackages();
-  assert.ok(names.length >= 8, `only found ${names.length} packages under packages/ -- the discovery `
+  assert.ok(names.length >= 7, `only found ${names.length} packages under packages/ -- the discovery `
     + "walk may be broken, not the codebase suddenly smaller");
 
   const privateOnes = names.filter((name) => {

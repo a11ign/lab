@@ -63,6 +63,17 @@ function layerRepository(sandbox: { dir: string; run(args: string[]): string; co
 const walk = (root: string, dir = ""): string[] => readdirSync(join(root, dir), { withFileTypes: true })
   .flatMap((entry) => (entry.isDirectory() ? walk(root, join(dir, entry.name)) : [join(dir, entry.name)])).sort();
 
+test("a CRLF lockfile, as a Windows runner checks it out, pins the same version as an LF one (#3787)", () => {
+  const lf = lockfileWith("0.3.0(@a11ign/scorer@packages+scorer)");
+  const crlf = lf.replace(/\n/g, "\r\n");
+  assert.notEqual(crlf, lf, "the control must differ from the LF text, or this proves nothing");
+  assert.deepEqual(pinnedVersion(crlf, NAME), { version: "0.3.0" });
+  assert.match(pinnedVersion(lockfileWith("link:packages/worker-fleet").replace(/\n/g, "\r\n"), NAME).refusal, /not a registry release/);
+  assert.equal(layingPlan(MANIFEST, crlf, "screenreader-fleet").tag, `${NAME}@0.3.0`);
+  const real = readFileSync(join(REPO_ROOT, "pnpm-lock.yaml"), "utf8");
+  assert.deepEqual(pinnedVersion(real.replace(/\r?\n/g, "\r\n"), NAME), pinnedVersion(real.replace(/\r?\n/g, "\n"), NAME));
+});
+
 test("lay: src/ only, without the layer's tests or its manifest, at the pinned tag; again is a no-op; another tag replaces it", () => {
   withGitSandbox((sandbox) => {
     layerRepository(sandbox, "0.3.0");

@@ -163,10 +163,10 @@ test("#1078: every published package and the README state the SAME homepage", ()
 test("#1078: the population is DERIVED, so a package that joins or leaves is compared or dropped without anyone editing a list", () => {
   // The row, and #919 before it, named FIVE packages when the derivation found SIX (`worker-fleet` was published and carried the homepage too).
   // **A hand-typed list would have shipped the row's own miscount**, which is the argument for deriving rather than a preference about style.
-  // `worker-fleet` has since left (#3504), so the set is the named four plus `toolchain`, and it is the DERIVATION that is pinned, not the number.
+  // `worker-fleet` has since left (#3504), #3625 took `toolchain` out the same way, so the set is the named four, and it is the DERIVATION that is pinned, not the number.
   const published = publishedPackages().map((p) => p.file.split("/")[1]).sort();
   assert.ok(!published.includes("worker-fleet"), `the derived set is ${published.join(", ")} -- worker-fleet left the workspace (#3504) and cannot be published from here`);
-  for (const named of ["cli", "evidence", "judge", "scorer", "toolchain"]) {
+  for (const named of ["cli", "evidence", "judge", "scorer"]) {
     assert.ok(published.includes(named), `${named} is published and must be in the compared set`);
   }
   assert.ok(!published.includes("lab") && !published.includes("control"),
