@@ -1,5 +1,5 @@
 /**
- * `node_modules/agent-org/src/row-claim.mjs` answers "is this row claimed?" by reading the BOARD (issue labels), never git
+ * `agent-org/src/row-claim.mjs` answers "is this row claimed?" by reading the BOARD (issue labels), never git
  * history -- #28 and #30 (2026-09-06) were each pulled twice because the documented collision check
  * (`git log --branches='agent/*' --not origin/main -- <path>`) answers "would I collide in this file",
  * not "is somebody already on this row". See that file's own header for the incident and the reasoning.
@@ -35,24 +35,25 @@ import { dirname, join } from "node:path";
 // filesystem's free space, and the host as the cause. It is this file's first adoption (#2158's Region);
 // the other 103 exposed suites are explicitly a later decision.
 import { EXHAUSTION_MARKER, withSandbox } from "../../../guards/src/sandbox-exhaustion.mjs";
-import {
+const {
   claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, moveProjectStatus,
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
-  worktreeStatus, removeClaimedWorktree as removeClaimedWorktreeWithClaims, WORKTREE_LABEL_PREFIX, BRANCH_LABEL_PREFIX,
+  worktreeStatus, removeClaimedWorktree: removeClaimedWorktreeWithClaims, WORKTREE_LABEL_PREFIX, BRANCH_LABEL_PREFIX,
   claimRecordComment, claimRecordFrom, claimedObjects, fetchClaimComments, CLAIM_RECORD_MARKER,
   b4Lines, reportB4, failureReport, landedWritesOf, LANDED_WRITE_EXIT,
   claimWithWorktree,
   worktreeTargetReason,
   worktreeFlagsReason,
   claimRecordSession,
-} from "agent-org/src/row-claim.mjs";
-import { forgetProcessSnapshot, withBoardSnapshot } from "agent-org/src/board-snapshot.mjs";
-import { claimRefusal, REMOVAL_LOG_ENV } from "agent-org/src/worktree-removal.mjs";
-import { refusalCause, PROJECT_UNREADABLE } from "agent-org/src/settle-closed-status.mjs";
-import { laneReason } from "agent-org/src/row-claim/runner-rule.mjs";
+} = await toolModule("src/row-claim.mjs");
+const { forgetProcessSnapshot, withBoardSnapshot } = await toolModule("src/board-snapshot.mjs");
+const { claimRefusal, REMOVAL_LOG_ENV } = await toolModule("src/worktree-removal.mjs");
+const { refusalCause, PROJECT_UNREADABLE } = await toolModule("src/settle-closed-status.mjs");
+const { laneReason } = await toolModule("src/row-claim/runner-rule.mjs");
 import { stripComments } from "@a11ign/evidence/source-text";
-import { READY_LABEL, WAS_READY_LABEL } from "agent-org/src/ready-label-audit.mjs";
+const { READY_LABEL, WAS_READY_LABEL } = await toolModule("src/ready-label-audit.mjs");
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { toolModule, toolUrl } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 // #2782: EVERY REMOVAL WRITES A LINE AND READS THE ROW'S CLAIM, and a fixture must do neither to the host -- a fixture directory
 // named for a row number would otherwise read the real row over `gh`, and every removal would land in the real log. The tests
@@ -123,7 +124,7 @@ test("multiple session labels are all reported -- a race leaves both visible unt
 });
 
 // --- #656: the claim records the BRANCH, so an escalating session can tell a portable row from a held
-// one before it ever offers to take it (see node_modules/agent-org/src/carry-branch.mjs's own header for the incident) ---
+// one before it ever offers to take it (see agent-org/src/carry-branch.mjs's own header for the incident) ---
 
 test("claimStatus reads the recorded branch off a branch: label", () => {
   const status = claimStatus(["in-progress", "session:worker-config", "started",
@@ -1367,7 +1368,7 @@ test("#1464: the live set these tests read is sessions.json's -- non-empty, and 
 });
 
 test("#1464: arm-pr's LIVE_SESSIONS is the same list -- derived from the same file, pinned by its SOURCE line", () => {
-  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
+  const source = readFileSync(toolUrl("src/arm-pr.mjs"), "utf8");
   assert.deepEqual(source.split("\n").filter((line) => line.includes("SESSIONS.live.filter(")),
     ["export const LIVE_SESSIONS = SESSIONS.live.filter((s) => s.family === undefined).map((s) => s.name);"],
     "arm-pr derives its list from `.live`'s names in exactly one line, as `LIVE` above does");
@@ -1547,7 +1548,7 @@ test("#1063: `renderStatus`'s UNCLAIMED branch calls reportB4 -- the row's deliv
   // SCOPED TO THE BRANCH, so it fails loudly if the call moves rather than passing vacuously somewhere
   // else in the file.
   const source = stripComments(readFileSync(
-    new URL("../../../../node_modules/agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
+    toolUrl("src/row-claim.mjs"), "utf8"));
   const unclaimedBranch = /if \(!status\.claimed\) \{([\s\S]*?)\n {2}\}/.exec(source);
   assert.ok(unclaimedBranch, "the UNCLAIMED branch must still be findable, or this asserts nothing");
   assert.match(unclaimedBranch[1], /reportB4\(issueNumber\)/,
@@ -1823,7 +1824,7 @@ test("#2746 REGRESSION: a decline label edit that exits CLEAN but does not durab
 });
 
 test("#1399 WIRING: the claim/dispatch and decline CLIs report a thrown error through failureReport", () => {
-  const source = stripComments(readFileSync(new URL("../../../../node_modules/agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
+  const source = stripComments(readFileSync(toolUrl("src/row-claim.mjs"), "utf8"));
   for (const fn of ["runDispatchOrClaim", "runDecline"]) {
     const start = source.indexOf(`function ${fn}(`);
     assert.ok(start >= 0, `${fn} not found`);
@@ -1841,6 +1842,29 @@ test("#1399 WIRING: the claim/dispatch and decline CLIs report a thrown error th
 // stamp reader and writer, and claim, and read the ORDER of what it did.
 
 /**
+ * A local branch is a PEER'S unmerged work in these fixtures. Since agent-org 0.54.7 (#3745) a claim passes over a local branch that is
+ * merged into origin/main and held by no worktree, and a stub answering "" to every git call reads as exactly that.
+ * The refusal asserted below is THE TOOL'S, not this repository's: `--branch=… ALREADY EXISTS locally (…)` is spelled in agent-org's
+ * `src/row-claim.mjs` (`localBranchReading`'s caller), which `toolModule` loads at its newest release tag. A failure here that carries
+ * no `reason` means that spelling or the free-branch reading moved there, so read the tool's refusal before touching this stub (#3756).
+ */
+function unmergedBranchAnswer(subcommand: "merge-base" | "rev-list") {
+  if (subcommand === "rev-list") return "3";
+  throw Object.assign(new Error("git merge-base: not an ancestor"), { status: 1 });
+}
+
+/** What origin answers to `ls-remote`: the FULL head listing with no `--exit-code`, else whether the one branch is there. */
+function lsRemoteAnswer(args: string[], { remoteBranch, remoteStatus, originHeads, listingThrows }:
+  { remoteBranch: boolean; remoteStatus: number; originHeads: string[]; listingThrows: boolean }) {
+  if (!args.includes("--exit-code")) {
+    if (listingThrows) throw Object.assign(new Error("git ls-remote: Could not read from remote repository"), { status: 128 });
+    return originHeads.join("\n");
+  }
+  if (remoteBranch) return "abc123\trefs/heads/agent/x-1432";
+  throw Object.assign(new Error(`git ls-remote exited ${remoteStatus}`), { status: remoteStatus });
+}
+
+/**
  * The git/gh a worktree claim meets: a local branch, an origin branch, row #1432's claim-record comments, and
  * (#2014) origin's FULL head listing -- the `ls-remote` with no `--exit-code`, which the row check reads.
  */
@@ -1853,14 +1877,8 @@ function worktreeClaimRun({ localBranch = false, remoteBranch = false, remoteSta
       if (localBranch) return "abc123";
       throw Object.assign(new Error("git rev-parse: no such ref"), { status: 1 });
     }
-    if (cmd === "git" && args[0] === "ls-remote" && !args.includes("--exit-code")) {
-      if (listingThrows) throw Object.assign(new Error("git ls-remote: Could not read from remote repository"), { status: 128 });
-      return originHeads.join("\n");
-    }
-    if (cmd === "git" && args[0] === "ls-remote") {
-      if (remoteBranch) return "abc123\trefs/heads/agent/x-1432";
-      throw Object.assign(new Error(`git ls-remote exited ${remoteStatus}`), { status: remoteStatus });
-    }
+    if (cmd === "git" && (args[0] === "merge-base" || args[0] === "rev-list")) return unmergedBranchAnswer(args[0]);
+    if (cmd === "git" && args[0] === "ls-remote") return lsRemoteAnswer(args, { remoteBranch, remoteStatus, originHeads, listingThrows });
     if (cmd === "gh" && args[0] === "issue" && args.includes("comments")) {
       return JSON.stringify({ comments: recordComments.map((body) => ({ body })) });
     }
@@ -1879,7 +1897,9 @@ function worktreeClaim(stub: ReturnType<typeof worktreeClaimRun>, { pathExists =
   const stamped: string[][] = [];
   const claimCalls: unknown[][] = [];
   const recordingRun = (cmd: string, args: string[]) => {
-    if (cmd === "git" && (args[0] === "fetch" || args[0] === "worktree" || args[0] === "branch")) order.push(`git ${args[0]} ${args[1]}`);
+    // `worktree list` is a READ (the claim asks which worktree holds a branch before it refuses), so it is not a write to order.
+    const writes = args[0] === "fetch" || (args[0] === "worktree" && args[1] !== "list") || args[0] === "branch";
+    if (cmd === "git" && writes) order.push(`git ${args[0]} ${args[1]}`);
     return stub.run(cmd, args);
   };
   const call = () => claimWithWorktree(1432, "worker-tooling", { ...TARGET, run: recordingRun as never,

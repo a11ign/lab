@@ -153,20 +153,17 @@ test("every site naming an SSH key names the fleet key or a DECLARED other one �
     + "move the rest; if this is genuinely a new key, add it to OTHER_KEYS with the reason it exists.");
 });
 
-test("the fleet key is named in ALL FOUR languages that dereference it — YAML ansible reads, the "
-  + "JavaScript `doctor` runs, the bash that generates it and the systemd unit that serves its public "
-  + "half — so a rename that reaches one of them is visibly a rename that reached one of them", () => {
+test("the fleet key is named where THIS repository dereferences it — the ansible YAML — so a rename that reaches the others is visibly one that did not reach this", () => {
+  // It was named in four languages (the YAML, `doctor.mjs`, the bootstrap `.sh` and the systemd unit). Three of the four left with `worker-fleet`
+  // (#3504) and are pinned in `a11ign/screenreader-fleet`; what stays is the YAML that ansible reads, which is the half a rename here would miss.
   const fleetKey = fleetKeyName();
   const files = new Set(mentions().filter(([, k]) => k === fleetKey).map(([f]) => f));
   for (const dereferencing of [
     "packages/control/ansible/group_vars/a11y_workers.yml",
-    "packages/worker-fleet/src/doctor.mjs",
-    "packages/worker-fleet/src/provisioning/bootstrap-control-plane.sh",
-    "packages/worker-fleet/src/provisioning/bare-metal/a11y-bootstrap.service",
   ]) {
     assert.ok(files.has(dereferencing),
       `${dereferencing} no longer names ${fleetKey}. It DEREFERENCES the key — it authenticates with it, `
       + "reads it to decide a verdict, generates it, or serves its public half — so if the name moved "
-      + "there and not here, one of those four is now pointing at a file that does not exist.");
+      + "there and not here, it is now pointing at a file that does not exist.");
   }
 });

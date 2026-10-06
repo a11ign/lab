@@ -43,6 +43,7 @@ import path from "node:path";
 import { REPO, REPO_URL, REPO_GIT_URL, PRODUCT_REPO, PRODUCT_REPO_URL, PRODUCT_GIT_URL }
   from "../../../../scripts/repo-identity.mjs";
 import { layerFile } from "../../../guards/src/layer-file.mjs";
+import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
 
@@ -95,9 +96,8 @@ const SITES: Site[] = [
   // COPY-PASTE-EXECUTE: `bash <(curl -fsSL <url>)` on the line right below this URL. A reader follows the
   // control-plane setup guide's literal step, verbatim; nothing prompts them to notice the org is not
   // live yet.
-  { file: "docs/control-plane-proxmox.md",
-    expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
-      + "bootstrap-control-plane.sh" },
+  // NOT the three provisioning one-liners (control-plane-proxmox.md, getting-started.md, nvda-worker-runbook.md) any more (#3504): the scripts they
+  // fetch live in `a11ign/screenreader-fleet`, so those URLs name THAT repository, which is the correct identity and not this repository's.
   { file: "docs/backlog-ready.md", expect: `${PRODUCT_REPO_URL}/issues` },
   { file: "docs/try-it.md", expect: `uses: ${REPO}@v0.1.0` },
   // COPY-PASTE-EXECUTE: the getting-started guide's own literal step 1. The `cd a11y-witness` line right
@@ -106,17 +106,11 @@ const SITES: Site[] = [
   // `control-plane-checkout-is-one-fact.test.ts` exists to catch, and pinning it here would make THIS
   // guard's own fixture read as an unclassified use of that guard's subject, one file over.
   { file: "docs/getting-started.md", expect: `git clone ${REPO_URL}.git` },
-  { file: "docs/getting-started.md",
-    expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
-      + "bootstrap-windows-worker.ps1" },
   { file: "docs/github-action.md", expect: `uses: ${REPO}@v0.1.0` },
   { file: "docs/github-action.md", expect: `uses: ${REPO}@<sha>` },
   // REPO, not PRODUCT_REPO -- docs/backlog.md is one of #66's explicit exclusions (historical narrative,
   // never rewritten to match the present), so this link correctly still points at the pre-rename repo.
   { file: "docs/backlog.md", expect: `${REPO_URL}/issues` },
-  { file: "docs/nvda-worker-runbook.md",
-    expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
-      + "bootstrap-windows-worker.ps1" },
   // NOT `docs/board/README.md`'s own `--repo` line -- DELIBERATELY, #647. The functional defect the old
   // entry here was pinning (a documented `gh --repo a11ign/a11ign` command that would have failed for
   // anyone who pasted it) was already fixed by removing the `--repo` argument entirely; the file's only
@@ -141,11 +135,13 @@ const SITES: Site[] = [
   { file: ".agent-org/roles/README.md", expect: `\`${PRODUCT_REPO}\`` },
   { file: ".agent-org/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${PRODUCT_REPO}` },
   { file: "examples/workflow.yml", expect: `uses: ${REPO}@main` },
-  { layer: "@a11ign/screenreader-worker", file: "package.json", expect: PRODUCT_GIT_URL },
+  // NOT the layer's `package.json` any more (#3447): the registry's 0.1.0 names `a11ign/screenreader-worker`, its OWN repository, which is
+  // what `manifest-repository-check.test.ts` requires of a package that publishes from there. Agreeing with THIS repository's name would
+  // be the defect, so that identity is pinned by the layer's repository and not asked of its copy here.
   // COPY-PASTE-EXECUTE, same shape as docs/getting-started.md above -- see that entry's comment for why
   // the `cd a11y-witness` line right after this is not separately pinned.
   { layer: "@a11ign/screenreader-worker", file: "src/README.md", expect: `git clone ${REPO_URL}.git` },
-  { file: "packages/worker-fleet/package.json", expect: PRODUCT_GIT_URL },
+  // NOT `packages/worker-fleet/package.json` any more (#3504), for the reason given above for the worker's: the fleet's own repository names itself.
   { file: "packages/evidence/README.md", expect: `(${PRODUCT_REPO_URL})` },
   { file: "packages/evidence/package.json", expect: PRODUCT_GIT_URL },
   { file: "packages/cli/package.json", expect: PRODUCT_GIT_URL },
@@ -188,7 +184,7 @@ test("every literal site still names this repository, agreeing with repo-identit
 });
 
 test("the vacuity guard: this list is not empty and each file it names exists", () => {
-  assert.ok(SITES.length >= 30, `only ${SITES.length} sites declared -- the 2026-09-06 audit found ~30; `
+  assert.ok(SITES.length >= 25, `only ${SITES.length} sites declared -- the 2026-09-06 audit found ~30, and #3447 and #3504 retired five that belonged to the layer's own repository; `
     + "a shrunk list examining less than the audit found would pass by looking at fewer things, not by "
     + "the repository needing fewer references fixed");
   const sites = [...new Map(SITES.map((s) => [siteName(s), s])).values()];
@@ -204,8 +200,8 @@ test("board-data.mjs and row-claim.mjs DERIVE the name rather than restating it 
   // The two runtime consumers this repo already had. Checked by IMPORT rather than by literal, because
   // that is the whole point of the split: these two no longer carry a copy for repo-identity-drift to
   // catch, and a test asserting a literal here would be re-introducing the duplicate this row removes.
-  for (const file of ["node_modules/agent-org/src/board-data.mjs", "node_modules/agent-org/src/row-claim.mjs"]) {
-    const text = readFileSync(path.join(ROOT, file), "utf8");
+  for (const file of [toolPath("src/board-data.mjs"), toolPath("src/row-claim.mjs")]) {
+    const text = readFileSync(file, "utf8");
     // The specifier is relative to wherever the consumer lives -- these two moved into @a11ign/agent-org,
     // so it is no longer `./`. What matters is that the name is IMPORTED, not which depth the path has.
     //

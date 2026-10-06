@@ -97,7 +97,6 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "control-plane-checkout-is-one-fact.test.ts: sites.length",
   "control-plane-hygiene.test.ts: trap.checked",
   "derived-artifact-sweep.test.ts: discovered.length",
-  "doc-cross-reference-report.test.ts: guards.size",
   "documented-checkout-step.test.ts: found.length",
   "exports-are-shipped.test.ts: checked",
   "exports-are-shipped.test.ts: packages.length",
@@ -112,6 +111,12 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "git-spawn-classification.test.ts: files.length",
   "git-spawn-classification.test.ts: spawningGit.length",
   "guest-paths-are-measured.test.ts: named.length",
+  // #2703, and both are PRECONDITIONS rather than stand-ins: the tree's file count and the number of
+  // tree-wide guards inside lab change with every row, so there is no right number to assert. Each floor
+  // answers only "did the walk read a population at all"; the verdicts are the equalities after them
+  // (`deepEqual(stay, all.filter(...))`, `deepEqual(…treeRefusals…, [])`), each with its own control.
+  "lab-extraction.test.ts: files.length",
+  "lab-extraction.test.ts: move.length",
   "licence-boundary.test.ts: obliged.length",
   "local-import-closure.test.ts: files.length",
   "local-import-closure.test.ts: walked",
@@ -125,12 +130,8 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "ready-label-audit.test.ts: statuses.size",
   "region-paths.test.ts: roots.length",
   "releasability.test.ts: VERDICTS.cases.length",
-  "repo-identity-consolidated.test.ts: SITES.length",
   "schema-migration-citations.test.ts: SOURCE_FILES.length",
   "schema-migration-citations.test.ts: headings.length",
-  "select-changed-tests.test.ts: alwaysRun.length",
-  "select-changed-tests.test.ts: every.length",
-  "select-changed-tests.test.ts: files.length",
   "spawned-paths.test.ts: files.length",
   "tracker-writer-population.test.ts: examined",
   "tracker-writer-population.test.ts: sending.length",

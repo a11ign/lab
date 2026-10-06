@@ -29,8 +29,10 @@ import { resolve, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
-import { isPrimaryWorktree } from "agent-org/src/prune-worktrees.mjs";
 import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
+import { toolModule } from "../../../scripts/agent-org-newest-tag.mjs";
+
+const { isPrimaryWorktree } = await toolModule("src/prune-worktrees.mjs");
 
 const REPO = REPO_ROOT;
 const MODEL_DIR = resolve(REPO, "packages/scorer/models/screenreader-scorer");

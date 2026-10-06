@@ -1,20 +1,29 @@
 /**
- * THE RELEASE STARTS ITSELF, AND WRITES NOTHING TO `main` (#3131, child of #928, ADR 0041).
+ * THE RELEASE STARTS ITSELF ON THE MERGE, THROUGH ONE CALL, AND OPENS NO PULL REQUEST (#3717, child of #928, ADR 0041).
  *
- * `release.yml` used to start only on `workflow_dispatch` and publish only on a typed `publish-for-real`; its last
- * step then pushed the version bump straight to `main`, which `main`'s required review (#2022) refuses. The ruled
- * design is two events in one file: a push to `main` that leaves a changeset pending opens the version pull request,
- * and the push that pull request's merge makes (nothing pending, a version ahead of the registry) publishes.
- * Nobody types and nobody pushes `main`.
+ * `release.yml` used to be ~770 lines of its own: a `plan` job that read the registry to pick one of four modes, a `version-pr`
+ * job that opened the "Version packages" pull request with `A11IGN_BOT_TOKEN`, and a `release` job on that pull request's merge.
+ * It is now a CALLER (#3131 was written around the pull request, and this row supersedes its remaining readings): a push to
+ * `main` that carries a changeset reaches ONE call to the reusable per-merge workflow in a11ign/toolchain (#3712, shown to
+ * publish by OIDC from a caller by #3713's real merge), and every guard about WHAT is published is a job that call `needs:`.
  *
- * WHAT THIS PARSES, AND WHY IT PARSES. A workflow is a structure, so every check below reads the parsed YAML: a step
- * that merely ECHOES `git push origin main`, or a comment that names `id-token: write`, must satisfy nothing, and a
- * step whose `if:` says `rehearsal` must not count as a guard that runs on a publish. `refusals()` returns one NAMED
- * property per defect, so a red run says which property went, and each property has a fixture below that makes it go
- * (the positive controls the row asks for): a guard nobody has seen refuse is not known to refuse.
+ * WHAT THIS PARSES, AND WHY. A workflow is a structure, so every check below reads the parsed YAML: a step that merely ECHOES
+ * `git push origin main`, or a comment that names `A11IGN_BOT_TOKEN`, must satisfy nothing. `refusals()` returns one NAMED property
+ * per defect, so a red run says which property went, and each property has a fixture below that makes it go (the positive
+ * controls the row asks for): a guard nobody has seen refuse is not known to refuse. The OLD workflow is kept as
+ * `scripts/fixtures/release-before-3717.yml` and must be refused for each property it breaks.
+ *
+ * WHICH GUARD MOVED WHERE (the row asks). Each used to be a step of the one `release` job; the called workflow takes no steps of
+ * the caller's, so a guard is a job it WAITS FOR. The seven numbered in the file header: 5, 6 and 7 are called workflows, as
+ * before; 1 to 4 moved into the called workflow's own refusals or stayed as steps of `guards` (see `GUARDS`). DROPPED, with why:
+ * the `plan` job and its four modes (the called workflow subtracts what the tags consumed, so nothing here needs to ask the
+ * registry what is pending), `version-pr` and its pull request body (no pull request), the rehearsal-only `release:version`
+ * and `changeset status` pair (the called workflow versions on a detached commit; `status` stays for a dispatch), and the
+ * `Publish` step and the `contents: write` that came with it (they are the called workflow's now, and `release` is the only job
+ * that holds `contents: write` and `id-token: write`).
  *
  * `release-safety.test.ts` keeps the guards about what a dispatch may do and what the called workflows need;
- * this file is the other half: what STARTS a release and what the publishing job must still contain.
+ * this file is the other half: what STARTS a release and what the guards must still contain.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -26,55 +35,72 @@ import { parse as parseYaml } from "yaml";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const WORKFLOW_PATH = ".github/workflows/release.yml";
-/** The script the `version-pr` job runs; it is the only thing here that pushes, so its push is read too. */
-const BUMP_SCRIPT_PATH = "scripts/release-commit-version-bump.mjs";
+/** Today's workflow before this row, kept so each property it breaks is SEEN to be refused. */
+const BEFORE_PATH = "scripts/fixtures/release-before-3717.yml";
 
-interface Step { name?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown> }
-interface Job { needs?: string | string[]; if?: string; environment?: string; uses?: string; permissions?: Record<string, string>; env?: Record<string, string>; steps?: Step[] }
+interface Step { name?: string; id?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; "continue-on-error"?: unknown }
+interface Job {
+  needs?: string | string[]; if?: string; environment?: string; uses?: string; permissions?: Record<string, string>;
+  with?: Record<string, unknown>; secrets?: unknown; concurrency?: unknown; steps?: Step[];
+}
 interface Workflow {
-  on?: { push?: { branches?: string[] }; workflow_dispatch?: unknown } | Record<string, unknown>;
+  on?: { push?: { branches?: string[]; paths?: string[] }; workflow_dispatch?: unknown } & Record<string, unknown>;
   concurrency?: { group?: string; "cancel-in-progress"?: unknown };
   jobs: Record<string, Job>;
 }
 
 const load = (path: string): string => readFileSync(resolve(REPO, path), "utf8");
 const liveWorkflow = (): Workflow => parseYaml(load(WORKFLOW_PATH)) as Workflow;
-const bumpScript = (): string => load(BUMP_SCRIPT_PATH);
+const beforeWorkflow = (): Workflow => parseYaml(load(BEFORE_PATH)) as Workflow;
+const clone = (): Workflow => structuredClone(liveWorkflow());
 
-/** The job that publishes. Named, not discovered: a second job that publishes would be a defect to find. */
+/** The one job that calls the reusable workflow, and so the only one that publishes. Named, not discovered. */
 const PUBLISHING_JOB = "release";
+/** The job whose steps are the guards about what is published. */
+const GUARDS_JOB = "guards";
+const CALLED = /^a11ign\/toolchain\/\.github\/workflows\/release-per-merge\.yml@(.+)$/;
+const FULL_SHA = /^[0-9a-f]{40}$/;
 
 /**
- * Each guard the row (design 2) says must STILL be in the publishing job, as a predicate over one step. The population
- * is declared so that "all present" cannot pass over an empty list: `guards are declared` below pins the count.
+ * Does this `if:` let the step run on a push to main (a publishing event)? Absent means always. A step that names the dispatch, or is
+ * constant false, is a rehearsal-only step and no guard; any other condition (the coverage step's reuse of nightly's verdict) is
+ * about the step's own work, and the step is still the guard.
  */
+const runsOnPush = (step: Step): boolean => step.if === undefined || !/workflow_dispatch|^\s*(\$\{\{\s*)?false\b/.test(step.if);
+
+/** Each guard that must be a step of the `guards` job, as a predicate over one step, found by what it DOES. */
 const GUARDS: Record<string, (step: Step) => boolean> = {
   "access-check": (step) => /config\.json/.test(step.run ?? "") && /\.access/.test(step.run ?? "") && /!=\s*"public"/.test(step.run ?? ""),
   "manifest-repository-check": (step) => /node scripts\/manifest-repository-check\.mjs/.test(step.run ?? ""),
   "packed-install-check": (step) => /pnpm run gate:isolation/.test(step.run ?? ""),
-  "provenance-request": (step) => step.env?.NPM_CONFIG_PROVENANCE === "true" && /changeset publish/.test(step.run ?? ""),
+  "provenance-request": (step) => step.env?.NPM_CONFIG_PROVENANCE === "true" && /release-publish-rehearsal\.mjs/.test(step.run ?? ""),
   "release-gate-ci": (step) => /pnpm run release:gate:ci/.test(step.run ?? ""),
   "gate-scope-statement": (step) => /node scripts\/release-gate-scope\.mjs/.test(step.run ?? ""),
+  "consumer-gate-current": (step) => /node scripts\/generate-consumer-gate\.mjs --check/.test(step.run ?? ""),
   "hold-3126": (step) => step.env?.A11Y_CHECK_RELEASE_HOLD === "1",
+  "qualification-verdict": (step) => /node scripts\/release-reads-qualification\.mjs/.test(step.run ?? ""),
+  "coverage": (step) => /^pnpm run coverage\b/m.test(step.run ?? ""),
+  "never-older-than-the-registry": (step) =>
+    /steps\.readings\.outputs\.readings/.test(JSON.stringify(step.env ?? {})) && /process\.exit\(1\)/.test(step.run ?? "") && /behind/.test(step.run ?? ""),
 };
+const GUARD_STEPS = 11;
 
-const GUARD_STEPS = 7;
-const CALLED_GUARD_JOBS = 3;
-
-/** The jobs whose success the publishing job must wait for: guards 5, 6 and 7, run as called workflows. */
+/** The guards that are called workflows, run as jobs against this sha (guards 5, 6 and 7 of the file header). */
 const CALLED_GUARDS: Record<string, string> = {
   "action-smoke": "action-smoke.yml",
   "capture-regression": "capture-regression.yml",
   "consumer-gate": "consumer-gate.yml",
 };
-
-const needsOf = (job: Job): string[] => (Array.isArray(job.needs) ? job.needs : job.needs ? [job.needs] : []);
+const CALLED_GUARD_JOBS = 3;
 
 /**
- * Does this `if:` let the step run when the mode is `publish`? Absent means always. Present must NAME `publish`: a step
- * guarded `== 'rehearsal'` is a rehearsal-only step and is no guard on a publishing push, however it is named.
+ * The one job that may hold `pull-requests: write`, and why: `consumer-gate.yml` is generated from README's Quickstart fence, which
+ * grants it for the Action's PR-comment step, and a called workflow may not request more than its caller grants (#1251). It is NOT
+ * a version pull request: nothing here opens one. #3718's release-shape cell reads it as one anyway, which is on #3717 for the rule.
  */
-const runsOnPublish = (step: Step): boolean => step.if === undefined || /['"]publish['"]/.test(step.if);
+const PULL_REQUESTS_WRITE_ALLOWED = ["consumer-gate"];
+
+const needsOf = (job: Job): string[] => (Array.isArray(job.needs) ? job.needs : job.needs ? [job.needs] : []);
 
 /** Every line of every `run:` in the workflow, with where it is, comments dropped. */
 function runLines(workflow: Workflow): { job: string; step: string; line: string }[] {
@@ -85,27 +111,15 @@ function runLines(workflow: Workflow): { job: string; step: string; line: string
         .map((line) => ({ job, step: step.name ?? step.uses ?? "(unnamed)", line }))));
 }
 
-/**
- * Where `git push` appears. A `run:` line that spells it at all is refused (the version commit is pushed by the script,
- * which is read separately), and the script's own push must name a ref that is not `main`.
- */
-function pushesToMain(workflow: Workflow, script: string): string[] {
-  const inline = runLines(workflow).filter(({ line }) => /\bgit\s+push\b/.test(line))
-    .map(({ job, step, line }) => `${job} / ${step}: ${line}`);
-  const pushArgs = [...script.matchAll(/git\(\[\s*"push"([^\]]*)\]\)/g)].map((match) => match[1]);
-  const toMain = pushArgs.filter((args) => !/VERSION_BRANCH/.test(args) || /\bmain\b/.test(args))
-    .map((args) => `${BUMP_SCRIPT_PATH}: git push${args}`);
-  return [...inline, ...toMain];
-}
-
-type On = { push?: { branches?: string[] }; workflow_dispatch?: unknown };
-
-function triggerRefusals(workflow: Workflow, script: string): string[] {
-  const on = workflow.on as On | undefined;
+function triggerRefusals(workflow: Workflow): string[] {
+  const on = workflow.on;
   const found: string[] = [];
   if (!on?.push?.branches?.includes("main")) found.push("push-trigger-on-main: no `push` trigger naming `main`");
+  // EXACTLY the changeset directory: a release is due when a changeset arrives. The manifests and the lockfile were in the filter only because
+  // the version pull request's merge changed them, and `main` is never written now, so a trigger on them would release on a dependency bump.
+  if (JSON.stringify(on?.push?.paths) !== JSON.stringify([".changeset/**"])) found.push("push-trigger-on-changesets: the push trigger is not filtered to exactly `.changeset/**`");
   if (on?.workflow_dispatch === undefined) found.push("dispatch-kept: `workflow_dispatch` is gone, and it is the rehearsal");
-  return [...found, ...pushesToMain(workflow, script).map((offence) => `no-push-to-main: ${offence}`)];
+  return found;
 }
 
 function concurrencyRefusals(workflow: Workflow): string[] {
@@ -117,35 +131,59 @@ function concurrencyRefusals(workflow: Workflow): string[] {
   return found;
 }
 
-function publishRefusals(publishing: Job): string[] {
+/** What the version pull request was made of, each one a defect now: the job, the action, the branch push, the PR, the token. */
+function noVersionPullRequestRefusals(workflow: Workflow): string[] {
   const found: string[] = [];
-  const publish = (publishing.steps ?? []).filter((step) => /^pnpm exec changeset publish\b/.test(step.run ?? ""));
-  if (publish.length !== 1) found.push(`one-publish-step: ${publish.length} steps run changeset publish, expected exactly 1`);
-  for (const step of publish) {
-    const keyedToThePlan = /needs\.plan\.outputs\.mode == 'publish'/.test(step.if ?? "") && !/inputs\./.test(step.if ?? "");
-    if (!keyedToThePlan) found.push(`publish-only-on-the-publishing-event: the publish step's if is ${JSON.stringify(step.if)}, not the plan's \`publish\` mode`);
+  if (workflow.jobs["version-pr"] !== undefined) found.push("no-version-pr-job: a job named `version-pr` is here");
+  const steps = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []);
+  if (steps.some((step) => /^changesets\/action(@|$)/.test(step.uses ?? ""))) found.push("no-changesets-action: a step uses `changesets/action`");
+  for (const { job, step, line } of runLines(workflow)) {
+    if (/\bgit\s+push\b/.test(line)) found.push(`no-branch-push: ${job} / ${step}: ${line}`);
+    if (/\bgh\s+pr\s+(create|edit)\b|\/pulls\b/.test(line)) found.push(`no-pull-request-creation: ${job} / ${step}: ${line}`);
   }
-  if (publishing.permissions?.["id-token"] !== "write") found.push("oidc: the publishing job lacks `id-token: write`");
-  if (/secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN/.test(JSON.stringify(publishing))) {
-    found.push("no-stored-token: the publishing job references a secret or a registry token, so OIDC would never be exercised");
-  }
+  if (/A11IGN_BOT_TOKEN/.test(JSON.stringify(workflow))) found.push("no-bot-token: `A11IGN_BOT_TOKEN` is read here, and nothing here opens a pull request");
+  const granting = Object.entries(workflow.jobs)
+    .filter(([name, job]) => job.permissions?.["pull-requests"] === "write" && !PULL_REQUESTS_WRITE_ALLOWED.includes(name)).map(([name]) => name);
+  if (granting.length > 0) found.push(`no-pull-requests-write: ${granting.join(", ")} grants \`pull-requests: write\``);
   return found;
 }
 
-/**
- * The environment name is part of the OIDC claim npm checks against the package's trusted publisher (ADR 0043: every
- * repository's publish job runs under `npm-publish`), so the publishing job names it and the jobs that publish nothing
- * must not: an environment there would claim a deployment, and could hold the job for approval, for no reason.
- */
-const PUBLISH_ENVIRONMENT = "npm-publish";
-
-function environmentRefusals(workflow: Workflow, publishing: Job): string[] {
+/** The call: one job, a full-sha pin (a moving ref would change what every release does with no pull request here), kind npm, the required check. */
+function callRefusals(workflow: Workflow): string[] {
+  const publishing = workflow.jobs[PUBLISHING_JOB];
+  const callers = Object.entries(workflow.jobs).filter(([, job]) => CALLED.test(job.uses ?? ""));
   const found: string[] = [];
-  if (publishing.environment !== PUBLISH_ENVIRONMENT) {
-    found.push(`environment: the publishing job's environment is ${JSON.stringify(publishing.environment)}, not ${PUBLISH_ENVIRONMENT}`);
+  if (callers.length !== 1 || callers[0][0] !== PUBLISHING_JOB) {
+    return [`calls-the-reusable-workflow: ${callers.length} jobs call release-per-merge.yml (${callers.map(([name]) => name).join(", ")}), expected exactly \`${PUBLISHING_JOB}\``];
   }
+  const ref = CALLED.exec(publishing.uses ?? "")?.[1] ?? "";
+  if (!FULL_SHA.test(ref)) found.push(`pinned-by-full-sha: the call is pinned to '${ref}', not a 40-hex commit`);
+  if (publishing.with?.kind !== "npm") found.push(`kind-npm: \`with.kind\` is ${JSON.stringify(publishing.with?.kind)}, and this repository publishes to npm`);
+  if (publishing.with?.["gate-check"] !== "gate") found.push(`gate-check: \`with.gate-check\` is ${JSON.stringify(publishing.with?.["gate-check"])}, and the required check is \`gate\``);
+  return found;
+}
+
+function publishingJobRefusals(workflow: Workflow): string[] {
+  const publishing = workflow.jobs[PUBLISHING_JOB];
+  const found: string[] = [];
+  if (!/['"]push['"]/.test(publishing.if ?? "")) found.push(`publish-on-push-only: the call's if is ${JSON.stringify(publishing.if)}, so a dispatch could reach it`);
+  if (publishing.permissions?.["id-token"] !== "write") found.push("oidc: the calling job lacks `id-token: write`, and a called workflow can never gain a permission");
+  if (publishing.permissions?.contents !== "write") found.push("tags: the calling job lacks `contents: write`, which the called workflow's tags need");
+  if (publishing.secrets !== undefined || /secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN/.test(JSON.stringify(publishing))) {
+    found.push("no-stored-token: the calling job references a secret or a registry token, so OIDC would never be exercised");
+  }
+  return [...found, ...otherJobsRefusals(workflow)];
+}
+
+/** Only the call may hold `id-token` or `contents: write`, or name an environment: the called workflow's `publish` job owns the OIDC claim. */
+function otherJobsRefusals(workflow: Workflow): string[] {
+  const found: string[] = [];
   for (const [name, job] of Object.entries(workflow.jobs)) {
-    if (name !== PUBLISHING_JOB && job.environment !== undefined) found.push(`environment-only-on-the-publishing-job: ${name} declares an environment`);
+    if (name === PUBLISHING_JOB) continue;
+    if (job.permissions?.["id-token"] !== undefined) found.push(`id-token-only-on-the-call: ${name} requests \`id-token\``);
+    if (job.permissions?.contents === "write") found.push(`contents-write-only-on-the-call: ${name} requests \`contents: write\``);
+    // The environment names the OIDC claim; a second one here would claim a deployment for nothing.
+    if (job.environment !== undefined) found.push(`no-environment-here: ${name} declares an environment, which is the called workflow's`);
   }
   return found;
 }
@@ -153,535 +191,290 @@ function environmentRefusals(workflow: Workflow, publishing: Job): string[] {
 /** The step that upgrades npm: it installs `npm@^11.5.1`, the floor npm's trusted publishing documents (#3180). */
 const isNpmUpgrade = (step: Step): boolean => /^npm install -g\s+"?npm@\^11\.5\.1"?/m.test(step.run ?? "");
 
-/** The steps that talk to the registry through npm, which must find the upgraded one: the publish and its rehearsal. */
-const NPM_USERS = [/^pnpm exec changeset publish\b/, /release-publish-rehearsal\.mjs/];
-
-function npmUpgradeRefusals(publishing: Job): string[] {
-  const steps = publishing.steps ?? [];
+function npmUpgradeRefusals(guards: Job): string[] {
+  const steps = guards.steps ?? [];
   const upgrades = steps.filter(isNpmUpgrade);
   if (upgrades.length !== 1) return [`npm-upgrade: ${upgrades.length} steps install npm ^11.5.1, expected exactly 1 (trusted publishing needs 11.5.1+)`];
   const at = steps.indexOf(upgrades[0]);
-  const found = NPM_USERS.flatMap((user) => {
-    const using = steps.findIndex((step) => user.test(step.run ?? ""));
-    return using !== -1 && using < at ? [`npm-upgrade-before-publish: the upgrade is step ${at} but ${user} runs at step ${using}, on npm 10`] : [];
-  });
-  return runsOnPublish(upgrades[0]) ? found : [...found, "npm-upgrade-on-publish: its if: keeps it off the publishing event"];
+  const using = steps.findIndex((step) => GUARDS["provenance-request"](step));
+  const found = using !== -1 && using < at ? [`npm-upgrade-before-provenance: the upgrade is step ${at} but the provenance request runs at step ${using}, on npm 10`] : [];
+  return runsOnPush(upgrades[0]) ? found : [...found, "npm-upgrade-on-push: its if: keeps it off the publishing event"];
 }
 
-function guardStepRefusals(publishing: Job): string[] {
-  const steps = publishing.steps ?? [];
-  return Object.entries(GUARDS).flatMap(([name, isGuard]) => {
+function guardStepRefusals(guards: Job): string[] {
+  const steps = guards.steps ?? [];
+  const found = Object.entries(GUARDS).flatMap(([name, isGuard]) => {
     const present = steps.filter(isGuard);
-    if (present.length === 0) return [`guard-${name}: no step in the publishing job is the ${name} guard`];
-    return present.some(runsOnPublish) ? [] : [`guard-${name}: it exists but its if: keeps it off the publishing event`];
+    if (present.length === 0) return [`guard-${name}: no step in the \`${GUARDS_JOB}\` job is the ${name} guard`];
+    return present.some(runsOnPush) ? [] : [`guard-${name}: it exists but its if: keeps it off the publishing event`];
   });
+  const verdict = steps.find(GUARDS["qualification-verdict"]);
+  // ONLY a rehearsal may continue past a stop: a publishing push that reads `wait` must stop the release.
+  if (verdict !== undefined && verdict["continue-on-error"] !== "${{ github.event_name == 'workflow_dispatch' }}") {
+    found.push(`qualification-stops-a-publish: the verdict step's continue-on-error is ${JSON.stringify(verdict["continue-on-error"])}, not the dispatch-only expression`);
+  }
+  return found;
 }
 
-function calledGuardRefusals(workflow: Workflow, publishing: Job): string[] {
-  return Object.entries(CALLED_GUARDS).flatMap(([job, file]) => {
+/** The called-workflow guards AND the `guards` job must all be jobs the call waits for, or a red one stops nothing. */
+function calledGuardRefusals(workflow: Workflow): string[] {
+  const publishing = workflow.jobs[PUBLISHING_JOB];
+  const found = Object.entries(CALLED_GUARDS).flatMap(([job, file]) => {
     const called = workflow.jobs[job];
-    const found: string[] = [];
-    if (called?.uses !== `./.github/workflows/${file}`) found.push(`guard-${job}: no job \`${job}\` calls ${file}`);
-    else if (!runsOnPublish(called)) found.push(`guard-${job}: its if: keeps it off the publishing event`);
-    if (!needsOf(publishing).includes(job)) found.push(`guard-${job}: the publishing job does not need ${job}, so a red ${job} cannot stop it`);
-    return found;
+    const refusals: string[] = [];
+    if (called?.uses !== `./.github/workflows/${file}`) refusals.push(`guard-${job}: no job \`${job}\` calls ${file}`);
+    else if (called.if !== undefined) refusals.push(`guard-${job}: it has an if: (${called.if}), so it can skip on a publish`);
+    if (!needsOf(publishing).includes(job)) refusals.push(`guard-${job}: the calling job does not need ${job}, so a red ${job} cannot stop it`);
+    return refusals;
   });
+  if (workflow.jobs[GUARDS_JOB] === undefined) found.push(`guards-job: no job named ${GUARDS_JOB}`);
+  else if (!needsOf(publishing).includes(GUARDS_JOB)) found.push(`guards-needed: the calling job does not need ${GUARDS_JOB}, so none of its steps stops a publish`);
+  return found;
 }
 
 /**
- * The properties of the self-starting release, each one NAMED. An empty list is the pass; a fixture must make a specific
- * name appear.
+ * The properties of the per-merge release, each one NAMED. An empty list is the pass; a fixture must make a specific name appear.
  */
-function refusals(workflow: Workflow, script: string): string[] {
-  const publishing = workflow.jobs[PUBLISHING_JOB];
-  const outside = [...triggerRefusals(workflow, script), ...concurrencyRefusals(workflow)];
-  if (publishing === undefined) return [...outside, `publishing-job: no job named ${PUBLISHING_JOB}`];
-  return [...outside, ...publishRefusals(publishing), ...environmentRefusals(workflow, publishing), ...npmUpgradeRefusals(publishing), ...guardStepRefusals(publishing), ...calledGuardRefusals(workflow, publishing)];
+function refusals(workflow: Workflow): string[] {
+  const outside = [...triggerRefusals(workflow), ...concurrencyRefusals(workflow), ...noVersionPullRequestRefusals(workflow)];
+  if (workflow.jobs[PUBLISHING_JOB] === undefined) return [...outside, `publishing-job: no job named ${PUBLISHING_JOB}`];
+  const guards = workflow.jobs[GUARDS_JOB] ?? {};
+  return [...outside, ...callRefusals(workflow), ...publishingJobRefusals(workflow), ...calledGuardRefusals(workflow), ...guardStepRefusals(guards), ...npmUpgradeRefusals(guards)];
 }
 
+const names = (found: string[]): string[] => found.map((refusal) => refusal.split(":")[0]);
+
 test("guards are declared: the lists the checks loop over are not empty, which is the positive control for every loop", () => {
-  assert.equal(Object.keys(GUARDS).length, GUARD_STEPS, "the guards of design 2: access, manifest repo, packed install, provenance, gate:ci, gate scope, hold");
+  assert.equal(Object.keys(GUARDS).length, GUARD_STEPS, "the guards the row names, kept as steps of the guards job");
   assert.equal(Object.keys(CALLED_GUARDS).length, CALLED_GUARD_JOBS, "guards 5, 6 and 7 of the file header");
 });
 
-test("the live release.yml has every property: it starts itself, writes nothing to main, and keeps its guards", () => {
-  assert.deepEqual(refusals(liveWorkflow(), bumpScript()), []);
+test("the live release.yml has every property: it starts itself on a changeset, calls the one workflow, and keeps its guards", () => {
+  assert.deepEqual(refusals(liveWorkflow()), []);
 });
 
-test("the plan decides the mode, and a dispatch can never reach `publish`", () => {
-  const plan = liveWorkflow().jobs.plan;
-  const decide = plan?.steps?.find((step) => /mode=publish/.test(step.run ?? ""));
-  assert.ok(decide?.run, "positive control: the step that writes the mode is found");
-  const run = decide.run;
-  const dispatchBranch = run.indexOf('"workflow_dispatch"');
-  const dispatchExit = run.indexOf("exit 0", dispatchBranch);
-  assert.ok(dispatchBranch !== -1 && dispatchExit !== -1, "the dispatch branch must end in an exit");
-  assert.ok(run.indexOf("mode=publish") > dispatchExit, "`mode=publish` is written only after the dispatch branch has exited");
-  assert.match(run, /mode=rehearsal/, "a dispatch gets the rehearsal");
-  assert.match(run, /DRY_RUN" != "true"[\s\S]{0,200}exit 1/, "a dispatch that sets dry-run false is REFUSED, not quietly rehearsed");
-  assert.equal(plan.permissions?.contents, "read", "planning reads; it is not the job that may write anything");
+test("the call passes exactly the inputs the called workflow declares and this repository needs", () => {
+  const publishing = liveWorkflow().jobs[PUBLISHING_JOB];
+  assert.deepEqual(Object.keys(publishing.with ?? {}).sort(), ["gate-check", "kind"],
+    "an input the called workflow does not declare fails at startup, and one it does is a decision this row should make");
 });
 
-test("the version pull request is the only write: a branch, with a token that lets CI run on it", () => {
-  const workflow = liveWorkflow();
-  const versionPr = workflow.jobs["version-pr"];
-  assert.ok(versionPr, "a `version-pr` job exists");
-  assert.match(versionPr.if ?? "", /mode == 'version-pr'/);
-  const text = JSON.stringify(versionPr);
-  assert.match(text, /release:version/, "it applies the changesets with `release:version`, which refreshes the lockfile too");
-  assert.match(text, /release-commit-version-bump\.mjs/, "it commits through the script that pushes the version branch");
-  assert.match(text, /A11IGN_BOT_TOKEN/, "a pull request opened with GITHUB_TOKEN starts no workflow, so CI would never report on it");
-  assert.doesNotMatch(text, /github\.token/, "and it must not fall back to GITHUB_TOKEN");
-  assert.equal(versionPr.permissions?.contents, "read", "the token, not the job's grant, is what writes the branch");
-  assert.match(bumpScript(), /VERSION_BRANCH = "release\/version-packages"/);
-  assert.match(text, /--head release\/version-packages/, "the pull request is opened from the branch the script pushes");
-  assert.match(text, /Closes: none — a version pull request finishes no row/, "a malformed body does not merge: `Closes` is declared, em dash included");
-  assert.equal((text.match(/Acceptance:/g) ?? []).length, 1, "exactly one Acceptance section: a duplicated one cost four red runs");
-});
+// ---- POSITIVE CONTROLS: today's workflow, refused for each property it breaks ------------------------------------------------
 
-// ---- #3131 done-when 5: the version pull request signs off the owned paths it always touches ----
-
-interface OwnedFact { id: string; states: string[] }
-const ownedFacts = (): OwnedFact[] => (JSON.parse(load("docs/owned-path-facts.json")) as { facts: OwnedFact[] }).facts;
-
-/** The body the `version-pr` job opens the pull request with: the heredoc between `<<'BODY'` and its terminator. */
-function versionPrBody(workflow: Workflow): string {
-  const run = (workflow.jobs["version-pr"].steps ?? []).map((step) => step.run ?? "").find((text) => text.includes("<<'BODY'")) ?? "";
-  return run.split("<<'BODY'\n")[1]?.split(/^\s*BODY\s*$/m)[0] ?? "";
-}
-
-/**
- * The facts a body leaves unstated, read as `owned-path-signoff` reads them: some line names the fact and says one of its
- * states as a whole word. The version pull request always touches `packages/nvda-worker/{CHANGELOG.md,package.json}`, which
- * is owned, so a template that states none of them makes `ownedPaths` red on a pull request nobody may push to (#3353).
- */
-function unstatedOwnedFacts(body: string, facts: OwnedFact[]): string[] {
-  const lines = body.split("\n");
-  return facts
-    .filter((fact) => !lines.some((line) => line.includes(fact.id) && fact.states.some((state) => new RegExp(`\\b${state}\\b`, "i").test(line))))
-    .map((fact) => fact.id);
-}
-
-test("the version pull request's body states every owned-path fact, so `ownedPaths` can pass on it", () => {
-  const facts = ownedFacts();
-  assert.ok(facts.length > 0, "the fact list is read: an empty one would make the assertion below pass over nothing");
-  const body = versionPrBody(liveWorkflow());
-  assert.ok(body.includes("Closes: none"), "the body was extracted: it is the template, not an empty string");
-  assert.deepEqual(unstatedOwnedFacts(body, facts), [], "every fact in docs/owned-path-facts.json is stated in the template");
-});
-
-test("POSITIVE CONTROL (#3131): a template that states no fact is refused naming all of them, and one missing a fact names that one", () => {
-  const facts = ownedFacts();
-  // Built from the fact list, not from the live template, so this control breaks only when the CHECK does.
-  const stating = (omit: (fact: OwnedFact) => string | null): string =>
-    ["Closes: none", ...facts.map((fact) => omit(fact) ?? "")].join("\n");
-  const stated = (fact: OwnedFact): string => `${fact.id}: ${fact.states[0]}`;
-  assert.deepEqual(unstatedOwnedFacts(stating(stated), facts), [], "the fixture is complete to begin with");
-  assert.deepEqual(unstatedOwnedFacts(stating(() => null), facts), facts.map((fact) => fact.id));
-  assert.deepEqual(unstatedOwnedFacts(stating((fact) => (fact.id === "provisionRevision" ? null : stated(fact))), facts), ["provisionRevision"]);
-  assert.deepEqual(unstatedOwnedFacts(stating((fact) => (fact.id === "environmentKey" ? fact.id : stated(fact))), facts), ["environmentKey"],
-    "naming a fact without saying one of its states does not state it");
-});
-
-// ---- the positive controls: each one removes ONE property from the live workflow and must be refused by NAME ----
-
-const clone = (): Workflow => structuredClone(liveWorkflow());
-
-/**
- * #3170: what the `version-pr` job must do with a dependency pull request's accepted entry. Named properties, as in
- * `refusals()`, so a red run says which one went. `compile` must run in THIS job (the publishing job never writes
- * entries), after the install, before `release:version` has spent the changesets, and on a checkout that holds the tags.
- */
-function compileStepProblems(workflow: Workflow): string[] {
-  const steps = workflow.jobs["version-pr"]?.steps ?? [];
-  const at = (match: (step: Step) => boolean): number => steps.findIndex(match);
-  const compile = at((step) => /node scripts\/dependency-changeset\.mjs compile(\s|$)/.test(step.run ?? ""));
-  if (compile < 0) return ["compile-step-missing: the version-pr job never runs `dependency-changeset.mjs compile`"];
-  const install = at((step) => /pnpm install/.test(step.run ?? ""));
-  const version = at((step) => /pnpm run release:version/.test(step.run ?? ""));
-  const problems: string[] = [];
-  if (install < 0 || compile < install) problems.push("compile-before-install: it runs before the install");
-  if (version < 0 || compile > version) problems.push("compile-after-release-version: `changeset version` has already spent the changesets");
-  return [...problems, ...compileContextProblems(workflow)];
-}
-
-/** The two properties of the SURROUNDINGS: the checkout holds the tags, and no publishing step writes entries. */
-function compileContextProblems(workflow: Workflow): string[] {
-  const checkout = workflow.jobs["version-pr"]?.steps?.find((step) => /^actions\/checkout@/.test(step.uses ?? ""));
-  const publishing = workflow.jobs[PUBLISHING_JOB]?.steps ?? [];
-  return [
-    ...(checkout?.with?.["fetch-depth"] === 0 ? [] : ["checkout-has-no-tags: a shallow checkout holds no release tag, so compile reads nothing moved"]),
-    ...(publishing.some((step) => /dependency-changeset\.mjs compile/.test(step.run ?? "")) ? ["compile-in-publishing-job: entries are written in version-pr, never where a publish happens"] : []),
-  ];
-}
-
-test("the version-pr job writes the dependency entry after install and before release:version, on a checkout with tags (#3170)", () => {
-  assert.deepEqual(compileStepProblems(liveWorkflow()), []);
-});
-
-/** Position of the live compile step, so the controls below move or remove exactly that step. */
-const compileIndex = (workflow: Workflow): number => workflow.jobs["version-pr"].steps!.findIndex((step) => /dependency-changeset\.mjs compile/.test(step.run ?? ""));
-
-test("POSITIVE CONTROL (#3170): the compile step is in the live job to begin with, so the controls below have something to break", () => {
-  assert.ok(compileIndex(liveWorkflow()) > 0);
-});
-
-test("POSITIVE CONTROL (#3170): the compile step deleted is refused, naming it", () => {
-  const workflow = clone();
-  workflow.jobs["version-pr"].steps!.splice(compileIndex(workflow), 1);
-  assert.deepEqual(compileStepProblems(workflow).map((p) => p.split(":")[0]), ["compile-step-missing"]);
-});
-
-test("POSITIVE CONTROL (#3170): the compile step moved after release:version is refused, and only for that", () => {
-  const workflow = clone();
-  const steps = workflow.jobs["version-pr"].steps!;
-  const [compile] = steps.splice(compileIndex(workflow), 1);
-  steps.splice(steps.findIndex((step) => /pnpm run release:version/.test(step.run ?? "")) + 1, 0, compile);
-  assert.deepEqual(compileStepProblems(workflow).map((p) => p.split(":")[0]), ["compile-after-release-version"]);
-});
-
-test("POSITIVE CONTROL (#3170): the compile step moved before the install is refused, and only for that", () => {
-  const workflow = clone();
-  const steps = workflow.jobs["version-pr"].steps!;
-  const [compile] = steps.splice(compileIndex(workflow), 1);
-  steps.splice(steps.findIndex((step) => /pnpm install/.test(step.run ?? "")), 0, compile);
-  assert.deepEqual(compileStepProblems(workflow).map((p) => p.split(":")[0]), ["compile-before-install"]);
-});
-
-test("POSITIVE CONTROL (#3170): a shallow checkout is refused, and only for that", () => {
-  const workflow = clone();
-  const checkout = workflow.jobs["version-pr"].steps!.find((step) => /^actions\/checkout@/.test(step.uses ?? ""))!;
-  delete checkout.with!["fetch-depth"];
-  assert.deepEqual(compileStepProblems(workflow).map((p) => p.split(":")[0]), ["checkout-has-no-tags"]);
-});
-
-test("POSITIVE CONTROL (#3170): compile in the publishing job is refused, and only for that", () => {
-  const workflow = clone();
-  workflow.jobs[PUBLISHING_JOB].steps!.push({ name: "Compile", run: "node scripts/dependency-changeset.mjs compile" });
-  assert.deepEqual(compileStepProblems(workflow).map((p) => p.split(":")[0]), ["compile-in-publishing-job"]);
-});
-
-
-test("POSITIVE CONTROL: no push trigger is refused, naming it", () => {
-  const workflow = clone();
-  workflow.on = { workflow_dispatch: {} };
-  assert.ok(refusals(workflow, bumpScript()).some((name) => name.startsWith("push-trigger-on-main")));
-});
-
-test("POSITIVE CONTROL: a push trigger on another branch is refused too", () => {
-  const workflow = clone();
-  workflow.on = { push: { branches: ["next"] }, workflow_dispatch: {} };
-  assert.ok(refusals(workflow, bumpScript()).some((name) => name.startsWith("push-trigger-on-main")));
-});
-
-test("POSITIVE CONTROL: a direct `git push` to main, in a step, is refused, naming it", () => {
-  const workflow = clone();
-  workflow.jobs[PUBLISHING_JOB].steps?.push({ name: "Commit the bump back", run: "git push origin HEAD:main" });
-  const refused = refusals(workflow, bumpScript());
-  assert.ok(refused.some((name) => name.startsWith("no-push-to-main") && name.includes("HEAD:main")), refused.join("\n"));
-});
-
-test("POSITIVE CONTROL: a bare `git push` is refused too, because on a checkout of main it pushes main", () => {
-  const workflow = clone();
-  workflow.jobs["version-pr"].steps?.push({ name: "Push", run: "git push" });
-  assert.ok(refusals(workflow, bumpScript()).some((name) => name.startsWith("no-push-to-main")));
-});
-
-test("POSITIVE CONTROL: the script pushing HEAD:main again is refused, which is the old defect", () => {
-  const old = bumpScript().replace(/git\(\[\s*"push"[^\]]*\]\)/, 'git(["push", "origin", "HEAD:main"])');
-  assert.notEqual(old, bumpScript(), "the fixture must actually change the script, or this proves nothing");
-  assert.ok(refusals(liveWorkflow(), old).some((name) => name.startsWith("no-push-to-main")));
-});
-
-test("NEGATIVE CONTROL: a step that only ECHOES the words does not count as a push, and a comment names nothing", () => {
-  const workflow = clone();
-  workflow.jobs[PUBLISHING_JOB].steps?.push({ name: "Say", run: 'echo "we no longer git-push to main"\n# git push origin main' });
-  assert.deepEqual(refusals(workflow, bumpScript()), []);
-});
-
-test("POSITIVE CONTROL: the consumer-gate removed from the publishing job's needs is refused, naming it", () => {
-  const workflow = clone();
-  workflow.jobs[PUBLISHING_JOB].needs = needsOf(workflow.jobs[PUBLISHING_JOB]).filter((job) => job !== "consumer-gate");
-  assert.ok(refusals(workflow, bumpScript()).some((name) => name.startsWith("guard-consumer-gate") && name.includes("does not need")));
-});
-
-test("POSITIVE CONTROL: the consumer-gate job itself deleted is refused, naming it", () => {
-  const workflow = clone();
-  delete workflow.jobs["consumer-gate"];
-  assert.ok(refusals(workflow, bumpScript()).some((name) => name.startsWith("guard-consumer-gate") && name.includes("no job")));
-});
-
-test("POSITIVE CONTROL: a guard job that skips on a publish is refused", () => {
-  const workflow = clone();
-  workflow.jobs["action-smoke"].if = "needs.plan.outputs.mode == 'rehearsal'";
-  assert.ok(refusals(workflow, bumpScript()).some((name) => name.startsWith("guard-action-smoke") && name.includes("publishing event")));
-});
-
-/** The live workflow with one guard's step(s) taken out of the publishing job; provenance lives ON the publish step, so it loses its env instead. */
-function withoutGuard(name: string, isGuard: (step: Step) => boolean): { workflow: Workflow; removed: boolean } {
-  const workflow = clone();
-  const job = workflow.jobs[PUBLISHING_JOB];
-  const before = job.steps?.length ?? 0;
-  job.steps = (job.steps ?? []).filter((step) => !isGuard(step) || /changeset publish/.test(step.run ?? ""));
-  const publish = job.steps.find((step) => /changeset publish/.test(step.run ?? ""));
-  if (name === "provenance-request" && publish) delete publish.env;
-  return { workflow, removed: job.steps.length < before || name === "provenance-request" };
-}
-
-test("POSITIVE CONTROL: each guard step deleted from the publishing job is refused, naming that guard", () => {
-  for (const [name, isGuard] of Object.entries(GUARDS)) {
-    const { workflow, removed } = withoutGuard(name, isGuard);
-    assert.ok(removed, `the fixture for ${name} must remove something`);
-    assert.ok(refusals(workflow, bumpScript()).some((refusal) => refusal.startsWith(`guard-${name}`)), `${name} was not refused`);
+test("POSITIVE CONTROL (the row's): today's release.yml, kept as a fixture, is REFUSED for each property the per-merge shape breaks", () => {
+  const found = names(refusals(beforeWorkflow()));
+  for (const property of [
+    "no-version-pr-job", "no-pull-request-creation", "no-bot-token",
+    "calls-the-reusable-workflow", "guards-job", "push-trigger-on-changesets",
+  ]) {
+    assert.ok(found.includes(property), `the fixture (today's workflow) must be refused for '${property}'; it was refused for: ${[...new Set(found)].join(", ")}`);
   }
 });
 
-test("POSITIVE CONTROL: a guard step moved to a rehearsal-only `if` is refused as keeping it off the publishing event", () => {
-  const workflow = clone();
-  const hold = workflow.jobs[PUBLISHING_JOB].steps?.find(GUARDS["hold-3126"]);
-  assert.ok(hold, "the hold step is found");
-  hold.if = "needs.plan.outputs.mode == 'rehearsal'";
-  assert.ok(refusals(workflow, bumpScript()).some((name) => name.startsWith("guard-hold-3126") && name.includes("publishing event")));
+test("POSITIVE CONTROL: a version pull request job is refused, naming it, and only for that", () => {
+  const withVersionPr = clone();
+  withVersionPr.jobs["version-pr"] = { steps: [{ name: "x", run: "true" }] };
+  assert.deepEqual(names(refusals(withVersionPr)), ["no-version-pr-job"]);
 });
 
-test("POSITIVE CONTROL: a publish step keyed to an input (the typed-confirmation shape) is refused", () => {
-  const workflow = clone();
-  const publish = workflow.jobs[PUBLISHING_JOB].steps?.find((step) => /changeset publish/.test(step.run ?? ""));
-  assert.ok(publish, "the publish step is found");
-  publish.if = "inputs.dry-run == false && inputs.confirm == 'publish-for-real'";
-  assert.ok(refusals(workflow, bumpScript()).some((name) => name.startsWith("publish-only-on-the-publishing-event")));
+test("POSITIVE CONTROL: changesets/action is refused, naming it, and only for that", () => {
+  const withAction = clone();
+  withAction.jobs[GUARDS_JOB].steps!.push({ uses: "changesets/action@v1" });
+  assert.deepEqual(names(refusals(withAction)), ["no-changesets-action"]);
 });
 
-test("POSITIVE CONTROL: a registry token on the publishing job, and a missing id-token, are each refused", () => {
-  const withToken = clone();
-  const publish = withToken.jobs[PUBLISHING_JOB].steps?.find((step) => /changeset publish/.test(step.run ?? ""));
-  assert.ok(publish, "the publish step is found");
-  publish.env = { ...publish.env, NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" };
-  assert.ok(refusals(withToken, bumpScript()).some((name) => name.startsWith("no-stored-token")));
+test("POSITIVE CONTROL: a branch push, and a bare `git push` (which on a checkout of main pushes main), are each refused", () => {
+  for (const line of ["git push origin release/version-packages", "git push", "git push origin HEAD:main"]) {
+    const pushing = clone();
+    pushing.jobs[GUARDS_JOB].steps!.push({ run: line });
+    assert.deepEqual(names(refusals(pushing)), ["no-branch-push"], line);
+  }
+});
 
+test("NEGATIVE CONTROL: a step that only ECHOES or comments the words does not count as a push, and a comment names nothing", () => {
+  const echoing = clone();
+  echoing.jobs[GUARDS_JOB].steps!.push({ run: "# git push origin main\ntrue" });
+  assert.deepEqual(refusals(echoing), []);
+});
+
+test("POSITIVE CONTROL: opening a pull request is refused, and so is reading the bot token", () => {
+  const opening = clone();
+  opening.jobs[GUARDS_JOB].steps!.push({ run: "gh pr create --title x --body y" });
+  assert.deepEqual(names(refusals(opening)), ["no-pull-request-creation"]);
+  const token = clone();
+  token.jobs[GUARDS_JOB].steps!.push({ env: { A11IGN_BOT_TOKEN: "${{ secrets.A11IGN_BOT_TOKEN }}" }, run: "true" });
+  assert.deepEqual(names(refusals(token)), ["no-bot-token"]);
+});
+
+test("POSITIVE CONTROL: `pull-requests: write` on any job but the consumer gate's is refused, naming it", () => {
+  const granting = clone();
+  granting.jobs[GUARDS_JOB].permissions = { ...granting.jobs[GUARDS_JOB].permissions, "pull-requests": "write" };
+  assert.deepEqual(names(refusals(granting)), ["no-pull-requests-write"]);
+});
+
+test("POSITIVE CONTROL: no push trigger, a push trigger on another branch, and a catch-all push are each refused", () => {
+  const none = clone();
+  none.on = { workflow_dispatch: {} };
+  assert.ok(names(refusals(none)).includes("push-trigger-on-main"));
+  const other = clone();
+  other.on = { ...other.on, push: { branches: ["release"], paths: [".changeset/**"] } };
+  assert.deepEqual(names(refusals(other)), ["push-trigger-on-main"]);
+  const catchAll = clone();
+  catchAll.on = { ...catchAll.on, push: { branches: ["main"] } };
+  assert.deepEqual(names(refusals(catchAll)), ["push-trigger-on-changesets"]);
+});
+
+test("POSITIVE CONTROL: the call pinned to a moving ref, with another kind or another required check, is refused for that and only that", () => {
+  const moving = clone();
+  moving.jobs[PUBLISHING_JOB].uses = "a11ign/toolchain/.github/workflows/release-per-merge.yml@main";
+  assert.deepEqual(names(refusals(moving)), ["pinned-by-full-sha"]);
+  const tag = clone();
+  tag.jobs[PUBLISHING_JOB].with = { ...tag.jobs[PUBLISHING_JOB].with, kind: "tag" };
+  assert.deepEqual(names(refusals(tag)), ["kind-npm"]);
+  const check = clone();
+  check.jobs[PUBLISHING_JOB].with = { ...check.jobs[PUBLISHING_JOB].with, "gate-check": "ts" };
+  assert.deepEqual(names(refusals(check)), ["gate-check"]);
+});
+
+test("POSITIVE CONTROL: a second job that calls the reusable workflow, or none, is refused", () => {
+  const two = clone();
+  two.jobs.second = { uses: two.jobs[PUBLISHING_JOB].uses, with: { kind: "npm", "gate-check": "gate" } };
+  assert.ok(names(refusals(two)).includes("calls-the-reusable-workflow"));
+  const none = clone();
+  none.jobs[PUBLISHING_JOB].uses = "./.github/workflows/consumer-gate.yml";
+  assert.ok(names(refusals(none)).includes("calls-the-reusable-workflow"));
+});
+
+test("POSITIVE CONTROL: a call that a dispatch can reach, a stored token, and a missing id-token or contents grant are each refused", () => {
+  const dispatchable = clone();
+  delete dispatchable.jobs[PUBLISHING_JOB].if;
+  assert.deepEqual(names(refusals(dispatchable)), ["publish-on-push-only"]);
+  const stored = clone();
+  stored.jobs[PUBLISHING_JOB].secrets = { NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" };
+  assert.deepEqual(names(refusals(stored)), ["no-stored-token"]);
   const noOidc = clone();
-  delete noOidc.jobs[PUBLISHING_JOB].permissions?.["id-token"];
-  assert.ok(refusals(noOidc, bumpScript()).some((name) => name.startsWith("oidc")));
+  delete noOidc.jobs[PUBLISHING_JOB].permissions!["id-token"];
+  assert.deepEqual(names(refusals(noOidc)), ["oidc"]);
+  const noTags = clone();
+  noTags.jobs[PUBLISHING_JOB].permissions!.contents = "read";
+  assert.deepEqual(names(refusals(noTags)), ["tags"]);
 });
 
-test("POSITIVE CONTROL: the live publishing job is under the environment to begin with, so the controls below have something to break", () => {
-  assert.equal(liveWorkflow().jobs[PUBLISHING_JOB].environment, PUBLISH_ENVIRONMENT);
-});
-
-test("POSITIVE CONTROL: the environment removed from the publishing job, or renamed, is refused naming it, and only for that", () => {
-  const removed = clone();
-  delete removed.jobs[PUBLISHING_JOB].environment;
-  assert.deepEqual(refusals(removed, bumpScript()).map((name) => name.split(":")[0]), ["environment"]);
-  assert.match(refusals(removed, bumpScript())[0], /undefined|null|not npm-publish/);
-
-  const renamed = clone();
-  renamed.jobs[PUBLISHING_JOB].environment = "production";
-  assert.deepEqual(refusals(renamed, bumpScript()).map((name) => name.split(":")[0]), ["environment"]);
-});
-
-test("POSITIVE CONTROL: the environment on a job that publishes nothing is refused, naming that job, and only for that", () => {
-  for (const name of Object.keys(clone().jobs).filter((job) => job !== PUBLISHING_JOB)) {
-    const workflow = clone();
-    workflow.jobs[name].environment = PUBLISH_ENVIRONMENT;
-    const found = refusals(workflow, bumpScript());
-    assert.deepEqual(found.map((refusal) => refusal.split(":")[0]), ["environment-only-on-the-publishing-job"], name);
-    assert.ok(found[0].includes(name), `${name} is named`);
-  }
+test("POSITIVE CONTROL: id-token or contents: write on a guard job, and an environment on any job but the call, are refused, naming the job", () => {
+  const oidc = clone();
+  oidc.jobs[GUARDS_JOB].permissions = { ...oidc.jobs[GUARDS_JOB].permissions, "id-token": "write" };
+  assert.deepEqual(names(refusals(oidc)), ["id-token-only-on-the-call"]);
+  const write = clone();
+  write.jobs[GUARDS_JOB].permissions = { ...write.jobs[GUARDS_JOB].permissions, contents: "write" };
+  assert.deepEqual(names(refusals(write)), ["contents-write-only-on-the-call"]);
+  const environment = clone();
+  environment.jobs[GUARDS_JOB].environment = "npm-publish";
+  assert.deepEqual(names(refusals(environment)), ["no-environment-here"]);
 });
 
 test("POSITIVE CONTROL: concurrency missing, or set to cancel, is refused", () => {
   const missing = clone();
   delete missing.concurrency;
-  assert.ok(refusals(missing, bumpScript()).some((name) => name.startsWith("concurrency")));
-
+  assert.ok(names(refusals(missing)).includes("concurrency-group"));
   const cancelling = clone();
   cancelling.concurrency = { group: "release", "cancel-in-progress": true };
-  assert.ok(refusals(cancelling, bumpScript()).some((name) => name.startsWith("concurrency-never-cancels")));
+  assert.deepEqual(names(refusals(cancelling)), ["concurrency-never-cancels"]);
   const quoted = clone();
   quoted.concurrency = { group: "release", "cancel-in-progress": "false" };
-  assert.ok(refusals(quoted, bumpScript()).some((name) => name.startsWith("concurrency-never-cancels")),
-    "the STRING 'false' is truthy to GitHub's expression engine; only the boolean is a promise");
+  assert.deepEqual(names(refusals(quoted)), ["concurrency-never-cancels"], "the STRING 'false' is truthy to GitHub's expression engine");
 });
 
-// ---- the plan step's own shell, RUN against a fixture tree and a stub registry ----------------------------------------
-//
-// The structural checks above prove what the YAML says; they cannot prove the shell it carries decides correctly. This
-// takes the plan step's `run:` out of the PARSED workflow and executes it with `bash`, in a temporary tree holding the
-// changesets and manifests a case describes, with a stub `npm` standing in for the registry. Nothing here reaches the
-// network, and the stub is what makes "the registry did not answer" something a test can cause.
+// ---- the guards: each one is a job the call needs ---------------------------------------------------------------------------
 
-type Registry = Record<string, string | "E404" | "DOWN">;
-interface PlanCase {
-  event: "push" | "workflow_dispatch";
-  dryRun?: string;
-  /** file name under `.changeset/` -> its text */
-  changesets?: Record<string, string>;
-  /** package dir -> manifest fields */
-  packages: Record<string, { name: string; version: string; private?: boolean }>;
-  registry: Registry;
-}
-const A_RELEASE = '---\n"a11ign": minor\n---\n\nSays what changed.\n';
-const EMPTY = "---\n---\n\nThe version pull request.\n";
-const STUB_NPM = `#!/usr/bin/env node
-const table = JSON.parse(process.env.STUB_REGISTRY);
-const answer = table[process.argv[3]];
-if (answer === undefined || answer === "E404") { console.error("npm error code E404"); process.exit(1); }
-if (answer === "DOWN") { console.error("npm error code ECONNREFUSED"); process.exit(1); }
-console.log(answer);
-`;
-
-function runPlan(plan: PlanCase): { status: number | null; mode: string | null; log: string } {
-  const dir = mkdtempSync(join(tmpdir(), "a11y-release-plan-"));
-  try {
-    mkdirSync(join(dir, ".changeset"), { recursive: true });
-    writeFileSync(join(dir, ".changeset/README.md"), "# Changesets\n");
-    for (const [name, text] of Object.entries(plan.changesets ?? {})) writeFileSync(join(dir, ".changeset", name), text);
-    for (const [pkg, manifest] of Object.entries(plan.packages)) {
-      mkdirSync(join(dir, "packages", pkg), { recursive: true });
-      writeFileSync(join(dir, "packages", pkg, "package.json"), JSON.stringify(manifest));
-    }
-    mkdirSync(join(dir, "bin"));
-    writeFileSync(join(dir, "bin/npm"), STUB_NPM);
-    chmodSync(join(dir, "bin/npm"), EXECUTABLE);
-    const step = liveWorkflow().jobs.plan.steps?.find((candidate) => /mode=publish/.test(candidate.run ?? ""));
-    assert.ok(step?.run, "positive control: the plan step is found");
-    const output = join(dir, "github-output");
-    writeFileSync(output, "");
-    const result = spawnSync("bash", ["-c", step.run], {
-      cwd: dir, encoding: "utf8",
-      env: {
-        PATH: `${join(dir, "bin")}:${process.env.PATH}`, GITHUB_OUTPUT: output, EVENT: plan.event, DRY_RUN: plan.dryRun ?? "",
-        STUB_REGISTRY: JSON.stringify(plan.registry),
-      },
-    });
-    const written = /^mode=(.*)$/m.exec(readFileSync(output, "utf8"));
-    return { status: result.status, mode: written ? written[1] : null, log: `${result.stdout}${result.stderr}` };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+test("POSITIVE CONTROL: each called-workflow guard removed from the call's needs, or deleted, or made skippable, is refused naming it", () => {
+  for (const job of Object.keys(CALLED_GUARDS)) {
+    const unneeded = clone();
+    unneeded.jobs[PUBLISHING_JOB].needs = needsOf(unneeded.jobs[PUBLISHING_JOB]).filter((need) => need !== job);
+    assert.deepEqual(names(refusals(unneeded)), [`guard-${job}`], `${job} dropped from needs`);
+    const deleted = clone();
+    delete deleted.jobs[job];
+    assert.ok(names(refusals(deleted)).includes(`guard-${job}`), `${job} deleted`);
+    const skippable = clone();
+    skippable.jobs[job].if = "github.event_name == 'workflow_dispatch'";
+    assert.deepEqual(names(refusals(skippable)), [`guard-${job}`], `${job} given an if:`);
   }
+});
+
+test("POSITIVE CONTROL: the guards job dropped from the call's needs, or deleted, is refused, and its steps then guard nothing", () => {
+  const unneeded = clone();
+  unneeded.jobs[PUBLISHING_JOB].needs = needsOf(unneeded.jobs[PUBLISHING_JOB]).filter((need) => need !== GUARDS_JOB);
+  assert.deepEqual(names(refusals(unneeded)), ["guards-needed"]);
+  const deleted = clone();
+  delete deleted.jobs[GUARDS_JOB];
+  assert.ok(names(refusals(deleted)).includes("guards-job"));
+});
+
+function withoutGuard(name: string): Workflow {
+  const workflow = clone();
+  const steps = workflow.jobs[GUARDS_JOB].steps!;
+  workflow.jobs[GUARDS_JOB].steps = steps.filter((step) => !GUARDS[name](step));
+  assert.notEqual(workflow.jobs[GUARDS_JOB].steps.length, steps.length, `the live guards job has a ${name} step to remove`);
+  return workflow;
 }
+
+test("POSITIVE CONTROL: each guard step deleted from the guards job is refused, naming that guard and no other", () => {
+  for (const name of Object.keys(GUARDS)) {
+    const found = names(refusals(withoutGuard(name))).filter((property) => property.startsWith("guard-"));
+    assert.deepEqual(found, [`guard-${name}`], `deleting ${name} must be refused as that guard`);
+  }
+});
+
+test("POSITIVE CONTROL: a guard step moved to a dispatch-only `if` is refused as keeping it off the publishing event", () => {
+  for (const name of Object.keys(GUARDS)) {
+    const workflow = clone();
+    workflow.jobs[GUARDS_JOB].steps = workflow.jobs[GUARDS_JOB].steps!.map((step) => (GUARDS[name](step) ? { ...step, if: "github.event_name == 'workflow_dispatch'" } : step));
+    assert.ok(names(refusals(workflow)).includes(`guard-${name}`), name);
+  }
+});
+
+test("POSITIVE CONTROL: a verdict that may continue past a stop on a publishing push is refused", () => {
+  const soft = clone();
+  const verdict = soft.jobs[GUARDS_JOB].steps!.find(GUARDS["qualification-verdict"])!;
+  verdict["continue-on-error"] = true;
+  assert.deepEqual(names(refusals(soft)), ["qualification-stops-a-publish"]);
+});
+
+test("the guards job's own steps never continue on error (the verdict's expression is the one allowed exception)", () => {
+  const soft = (liveWorkflow().jobs[GUARDS_JOB].steps ?? []).filter((step) => step["continue-on-error"] !== undefined && !GUARDS["qualification-verdict"](step));
+  assert.deepEqual(soft.map((step) => step.name), [], "no guard may continue on error: that is how a release ships past its own gate");
+});
+
+// ---- the npm floor (#3180), moved with the provenance request it serves -------------------------------------------------------
 
 const EXECUTABLE = 0o755;
-const ONE_PACKAGE = (version: string) => ({ cli: { name: "a11ign", version } });
+const upgradeStep = (workflow: Workflow): Step => workflow.jobs[GUARDS_JOB].steps!.find(isNpmUpgrade)!;
+const upgradeNames = (workflow: Workflow): string[] => names(npmUpgradeRefusals(workflow.jobs[GUARDS_JOB]));
 
-test("PLAN: a pending changeset that names a release asks for the version pull request, whatever the registry says", () => {
-  const ahead = runPlan({ event: "push", changesets: { "a.md": A_RELEASE }, packages: ONE_PACKAGE("0.1.1"), registry: { a11ign: "0.1.0" } });
-  assert.equal(ahead.mode, "version-pr", "pending is tested BEFORE ahead: the version pull request must consume the changesets first");
-  const level = runPlan({ event: "push", changesets: { "a.md": A_RELEASE }, packages: ONE_PACKAGE("0.1.0"), registry: { a11ign: "0.1.0" } });
-  assert.equal(level.mode, "version-pr");
+test("POSITIVE CONTROL (#3180): the upgrade step is in the live guards job to begin with, once, so the controls below have something to break", () => {
+  assert.equal((liveWorkflow().jobs[GUARDS_JOB].steps ?? []).filter(isNpmUpgrade).length, 1);
+  assert.deepEqual(upgradeNames(liveWorkflow()), []);
 });
 
-test("PLAN: nothing pending and a version NEWER than the registry's latest publishes", () => {
-  const plan = runPlan({ event: "push", packages: ONE_PACKAGE("0.1.1"), registry: { a11ign: "0.1.0" } });
-  assert.equal(plan.mode, "publish", plan.log);
-  assert.match(plan.log, /AHEAD of the registry: a11ign@0\.1\.1/, "the log says which package made it publish");
-});
-
-test("PLAN: the EMPTY changeset the version pull request carries is not pending, or every version pull request would ask for another", () => {
-  const plan = runPlan({ event: "push", changesets: { "version-packages.md": EMPTY }, packages: ONE_PACKAGE("0.1.1"), registry: { a11ign: "0.1.0" } });
-  assert.equal(plan.mode, "publish", plan.log);
-  const nothing = runPlan({ event: "push", changesets: { "version-packages.md": EMPTY }, packages: ONE_PACKAGE("0.1.0"), registry: { a11ign: "0.1.0" } });
-  assert.equal(nothing.mode, "nothing", nothing.log);
-});
-
-test("PLAN: nothing pending and nothing newer is `nothing`, and a manifest BEHIND the registry is not ahead (main reads 0.0.0 beside a published 0.1.0)", () => {
-  assert.equal(runPlan({ event: "push", packages: ONE_PACKAGE("0.1.0"), registry: { a11ign: "0.1.0" } }).mode, "nothing");
-  const behind = runPlan({ event: "push", packages: ONE_PACKAGE("0.0.0"), registry: { a11ign: "0.1.0" } });
-  assert.equal(behind.mode, "nothing", "`changeset publish` would publish 0.0.0 because the registry lacks it; `plan` must not ask it to");
-  assert.match(behind.log, /not ahead of the registry: a11ign@0\.0\.0 \(latest there: 0\.1\.0\)/);
-});
-
-test("PLAN: a package the registry has never heard of is ahead at 0.1.0 and never at the 0.0.0 placeholder", () => {
-  assert.equal(runPlan({ event: "push", packages: ONE_PACKAGE("0.1.0"), registry: {} }).mode, "publish");
-  assert.equal(runPlan({ event: "push", packages: ONE_PACKAGE("0.0.0"), registry: {} }).mode, "nothing");
-});
-
-// ADR 0040 reserves each extracted package's name with `0.0.0-reserved.0`, so the registry's latest for one is not x.y.z.
-// The first push after the first version pull request merged (#3353) died on exactly that: `CANNOT_TELL: 0.0.0-reserved.0
-// is not a plain x.y.z version`, six pushes running, and the publish it was meant to lead to never started (#3131).
-test("PLAN: a registry holding only the name-reservation placeholder reads as never published, and 0.0.0 is not publishable over it", () => {
-  const reserved = { fleet: { name: "fleet", version: "0.0.0" }, cli: { name: "a11ign", version: "0.1.1" } };
-  const plan = runPlan({ event: "push", packages: reserved, registry: { fleet: "0.0.0-reserved.0", a11ign: "0.1.0" } });
-  assert.equal(plan.status, 0, plan.log);
-  assert.equal(plan.mode, "publish", "the reservation must not hide that a11ign is ahead");
-  assert.match(plan.log, /not ahead of the registry: fleet@0\.0\.0 \(latest there: 0\.0\.0\)/, "0.0.0 beside a placeholder is never ahead");
-  assert.match(plan.log, /AHEAD of the registry: a11ign@0\.1\.1/);
-  const first = runPlan({ event: "push", packages: { fleet: { name: "fleet", version: "0.1.0" } }, registry: { fleet: "0.0.0-reserved.0" } });
-  assert.equal(first.mode, "publish", "the first real release over a reservation is ahead");
-});
-
-test("PLAN: any OTHER prerelease on the registry is still CANNOT_TELL: only the one spelling the reservation uses is understood", () => {
-  for (const latest of ["0.1.0-beta.1", "1.0.0-reserved.0", "0.0.0-reserved", "0.0.0-rc.0"]) {
-    const plan = runPlan({ event: "push", packages: ONE_PACKAGE("0.1.1"), registry: { a11ign: latest } });
-    assert.notEqual(plan.status, 0, `${latest} must fail the job`);
-    assert.equal(plan.mode, null, `${latest} writes no mode`);
-    assert.match(plan.log, /CANNOT_TELL/);
-  }
-});
-
-test("PLAN: a private package is never a reason to publish", () => {
-  const plan = runPlan({ event: "push", packages: { lab: { name: "lab", version: "9.9.9", private: true } }, registry: {} });
-  assert.equal(plan.mode, "nothing", plan.log);
-});
-
-test("PLAN: a registry that does not answer is CANNOT_TELL and fails the job, never `not published`", () => {
-  const plan = runPlan({ event: "push", packages: ONE_PACKAGE("0.1.1"), registry: { a11ign: "DOWN" } });
-  assert.notEqual(plan.status, 0, "an unanswered registry must fail the job");
-  assert.equal(plan.mode, null, "and no mode may be written, or the jobs after it would run on a guess");
-  assert.match(plan.log, /CANNOT_TELL/);
-});
-
-test("PLAN: a dispatch rehearses, however much is pending or ahead, and a dispatch with dry-run false is refused", () => {
-  const busy = { changesets: { "a.md": A_RELEASE }, packages: ONE_PACKAGE("0.1.1"), registry: { a11ign: "0.1.0" } };
-  assert.equal(runPlan({ event: "workflow_dispatch", dryRun: "true", ...busy }).mode, "rehearsal");
-  const refused = runPlan({ event: "workflow_dispatch", dryRun: "false", ...busy });
-  assert.notEqual(refused.status, 0);
-  assert.equal(refused.mode, null, "a refused dispatch writes no mode");
-  assert.match(refused.log, /never publishes/);
-});
-
-// ---- npm 11.5.1 for trusted publishing (#3180) -----------------------------------------------------------------------
-//
-// The job runs the npm that ships with Node 22 (10.x) and publishes with no `NODE_AUTH_TOKEN`; npm documents 11.5.1 as the
-// floor for the OIDC exchange. The structure is pinned by `npmUpgradeRefusals`; the floor is pinned by RUNNING the step's
-// shell against a fake npm, because a regex over `sort -V -C` proves a spelling and not a decision.
-
-const upgradeStep = (workflow: Workflow): Step => workflow.jobs[PUBLISHING_JOB].steps!.find(isNpmUpgrade)!;
-const upgradeIndex = (workflow: Workflow): number => workflow.jobs[PUBLISHING_JOB].steps!.findIndex(isNpmUpgrade);
-const refusalNames = (workflow: Workflow): string[] => npmUpgradeRefusals(workflow.jobs[PUBLISHING_JOB]).map((r) => r.split(":")[0]);
-
-test("POSITIVE CONTROL (#3180): the upgrade step is in the live publishing job to begin with, once, so the controls below have something to break", () => {
-  assert.equal(liveWorkflow().jobs[PUBLISHING_JOB].steps!.filter(isNpmUpgrade).length, 1);
-  assert.deepEqual(refusalNames(liveWorkflow()), []);
-});
-
-test("POSITIVE CONTROL (#3180): the upgrade step deleted is refused", () => {
-  const workflow = clone();
-  workflow.jobs[PUBLISHING_JOB].steps!.splice(upgradeIndex(workflow), 1);
-  assert.deepEqual(refusalNames(workflow), ["npm-upgrade"]);
-});
-
-test("POSITIVE CONTROL (#3180): the upgrade step AFTER `Publish` is refused, and only for that", () => {
-  const workflow = clone();
-  const steps = workflow.jobs[PUBLISHING_JOB].steps!;
-  const [upgrade] = steps.splice(upgradeIndex(workflow), 1);
-  steps.splice(steps.findIndex((step) => /^pnpm exec changeset publish\b/.test(step.run ?? "")) + 1, 0, upgrade);
-  assert.deepEqual(refusalNames(workflow), ["npm-upgrade-before-publish"]);
-});
-
-test("POSITIVE CONTROL (#3180): the upgrade step kept off the publishing event is refused", () => {
-  const workflow = clone();
-  upgradeStep(workflow).if = "needs.plan.outputs.mode == 'rehearsal'";
-  assert.deepEqual(refusalNames(workflow), ["npm-upgrade-on-publish"]);
+test("POSITIVE CONTROL (#3180): the upgrade step deleted, moved AFTER the provenance request, or kept off the publishing event, is refused", () => {
+  const deleted = clone();
+  deleted.jobs[GUARDS_JOB].steps = deleted.jobs[GUARDS_JOB].steps!.filter((step) => !isNpmUpgrade(step));
+  assert.deepEqual(upgradeNames(deleted), ["npm-upgrade"]);
+  const late = clone();
+  const steps = late.jobs[GUARDS_JOB].steps!;
+  late.jobs[GUARDS_JOB].steps = [...steps.filter((step) => !isNpmUpgrade(step)), upgradeStep(late)];
+  assert.deepEqual(upgradeNames(late), ["npm-upgrade-before-provenance"]);
+  const dispatchOnly = clone();
+  upgradeStep(dispatchOnly).if = "github.event_name == 'workflow_dispatch'";
+  assert.deepEqual(upgradeNames(dispatchOnly), ["npm-upgrade-on-push"]);
 });
 
 test("POSITIVE CONTROL (#3180): a step that only COMMENTS the install, or a floor below 11.5.1, is not the upgrade", () => {
   const commented = clone();
-  upgradeStep(commented).run = '# npm install -g "npm@^11.5.1"\ntrue\n';
-  assert.deepEqual(refusalNames(commented), ["npm-upgrade"]);
+  upgradeStep(commented).run = '# npm install -g "npm@^11.5.1"\ntrue';
+  assert.deepEqual(upgradeNames(commented), ["npm-upgrade"]);
   const lowered = clone();
-  upgradeStep(lowered).run = upgradeStep(lowered).run!.replace("^11.5.1", "^11.0.0");
-  assert.deepEqual(refusalNames(lowered), ["npm-upgrade"]);
+  upgradeStep(lowered).run = 'npm install -g "npm@^10.9.0"';
+  assert.deepEqual(upgradeNames(lowered), ["npm-upgrade"]);
 });
 
 /** Runs the live upgrade step with a fake `npm` that installs nothing and reports `version`. */
@@ -718,4 +511,73 @@ test("POSITIVE CONTROL (#3180): the upgrade step run against an npm below 11.5.1
     assert.equal(status, 1, `${version} is below the floor`);
     assert.ok(log.includes(`npm ${version} is below 11.5.1`), log);
   }
+});
+
+// ---- the readings step's own shell, RUN against a fixture tree and a stub registry --------------------------------------------
+//
+// The readings are what the qualification verdict and the refusal to publish older both read, and they were `plan`'s until #3717. The
+// structural checks above prove what the YAML says; they cannot prove the shell it carries decides correctly. This takes the step's
+// `run:` out of the PARSED workflow and executes it with `bash`, in a temporary tree holding the manifests a case describes, with a
+// stub `npm` standing in for the registry. Nothing here reaches the network, and the stub is what makes "the registry did not answer"
+// something a test can cause.
+
+type Registry = Record<string, string>;
+const STUB_NPM = `#!/usr/bin/env node
+const table = JSON.parse(process.env.STUB_REGISTRY);
+const answer = table[process.argv[3]];
+if (answer === undefined || answer === "E404") { console.error("npm error code E404"); process.exit(1); }
+if (answer === "DOWN") { console.error("npm error code ECONNREFUSED"); process.exit(1); }
+console.log(answer);
+`;
+type Readings = { name: string; manifest: string; latest: string; state: string }[];
+
+function runReadings(packages: Record<string, { name: string; version: string; private?: boolean }>, registry: Registry): { status: number | null; readings: Readings | null; log: string } {
+  const dir = mkdtempSync(join(tmpdir(), "a11y-release-readings-"));
+  try {
+    for (const [pkg, manifest] of Object.entries(packages)) {
+      mkdirSync(join(dir, "packages", pkg), { recursive: true });
+      writeFileSync(join(dir, "packages", pkg, "package.json"), JSON.stringify(manifest));
+    }
+    mkdirSync(join(dir, "bin"));
+    writeFileSync(join(dir, "bin/npm"), STUB_NPM);
+    chmodSync(join(dir, "bin/npm"), EXECUTABLE);
+    const step = liveWorkflow().jobs[GUARDS_JOB].steps?.find((candidate) => candidate.id === "readings");
+    assert.ok(step?.run, "positive control: the readings step is found");
+    const output = join(dir, "github-output");
+    writeFileSync(output, "");
+    const result = spawnSync("bash", ["-c", step.run], {
+      cwd: dir, encoding: "utf8",
+      env: { PATH: `${join(dir, "bin")}:${process.env.PATH}`, GITHUB_OUTPUT: output, STUB_REGISTRY: JSON.stringify(registry) },
+    });
+    const written = /^readings=(.*)$/m.exec(readFileSync(output, "utf8"));
+    return { status: result.status, readings: written ? (JSON.parse(written[1]) as Readings) : null, log: `${result.stdout}${result.stderr}` };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+const ONE_PACKAGE = (version: string) => ({ cli: { name: "a11ign", version } });
+
+test("READINGS: a manifest NEWER than the registry's latest is ahead, level is level, and one BEHIND is behind (main reads 0.0.0 beside a published 0.1.0)", () => {
+  assert.deepEqual(runReadings(ONE_PACKAGE("0.2.0"), { a11ign: "0.1.0" }).readings?.map((r) => r.state), ["ahead"]);
+  assert.deepEqual(runReadings(ONE_PACKAGE("0.1.0"), { a11ign: "0.1.0" }).readings?.map((r) => r.state), ["level"]);
+  assert.deepEqual(runReadings(ONE_PACKAGE("0.0.0"), { a11ign: "0.1.0" }).readings?.map((r) => r.state), ["behind"]);
+});
+
+test("READINGS: a package the registry has never heard of, or holds only as the name reservation, reads as 0.0.0, so 0.0.0 is never ahead of it", () => {
+  assert.deepEqual(runReadings(ONE_PACKAGE("0.1.0"), {}).readings?.map((r) => [r.state, r.latest]), [["ahead", "0.0.0"]]);
+  assert.deepEqual(runReadings(ONE_PACKAGE("0.0.0"), { a11ign: "0.0.0-reserved.0" }).readings?.map((r) => r.state), ["level"]);
+});
+
+test("READINGS: any OTHER prerelease on the registry, and a registry that does not answer, are CANNOT_TELL and fail the step, never `not published`", () => {
+  for (const latest of ["0.1.0-beta.1", "DOWN"]) {
+    const { status, readings, log } = runReadings(ONE_PACKAGE("0.1.0"), { a11ign: latest });
+    assert.notEqual(status, 0, latest);
+    assert.equal(readings, null, "a failed reading writes nothing the guards could read as a pass");
+    assert.match(log, /CANNOT_TELL/, latest);
+  }
+});
+
+test("READINGS: a private package is never read, so it is never a reason to refuse", () => {
+  const { readings } = runReadings({ ...ONE_PACKAGE("0.1.0"), lab: { name: "@a11ign/lab", version: "0.0.0", private: true } }, { a11ign: "0.1.0" });
+  assert.deepEqual(readings?.map((r) => r.name), ["a11ign"]);
 });

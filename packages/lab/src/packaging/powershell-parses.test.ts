@@ -58,8 +58,11 @@ const CONTROL = "packages/lab/src/packaging/fixtures/broken-continuation.ps1";
  * (`a11y_nic_power.Tests.ps1`, `a11y_wake_prereqs.Tests.ps1`).
  *
  * 21 -> 23 with #3387: `a11y_boot_order.ps1` and its Pester file `a11y_boot_order.Tests.ps1`.
+ *
+ * 23 -> 15 with #3504: the eight PowerShell files under `packages/worker-fleet/` (the provisioning scripts and `display-mode-harness.ps1`) left with the
+ * fleet's code. They are laid at that path for the build, untracked, and this walk reads `git ls-files`, so it does not see them.
  */
-const EXPECTED_FILES = 23;
+const EXPECTED_FILES = 15;
 
 /** Exactly one file is excluded, and it is the control. Asserted, so the exclusion cannot widen quietly. */
 const EXPECTED_EXCLUDED = 1;
@@ -158,7 +161,9 @@ test("#2006 POSITIVE CONTROL: the walk reaches the file the instance was found i
   // fourteen parse errors produced this row is named, so a walk that stops finding it fails as a broken
   // walk rather than passing as a clean tree.
   const population = trackedPowerShell().filter((path) => path !== CONTROL);
-  const instance = "packages/worker-fleet/src/provisioning/set-display-mode.ps1";
+  // `set-display-mode.ps1`, the file the fourteen errors were found in, left with the fleet (#3504); the walk's control is a script of this
+  // repository that is a real module of the same kind (a provisioning script a Windows guest runs), so the claim "the walk reaches a real script" holds.
+  const instance = "packages/control/ansible/collections/ansible_collections/a11y/worker/plugins/modules/a11y_wake_prereqs.ps1";
   assert.ok(population.includes(instance),
     `the walk no longer reaches ${instance}, the file this guard was written for`);
   assert.ok(population.some((path) => path.endsWith(".psm1")),

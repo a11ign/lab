@@ -350,6 +350,17 @@ test("the section says each definition once at the top, names the price list's d
   assert.equal(text.split("**Call**").length, 2, "each definition appears once");
   assert.match(text, /\(ALL calls\)/);
   assert.match(text, /\(attributed\)/);
-  assert.match(text, /\(the chairman's proxy\)/);
+  assert.match(text, /\(the chairman's proxy; comparison, not the verdict\)/);
   assert.match(text, /Rate limit seen: fixture/);
+});
+
+test("exactly one row is the verdict of record, and it is the list-price dollars row; the 5-minute-write proxy is a comparison (ceo ruling, #3217)", () => {
+  const rows = section(reading([...on("agent/one-1", 2), ...on("main", 2)])).split("\n").filter((line) => line.startsWith("| "));
+  const record = rows.filter((line) => line.includes("verdict of record"));
+  assert.equal(record.length, 1, "one verdict of record");
+  assert.match(record[0], /^\| Dollars per merged pull request \(ALL calls\)/, "and it is the list-price dollars row");
+  const proxy = rows.filter((line) => line.includes("5-minute rate"));
+  assert.equal(proxy.length, 1);
+  assert.ok(proxy[0].includes("comparison, not the verdict"));
+  assert.ok(!proxy[0].includes("verdict of record"));
 });

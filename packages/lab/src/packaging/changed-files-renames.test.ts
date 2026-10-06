@@ -18,6 +18,7 @@ import { join, resolve } from "node:path";
 
 import { changedFiles } from "../../../guards/src/changed-files.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 
@@ -142,9 +143,9 @@ test("#939 THE SHAPE: no script or workflow asks git for changed paths without -
 });
 
 test("#939 THE READERS: each surviving one goes through the helper, and board-data asks origin/main", () => {
-  const source = (path: string) => readFileSync(join(REPO, path), "utf8");
+  const source = (path: string) => readFileSync(resolve(REPO, path), "utf8");
   for (const reader of ["scripts/ci-changed.mjs", "packages/guards/src/changed-packages.mjs",
-    "node_modules/agent-org/src/board-data.mjs", "scripts/select-changed-tests.mjs"]) {
+    toolPath("src/board-data.mjs")]) {
     assert.match(source(reader), /import \{ changedFiles \} from "[^"]*changed-files\.mjs"/,
       `${reader} does not import the shared helper`);
   }
@@ -155,6 +156,6 @@ test("#939 THE READERS: each surviving one goes through the helper, and board-da
     "the retired lane check must leave no half-removed feed behind in ci.yml");
   // #939's second defect, on the same line: the read-set check compared to LOCAL `main`, which in a shared
   // checkout has been measured over a thousand commits stale.
-  assert.match(source("node_modules/agent-org/src/board-data.mjs"), /changedFiles\(\["origin\/main"\], \{ repoRoot: ROOT, pathspec: \[\.\.\.READ_SET\] \}\)/);
-  assert.doesNotMatch(source("node_modules/agent-org/src/board-data.mjs"), /"diff", "--name-only", "main"/);
+  assert.match(source(toolPath("src/board-data.mjs")), /changedFiles\(\["origin\/main"\], \{ repoRoot: ROOT, pathspec: \[\.\.\.READ_SET\] \}\)/);
+  assert.doesNotMatch(source(toolPath("src/board-data.mjs")), /"diff", "--name-only", "main"/);
 });

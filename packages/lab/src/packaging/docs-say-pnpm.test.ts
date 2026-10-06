@@ -304,14 +304,14 @@ const LEFT_AS_TYPED: RecordGroup[] = [
     kind: "record",
     reason: "incident entries quoting what was typed",
     files: {
-      "docs/pipeline.md": 5,
+      "docs/pipeline.md": 3,
     },
   },
   {
     kind: "deliberate",
     reason: "runs after the revert, when npm IS the manager (or is the rehearsal transcript)",
     files: {
-      "docs/pnpm-rollback.md": 8,
+      "docs/pnpm-rollback.md": 6,
     },
   },
   {
@@ -466,6 +466,16 @@ const RETIRED_HEADINGS: { file: string; heading: string; reason: string }[] = [
     file: "docs/row-filing.md",
     heading: "## A row that finishes in another repository says so: `Finished-in:` (#2995, #3009)",
     reason: "#3059: the Finished-in field was ruled never to be built (#928), so the section describing it was replaced",
+  },
+  {
+    file: "docs/row-filing.md",
+    heading: "# Filing a backlog row: `npm run row-file`",
+    reason: "#3534: the row-file alias was deleted with the dependency, so the title names the command the tool runs as `agent-org row-file`",
+  },
+  {
+    file: "docs/pipeline.md",
+    heading: "## The PR `ts` job runs only what a diff actually reaches (A1b, A1c)",
+    reason: "#3573: the hand-built test selectors were deleted, so the PR ts job runs the whole suite and the section described a scoped run",
   },
 ];
 

@@ -6,11 +6,12 @@
  * so the trusted-publisher binding is made once, against the final name.
  *
  * THREE CLAIMS, each read from the real tree:
- *   1. the package's `name` is the new one;
+ *   1. the lockfile pins the package under the new name, from the registry (#3504: the directory left the workspace, so the name is read
+ *      from the lockfile's entry and no workspace manifest is left to read it from);
  *   2. no NON-DOCUMENT file names the old one (`*.md` and `docs/` are the record, and keep it -- the deprecation
  *      note and the history live there; the pending changeset is a `.md` and is exempt by that rule);
- *   3. every workspace importer that declares the new name resolves it in `pnpm-lock.yaml` as a `link:` to the
- *      package's directory. The directory is still `packages/worker-fleet/`: M2 moves it, this row does not.
+ *   3. every workspace importer that declares the new name resolves it in `pnpm-lock.yaml` to a registry version, never a `link:`. Until
+ *      #3504 (M2) it resolved as a `link:` to `packages/worker-fleet/`; that directory is gone, so a `link:` here is now the defect.
  *
  *   4. every pending changeset's frontmatter names a package that exists: `changeset version` throws on one that
  *      does not, so a rename that leaves the old name in a pending changeset breaks the RELEASE that publishes
@@ -33,7 +34,6 @@ import { parse } from "yaml";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
-const PACKAGE_DIR = "packages/worker-fleet";
 const NEW_NAME = "@a11ign/screenreader-fleet";
 const OLD_NAME = ["@a11ign", "worker-fleet"].join("/");
 const SELF = relative(REPO, import.meta.filename);
@@ -67,8 +67,10 @@ const declaresNewName = (manifest: Manifest) => DEPENDENCY_SECTIONS.some((sectio
 
 type LockImporter = Partial<Record<(typeof DEPENDENCY_SECTIONS)[number], Record<string, { version: string }>>>;
 
-test("the package's name is the new one", () => {
-  assert.equal(readManifest(`${PACKAGE_DIR}/package.json`).name, NEW_NAME);
+test("the lockfile pins the package under the new name, and holds no entry under the old one", () => {
+  const lockfile = readFileSync(join(REPO, "pnpm-lock.yaml"), "utf8");
+  assert.ok(lockfile.includes(`'${NEW_NAME}'`), "pnpm-lock.yaml does not name the new package: the lockfile was not read");
+  assert.ok(!OLD_NAME_AS_A_WHOLE_WORD.test(lockfile), "pnpm-lock.yaml still names the old package");
 });
 
 test("no non-document file names the old package", () => {
@@ -101,17 +103,16 @@ test("positive control: the walk finds the old name in a fixture and refuses it,
   }
 });
 
-test("every importer that declares the new name resolves it in pnpm-lock.yaml, as a link to the package", () => {
+test("every importer that declares the new name resolves it in pnpm-lock.yaml, to a registry version, never a link", () => {
   const lock = parse(readFileSync(join(REPO, "pnpm-lock.yaml"), "utf8")) as { importers: Record<string, LockImporter> };
   const declarers = workspaceManifests().filter((file) => declaresNewName(readManifest(file)));
-  // Derived a second way: the three manifests `git grep` finds naming it, so a walk that lost one is not "enough".
-  assert.deepEqual(declarers, ["package.json", "packages/cli/package.json", "packages/lab/package.json"]);
+  // Derived a second way: the manifests `git grep` finds naming it, so a walk that lost one is not "enough".
+  assert.deepEqual(declarers, ["package.json", "packages/cli/package.json", "packages/guards/package.json", "packages/lab/package.json"]);
   for (const file of declarers) {
     const importer = dirname(file);
     const section = DEPENDENCY_SECTIONS.find((name) => lock.importers[importer]?.[name]?.[NEW_NAME]);
     const resolved = section === undefined ? undefined : lock.importers[importer]?.[section]?.[NEW_NAME]?.version;
-    const wanted = `link:${relative(importer, PACKAGE_DIR) || "."}`;
-    assert.equal(resolved, wanted, `${file} declares ${NEW_NAME}, and pnpm-lock.yaml resolves it to ${resolved ?? "nothing"}`);
+    assert.match(resolved ?? "", /^\d+\.\d+\.\d+/, `${file} declares ${NEW_NAME}, and pnpm-lock.yaml resolves it to ${resolved ?? "nothing"}, not a registry version`);
   }
 });
 
@@ -130,7 +131,8 @@ function changesetsNamingAnUnknownPackage(dir: string, known: Set<string>): stri
 
 test("every pending changeset names a package that exists, so `changeset version` can run", () => {
   const known = new Set(workspaceManifests().map((file) => readManifest(file).name).filter((name): name is string => name !== undefined));
-  assert.ok(known.has(NEW_NAME), "the workspace does not know the new name: the set of known packages was not read");
+  assert.ok(known.has("a11ign") && known.size >= 8, "the set of known workspace packages was not read");
+  assert.ok(!known.has(NEW_NAME), "the fleet is in the workspace again: #3504 took it out, and a changeset for it belongs to its own repository");
   assert.deepEqual(changesetsNamingAnUnknownPackage(join(REPO, ".changeset"), known), []);
 });
 

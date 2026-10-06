@@ -7,7 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fleetHoldUntil as controlUntil, fleetHoldWorkers as controlWorkers } from "../../../control/src/fleet-playbook.mjs";
-import { fleetHoldUntil as toolUntil, fleetHoldWorkers as toolWorkers } from "agent-org/src/waiting-condition.mjs";
+import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
+const { fleetHoldUntil: toolUntil, fleetHoldWorkers: toolWorkers } = await toolModule("src/waiting-condition.mjs");
 
 const BODIES: Array<[label: string, body: string | null | undefined]> = [
   ["a bare timestamp", "Fleet-hold-until: 2026-09-22T04:00:00Z"],

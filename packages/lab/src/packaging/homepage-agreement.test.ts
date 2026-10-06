@@ -29,6 +29,7 @@ import { productHome, PRODUCT_HOME_SOURCE } from "../../../../scripts/product-ho
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -95,7 +96,7 @@ function readmeProjectLink(): { file: string; homepage: string | null } {
  * and after. Same extraction and the same reason as `region-paths.mjs` (#462, B4).
  */
 function boardDocumentHome(): { file: string; homepage: string | null } {
-  return { file: `node_modules/agent-org/src/board-document.mjs (via ${PRODUCT_HOME_SOURCE})`, homepage: productHome() };
+  return { file: `agent-org/src/board-document.mjs (via ${PRODUCT_HOME_SOURCE})`, homepage: productHome() };
 }
 
 /**
@@ -113,7 +114,7 @@ function boardDocumentHome(): { file: string; homepage: string | null } {
  * told something nobody checked — which is the state this row was filed about.
  */
 test("#1113: the board document RENDERS the derived home — it does not state one", () => {
-  const source = stripComments(readFileSync(join(REPO, "node_modules/agent-org/src/board-document.mjs"), "utf8"));
+  const source = stripComments(readFileSync(toolPath("src/board-document.mjs"), "utf8"));
 
   assert.match(source, /productHome\(\)/,
     "board-document.mjs must CALL productHome(). Without this the eighth place is a literal again, and "
@@ -159,14 +160,13 @@ test("#1078: every published package and the README state the SAME homepage", ()
     + "but a published package's metadata is fixed at publish time, so they must agree BEFORE the publish.");
 });
 
-test("#1078: the population is DERIVED, and it is six rather than the five both rows say", () => {
-  // The row, and #919 before it, name FIVE packages. The derivation finds SIX -- `worker-fleet` is
-  // published and carries the homepage too. **A hand-typed list would have shipped the row's own
-  // miscount**, which is the argument for deriving rather than a preference about style.
+test("#1078: the population is DERIVED, so a package that joins or leaves is compared or dropped without anyone editing a list", () => {
+  // The row, and #919 before it, named FIVE packages when the derivation found SIX (`worker-fleet` was published and carried the homepage too).
+  // **A hand-typed list would have shipped the row's own miscount**, which is the argument for deriving rather than a preference about style.
+  // `worker-fleet` has since left (#3504), so the set is the named four plus `toolchain`, and it is the DERIVATION that is pinned, not the number.
   const published = publishedPackages().map((p) => p.file.split("/")[1]).sort();
-  assert.ok(published.includes("worker-fleet"),
-    `the derived set is ${published.join(", ")} -- worker-fleet is published and was missing from both rows`);
-  for (const named of ["cli", "evidence", "judge", "nvda-worker", "scorer"]) {
+  assert.ok(!published.includes("worker-fleet"), `the derived set is ${published.join(", ")} -- worker-fleet left the workspace (#3504) and cannot be published from here`);
+  for (const named of ["cli", "evidence", "judge", "scorer", "toolchain"]) {
     assert.ok(published.includes(named), `${named} is published and must be in the compared set`);
   }
   assert.ok(!published.includes("lab") && !published.includes("control"),

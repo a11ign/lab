@@ -12,13 +12,13 @@
 // reading less is not an improvement, and a suite that only asserts "it ran" stays green
 // while the evidence turns to garbage (see CLAUDE.md).
 import { setTimeout as sleep } from "node:timers/promises";
-import { CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
+import { CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/screenreader-fleet/worker-http";
 
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { captureIn, costCause, MIN_TRIPS_FOR_A_RATE, rateAcrossPages, sweepCostsByPage, walkRate }
   from "../src/capture/sweep-costs.mjs";
-import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
+import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
 import { datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
 import { wakeNamedWorkers } from "../src/training/wake-by-hand.mjs";
 

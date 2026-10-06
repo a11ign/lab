@@ -41,9 +41,20 @@ function internalEdges(): { edge: string; version: string }[] {
       .map(([name, { version }]) => ({ edge: `${importer} -> ${name}`, version }))));
 }
 
-/** Packages that publish from ANOTHER repository, so the registry is where `cli` reads them (#3125); `cli-documents-dependency.test.ts`
- * pins that edge. Named, so a package that should be a `link:` and is not still fails here. */
-const CONSUMED_FROM_THE_REGISTRY = ["packages/cli -> @a11ign/documents"];
+/** Packages that publish from ANOTHER repository, so the registry is where their consumers read them: `cli` takes `documents` (#3125;
+ * `cli-documents-dependency.test.ts` pins that edge), the root and `lab` take `screenreader-worker` (#3447, which deleted `packages/nvda-worker/`;
+ * `screenreader-worker-extraction.test.ts` pins the version and its integrity), and the root, `cli`, `guards` and `lab` take `screenreader-fleet`
+ * (#3504, which deleted `packages/worker-fleet/`; `worker-fleet-delete.test.ts` pins it). Named, so a package that should be a `link:` and is
+ * not still fails here. */
+const CONSUMED_FROM_THE_REGISTRY = [
+  "packages/cli -> @a11ign/documents",
+  ". -> @a11ign/screenreader-worker",
+  "packages/lab -> @a11ign/screenreader-worker",
+  ". -> @a11ign/screenreader-fleet",
+  "packages/cli -> @a11ign/screenreader-fleet",
+  "packages/guards -> @a11ign/screenreader-fleet",
+  "packages/lab -> @a11ign/screenreader-fleet",
+];
 
 test("EVERY INTERNAL DEPENDENCY IN pnpm-lock.yaml IS A LINK, never a registry copy, but the named packages that left", () => {
   const edges = internalEdges();
@@ -96,4 +107,21 @@ test("yaml AND axe-core are hoisted to the root, because no manifest declares th
   const lock = readFileSync(join(ROOT, "pnpm-lock.yaml"), "utf8");
   assert.match(lock, /^ {2}yaml@2\.\d+\.\d+:/m);
   assert.match(lock, /^ {2}axe-core@\d+\.\d+\.\d+:/m);
+});
+
+/** The layers `packages/control/layers.json` declares, as `[name, path]`. Read as the file, as `lab` imports nothing from `control`. */
+function declaredLayers(): [string, string][] {
+  const manifest = JSON.parse(readFileSync(join(ROOT, "packages/control/layers.json"), "utf8")) as { layers: Record<string, { path: string }> };
+  return Object.entries(manifest.layers).map(([name, { path }]) => [name, path]);
+}
+
+test("EVERY LAYER layers.json DECLARES IS EXCLUDED FROM THE WORKSPACE, because its clone is not a member of the core", () => {
+  const layers = declaredLayers();
+  // The positive control for the emptiness below: a manifest that yielded no layers would pass over nothing.
+  assert.ok(layers.length > 0, "layers.json yielded no layers -- the read broke, or the split was undone");
+  const { packages } = parse(readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8")) as { packages: string[] };
+  const missing = layers.filter(([, path]) => !packages.includes(`!${path}`)).map(([name, path]) => `${name}: !${path}`);
+  assert.deepEqual(missing, [],
+    "a layer is cloned at its `path` on a guest, the lab host and an operator worktree, and `packages/*` makes that clone a workspace "
+    + "member, so `pnpm install --frozen-lockfile` fails with ERR_PNPM_OUTDATED_LOCKFILE; add `- \"!<path>\"` after `packages/*`");
 });

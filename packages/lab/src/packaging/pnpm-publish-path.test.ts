@@ -38,7 +38,7 @@ const read = (path: string) => readFileSync(join(REPO, path), "utf8");
 
 interface Step { name?: string; uses?: string; run?: string; if?: string; env?: Record<string, string>; with?: Record<string, unknown> }
 const releaseSteps = (): Step[] =>
-  (parse(read(".github/workflows/release.yml")) as { jobs: { release: { steps: Step[] } } }).jobs.release.steps;
+  (parse(read(".github/workflows/release.yml")) as { jobs: { guards: { steps: Step[] } } }).jobs.guards.steps;
 const stepNamed = (fragment: string): Step => {
   const found = releaseSteps().filter((step) => (step.name ?? "").includes(fragment));
   assert.equal(found.length, 1, `exactly one release step should be named like "${fragment}", found ${found.length}`);
@@ -49,7 +49,7 @@ const commandLines = (step: Step): string[] =>
 
 // --- release.yml -----------------------------------------------------------------------------------------
 
-test("#2301: the release job installs with pnpm, frozen, with pnpm on PATH before setup-node asks for its cache", () => {
+test("#2301: the release guards job installs with pnpm, frozen, with pnpm on PATH before setup-node asks for its cache", () => {
   const steps = releaseSteps();
   const setup = steps.findIndex((step) => (step.uses ?? "").startsWith("pnpm/action-setup@"));
   const node = steps.findIndex((step) => (step.uses ?? "").startsWith("actions/setup-node@"));
@@ -66,39 +66,35 @@ test("#2301: the release job installs with pnpm, frozen, with pnpm on PATH befor
     "no other install: an npm one resolves a tree the lockfile does not describe");
 });
 
-test("#2301: nothing in the release job runs npx, which would pick its own tool", () => {
+test("#2301: nothing in the release guards job runs npx, which would pick its own tool", () => {
   const offenders = releaseSteps().flatMap(commandLines).filter((line) => /\bnpx\b/.test(line));
   assert.deepEqual(offenders, []);
-  assert.ok(releaseSteps().flatMap(commandLines).some((line) => line.startsWith("pnpm exec changeset ")),
-    "positive control: the changeset steps are still there, run through pnpm");
+  assert.ok(releaseSteps().flatMap(commandLines).some((line) => line.startsWith("pnpm exec rstest ")),
+    "positive control: the steps that run a tool through pnpm are still there (the hold's rstest; the `changeset` calls left with the publish, #3717)");
 });
 
-test("#2301: the Publish step runs `pnpm exec changeset publish`, on the publishing push only, with provenance and NO token", () => {
-  const publish = stepNamed("Publish");
-  assert.match(publish.run ?? "", /^pnpm exec changeset publish$/, "no flag: a push publishes to `latest`, changesets' own default (#3131 removed the dist-tag input)");
-  assert.equal(publish.if, "needs.plan.outputs.mode == 'publish'",
-    "the plan's `publish` mode is the push where nothing is pending and a version is ahead; there is no typed confirmation (#3131)");
-  assert.equal(publish.env?.NPM_CONFIG_PROVENANCE, "true");
-  assert.equal("NODE_AUTH_TOKEN" in (publish.env ?? {}), false,
-    "the trusted-publisher OIDC path is only exercised while no registry token is set");
-});
-
-test("#2301: the dry run REHEARSES the pnpm-to-npm hand-off with the same provenance variable, and only on a dry run", () => {
+test("#2301/#3717: no step in release.yml publishes -- the publish is the called workflow's, and the provenance request here rehearses the same hand-off", () => {
+  // The `Publish` step (`pnpm exec changeset publish`, with provenance and NO token) is the reusable per-merge workflow's `publish` job now, run
+  // from the release commit under `npm-publish`; `release-triggers-itself.test.ts` pins that nothing here holds a token or `id-token` but the call.
+  const publishing = releaseSteps().flatMap(commandLines).filter((line) => /\b(changeset publish|npm publish|pnpm publish)\b/.test(line));
+  assert.deepEqual(publishing, [], "a publish step here would be a second publish path, outside the called workflow's environment");
   const rehearsal = stepNamed("pnpm-to-npm publish hand-off");
-  assert.equal(rehearsal.if, "inputs.dry-run == true", "a real publish must not also rehearse itself");
-  assert.equal(rehearsal.env?.NPM_CONFIG_PROVENANCE, stepNamed("Publish").env?.NPM_CONFIG_PROVENANCE,
-    "the rehearsal must be handed the SAME request the publish is, or it shows a different publish");
+  assert.equal(rehearsal.if, undefined, "the request is rehearsed on EVERY run: nothing else here can read the called workflow's publish");
+  assert.equal(rehearsal.env?.NPM_CONFIG_PROVENANCE, "true", "the rehearsal asks for provenance, the request the called publish makes");
+  assert.equal("NODE_AUTH_TOKEN" in (rehearsal.env ?? {}), false, "the trusted-publisher OIDC path is only exercised while no registry token is set");
+});
+
+test("#2301: the provenance request REHEARSES the pnpm-to-npm hand-off, after the pack that hands the set on", () => {
+  const rehearsal = stepNamed("pnpm-to-npm publish hand-off");
   assert.equal(rehearsal.run, "node scripts/release-publish-rehearsal.mjs");
   const names = releaseSteps().map((step) => step.name ?? "");
   assert.ok(names.indexOf(rehearsal.name as string) > names.findIndex((n) => n.startsWith("Pack every package")),
     "the rehearsal comes after the pack: it hands the packed set on");
 });
 
-test("#2301: `release:version` refreshes the pnpm lockfile, and the release commit stages that one", () => {
+test("#2301: `release:version` refreshes the pnpm lockfile", () => {
   const scripts = JSON.parse(read("package.json")).scripts as Record<string, string>;
   assert.equal(scripts["release:version"], "changeset version && node scripts/pnpm.mjs install --lockfile-only");
-  const bump = read("scripts/release-commit-version-bump.mjs");
-  assert.match(stripComments(bump), /"pnpm-lock\.yaml"/);
 });
 
 // --- the isolation gate ----------------------------------------------------------------------------------

@@ -18,22 +18,23 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
-import {
+const {
   closurePlan, labelsToStrip, applyClosurePlan, owedNote, EXIT, closeRowsExit, liveClosureEffects, stripClaimLabels,
   LIVE_SETTLE_DEPS, rateLimitHeaders, rateLimitLine, logRateLimit,
   rowNumberFromBranch, orphanedRowReport, reportOrphanedRow,
   declaredRowsFromBody, planForMergedPr, closingComment,
-} from "agent-org/src/close-rows-for-merged-pr.mjs";
-import { extractClosesDeclaration } from "agent-org/src/acceptance-commands.mjs";
-import { refusalCause } from "agent-org/src/settle-closed-status.mjs";
-import { moveProjectStatus } from "agent-org/src/row-claim.mjs";
-import { scopedStatus } from "agent-org/src/board-snapshot.mjs";
+} = await toolModule("src/close-rows-for-merged-pr.mjs");
+const { extractClosesDeclaration } = await toolModule("src/acceptance-commands.mjs");
+const { refusalCause } = await toolModule("src/settle-closed-status.mjs");
+const { moveProjectStatus } = await toolModule("src/row-claim.mjs");
+const { scopedStatus } = await toolModule("src/board-snapshot.mjs");
 import { stripComments } from "@a11ign/evidence/source-text";
+import { toolModule, toolPath, toolUrl } from "../../../../scripts/agent-org-newest-tag.mjs";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
 // finding again the moment it has not. Proving that with a re-implemented predicate would prove nothing
 // about the real audit.
-import { closedDebris } from "agent-org/src/ready-label-audit.mjs";
+const { closedDebris } = await toolModule("src/ready-label-audit.mjs");
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOW = `${REPO}.github/workflows/trunk.yml`; // #909: close-rows.yml folded into trunk.yml's closeRows job
@@ -521,7 +522,7 @@ test("bridge: the dispatch path exits DONE with ONE DEGRADED line when every ref
 
 /** COMMENTS STRIPPED: commenting the call out IS the mutation a prose search agrees with. */
 test("#1299: the dispatch path's main() EXITS WITH that decision -- worker-capture's M1 on #1357 left it untested", () => {
-  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
+  const source = readFileSync(toolUrl("src/close-rows-for-merged-pr.mjs"), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const mainBody = source.slice(source.indexOf("function main() {"));
   assert.match(mainBody, /const \{ code, lines \} = closeRowsExit\(applyClosurePlan\(/,
@@ -563,7 +564,7 @@ test("#1400: liveClosureEffects is the ONE place the live effects are named -- m
   assert.deepEqual(Object.keys(live).sort(), ["closeOne", "settle", "strip"]);
   assert.equal(live.strip, stripClaimLabels, "the live strip is the exported gh issue edit");
   for (const effect of Object.values(live)) assert.equal(typeof effect, "function", "each is a function, and none is called here");
-  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
+  const source = readFileSync(toolUrl("src/close-rows-for-merged-pr.mjs"), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const mainBody = source.slice(source.indexOf("function main() {"));
   assert.match(mainBody, /applyClosurePlan\(plan, \{ prNumber: prRef, sha, repo: REPO, basis \}, liveClosureEffects\(\)\)/,
@@ -582,12 +583,12 @@ test("#1360 LIVE_SETTLE_DEPS carries the scoped Status lookup and the real move 
 test("#1360 BOTH defaults settle with LIVE_SETTLE_DEPS: the per-merge effects and the sweep's closeOnePr", () => {
   // Read from CODE with comments stripped, anchored to the call shape only code can have. Measured before this test:
   // the sweep's own inline default could drop currentStatus and every close-rows test stayed green.
-  const code = (rel: string) => stripComments(readFileSync(fileURLToPath(new URL(`../../../../${rel}`, import.meta.url)), "utf8"));
-  assert.match(code("node_modules/agent-org/src/close-rows-for-merged-pr.mjs"), /settle:\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
+  const code = (rel: string) => stripComments(readFileSync(toolPath(rel), "utf8"));
+  assert.match(code("src/close-rows-for-merged-pr.mjs"), /settle:\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
     "liveClosureEffects' settle must use the one definition");
-  assert.match(code("node_modules/agent-org/src/close-rows-sweep.mjs"), /settle\s*=\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
+  assert.match(code("src/close-rows-sweep.mjs"), /settle\s*=\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
     "closeOnePr's default settle must use the one definition");
-  for (const rel of ["node_modules/agent-org/src/close-rows-for-merged-pr.mjs", "node_modules/agent-org/src/close-rows-sweep.mjs"]) {
+  for (const rel of ["src/close-rows-for-merged-pr.mjs", "src/close-rows-sweep.mjs"]) {
     assert.doesNotMatch(code(rel), /settleClosedStatus\(n,\s*\{/, `${rel} builds its own settle deps inline again`);
   }
 });

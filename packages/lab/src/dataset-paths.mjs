@@ -43,10 +43,10 @@
  * `@a11ign/judge`, so none of those packages can import this module without a dependency cycle.
  * `a11ign` (cli) is the same shape since #199 (see this file's own header): it depends on nothing
  * that depends on `lab`, but its own test needed real captures, so it computes its own copy too rather
- * than reintroducing the `cli <-> lab` cycle #199 closed. Four call sites keep their own copy of the
- * repo-root computation for exactly this reason:
+ * than reintroducing the `cli <-> lab` cycle #199 closed. Three call sites keep their own copy of the
+ * repo-root computation for exactly this reason (a fourth, `nvda-worker`'s `capture-pure.corpus.test.ts`, left
+ * with the worker in #3447):
  *
- *   - `packages/nvda-worker/src/capture-pure.corpus.test.ts`
  *   - `packages/worker-fleet/src/doctor.mjs` and `packages/worker-fleet/src/compare-workers.mjs`
  *   - `packages/judge/src/channel-tables-4.1.2.test.ts`
  *   - `packages/cli/src/cli.test.ts`

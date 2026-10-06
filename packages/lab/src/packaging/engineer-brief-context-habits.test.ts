@@ -11,7 +11,7 @@
  * refuses the existing named packaging tests.
  *
  * #2690 added the fifth: the COUNT axis beside the four SIZE-axis habits above -- batching several small
- * `grep`/`sed`/`cat`/`Read` checks into one `pnpm run survey --` call rather than paying the accumulated
+ * `grep`/`sed`/`cat`/`Read` checks into one `agent-org survey` call rather than paying the accumulated
  * context's re-read once per check.
  */
 import { test } from "node:test";
@@ -40,7 +40,7 @@ const HABITS = [
   ["summarise output", "| tail"],
   ["project gh JSON", "--jq"],
   ["explore in a subagent", 'model="haiku"'],
-  ["batch small checks into one command", "pnpm run survey --"],
+  ["batch small checks into one command", "agent-org survey"],
 ] as const;
 
 /** Which of the habits' spellings the section lacks: the decider both the real read and the mutations call. */

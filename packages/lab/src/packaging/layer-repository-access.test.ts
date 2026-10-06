@@ -14,12 +14,13 @@
  * spawns `gh` and this one is a row's Acceptance command, run by a job with no token. Nothing here changes
  * GitHub: the downgrade is an org-admin act, the chairman's (`docs/repository-access.md`).
  *
- * The wrapper and `host-units.mjs` live in `a11ign/agent-org` (installed as `node_modules/agent-org`), so they
+ * The wrapper and `host-units.mjs` live in `a11ign/agent-org` (the checkout `.agent-org/host.json` names), so they
  * are read as TEXT and edited by nobody here.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const rootFile = (path: string) => readFileSync(new URL(`../../../../${path}`, import.meta.url), "utf8");
 
@@ -118,14 +119,14 @@ test("#3124: the bots team is declared at `push` on a layer, never admin", () =>
 });
 
 test("#3124: the gh wrapper names no repository, and does name accounts (the control that the read saw it)", () => {
-  const wrapper = rootFile("node_modules/agent-org/host/gh");
+  const wrapper = readFileSync(toolPath("host/gh"), "utf8");
   assert.match(wrapper, /a11ign-ai-workers/, "positive control: the wrapper is the real file and names accounts");
   assert.match(wrapper, /a11ign-ai-leads/, "positive control: ...both of the accounts it routes to");
   assert.deepEqual(wrapper.match(/a11ign\/[a-z][\w.-]*/g) ?? [], [], "a repository named in the wrapper is a per-repository table");
 });
 
 test("#3124: host-units.mjs's \"write, not admin\" sentence and the declaration agree about a11ign-ai-leads", () => {
-  const sentences = rootFile("node_modules/agent-org/src/host-units.mjs")
+  const sentences = readFileSync(toolPath("src/host-units.mjs"), "utf8")
     .split("\n")
     .filter((line) => line.includes("write, not admin"));
   assert.ok(sentences.length > 0, "positive control: the sentence is still there to be pinned");

@@ -14,16 +14,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 // Not `REPO_ROOT` from host-units.mjs: importing it reaches the gate's `history` reader and taxes this file
 // in `work-gate.test.ts`'s closure population, for a path this file can compute itself.
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
-const UNIT_DIRS = [".agent-org/units", "node_modules/agent-org/host"];
+const UNIT_DIRS = [".agent-org/units", toolPath("host")];
 const UNIT_FILE = /\.service(\.in)?$/;
 const PNPM_SHIM = "%h/.local/bin/pnpm";
+/** #3534: `agent-org` is the tool's own bin, left in the same directory by `agent-org host:install` -- not a package script, so no `run`. */
+const AGENT_ORG_BIN = "%h/.local/bin/agent-org";
 const PACKAGE_MANAGERS_RETIRED = new Set(["npm", "npx"]);
 
 /** The units in this row's Region -- the ones that MUST be on the shim, not merely free of npm. */
@@ -32,8 +35,8 @@ const MOVED = [
   ".agent-org/units/a11ign-corpus-release-nightly.service",
   ".agent-org/units/a11ign-fleet-watch.service",
   ".agent-org/units/a11ign-lab-watch.service",
-  "node_modules/agent-org/host/worktree-prune.service.in",
-  "node_modules/agent-org/host/work-tick.service.in",
+  toolPath("host/worktree-prune.service.in"),
+  toolPath("host/work-tick.service.in"),
 ];
 
 type ExecLine = { line: number; text: string; program: string };
@@ -56,11 +59,11 @@ function npmRefusals(file: string, unitText: string): string[] {
 }
 
 function shippedUnitFiles(): string[] {
-  return UNIT_DIRS.flatMap((dir) => readdirSync(join(REPO_ROOT, dir))
+  return UNIT_DIRS.flatMap((dir) => readdirSync(resolve(REPO_ROOT, dir))
     .filter((name) => UNIT_FILE.test(name)).map((name) => `${dir}/${name}`)).sort();
 }
 
-const unitText = (file: string) => readFileSync(join(REPO_ROOT, file), "utf8");
+const unitText = (file: string) => readFileSync(resolve(REPO_ROOT, file), "utf8");
 
 test("#2892: a unit that runs `/usr/bin/npm run` is REFUSED, naming the file and the line", () => {
   const fixture = "[Service]\nType=oneshot\n\nExecStartPre=-/usr/bin/npm run primary:update\nExecStart=/usr/bin/npm run x\n";
@@ -86,10 +89,10 @@ test("#2892: the six moved units spell the shim and no Exec line names npm", () 
   assert.ok(execs.length >= MOVED.length, `read only ${execs.length} Exec lines from ${MOVED.length} units`);
   assert.deepEqual(MOVED.flatMap((file) => npmRefusals(file, unitText(file))), []);
   for (const file of MOVED) {
-    const runs = execLines(unitText(file)).filter(({ text }) => /\brun\b/.test(text));
-    assert.ok(runs.length >= 1, `${file} has no \`... run <script>\` line, so it is not what this row moved`);
+    const runs = execLines(unitText(file)).filter(({ text, program }) => /\brun\b/.test(text) || program === AGENT_ORG_BIN);
+    assert.ok(runs.length >= 1, `${file} has no \`... run <script>\` line or \`agent-org\` line, so it is not what this row moved`);
     for (const { line, program } of runs) {
-      assert.equal(program, PNPM_SHIM, `${file}:${line} must start the shim by its %h path, not a bare name`);
+      assert.ok([PNPM_SHIM, AGENT_ORG_BIN].includes(program), `${file}:${line} must start the shim by its %h path, not a bare name`);
     }
   }
 });
@@ -98,7 +101,7 @@ test("#2892: no shipped unit anywhere names npm -- work-tick is no longer exempt
   const files = shippedUnitFiles();
   assert.ok(files.length >= MOVED.length,
     `POSITIVE CONTROL: only ${files.length} unit files found under ${UNIT_DIRS.join(", ")}`);
-  assert.ok(files.includes("node_modules/agent-org/host/work-tick.service.in"),
+  assert.ok(files.includes(toolPath("host/work-tick.service.in")),
     "POSITIVE CONTROL: the file whose exemption was deleted is among the files scanned, so its npm line is read");
   assert.deepEqual(files.flatMap((file) => npmRefusals(file, unitText(file))), []);
 });

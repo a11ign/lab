@@ -62,32 +62,35 @@ test("#1536: a manifest with no repository URL is refused, never passed for havi
   }
 });
 
-test("#1536 THE INCIDENT, on the real manifests: from run 34816466408's repository all seven are refused; from the repository they name, none is", () => {
+test("#1536 THE INCIDENT, on the real manifests: from run 34816466408's repository all five are refused; from the repository they name, none is", () => {
   const manifests = publishedManifests(REPO);
   assert.deepEqual(manifests.map((m) => m.name),
-    ["a11ign", "@a11ign/evidence", "@a11ign/judge", "@a11ign/screenreader-worker", "@a11ign/scorer",
-      "@a11ign/toolchain", "@a11ign/screenreader-fleet"],
-    "the seven packages Changesets publishes -- lab, control, guards, agent-org and nvda-speech are private "
-      + "(@a11ign/documents publishes from its own repository since #3125)");
+    ["a11ign", "@a11ign/evidence", "@a11ign/judge", "@a11ign/scorer",
+      "@a11ign/toolchain"],
+    "the five packages Changesets publishes -- lab, control, guards and agent-org are private "
+      + "(@a11ign/documents publishes from its own repository since #3125, @a11ign/screenreader-worker since #3447, @a11ign/screenreader-fleet since #3504)");
   const fromIncident = manifestRepositoryMismatches({ manifests, repository: INCIDENT_RUN_REPOSITORY });
   assert.equal(fromIncident.length, manifests.length, "run 34816466408's shape: every manifest names a different repository");
   const named = new Set(manifests.map((m) => repositorySlugOf(String((m.repository as { url?: string } | undefined)?.url ?? ""))));
-  assert.equal(named.size, 1, `the seven manifests should name one repository between them: ${[...named].join(", ")}`);
+  assert.equal(named.size, 1, `the five manifests should name one repository between them: ${[...named].join(", ")}`);
   const [theirs] = [...named];
   assert.ok(theirs, "the manifests' repository URL could not be read");
   assert.deepEqual(manifestRepositoryMismatches({ manifests, repository: theirs }), [],
     "publishing from the repository the manifests name is not refused");
 });
 
-test("#1536 THE WORKFLOW CALLS IT: release.yml runs the check with no `if:`, so on the dry run too, before the guard and before `changeset publish`", () => {
+test("#1536 THE WORKFLOW CALLS IT: release.yml runs the check with no `if:`, so on a rehearsal too, in a job the publishing call NEEDS", () => {
   const step = WORKFLOW.indexOf("run: node scripts/manifest-repository-check.mjs");
   assert.notEqual(step, -1, "release.yml does not run scripts/manifest-repository-check.mjs");
   const stepStart = WORKFLOW.lastIndexOf("- name:", step);
   assert.doesNotMatch(WORKFLOW.slice(stepStart, step), /\n\s+if:/,
-    "the check carries an `if:`, so some path -- the dry run -- can skip it");
+    "the check carries an `if:`, so some path -- a rehearsal -- can skip it");
   const refuse = WORKFLOW.indexOf("- name: Refuse to publish unless");
-  const publish = WORKFLOW.indexOf("run: pnpm exec changeset publish");
-  assert.ok(refuse !== -1 && publish !== -1, "release.yml's guard or publish step moved; re-read this test");
-  assert.ok(step < refuse && step < publish,
-    "the manifest check must run before the guard step and before `changeset publish`, or the registry answers first");
+  const call = WORKFLOW.indexOf("uses: a11ign/toolchain/.github/workflows/release-per-merge.yml@");
+  assert.ok(refuse !== -1 && call !== -1, "release.yml's guard step or the call to the called workflow moved; re-read this test");
+  assert.ok(step < refuse && step < call,
+    "the manifest check must run before the guard step and before the call that publishes, or the registry answers first");
+  // #3717: the publish left this file, so "before `changeset publish`" is a fact about the job graph: the guards job is one the call needs.
+  const releaseJob = WORKFLOW.slice(WORKFLOW.indexOf("\n  release:\n"));
+  assert.match(releaseJob, /\n {4}needs:\s*\[[^\]]*\bguards\b[^\]]*\]/, "the call must need the guards job, or a red manifest check stops nothing");
 });

@@ -33,6 +33,7 @@ import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments, localImports } from "../../../guards/src/local-import-closure.mjs";
+import { toolPath, toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -81,19 +82,18 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   //
   // (#1014 added the thirteenth import and this assertion caught it, which is the test working. It was
   // an exact `12` then; it is the difference now, for the reason above.)
-  const walked = localImports(`${REPO}node_modules/agent-org/src/row-claim.mjs`).length;
+  const walked = localImports(toolPath("src/row-claim.mjs")).length;
   const rawSpecifiers = new Set(
-    [...readFileSync(`${REPO}node_modules/agent-org/src/row-claim.mjs`, "utf8").matchAll(/from\s+"(\.[^"]*)"/g)].map((m) => m[1]),
+    [...readFileSync(toolPath("src/row-claim.mjs"), "utf8").matchAll(/from\s+"(\.[^"]*)"/g)].map((m) => m[1]),
   ).size;
   assert.ok(walked >= 12, `expected row-claim.mjs's imports to be visible, walked ${walked}`);
   assert.equal(rawSpecifiers - walked, 1,
     `raw source spells ${rawSpecifiers} relative specifiers and the walk sees ${walked}: exactly one is `
     + "the `//` comment quoting an import. A gap of 0 means the stripper stopped blanking comments; a gap "
     + "above 1 means it started eating real ones");
-  // The two that decide what CI runs, and a SIGHTED control so this cannot pass by the walk finding
+  // The one that decides what CI runs, and a SIGHTED control so this cannot pass by the walk finding
   // nothing anywhere.
   assert.equal(localImports(`${REPO}scripts/ci-changed.mjs`).length, 5);
-  assert.equal(localImports(`${REPO}scripts/select-changed-tests.mjs`).length, 5);
   // A SIGHTED CONTROL, and the number is incidental to it: it says the walk finds this file's imports
   // rather than nothing. It read `3` until #1969 added `./api-pool.mjs`, and the message then sent the
   // reader after a broken walker for a count that had moved for a perfectly good reason. So it now pins
@@ -123,11 +123,11 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   // THE SIXTH IS `lane-ownership.mjs` (agent-org v0.3.0, #3254): `authorshipVerdict`, which refuses to arm a PR
   // a lane owner's own login authored into a review-only lane. Moved here with the pin to v0.4.2 (#3151).
   assert.deepEqual(
-    localImports(`${REPO}node_modules/agent-org/src/arm-pr.mjs`).map((p: string) => p.replace(REPO, "")).sort(),
-    ["node_modules/agent-org/src/acceptance-commands.mjs", "node_modules/agent-org/src/api-pool.mjs",
-      "node_modules/agent-org/src/lane-ownership.mjs", "node_modules/agent-org/src/lib/cli-flags.mjs", "node_modules/agent-org/src/pr-armed-state.mjs",
-      "node_modules/agent-org/src/pr-hold-state.mjs", "node_modules/agent-org/src/project-roles.mjs",
-      "node_modules/agent-org/src/project-vocabulary.mjs", "node_modules/agent-org/src/trunk-red.mjs"],
+    localImports(toolPath("src/arm-pr.mjs")).map((p: string) => p.replace(`${toolRoot()}/`, "")).sort(),
+    ["src/acceptance-commands.mjs", "src/api-pool.mjs",
+      "src/lane-ownership.mjs", "src/lib/cli-flags.mjs", "src/pr-armed-state.mjs",
+      "src/pr-hold-state.mjs", "src/project-roles.mjs",
+      "src/project-vocabulary.mjs", "src/trunk-red.mjs"],
     "arm-pr.mjs's local imports must all be visible to the walk");
 });
 

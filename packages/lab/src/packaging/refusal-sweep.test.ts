@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const WORKFLOWS_DIR = join(REPO_ROOT, ".github", "workflows");
@@ -106,9 +107,9 @@ function reasonProblems(exempt: Record<string, string>): string[] {
 
 /**
  * What is wrong with a mapping: a cause the gate does not declare. READ AS TEXT from `cause-declaration.mjs` in the installed
- * tool (`node_modules/agent-org`), never imported.
+ * tool (reached by path), never imported.
  */
-const DECLARED_CAUSES_SOURCE = readFileSync(join(REPO_ROOT, "node_modules", "agent-org", "src", "cause-declaration.mjs"), "utf8");
+const DECLARED_CAUSES_SOURCE = readFileSync(toolPath("src/cause-declaration.mjs"), "utf8");
 function causeProblems(mapped: Record<string, string>): string[] {
   return Object.entries(mapped).filter(([, cause]) => !DECLARED_CAUSES_SOURCE.includes(`"${cause}"`))
     .map(([key, cause]) => `${key} -> ${cause} is not a declared cause`);

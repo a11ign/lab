@@ -23,10 +23,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { OPERATORS } from "../../../guards/src/mutant-survivors.mjs";
+import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const REPO = join(import.meta.dirname, "../../../..");
 const RECORD = readFileSync(join(REPO, "docs/mutant-replay.md"), "utf8");
-const PR_OPEN = readFileSync(join(REPO, "node_modules/agent-org/src/pr-open.mjs"), "utf8");
+const PR_OPEN = readFileSync(toolPath("src/pr-open.mjs"), "utf8");
 
 /** The three refusals the row names, at the commits the reviewer refused (2026-09-24). */
 const REFUSED: Record<string, string> = { "2384": "9eee4fdb", "2368": "011da083", "2392": "0c929352" };

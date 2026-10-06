@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// COPIED FROM `node_modules/agent-org/src/board-gates.mjs` at 9eb846790 (#2623, child 5 of #69; ADR 0040
+// COPIED FROM `agent-org/src/board-gates.mjs` at 9eb846790 (#2623, child 5 of #69; ADR 0040
 // decision 6's rehearsal run): `field-role.test.ts`'s only use of `board-gates.mjs` is a two-line
 // integration check ("the corpus's printed field section must not read as a gate verdict"), not a thing
 // about agent-org itself -- ceo's ruling on this row, 2026-09-28, shape 1: relocate the two functions

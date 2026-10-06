@@ -12,11 +12,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { declaresRelease, fileRefusalReason, outOfReleaseArgv } from "agent-org/src/row-file.mjs";
+const { declaresRelease, fileRefusalReason, outOfReleaseArgv } = await toolModule("src/row-file.mjs");
 import {
   TITLE_PREFIX, bodyReadFromSources, buildBody, eligible, extractQuestions, extractRequirements, filingPlan,
   ineligibleFromBody, ineligibleSessions, isoWeek, isoWeekLabel, recheckLastWeek, reviewTitle, reviewWindow, rowFileArgs,
 } from "../../../../scripts/weekly-review.mjs";
+import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const read = (rel: string) => readFileSync(resolve(REPO, rel), "utf8");

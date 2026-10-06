@@ -35,12 +35,11 @@
 import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, matchesGlob } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { versionBumpPaths } from "../../../../scripts/release-commit-version-bump.mjs";
 
 // #929: THIS GUARD READS ONLY `.github/workflows`, so a diff that cannot reach it need not run this file.
 // Undeclared means unbounded, which is why the selector runs 173 always-run guards on every pull
@@ -100,7 +99,7 @@ const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {};
 // MERGE COMMIT landing on `main` was ever tested -- `ci.yml`'s `pull_request` trigger tests a PR's head,
 // never the commit it produces on merge. That is a genuinely different gap from "did a schedule go
 // silent", and closing it needs the opposite shape from a watchdog: real verification, real action. See
-// `trunk.yml`'s own header for the full reasoning and `node_modules/agent-org/src/trunk-red.mjs`'s for why a red `main` wakes
+// `trunk.yml`'s own header for the full reasoning and `agent-org/src/trunk-red.mjs`'s for why a red `main` wakes
 // a fixer and nothing reverts it (#2356).
 const TRUNK_GATE_ALLOWLIST: Record<string, string> = {
   "trunk.yml": "pipeline unit 3 (#316): the merge commit landing on main after strict=false (#298) "
@@ -203,69 +202,29 @@ test("the trunk-followup allowlist names exactly the one known followup workflow
   assert.deepEqual(Object.keys(TRUNK_FOLLOWUP_ALLOWLIST).sort(), ["auto-arm.yml"]);
 });
 
-test("#3131: the release allowlist names exactly release.yml, and its push trigger is filtered to the paths it acts on", () => {
-  assert.deepEqual(Object.keys(RELEASE_ALLOWLIST), ["release.yml"]);
-  const doc = parseYaml(readWorkflow("release.yml")) as { on: { push?: { branches?: string[]; paths?: string[] } } };
-  assert.deepEqual(doc.on.push?.branches, ["main"]);
-  assert.ok((doc.on.push?.paths ?? []).length > 0,
-    "an unfiltered push trigger would start a release plan on every merge, which carries neither a changeset nor a version");
-});
-
-// #3359: THE FILTER MUST LET THROUGH EVERY FILE THE VERSION COMMIT REWRITES. The version pull request is a branch
-// force-rewritten by `release.yml` only when a run gets past this `paths` filter, so a merge to main that moves a file
-// the version commit also rewrites (root `package.json`, `pnpm-lock.yaml`) and matches nothing here leaves the branch on
-// its old base, and the pull request goes CONFLICTING (#3353: three merges, none ran). The list is CHECKED against
-// `versionBumpPaths` on a fixture rather than trusted, so a file the version commit starts to touch fails the control
-// below instead of becoming a quiet hole. Two kinds of path are not asked for: a `CHANGELOG.md`, which only the version
-// commit ever writes (no other merge can conflict on it), and the `.changeset` directory, which stands for the
-// markdown files inside it.
 const releasePushPaths = (): string[] => {
   const doc = parseYaml(readWorkflow("release.yml")) as { on: { push?: { paths?: string[] } } };
   return doc.on.push?.paths ?? [];
 };
 const matchesAnyPath = (file: string, globs: string[]): boolean => globs.some((glob) => matchesGlob(file, glob));
 
-const pathsTheVersionCommitRewrites = (): string[] => {
-  const dir = mkdtempSync(join(tmpdir(), "version-bump-paths-"));
-  try {
-    mkdirSync(join(dir, "packages", "example"), { recursive: true });
-    mkdirSync(join(dir, ".changeset"));
-    for (const file of ["package.json", "pnpm-lock.yaml", "packages/example/package.json", "packages/example/CHANGELOG.md"]) {
-      writeFileSync(join(dir, file), "");
-    }
-    return versionBumpPaths(dir)
-      .filter((path) => !path.endsWith("CHANGELOG.md"))
-      .map((path) => (path === ".changeset" ? ".changeset/pending-change.md" : path));
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-};
-
-// The list is written out, and the test after it is what keeps it equal to what `versionBumpPaths` names: reading the
-// fixture while the file is still being collected reads the runner's own shim, which `WALK_SCOPE` above refuses.
-const VERSION_COMMIT_REWRITES = [".changeset/pending-change.md", "package.json", "packages/example/package.json", "pnpm-lock.yaml"];
-
-test("#3359 control: the paths tested below are exactly what `versionBumpPaths` names, so the loop is neither stale nor empty", () => {
-  assert.deepEqual(pathsTheVersionCommitRewrites().sort(), VERSION_COMMIT_REWRITES);
+test("#3131/#3717: the release allowlist names exactly release.yml, and its push trigger is filtered to the changesets it acts on", () => {
+  assert.deepEqual(Object.keys(RELEASE_ALLOWLIST), ["release.yml"]);
+  const doc = parseYaml(readWorkflow("release.yml")) as { on: { push?: { branches?: string[] } } };
+  assert.deepEqual(doc.on.push?.branches, ["main"]);
+  // #3717: the version pull request is gone, so the filter no longer has to let through the files its commit rewrote
+  // (#3359: `package.json`, `pnpm-lock.yaml`) -- nothing rebuilds a branch on them. A release is a merge that carries a
+  // changeset, and the reusable workflow subtracts what release tags already consumed, so a spurious run publishes nothing.
+  assert.deepEqual(releasePushPaths(), [".changeset/**"],
+    "the push trigger is exactly the changesets: a catch-all runs the guards and the call on every merge (#3131), "
+    + "and a narrower list misses the merge that carries the changeset");
 });
 
-for (const file of VERSION_COMMIT_REWRITES) {
-  test(`#3359: release.yml's push trigger lets a change to ${file} through, so the version branch is rebuilt on it`, () => {
-    assert.ok(matchesAnyPath(file, releasePushPaths()),
-      `a merge that changes ${file} matches nothing in release.yml's on.push.paths, so \`release.yml\` does not run, `
-      + "the version branch keeps its old base, and the version pull request goes CONFLICTING (#3359). `plan` installs "
-      + "nothing, so adding the path costs a checkout and two reads");
-  });
-}
-
-test("#3359: release.yml's push trigger is still a filter -- no catch-all glob, and an ordinary change does not match", () => {
+test("#3717: release.yml's push trigger is a filter -- a changeset starts it and an ordinary change, or a version-file change, does not", () => {
   const globs = releasePushPaths();
-  assert.ok(globs.length > 0, "the control: an emptied filter would pass the catch-all check below for the wrong reason");
-  const catchAlls = globs.filter((glob) => ["*", "**", "**/*", "/**"].includes(glob));
-  assert.deepEqual(catchAlls, [], "a catch-all runs `plan` on every merge, which is the cost the filter exists to avoid (#3131)");
-  for (const ordinary of ["README.md", "docs/backlog.md", "packages/lab/src/example.ts", ".github/workflows/ci.yml"]) {
-    assert.ok(!matchesAnyPath(ordinary, globs),
-      `${ordinary} carries neither a changeset nor a version change, so it must not start \`plan\``);
+  assert.ok(matchesAnyPath(".changeset/some-change.md", globs), "the control: the filter is not empty and it matches a changeset");
+  for (const ordinary of ["README.md", "docs/backlog.md", "package.json", "pnpm-lock.yaml", "packages/example/package.json", ".github/workflows/ci.yml"]) {
+    assert.ok(!matchesAnyPath(ordinary, globs), `${ordinary} carries no changeset, so it must not start a release`);
   }
 });
 

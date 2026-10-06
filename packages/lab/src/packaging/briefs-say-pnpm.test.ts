@@ -26,7 +26,6 @@ const REGION = [
   "CLAUDE.md",
   ".github/CLAUDE.md",
   "packages/lab/CLAUDE.md",
-  "packages/nvda-worker/CLAUDE.md",
   "packages/control/CLAUDE.md",
   ".claude/rules",
 ] as const;
@@ -49,12 +48,8 @@ const HISTORICAL: readonly Allowed[] = [
     why: "what the pre-push hook ran when GIT_DIR leaked into it" },
   { file: ".agent-org/roles/memory/worktree-resolves-primary-dist.md", line: 14, anchor: "Measured 2026-09-06",
     why: "the dated incident" },
-  { file: ".agent-org/roles/migrate.md", line: 125, anchor: "ExecStart=/usr/bin/npm",
-    why: "a systemd unit path, which is the units row's (#2892) to move, and /usr/bin/pnpm does not exist" },
   { file: ".agent-org/roles/migrate.md", line: 195, anchor: "ran clean after",
     why: "what the reconstitution drill ran on a date" },
-  { file: ".agent-org/roles/product-manager.md", line: 101, anchor: "Fifth instance, 2026-09-09",
-    why: "a dated incident" },
   { file: ".agent-org/roles/reviewer.md", line: 273, anchor: "unavailable (0/4;",
     why: "a dated incident: `npx` failed before execution" },
   { file: ".agent-org/roles/worker-loop-orchestrator.md", line: 220, anchor: "had already been tried",
@@ -62,7 +57,7 @@ const HISTORICAL: readonly Allowed[] = [
 ];
 
 /** Pinned: a number the author moves in the same diff as the line it counts. */
-const HISTORICAL_COUNT = 9;
+const HISTORICAL_COUNT = 7;
 
 function filesUnder(path: string): string[] {
   const abs = join(ROOT, path);

@@ -63,7 +63,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newestPerName, newestConclusionOf } from "agent-org/src/newest-check-run.mjs";
+import { toolModule } from "../../../scripts/agent-org-newest-tag.mjs";
+const { newestPerName, newestConclusionOf } = await toolModule("src/newest-check-run.mjs");
 
 // #1144: `NAMES_ITS_WINDOW` and `WIDER_WINDOW_IS_HARMLESS` moved WITH the per-node check --
 // the wrapper names are the rule's `NARROWS_THE_WINDOW` set and the exemption is its

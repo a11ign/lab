@@ -25,8 +25,9 @@ const packagesDir = fileURLToPath(new URL("../../../../packages/", import.meta.u
 /** Anything that looks like a repo-relative path to a program. */
 const REPO_RELATIVE = /"(?:src|scripts|packages)\/[A-Za-z0-9._/-]+\.(?:mjs|js|ts|py|sh|ps1)"/g;
 
-/** Composing a path from a resolved base is fine; only a bare literal is a cwd guess. */
-const COMPOSED = /\b(?:join|resolve|readFileSync|existsSync|statSync|new URL)\s*\(/;
+/** Composing a path from a resolved base is fine; only a bare literal is a cwd guess. `toolPath`/`toolUrl`/`toolModule` resolve from the
+ *  tool's own root (#3534), so a literal handed to them is a path UNDER that root, the same shape as `join(base, "x")`. */
+const COMPOSED = /\b(?:join|resolve|readFileSync|existsSync|statSync|new URL|toolPath|toolUrl|toolModule)\s*\(/;
 
 /**
  * #1149: A FILE THAT SPAWNS NOTHING CANNOT SPAWN A PROGRAM BY A BAD PATH.

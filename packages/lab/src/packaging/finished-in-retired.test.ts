@@ -26,7 +26,7 @@ const RETIRED_FIELD = "Finished-in";
 
 /** The `## ` section of `markdown` whose heading mentions `needle`, heading line included. */
 function sectionMentioning(markdown: string, needle: RegExp): string | undefined {
-  return markdown.split(/^(?=## )/m).find((section) => needle.test(section.split("\n", 1)[0]));
+  return markdown.split(/^(?=## )/m).find((section) => section.startsWith("## ") && needle.test(section.split("\n", 1)[0]));
 }
 
 test("#3059: neither the filing guide nor the row form mentions the retired field", () => {

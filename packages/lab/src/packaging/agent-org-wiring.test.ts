@@ -34,15 +34,17 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
 import { localImports, stripComments } from "../../../guards/src/local-import-closure.mjs";
-import { SPAWNS_GH, SUITE_SCRIPTS } from "agent-org/src/acceptance-commands.mjs";
-import { GUARDED_WORKFLOWS } from "agent-org/src/board-schedule-liveness.mjs";
-import { parseHostConfig, parseUnitsDeclaration, templateValues } from "agent-org/src/host-config.mjs";
-import { copyDriftReading, readDeclaredCopies } from "agent-org/src/org-health.mjs";
-import { MAX_RECORDED_PARENT_FAILURES, RECHECK_ANNOTATION_TITLE, RECHECK_JOB } from "agent-org/src/trunk-red.mjs";
-import { drainedRoles } from "agent-org/src/wake.mjs";
+import { toolModule, toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+const { SPAWNS_GH, SUITE_SCRIPTS } = await toolModule("src/acceptance-commands.mjs");
+const { GUARDED_WORKFLOWS } = await toolModule("src/board-schedule-liveness.mjs");
+const { parseHostConfig, parseUnitsDeclaration, templateValues } = await toolModule("src/host-config.mjs");
+const { copyDriftReading, readDeclaredCopies } = await toolModule("src/org-health.mjs");
+const { MAX_RECORDED_PARENT_FAILURES, RECHECK_ANNOTATION_TITLE, RECHECK_JOB } = await toolModule("src/trunk-red.mjs");
+const { drainedRoles } = await toolModule("src/wake.mjs");
+const { COMMANDS: TOOL_COMMANDS } = await toolModule("src/commands.mjs");
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-const TOOL = join(ROOT, "node_modules/agent-org");
+const TOOL = toolRoot();
 
 /**
  * `host-units.mjs` is loaded by a path built here, not by an import declaration or an `import("...")` type, and that is deliberate. The acceptance
@@ -83,7 +85,7 @@ const MIN_WORKFLOWS = 5;
 /** lint, typecheck, the unscoped suite, pytest. */
 const RED_JOB_COMMAND_COUNT = 4;
 const MIN_REASON_LENGTH = 20;
-const OWN_UNIT_COUNT = 12;
+const OWN_UNIT_COUNT = 14;
 /** corpus-release, lab-watch and fleet-watch: the own services that spawn `gh`. */
 const MIN_DECLARING_SERVICES = 3;
 const workflowText = (name: string) => read(`${WORKFLOWS}/${name}`);
@@ -106,9 +108,9 @@ function stepNamed(job: Job, fragment: string): Step {
 
 test("[1] THE PER-PR ARM PATH GOES THROUGH THE PREDICATE -- it is the path that merged #625, and it ran `gh pr merge --auto` from three lines of bash that read nothing", () => {
   const doc = workflow("auto-arm.yml");
-  const armJob = Object.values(doc.jobs).find((job) => /pnpm exec agent-org arm-pr\b/.test(runsOf(job)));
+  const armJob = Object.values(doc.jobs).find((job) => /agent-org arm-pr\b/.test(runsOf(job)));
   assert.ok(armJob, "a job must call the script that reads the hold");
-  const armIndex = (armJob.steps ?? []).findIndex((step) => /pnpm exec agent-org arm-pr\b/.test(step.run ?? ""));
+  const armIndex = (armJob.steps ?? []).findIndex((step) => /agent-org arm-pr\b/.test(step.run ?? ""));
   assert.ok((armJob.steps ?? []).slice(0, armIndex).some((step) => step.uses?.startsWith("actions/checkout")),
     "a job that runs a repository script needs a checkout BEFORE it -- this one did not have one before");
   // Stricter than the original, which named the one retired spelling: no step of ANY job arms by hand, since a bash arm reads no hold.
@@ -128,7 +130,7 @@ test("[2] ci.yml re-runs on `labeled` and `unlabeled`, or the gate's hold refusa
 
 test("[3] board-report.yml publishes the Discussion, and its token CANNOT create a release", () => {
   const code = withoutComments(workflowText("board-report.yml"));
-  assert.match(code, /pnpm exec agent-org board:document --discussion\b/);
+  assert.match(code, /agent-org board:document --discussion\b/);
   assert.match(code, /^\s*discussions:\s*write\s*$/m);
   assert.match(code, /^\s*contents:\s*read\s*$/m,
     "contents: read is what a checkout needs; write is what a release draft needs, and this job makes none");
@@ -138,7 +140,7 @@ test("[3] board-report.yml publishes the Discussion, and its token CANNOT create
 });
 
 test("[4] the republish precondition asks for today's DISCUSSION through the one lookup, not a release", () => {
-  assert.match(withoutComments(workflowText("board-report.yml")), /pnpm exec agent-org board-discussion --exists\b/);
+  assert.match(withoutComments(workflowText("board-report.yml")), /agent-org board-discussion --exists\b/);
 });
 
 // --- trunk.yml and nightly.yml: the sweeps ------------------------------------------------------------------------------------------
@@ -154,8 +156,8 @@ test("[5] #909: close-rows-sweep.mjs IS wired to trunk.yml's push, as the closeR
   assert.ok(job, "trunk.yml carries a closeRows job");
   assert.ok(!job.needs, "closeRows does not wait on the gate: a red push still closes the rows its PR declared");
   const run = runsOf(job);
-  assert.match(run, /pnpm exec agent-org close-rows-sweep --window=60/, "the push path sweeps the last hour, idempotently");
-  assert.match(run, /pnpm exec agent-org close-rows-for-merged-pr "\$DISPATCH_PR"/, "the dispatch path closes the named PR's rows");
+  assert.match(run, /agent-org close-rows-sweep --window=60/, "the push path sweeps the last hour, idempotently");
+  assert.match(run, /agent-org close-rows-for-merged-pr "\$DISPATCH_PR"/, "the dispatch path closes the named PR's rows");
   assert.match(run, /if \[ -n "\$DISPATCH_PR" \]/, "and the two are chosen by whether a pr was given");
 });
 
@@ -171,8 +173,8 @@ test("[6] #417's sweep is hourly on nightly.yml's :37 cron since #909, and also 
     assert.match(String(job.if ?? ""), /workflow_dispatch/, `${name} runs on a hand dispatch too`);
     assert.ok(!job.needs, "the two halves are independent -- one failing must not block the other");
   }
-  assert.match(runsOf(doc.jobs.gateSweep), /pnpm exec agent-org trunk-sweep\b/);
-  assert.match(runsOf(doc.jobs.closeRowsSweep), /pnpm exec agent-org close-rows-sweep --window=120/,
+  assert.match(runsOf(doc.jobs.gateSweep), /agent-org trunk-sweep\b/);
+  assert.match(runsOf(doc.jobs.closeRowsSweep), /agent-org close-rows-sweep --window=120/,
     "a 120-minute window against an hourly schedule is DELIBERATE overlap, so one missed tick cannot lose a row; "
     + "this pins the number so a future edit cannot narrow it to the schedule interval");
 });
@@ -204,7 +206,7 @@ test("[9] the workflow that runs this has no schedule key -- it must fire on pus
   const doc = workflow("trunk.yml");
   assertFiresOnPushNeverOnCron(doc);
   const step = stepNamed(doc.jobs.watchdogs, "Was the pull request that produced this commit actually tested?");
-  assert.match(step.run ?? "", /pnpm exec agent-org workflow:liveness --sha=/);
+  assert.match(step.run ?? "", /agent-org workflow:liveness --sha=/);
   assert.equal(step["continue-on-error"], true,
     "this step's finding is about a commit that already merged -- it must never fail the push that happens to trigger it");
 });
@@ -212,7 +214,7 @@ test("[9] the workflow that runs this has no schedule key -- it must fire on pus
 test("[10] the check does NOT run on a schedule, which is the property it exists for", () => {
   const doc = workflow("trunk.yml");
   assertFiresOnPushNeverOnCron(doc);
-  assert.match(runsOf(doc.jobs.watchdogs), /pnpm exec agent-org board:liveness --post --issue=20/,
+  assert.match(runsOf(doc.jobs.watchdogs), /agent-org board:liveness --post --issue=20/,
     "the board watchdog step must still be in trunk.yml -- a watchdog in no workflow has silently stopped");
   assert.doesNotMatch(workflowText("nightly.yml"), /board-schedule-liveness\.mjs/,
     "the board watchdog must not ALSO be in nightly.yml -- a cron copy would look like it covers the gap");
@@ -259,14 +261,14 @@ function filesMatching(glob: string): string[] {
 }
 
 /**
- * The tool is a DEPENDENCY now (#2975), so a test of ours reaches `gh` through `import ... from "agent-org/src/x.mjs"`, a bare specifier the
- * local-import closure does not follow. Without this edge `board-document-chrome-resolver.test.ts` reads as reaching nothing and the guard
+ * The tool is loaded by PATH (#3534), so a test of ours reaches `gh` through `toolModule("src/x.mjs")`, a call the local-import closure does not
+ * follow. Without this edge `board-document-chrome-resolver.test.ts` reads as reaching nothing and the guard
  * below walks a population that has quietly lost its only member.
  */
 function toolImports(file: string): string[] {
   const code = stripComments(readFileSync(file, "utf8"));
-  return [...code.matchAll(/(?:from|import)\s*\(?\s*["'](agent-org\/[^"']+)["']/g)]
-    .map((match) => join(ROOT, "node_modules", match[1])).filter((path) => existsSync(path));
+  return [...code.matchAll(/toolModule\(\s*["']([^"']+)["']/g)]
+    .map((match) => join(TOOL, match[1])).filter((path) => existsSync(path));
 }
 
 /** Can a `gh` spawn be reached from `entry` through any depth of local imports, including the ones into the installed tool? */
@@ -300,7 +302,7 @@ test("[14] ci.yml parses into real jobs -- a scrape that finds nothing must FAIL
 
 test("[13] board-document-chrome-resolver.test.ts reaches `gh` only TRANSITIVELY -- the premise this guard rests on", () => {
   // It takes `resolveChromeBinary` from the tool's `board-document.mjs`, which shells to `gh release` further down the same module: no `gh` in
-  // the test file itself, only in what it imports. Re-derived for a dependency: the import is a bare `agent-org/...` specifier, so the premise
+  // the test file itself, only in what it imports. Re-derived for a tool loaded by path: the import is a `toolModule(...)` call, so the premise
   // holds only through `toolImports`, and a walk without that edge would find it false.
   assert.ok(existsSync(CHROME_RESOLVER), "board-document-chrome-resolver.test.ts must exist for this guard to mean anything");
   assert.doesNotMatch(readFileSync(CHROME_RESOLVER, "utf8"), SPAWNS_GH,
@@ -342,10 +344,11 @@ function armedPrGuardBlock(): string {
 interface Verdict { status: number; stdout: string; stderr: string }
 
 /**
- * Runs ONLY the extracted block in a throwaway tree, with a shell FUNCTION named `pnpm` shadowing the real binary: the real
- * `pnpm exec agent-org merge-guard --armed-check=` needs a live PR in the armed-and-green state, which no PR holds for as long as a test run.
- * The guard asks `command -v gh` and `[ -e node_modules/.bin/agent-org ]`, so the tree gets a stub `gh` on PATH (a machine without one would
- * otherwise skip every case) and the tool's bin only when `installed`.
+ * Runs ONLY the extracted block in a throwaway tree, with a shell FUNCTION named `agent-org` shadowing the real binary: the real
+ * `agent-org merge-guard --armed-check=` needs a live PR in the armed-and-green state, which no PR holds for as long as a test run.
+ * The guard asks `command -v gh` and `command -v agent-org`, so the tree gets a stub `gh` on PATH (a machine without one would
+ * otherwise skip every case) and an `agent-org` function only when `installed` -- `command -v` finds a function, and the rest of PATH is the
+ * system's only, so a host's own `agent-org` cannot answer for it.
  */
 function runArmedGuardBlock(branch: string, stub: { exitCode: number; output: string },
   { env = {}, installed = true }: { env?: Record<string, string>; installed?: boolean } = {}): Verdict {
@@ -354,15 +357,11 @@ function runArmedGuardBlock(branch: string, stub: { exitCode: number; output: st
     mkdirSync(join(tree, "bin"));
     writeFileSync(join(tree, "bin/gh"), "#!/bin/sh\n");
     chmodSync(join(tree, "bin/gh"), EXECUTABLE);
-    if (installed) {
-      mkdirSync(join(tree, "node_modules/.bin"), { recursive: true });
-      writeFileSync(join(tree, "node_modules/.bin/agent-org"), "");
-    }
     const script = `set -euo pipefail\nfailed=()\nskipped=()\nBRANCH="${branch}"\n`
-      + `pnpm() { echo '${stub.output.replace(/'/g, "'\\''")}'; exit ${stub.exitCode}; }\n`
+      + (installed ? `agent-org() { echo '${stub.output.replace(/'/g, "'\\''")}'; exit ${stub.exitCode}; }\n` : "")
       + `${armedPrGuardBlock()}\necho A11Y_REACHED_END\nprintf '%s\\n' "\${skipped[@]:-}" >&2`;
     // `spawnSync`, never `execFileSync`: the latter returns stdout ALONE on success, and the override message prints to stderr and still exits 0.
-    const result = spawnSync("bash", ["-c", script], { encoding: "utf8", cwd: tree, env: { PATH: `${tree}/bin:${process.env.PATH ?? ""}`, ...env } });
+    const result = spawnSync("bash", ["-c", script], { encoding: "utf8", cwd: tree, env: { PATH: `${tree}/bin:/usr/bin:/bin`, ...env } });
     return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
   } finally {
     rmSync(tree, { recursive: true, force: true });
@@ -390,10 +389,10 @@ test("[17] WIRING: A11Y_ALLOW_ARMED_PUSH skips the lookup entirely and prints th
   assert.match(result.stdout, /A11Y_REACHED_END/);
 });
 
-test("[18] WIRING: a tree without the pinned tool installed SKIPS the guard, naming why -- never a refusal that reads as 'this branch is armed'", () => {
+test("[18] WIRING: a machine without `agent-org` on PATH SKIPS the guard, naming why -- never a refusal that reads as 'this branch is armed'", () => {
   const result = runArmedGuardBlock("agent/some-branch", { exitCode: 1, output: "REFUSING" }, { installed: false });
   assert.equal(result.status, 0, `expected the missing tool to skip, got: ${result.stderr}`);
-  assert.match(result.stderr, /agent-org is not installed in this tree/);
+  assert.match(result.stderr, /agent-org is not on PATH/);
   assert.match(result.stdout, /A11Y_REACHED_END/);
 });
 
@@ -501,12 +500,12 @@ test("[28] NO WORKFLOW calls `git revert`, pushes or opens a `revert/` branch, o
 test("[29] the revert script and its token test are GONE, and the guard that reverts nothing is still wired", () => {
   // The tool-side half (its `src` has no revert script and does have the guard) is the tool's, and stays in agent-org.
   assert.ok(!existsSync(join(ROOT, "packages/lab/src/packaging/trunk-revert-token.test.ts")));
-  assert.match(runsOf(trunk().jobs.trunkGate), /pnpm exec agent-org trunk-revert-guard\b/);
+  assert.match(runsOf(trunk().jobs.trunkGate), /agent-org trunk-revert-guard\b/);
 });
 
 test("[30] trunk.yml runs trunk-revert-guard.mjs INSIDE trunkGate, not as a separate job", () => {
   const runs = runsOf(trunk().jobs.trunkGate);
-  assert.match(runs, /pnpm exec agent-org trunk-revert-guard\b/,
+  assert.match(runs, /agent-org trunk-revert-guard\b/,
     "the guard must run as a step inside trunkGate -- a refusal there is what makes trunkRecheck fire and the gate's `trunk-red` cause wake a fixer");
   assert.match(runs, /--merge=\$\{\{ github\.sha \}\}/, "it must check the commit THIS push actually landed, not an inferred or default ref");
 });
@@ -537,9 +536,8 @@ const projectDeclaration = () => JSON.parse(read(".agent-org/project.json")) as 
   units: { prefix: string; boardReportWorkflow: string; own: string[] };
 };
 
-test("[33] #2324: `npm run spawn:cycles` is wired to that command", () => {
-  const scripts = JSON.parse(read("package.json")).scripts as Record<string, string>;
-  assert.equal(scripts["spawn:cycles"], "agent-org spawn:cycles");
+test("[33] #2324: the tool's command table names a program for `spawn:cycles`", () => {
+  assert.equal(typeof TOOL_COMMANDS["spawn:cycles"], "string", "`agent-org spawn:cycles` runs the program the table names");
 });
 
 test("[34] #2505: the real sessions.json marks NO role drained, and the reader still finds the mark in a roster that has one", () => {
@@ -574,11 +572,10 @@ const RECORDED_ORGANISATION = [
  */
 const EXEMPT: Record<string, string> = {
   "corpus-backups": "release storage only: 0 pull requests, all or open (measured 2026-10-02, `gh pr list -R a11ign/corpus-backups --state all`)",
-  "lab": "a layer repository (#2612) whose issues live on a11ign/a11ign; 0 pull requests measured 2026-10-02",
   "auth-capture-check": "a private test bed (#2561) whose pull requests are workflow-run vehicles, NOT work to review or merge; 7 open on "
     + "2026-10-02, the same class, routed to product-manager on #2969 rather than declared here",
 };
-const EXEMPTION_CEILING = 3;
+const EXEMPTION_CEILING = 2;
 
 /** The non-archived repositories of `organisation` that are neither a declared scope nor exempt: the offenders. */
 function undeclared(organisation: { name: string; isArchived: boolean }[], declared: Set<string>): string[] {
@@ -676,9 +673,9 @@ test("[40] #2620: the project's own services still name their own host (the scan
     "a timer names no path, and the literal belongs in the project's own units, which is where it is");
 });
 
-test("[41] the 12 units in a11ign's .agent-org/units equal the `units.own` list in its declaration, and none are stray", () => {
+test("[41] the 14 units in a11ign's .agent-org/units equal the `units.own` list in its declaration, and none are stray", () => {
   const { own } = unitsDeclaration();
-  assert.equal(own.length, OWN_UNIT_COUNT, "POSITIVE CONTROL: twelve units are declared, so the equality below is not two empty lists");
+  assert.equal(own.length, OWN_UNIT_COUNT, "POSITIVE CONTROL: fourteen units are declared, so the equality below is not two empty lists");
   assert.deepEqual(unitNames(), [...own].sort());
 });
 
@@ -689,6 +686,7 @@ test("[42] #2620: NO UNIT IS RENAMED -- a11ign's own units still carry the names
     "a11ign-fleet-watch.service", "a11ign-fleet-watch.timer",
     "a11ign-lab-watch.service", "a11ign-lab-watch.timer",
     "a11ign-regression-board.service", "a11ign-regression-board.timer", // #3328: boards the outsider job's `regression` rows
+    "a11ign-token-cost-weekly.service", "a11ign-token-cost-weekly.timer", // #3690: the weekly calls-and-dollars reading's clock
     "a11ign-weekly-review.service", "a11ign-weekly-review.timer", // #3319: the weekly outsider review's clock
   ]);
 });
@@ -782,7 +780,7 @@ test("[49] #2000: which own timers run their service at `host:install`, and whic
   assert.deepEqual(requiring, ["a11ign-corpus-release-nightly.timer", "a11ign-corpus-snapshot.timer"],
     "`Requires=` in a timer's [Unit] is an ordinary start dependency, so `enable --now` starts the service too, once, at install time. Adding "
     + "another entry means that service runs during `host:install`: say so in the unit and check it is a run you want unattended");
-  assert.deepEqual(ownTimers().filter((name) => !requiring.includes(name)).sort(), ["a11ign-fleet-watch.timer", "a11ign-lab-watch.timer", "a11ign-regression-board.timer", "a11ign-weekly-review.timer"],
+  assert.deepEqual(ownTimers().filter((name) => !requiring.includes(name)).sort(), ["a11ign-fleet-watch.timer", "a11ign-lab-watch.timer", "a11ign-regression-board.timer", "a11ign-token-cost-weekly.timer", "a11ign-weekly-review.timer"],
     "the watchers `--post`, so a firing at every `host:install` would put a comment on #928 each time; they are activated by name alone ON PURPOSE. "
     + "The weekly review files a row, which is idempotent by ISO week but still not something an install should do (#3319). The regression board sweeps every quarter hour and would only anticipate its first fire (#3328)");
 });

@@ -137,7 +137,7 @@ function outsideTheAllowance(specifier: string, relativeAllowed: readonly string
   return !relativeAllowed.includes(specifier);
 }
 
-const CLI_FLAGS = "../packages/worker-fleet/src/cli-flags.mjs";
+const CLI_FLAGS = "./cli-flags.mjs";
 
 test("the script fetches nothing: its imports are built-ins and cli-flags.mjs by relative path, and nothing calls fetch", () => {
   const code = stripComments(readFileSync(SCRIPT, "utf8"));
@@ -145,7 +145,7 @@ test("the script fetches nothing: its imports are built-ins and cli-flags.mjs by
   assert.doesNotMatch(code, /\bfetch\b|\bprocess\.binding\b/);
   assert.ok(importsOf(code).includes(CLI_FLAGS), "the script no longer imports cli-flags.mjs: update this test and the header, which say it does");
   // The file it reaches runs before node_modules exists too, so it is held to the same allowance (built-ins only, none reaching out).
-  const reached = stripComments(readFileSync(join(REPO, "packages/worker-fleet/src/cli-flags.mjs"), "utf8"));
+  const reached = stripComments(readFileSync(join(REPO, "scripts/cli-flags.mjs"), "utf8"));
   assert.deepEqual(importsOf(reached).filter((specifier) => outsideTheAllowance(specifier, [])), []);
 });
 
@@ -158,7 +158,7 @@ test("the control for the line above: the same reading REFUSES a package, a netw
     'const m = await import("zod");',
     'const r = require("node:net");',
     'import { realpathSync } from "node:fs";',
-    'import { refuseUnknownFlags } from "../packages/worker-fleet/src/cli-flags.mjs";',
+    'import { refuseUnknownFlags } from "./cli-flags.mjs";',
   ].join("\n");
   assert.deepEqual(importsOf(fixture).filter((specifier) => outsideTheAllowance(specifier, [CLI_FLAGS])),
     ["left-pad", "node:https", "node:child_process", "../other.mjs", "zod", "node:net"]);
@@ -201,9 +201,8 @@ function installFixture(lock: Lock = "whole"): string {
   writeFileSync(join(dir, "left", "package.json"), JSON.stringify({ name: "left", version: "1.0.0" }));
   // The script's one relative import comes along, at the path it names, and `node_modules` is NOT: a fresh checkout has none.
   mkdirSync(join(dir, "scripts"));
-  mkdirSync(join(dir, "packages", "worker-fleet", "src"), { recursive: true });
   copyFileSync(SCRIPT, join(dir, SCRIPT_PATH));
-  copyFileSync(join(REPO, "packages/worker-fleet/src/cli-flags.mjs"), join(dir, "packages/worker-fleet/src/cli-flags.mjs"));
+  copyFileSync(join(REPO, "scripts/cli-flags.mjs"), join(dir, "scripts/cli-flags.mjs"));
   return dir;
 }
 

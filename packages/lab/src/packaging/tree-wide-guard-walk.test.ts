@@ -87,10 +87,10 @@ test("#795: a repeated call with the SAME argv is served from the per-process ca
   + "cannot prove this (`.set` on an existing key does not grow it either way), so this counts the real "
   + "spawns themselves", () => {
   const before = _lsFilesSpawnCountForTests();
-  walkTree({ kind: "mjs", roots: ["packages/worker-fleet/src"] });
+  walkTree({ kind: "mjs", roots: ["packages/guards/src"] });
   const afterFirst = _lsFilesSpawnCountForTests();
   assert.ok(afterFirst > before, "a genuinely new argv must spawn git at least once");
-  walkTree({ kind: "mjs", roots: ["packages/worker-fleet/src"] });
+  walkTree({ kind: "mjs", roots: ["packages/guards/src"] });
   const afterSecond = _lsFilesSpawnCountForTests();
   assert.equal(afterSecond, afterFirst,
     "the identical argv, asked again, must be served from cache -- not spawn git a second time");

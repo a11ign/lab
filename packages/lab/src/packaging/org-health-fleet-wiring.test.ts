@@ -18,8 +18,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { advanceCaptures, captureTimes } from "../../../control/src/fleet-watch.mjs";
-import { orgHealthNow, readFleetCaptures, fleetWaitingFacts, stalledPrFacts, stallReasonOf } from "agent-org/src/work-gate.mjs";
-import { overdueReading } from "agent-org/src/org-health.mjs";
+import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
+const { orgHealthNow, readFleetCaptures, fleetWaitingFacts, stalledPrFacts, stallReasonOf } = await toolModule("src/work-gate.mjs");
+const { overdueReading } = await toolModule("src/org-health.mjs");
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;

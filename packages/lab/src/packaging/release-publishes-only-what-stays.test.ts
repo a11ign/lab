@@ -21,7 +21,7 @@
  *
  * The three are publishable today, so asserting they are not would be red on `main` for as long as the moves take. The
  * held-set assertion therefore runs only under `A11Y_CHECK_RELEASE_HOLD=1` (the precedent is
- * `A11Y_CHECK_MAIN_RULESET=1`), which `release.yml` sets on a step guarded by the plan's `publish` mode (#3131; it was `inputs.dry-run == false`). Ordinary CI and
+ * `A11Y_CHECK_MAIN_RULESET=1`), which `release.yml` sets on a step of its `guards` job that runs on a push only (#3717; it was the plan's `publish` mode, #3131, and before that `inputs.dry-run == false`), and which the called release `needs`. Ordinary CI and
  * the dry run stay green; a real publish goes red before any byte leaves, naming the package. What keeps that from
  * being a switch nobody throws is the last test here, which reads the PARSED workflow.
  *
@@ -161,24 +161,28 @@ test("THE HOLD: the real workspace publishes none of the held packages (real pat
 });
 
 interface Step { name?: string; if?: string; run?: string; env?: Record<string, string> }
+interface WorkflowJob { needs?: string | string[]; steps?: Step[] }
 
-function releaseSteps(): Step[] {
-  const doc = parse(readFileSync(WORKFLOW, "utf8")) as { jobs?: Record<string, { steps?: Step[] }> };
-  return Object.values(doc.jobs ?? {}).flatMap((job) => job.steps ?? []);
+function releaseJobs(): Record<string, WorkflowJob> {
+  return (parse(readFileSync(WORKFLOW, "utf8")) as { jobs?: Record<string, WorkflowJob> }).jobs ?? {};
 }
 
-test("release.yml runs this hold on the real path only, before the access read-back and the publish", () => {
-  const steps = releaseSteps();
+test("release.yml runs this hold on a push only, in the job the publishing call needs", () => {
+  const { guards, release } = releaseJobs();
+  const steps = guards?.steps ?? [];
   const holdAt = steps.findIndex((step) => step.env?.[HOLD_FLAG] === "1");
-  assert.notEqual(holdAt, -1, `no release.yml step sets ${HOLD_FLAG}=1, so the hold would never bite`);
+  assert.notEqual(holdAt, -1, `no step of release.yml's guards job sets ${HOLD_FLAG}=1, so the hold would never bite`);
   const hold = steps[holdAt];
-  assert.equal(hold.if?.replace(/\s+/g, " ").trim(), "needs.plan.outputs.mode == 'publish'",
-    "the hold runs on the publishing push only: the rehearsal and ordinary CI stay green while the three are still here");
+  assert.equal(hold.if?.replace(/\s+/g, " ").trim(), "github.event_name == 'push'",
+    "the hold runs on the publishing push only: the rehearsal (a dispatch) and ordinary CI stay green while the packages are still here");
   assert.ok(hold.run?.includes(SELF), `the hold step must run ${SELF}`);
   assert.ok(hold.run?.includes("RELEASE HOLD PASS"),
     "a green exit is not a pass: the step must require the PASS line, or a run that asserted nothing would publish");
   const accessAt = steps.findIndex((step) => /\.changeset\/config\.json.*\.access|\.access.*\.changeset\/config\.json/s.test(step.run ?? ""));
-  const publishAt = steps.findIndex((step) => step.run?.includes("changeset publish"));
   assert.ok(accessAt > holdAt, "the hold must come BEFORE the access read-back");
-  assert.ok(publishAt > holdAt, "the hold must come BEFORE `changeset publish`, so the real path goes red before a byte leaves");
+  assert.ok([release?.needs ?? []].flat().includes("guards"),
+    "#3717: `changeset publish` runs inside the called workflow, so the hold goes red before a byte leaves only because the call needs this job");
+  const publishes = Object.entries(releaseJobs()).flatMap(([name, job]) =>
+    (job.steps ?? []).filter((step) => step.run?.includes("changeset publish")).map(() => name));
+  assert.deepEqual(publishes, [], "no job of release.yml runs `changeset publish` itself: the called workflow does");
 });

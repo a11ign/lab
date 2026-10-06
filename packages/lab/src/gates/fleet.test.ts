@@ -22,7 +22,10 @@ import { inventoryWorkerUrls } from "@a11ign/screenreader-fleet/fleet-env";
 // what this test needs (more than one), and the example is guaranteed to match the real fleet's count
 // (inventory-example-parity.test.ts).
 const EXAMPLE_INVENTORY = fileURLToPath(new URL("../../../control/ansible/inventory.example.yml", import.meta.url));
-const exampleInventoryWorkers = () => inventoryWorkerUrls({ inventoryPath: EXAMPLE_INVENTORY });
+// BOTH paths are named (#3504): the registry copy of `fleet-env` resolves its DEFAULTS relative to its own `dist/`, which under `node_modules` is
+// nowhere, and `inventoryWorkerUrls` answers `[]` for a file it cannot read -- so naming only the inventory read an empty fleet and "more than one" failed.
+const GROUP_VARS = fileURLToPath(new URL("../../../control/ansible/group_vars/a11y_workers.yml", import.meta.url));
+const exampleInventoryWorkers = () => inventoryWorkerUrls({ inventoryPath: EXAMPLE_INVENTORY, groupVarsPath: GROUP_VARS });
 
 test("naming a worker is the ESCAPE HATCH, and the scope says so out loud", () => {
   const named = gateWorkers("http://REDACTED-INTERNAL-ADDRESS:8765");

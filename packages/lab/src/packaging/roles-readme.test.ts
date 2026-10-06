@@ -728,23 +728,23 @@ test("#2076 CONTROL: the detector fires on the dangerous shape and declines the 
 const CALL_SITES = [
   "packages/control/ansible/lab-reset.yml",
   "packages/judge/src/codex-backend.test.ts",
-  "packages/worker-fleet/src/lab-job-lock-two-rows.test.ts",
-  "packages/worker-fleet/src/local-worker/build-vm.sh",
-  "packages/worker-fleet/src/local-worker/create-utm-vm.sh",
-  "packages/worker-fleet/src/local-worker/fetch-windows-iso.sh",
-  "packages/worker-fleet/src/provisioning/bare-metal/serve-bootstrap.sh",
+  "packages/control/src/fleet-layer/lab-job-lock-two-rows.test.ts",
   "scripts/git-hooks/pre-commit",
   "scripts/git-hooks/pre-push",
 ] as const;
 
-/** 13 `rm`-through-a-variable lines across the nine at `67f30071f`, and 16 shell-executed tracked files. */
-const MEASURED_CALL_SITE_LINES = 13;
-const SHELL_FILE_FLOOR = 10;
+/**
+ * 13 `rm`-through-a-variable lines across the nine at `67f30071f`, and 16 shell-executed tracked files. #3504 took the four call sites that were
+ * the fleet's own shell scripts with that code (`worker-fleet/src/local-worker/*.sh`, `provisioning/bare-metal/serve-bootstrap.sh`), leaving five
+ * sites, eight lines and eight shell-executed files: the same measurement taken again, not the floor lowered to make room.
+ */
+const MEASURED_CALL_SITE_LINES = 8;
+const SHELL_FILE_FLOOR = 8;
 
 const REPO_ROOT = resolve(import.meta.dirname, "../../../..");
 const lines = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf8").split("\n");
 
-test("#2076: the nine tracked call sites are a real, non-empty population and none of them is the shape", () => {
+test("#2076: the five tracked call sites are a real, non-empty population and none of them is the shape", () => {
   let found = 0;
   for (const path of CALL_SITES) {
     const throughAVariable = lines(path).filter(removesThroughAVariable);
@@ -758,7 +758,7 @@ test("#2076: the nine tracked call sites are a real, non-empty population and no
         + '`.claude/rules/agent-practices.md` says to write as `"${VAR:?}"/*`');
     }
   }
-  // A FLOOR, NOT A PIN -- 13 at `67f30071f`, and a tenth legitimate call site raises it. The floor exists
+  // A FLOOR, NOT A PIN -- 13 at `67f30071f`, 8 once the fleet's shell left, and a further legitimate call site raises it. The floor exists
   // only to catch the other failure: `removesThroughAVariable` breaking and finding nothing, which would
   // make every assertion in the loop above pass having examined no lines.
   assert.ok(found >= MEASURED_CALL_SITE_LINES,
@@ -790,7 +790,7 @@ test("#2076: no tracked file a shell executes runs `rm` on a glob beneath an ung
   assert.ok(files.length >= SHELL_FILE_FLOOR,
     `only ${files.length} shell-executed tracked files found, against 16 at \`67f30071f\` -- the `
     + "`ls-files` walk is broken, and an emptiness over nothing is not a reading");
-  assert.ok(files.includes("packages/worker-fleet/src/local-worker/fetch-windows-iso.sh"),
+  assert.ok(files.includes("scripts/git-hooks/pre-push"),
     "the walk must reach the file with the most `rm`-through-a-variable lines in the tree, or its scope "
     + "is not what this test claims");
 

@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const UNITS = join(ROOT, ".agent-org/units");
@@ -28,7 +29,7 @@ interface UnclassifiedFinding { unit: string; problem: string }
 interface HostUnits {
   unclassifiedEntries(deps: { projectUnitsDir: string; units: { own: string[] } }): UnclassifiedFinding[];
 }
-const { unclassifiedEntries } = await import(pathToFileURL(join(ROOT, "node_modules/agent-org/src/host-units.mjs")).href) as HostUnits;
+const { unclassifiedEntries } = await import(pathToFileURL(toolPath("src/host-units.mjs")).href) as HostUnits;
 
 const SERVICE = "a11ign-weekly-review.service";
 const TIMER = "a11ign-weekly-review.timer";
@@ -102,7 +103,7 @@ test("the unit supplies GITHUB_SHA, which the script refuses to run without, and
   const script = readFileSync(join(ROOT, "scripts/weekly-review.mjs"), "utf8");
   assert.match(script, /process\.env\.GITHUB_SHA/, "POSITIVE CONTROL: the script still reads it, so the line below is still needed");
   assert.match(setting(unitText(SERVICE), "ExecStart") ?? "", /GITHUB_SHA=/);
-  assert.equal(setting(unitText(SERVICE), "ExecStartPre"), "-%h/.local/bin/pnpm run primary:update",
+  assert.equal(setting(unitText(SERVICE), "ExecStartPre"), "-%h/.local/bin/agent-org primary:update",
     "the script reads RELEASE.md and docs/try-it.md from this checkout, so a stale one files last week's requirements");
 });
 

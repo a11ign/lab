@@ -27,8 +27,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # a11ign/a11ign at the commit `packages/lab` was cut from (2026-10-05). A sha and never a branch: a branch moves under a pull request that did not touch it.
-  CORE_REF: d533ad216136e1dc68fb8a2b3ac447dd552fbea6
+  # a11ign/a11ign at the commit `packages/lab` was last synced from (9f2860710, 2026-10-06; first cut from d533ad216136, 2026-10-05). A sha and never a branch: a branch moves under a pull request that did not touch it.
+  CORE_REF: 9f2860710197d65518a1a136f75708e727734567
 
 jobs:
   gate:
@@ -52,6 +52,12 @@ jobs:
         working-directory: core
       # The packages' `dist` is what `@a11ign/*` imports resolve to, in the typecheck and in the tests alike: unbuilt, both fail on the first import (the monorepo's `pretest` does this).
       - run: pnpm run build
+        working-directory: core
+      # The core's packaging tests read the TOOL (a11ign/agent-org) by path, and `/home/agent/repos/agent-org` is a host's, not a runner's: the core's own jobs clone it at the newest release tag and export where
+      # (`scripts/agent-org-newest-tag.mjs`, #3534), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
+      # (measured on the sync pull request, a11ign/a11ign#3791).
+      - name: The tool at the newest release tag, cloned for this run, with `agent-org` on PATH (a11ign/a11ign#3534)
+        run: node scripts/agent-org-newest-tag.mjs --dest="$RUNNER_TEMP/agent-org"
         working-directory: core
       # Lint and typecheck run before the tests so a style or type failure reads red without waiting for the suite.
       - run: pnpm exec eslint packages/lab

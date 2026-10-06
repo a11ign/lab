@@ -13,8 +13,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { declareCause, GROUPS } from "agent-org/src/cause-shape.mjs";
+const { declareCause, GROUPS } = await toolModule("src/cause-shape.mjs");
 import { causeDeclarations as A11IGN_CAUSES } from "../../../../.agent-org/plugins/causes.mjs";
+import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 test("a11ign's plugin declares exactly TWO causes: `fleet-batch-due` and `lab-job-finished` (N=2, at most 2)", () => {
   assert.deepEqual(A11IGN_CAUSES.map((c: { cause: string }) => c.cause), ["fleet-batch-due", "lab-job-finished"]);

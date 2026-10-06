@@ -143,7 +143,13 @@ test("#1135 clause 4: the PR suite's floor still holds after the split, on the r
   // @a11ign/agent-org, @a11ign/guards and lab, where `test:org` runs them and `test:all` covers both.
   // So 180 is the floor for a SMALLER POPULATION, not the old one relaxed: the whole-tree floor lives on
   // `test:all` at 500, and clause 5 below pins that.
-  assert.equal(min, 180, `the PR floor is the one the row states, not lowered to make room: ${min}`);
+  //
+  // IT IS 140 SINCE #3447, WHICH TOOK `nvda-worker` AND `nvda-speech` OUT OF THE WORKSPACE: 206 files became 161 (counted by this
+  // glob, not estimated), and 140 keeps the 87% margin 180 held over 206. Lowered because the POPULATION left, not to make room.
+  //
+  // IT IS 95 SINCE #3504, WHICH TOOK `worker-fleet` OUT OF THE WORKSPACE: 161 files became 108 (counted by this glob), and 95 keeps the same margin.
+  // Lowered because the POPULATION left, not to make room.
+  assert.equal(min, 95, `the PR floor is the one the row states, not lowered to make room: ${min}`);
   const resolve = (pattern: string) => globSync(pattern, { cwd: REPO });
   assert.deepEqual(underFloor([PR_GLOB], min, resolve), [], "the PR glob resolves at or above its floor");
   assert.deepEqual(underFloor([NIGHTLY_GLOB], 1, resolve), [], "and the nightly population on the real tree is not empty");

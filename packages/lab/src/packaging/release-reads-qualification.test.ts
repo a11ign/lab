@@ -11,7 +11,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -137,7 +137,7 @@ test("success on an EARLIER commit carries when only the version bump changed si
 });
 
 test("success on an earlier commit does NOT carry once a path the fleet part reads changed since", () => {
-  for (const path of ["packages/lab/src/stability.mjs", "packages/worker-fleet/src/cli-flags.mjs",
+  for (const path of ["packages/lab/src/stability.mjs", "packages/evidence/src/index.ts",
     "pnpm-lock.yaml", "scripts/anything.mjs", "a-path-nobody-thought-of"]) {
     const decision = decide([on(RELEASE, []), on(QUALIFIED, [...VERSION_BUMP, path], "success")]);
     assert.equal(decision.outcome, "wait", `${path} is read by the fleet part`);
@@ -199,9 +199,10 @@ test("only `proceed` publishes: no other outcome is spelled proceed", () => {
 });
 
 test("every package directory is classified exactly once, so adding one fails HERE and not at a release", () => {
+  // A PACKAGE is a directory with a manifest: `packages/worker-fleet/` is a layer checkout where `pnpm run build` laid it (#3504), with no manifest, untracked.
   const directories = readdirSync("packages", { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
-    .filter((name) => !["node_modules"].includes(name));
-  assert.ok(directories.length >= 10, "the discovery found the packages (positive control for the emptiness)");
+    .filter((name) => !["node_modules"].includes(name) && existsSync(`packages/${name}/package.json`));
+  assert.ok(directories.length >= 8, "the discovery found the packages (positive control for the emptiness; ten until #3447 took nvda-speech out, with nvda-worker the eleventh, and nine until #3504 took worker-fleet)");
   const classified = [...FLEET_GATED_PACKAGES, ...RUNNER_ONLY_PACKAGES, ...PRIVATE_PACKAGES];
   assert.deepEqual([...classified].sort(), [...directories].sort());
   assert.equal(new Set(classified).size, classified.length, "no package is in two tables");
@@ -213,7 +214,7 @@ test("PRIVATE_PACKAGES are private manifests, and every PUBLISHED package is in 
   // lab, control and guards are private here too (#3126: their own repositories release them), so a private manifest
   // may sit in a fleet table; what may NOT happen is a published one being only in PRIVATE_PACKAGES.
   const published = readdirSync("packages", { withFileTypes: true }).filter((d) => d.isDirectory())
-    .map((d) => d.name).filter((dir) => manifest(dir).private !== true);
+    .map((d) => d.name).filter((dir) => existsSync(`packages/${dir}/package.json`)).filter((dir) => manifest(dir).private !== true);
   assert.ok(published.length >= 4, "the discovery found published packages (positive control for the emptiness)");
   for (const dir of published) {
     assert.ok([...FLEET_GATED_PACKAGES, ...RUNNER_ONLY_PACKAGES].includes(dir), `${dir} is published and in no fleet table`);
@@ -239,19 +240,19 @@ test("the plan's readings name the release's directories: the ones ahead on a pu
   assert.throws(() => releasedDirectories("[]", directoryOf), /CANNOT_TELL/);
 });
 
-test("release.yml READS the verdict before it publishes, and only a rehearsal may continue past a stop", () => {
-  const workflow = readFileSync(".github/workflows/release.yml", "utf8");
-  const read = workflow.indexOf("name: Read the fleet part's verdict for this sha");
-  const publish = workflow.indexOf("- name: Publish\n");
-  assert.ok(read !== -1, "the step that reads the verdict is in release.yml");
-  assert.ok(publish !== -1, "the Publish step is where this test looks for it (positive control for the order check)");
-  assert.ok(read < publish, "the verdict is read BEFORE Publish");
-  const step = workflow.slice(read, publish).split("\n      - ")[0];
-  assert.match(step, /node scripts\/release-reads-qualification\.mjs --sha=\$\{\{ github\.sha \}\}/);
-  assert.match(step, /continue-on-error: \$\{\{ needs\.plan\.outputs\.mode == 'rehearsal' \}\}/,
-    "a stop is survivable only in a rehearsal, which publishes nothing");
-  assert.doesNotMatch(step, /continue-on-error: true/);
-  assert.match(workflow, /permissions:[\s\S]*?statuses: read/);
+test("release.yml READS the verdict in the `guards` job the call needs, and only a rehearsal may continue past a stop", () => {
+  const { guards, release } = jobs();
+  const steps = guards.steps!;
+  const readAt = steps.findIndex((step) => step.name === "Read the fleet part's verdict for this sha");
+  assert.notEqual(readAt, -1, "the step that reads the verdict is in release.yml's guards job");
+  const step = steps[readAt] as Step & { id?: string; "continue-on-error"?: string };
+  assert.equal(step.id, "qualification", "the filing job reads its outputs by this id");
+  assert.match(step.run ?? "", /node scripts\/release-reads-qualification\.mjs --sha=\$\{\{ github\.sha \}\}/);
+  assert.equal(step["continue-on-error"], "${{ github.event_name == 'workflow_dispatch' }}",
+    "a stop is survivable only in a rehearsal (a dispatch), which publishes nothing");
+  assert.ok([release.needs].flat().includes("guards"),
+    "#3717: the verdict is read BEFORE the publish because the call `needs` the job that reads it");
+  assert.equal(guards.permissions?.statuses, "read", "the verdict is read from commit statuses");
 });
 
 // ---- #3291: the release files a row when the wait is overdue or a regression is confirmed ----------------------------
@@ -304,21 +305,22 @@ interface Step { name?: string; run?: string; env?: Record<string, string> }
 interface Job { needs?: string | string[]; if?: string; permissions?: Record<string, string>; outputs?: Record<string, string>; steps?: Step[] }
 const jobs = () => (parseYaml(readFileSync(".github/workflows/release.yml", "utf8")) as { jobs: Record<string, Job> }).jobs;
 
-test("the filing job holds `issues: write` and `contents: read` and nothing else, and the publishing job gained no write scope", () => {
-  const { "qualification-row": filing, release } = jobs();
+test("the filing job holds `issues: write` and `contents: read` and nothing else, and the publishing job holds only what the called workflow needs", () => {
+  const { "qualification-row": filing, release, guards } = jobs();
   assert.deepEqual(filing.permissions, { contents: "read", issues: "write" });
-  assert.deepEqual(release.permissions, { contents: "write", "id-token": "write", statuses: "read" },
-    "the publishing job's permissions are exactly what #3290 left");
+  assert.deepEqual(release.permissions, { contents: "write", checks: "read", "id-token": "write" },
+    "#3717: the call's permissions are exactly what the reusable workflow's jobs may use, and no more");
+  assert.deepEqual(guards.permissions, { contents: "read", statuses: "read" }, "the guards job reads, and writes nothing");
   assert.ok(!filing.steps!.some((step) => step.run === undefined), "every step of the filing job runs a command: no `uses:` action meets the issue token");
-  assert.deepEqual([filing.needs].flat().sort(), ["plan", "release"]);
+  assert.deepEqual([filing.needs].flat().sort(), ["guards"]);
   assert.match(filing.if!, /failure\(\)/);
-  assert.match(filing.if!, /mode == 'publish'/, "a rehearsal files nothing");
+  assert.match(filing.if!, /github\.event_name == 'push'/, "a rehearsal files nothing");
 });
 
-test("the publishing job hands the row on: each `row-*` output reads the verdict step", () => {
-  const { release } = jobs();
+test("the guards job hands the row on: each `row-*` output reads the verdict step", () => {
+  const { guards } = jobs();
   for (const name of ["row-title", "row-labels", "row-body"]) {
-    assert.equal(release.outputs?.[name], `\${{ steps.qualification.outputs.${name} }}`);
+    assert.equal(guards.outputs?.[name], `\${{ steps.qualification.outputs.${name} }}`);
   }
 });
 

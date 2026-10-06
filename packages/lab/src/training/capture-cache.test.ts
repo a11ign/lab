@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { cacheDecision, cacheKey, environmentKey, hashPageDir, stampProvenance } from "./capture-cache.mjs";
 import { captureFilePath } from "../capture/evidence-diff.mjs";
+import { layerFile } from "../../../guards/src/layer-file.mjs";
 
 const ENV = {
   screenReader: "NVDA",
@@ -324,8 +325,8 @@ test("the value the worker reports IS the value the launch flags ask for -- one 
   // Read from `browsers.mjs`'s SOURCE rather than imported: that module is fine to import, but
   // `server.mjs` is not (it constructs a guidepup ScreenReader at module scope and throws on a host with
   // no screen reader), and asserting both ends the same way is what makes this one claim instead of two.
-  const browsers = readFileSync(new URL("../../../nvda-worker/src/browsers.mjs", import.meta.url), "utf8");
-  const server = readFileSync(new URL("../../../nvda-worker/src/server.mjs", import.meta.url), "utf8");
+  const browsers = readFileSync(layerFile("@a11ign/screenreader-worker", "src/browsers.mjs", { from: import.meta.dirname }), "utf8");
+  const server = readFileSync(layerFile("@a11ign/screenreader-worker", "src/server.mjs", { from: import.meta.dirname }), "utf8");
   assert.match(browsers, /export const CAPTURE_WINDOW = \{ width: 1024, height: 768 \}/,
     "the pin is 1024x768 -- ceo's ruling (b) on #1561, and what all ten guests provision to (#1567)");
   assert.match(browsers, /`--window-size=\$\{CAPTURE_WINDOW\.width\},\$\{CAPTURE_WINDOW\.height\}`/,
