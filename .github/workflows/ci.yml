@@ -60,7 +60,8 @@ jobs:
         run: node scripts/agent-org-newest-tag.mjs --dest="$RUNNER_TEMP/agent-org"
         working-directory: core
       # Lint and typecheck run before the tests so a style or type failure reads red without waiting for the suite.
-      - run: pnpm exec eslint packages/lab
+      # `--no-ignore`: from the core's #3505 its eslint config ignores `packages/lab/**` (a LAYER CHECKOUT where laid), so a bare `eslint packages/lab` exits 2 with "all of the files ... are ignored" (measured on this repository's pull request #11).
+      - run: pnpm exec eslint --no-ignore packages/lab
         working-directory: core
       # The core's OWN program, not a copy of it for lab alone: a second tsconfig laid at the core's root is a file naming lab's paths, which the layer-edge test reads as a new edge, and a
       # reduced `include` lost the declarations the core's program carries (`agent-org`'s modules: TS7016). Lab is in that program once it is laid, so this checks it, and the core with it.

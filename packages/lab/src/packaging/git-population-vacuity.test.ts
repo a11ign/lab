@@ -564,6 +564,7 @@ test("the discovery finds a non-trivial population -- vacuity guard for the walk
 test("every discovered git-population test is classified, and its guard still exists", () => {
   const discovered = discoverGitPopulationTests();
   const unclassified = discovered.filter((f) => !(f in CLASSIFICATION));
+  // eslint-disable-next-line local/uncontrolled-emptiness -- demonstration: the vacuity is this file's subject; the core's lint exemption for it left with a11ign/a11ign#3505
   assert.deepEqual(unclassified, [],
     `these tests spawn git to enumerate a population and are classified nowhere -- prove the population `
     + `non-empty before asserting over it, then add an entry to CLASSIFICATION here (never assume a guard `

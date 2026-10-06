@@ -227,6 +227,7 @@ test("no activation delta was contaminated by a document announcement", () => {
       .filter((change) => /,\s*document\s*$/i.test(change.after ?? ""))
       .map((change) => `${s.id}.${s.variant}: ${change.control} -> ${change.after}`);
   });
+  // eslint-disable-next-line local/uncontrolled-emptiness -- guarded by labCorpusReadable: the core's lint exemption for this file left with a11ign/a11ign#3505
   assert.deepEqual(contaminated, [],
     `${contaminated.length} activation delta(s) recorded NVDA's document announcement instead of the ` +
     `page's response. That is speech from an earlier step arriving late and being credited to the ` +
