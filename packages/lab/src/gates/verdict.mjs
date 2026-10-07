@@ -54,6 +54,21 @@ export function gateVerdict({ examined, of, source, failures = 0 }) {
   return { ...base, verdict: "PASS", why: `all ${examined} of ${of} from ${source} examined and clean` };
 }
 
+/**
+ * The verdict of a harness that THREW (a11ign/a11ign#3977): it read nothing, so it is INCONCLUSIVE and never FAIL.
+ *
+ * Node exits 1 for an uncaught rejection, and 1 is this repo's "a real failure". `gate:stability` crashed on a page server
+ * that never came up, before one canary was captured, and the poster published `FAIL ... a canary was found UNSTABLE` on a
+ * sha whose pages nobody had looked at. A gate script catches its own throw and exits through this instead.
+ *
+ * @param {string} gate @param {unknown} error @returns {GateVerdict}
+ */
+export function crashVerdict(gate, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return { verdict: "INCONCLUSIVE", examined: 0, of: 0, source: `${gate} (the harness crashed)`, failures: 0,
+    why: `NO VERDICT: ${gate} crashed before it read one, so this says nothing about the pages: ${message}` };
+}
+
 /** One line, so every gate reads the same way in a log. */
 export function renderVerdict(/** @type {GateVerdict} */ v) {
   return `${v.verdict} — ${v.why}`;
