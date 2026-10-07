@@ -172,9 +172,13 @@ const rowWithRegion = (region: string, acceptance: string) =>
 /** #1939's Acceptance as filed, verbatim. Both paths are absent from this tree. */
 const AS_FILED_1939 =
   "npx rstest run --config packages/lab/rstest.config.ts packages/lab/src/packaging/lab-job-params.test.ts";
-/** And as `product-manager` corrected it by hand while promoting. Both paths are real. */
+/**
+ * And as `product-manager` corrected it by hand while promoting. Both paths are real. The test it named, `packages/control/src/fleet-layer/lab-job-params-reach-the-command.test.ts`,
+ * left this tree when `packages/control` became a laid layer with no `*.test.*` (a11ign/a11ign#3506), so the correction names THIS file: any
+ * test that is on disk here is the same shape, and the check is about the shape.
+ */
 const CORRECTED_1939 = "npx rstest run --config scripts/rstest/rstest.config.mjs --include "
-  + "packages/control/src/fleet-layer/lab-job-params-reach-the-command.test.ts";
+  + "packages/lab/src/packaging/acceptance-check-at-filing.test.ts";
 
 test("THE POSITIVE CONTROL: #1939's Acceptance as filed is REFUSED, and its correction is FILED", () => {
   // THE CONTROL EXISTS BECAUSE THE CALIBRATION BELOW ASSERTS AN EMPTINESS. `assert.deepEqual(offenders,

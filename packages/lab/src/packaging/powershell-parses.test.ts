@@ -36,6 +36,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { laidControlFiles } from "./laid-control.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 
@@ -77,9 +78,11 @@ const trackedPowerShell = () =>
   // first array element, so a `["-C", REPO, "ls-files"]` call escapes its census through argument order
   // alone. This guard asserts over an offender list, which is exactly the population that census exists to
   // require a pin for, so it is written in the shape that gets found and is classified there.
-  execFileSync("git", ["ls-files", "*.ps1", "*.psm1"],
+  [...execFileSync("git", ["ls-files", "*.ps1", "*.psm1"],
     { encoding: "utf8", cwd: REPO, env: sandboxGitEnv() })
-    .split("\n").filter(Boolean);
+    .split("\n").filter(Boolean),
+  // The control's 15 are LAID, untracked, and invisible to the listing above since a11ign/a11ign#3506: read from the laid layer (`laid-control.ts`, a11ign/a11ign#3972).
+  ...laidControlFiles(REPO).filter((path) => /\.(ps1|psm1)$/.test(path))].sort();
 
 /**
  * One `pwsh` start for the whole population — a process per file is 18 starts for one answer. The paths

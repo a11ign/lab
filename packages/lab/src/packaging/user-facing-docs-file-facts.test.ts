@@ -34,7 +34,8 @@ function realPackages(): string[] {
 
 test("the real package count and private/public split", () => {
   const names = realPackages();
-  assert.ok(names.length >= 7, `only found ${names.length} packages under packages/ -- the discovery `
+  // 6 at core `d8d9a02fc` (cli, evidence, guards, judge, lab, scorer): `packages/control` is a laid layer with no manifest since a11ign/a11ign#3506 (#3972).
+  assert.ok(names.length >= 6, `only found ${names.length} packages under packages/ -- the discovery `
     + "walk may be broken, not the codebase suddenly smaller");
 
   const privateOnes = names.filter((name) => {

@@ -158,13 +158,8 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "Measured at 132 walked and 11 sending when written.",
   },
   "packages/guards/src/control-extraction.test.ts": {
-    guard: 'diffs.includes("diff --git")',
-    note: "guarded -- (relocated to the core's guards by #3505) #2704's history scan spawns `git log -p` over the moving package and expects nothing the purge rules would "
-      + "leave behind after `--replace-text`. A clean result is the EXPECTED answer, so 'the history is clean' and 'the log read "
-      + "nothing' would be the same observation; the assertion that the output contains a `diff --git` header tells them apart, "
-      + "and a positive control asserts the RAW history still needs `--replace-text` (46 lines of `10.0.0.x` fixture addresses "
-      + "when written). Its message scan asserts more than 300 lines came back before scanning. Both skip by name on a shallow "
-      + "clone, and its fixtures prove each predicate refuses a planted address and token.",
+    guard: null,
+    note: "RETIRED WITH ITS SUBJECT, 2026-10-07 (a11ign/a11ign#3972). #3506 (`d8d9a02fc`) finished the extraction this test guarded, deleted `packages/control` from the workspace and took a11ign/control as a pinned tag, and deleted the history scan (`git log -p` over the moving package, guarded by `diffs.includes(\"diff --git\")`) with it. Kept as an entry rather than deleted, the convention of the three above.",
   },
   "packages/lab/src/packaging/lab-extraction.test.ts": {
     guard: 'diffs.includes("diff --git")',
@@ -320,18 +315,31 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "the fixture workspace and lockfile in the same file that must be refused; the population it enumerates positively (the tests relocated "
       + "to `packages/guards`) is held by a floor on the table it walks.",
   },
+  "packages/guards/src/control-delete.test.ts": {
+    guard: "workspaceDirectories(REPO_ROOT).length >= MIN_WORKSPACE_DIRECTORIES",
+    note: "guarded -- the core's own test that nothing is tracked under the directory that left. Its `git ls-files` reads the tracked files under `packages/control`, "
+      + "where an EMPTY answer is the expected one, so the floor on the workspace directories it walks beside it is what tells 'nothing remains' from 'the listing read nothing'. "
+      + "Added with the pin that brought it (a11ign/a11ign#3972); it is the core's test, classified here because the scan reads the core's tree.",
+  },
+  "packages/guards/src/pnpm-publish-path.test.ts": {
+    guard: "scanned.length > 300",
+    note: "guarded -- the walk spawns `git ls-files` over `.github`, `scripts` and `packages` for files naming the old lockfile, and the floor asserts the listing is not nearly "
+      + "empty, so a clean tree is not read from a listing that broke. Added with the pin that brought it (a11ign/a11ign#3972); the core's test, classified here because the scan reads the core's tree.",
+  },
   "packages/guards/src/one-package-manager.test.ts": {
-    guard: "files.length > 800",
+    guard: "files.length > 650",
     note: "guarded -- `git ls-files` for lockfiles in any directory, and the floor asserts the listing is not nearly empty, so a clean tree "
       + "is not read from a listing that broke. Relocated to the core's guards by #3505.",
   },
   "packages/control/src/fleet-layer/protocol-guard.test.ts": {
-    guard: "clients.length >= 1",
-    note: "guarded — the one known deploy call site (fleet-playbook.mjs); the UTM one, deploy-worker.mjs, left with screenreader-fleet 0.4.0 (#3803)",
+    guard: null,
+    note: "RETIRED WITH ITS PACKAGE, 2026-10-07 (a11ign/a11ign#3972). `packages/control` is a LAID layer of a11ign/control since a11ign/a11ign#3506 (`d8d9a02fc`): the core lays `src`, `ansible`, `CLAUDE.md` and `README.md` and no `*.test.*`, "
+      + "so this test is not in the tree this repository's suite runs over. It lives, and runs, in a11ign/control. It was guarded by `clients.length >= 1`, the one known deploy call site (`fleet-playbook.mjs`). Kept as an entry rather than deleted, the convention of the three above.",
   },
   "packages/control/src/fleet-layer/lab-job.test.ts": {
-    guard: "referenced.length >= 5",
-    note: "guarded — `git grep` for job= references across the tree; comment explicitly names the vacuity risk",
+    guard: null,
+    note: "RETIRED WITH ITS PACKAGE, 2026-10-07 (a11ign/a11ign#3972). `packages/control` is a LAID layer of a11ign/control since a11ign/a11ign#3506 (`d8d9a02fc`): the core lays `src`, `ansible`, `CLAUDE.md` and `README.md` and no `*.test.*`, "
+      + "so this test is not in the tree this repository's suite runs over. It lives, and runs, in a11ign/control. It was guarded by `referenced.length >= 5`, a `git grep` for `job=` references across the tree. Kept as an entry rather than deleted, the convention of the three above.",
   },
   "packages/lab/src/referenced-scripts.test.ts": {
     guard: "referenced.size >= 10",
@@ -416,14 +424,9 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "the repository population were to empty entirely.",
   },
   "packages/control/src/fleet-layer/entry-points.test.ts": {
-    guard: "declared.length >= 70",
-    note: "guarded — #211's FORM population, walked via `git ls-files`: every tracked source declaring "
-      + "`import.meta.url ===`. Floored at 70 since #3505 took the lab's declaring sources out of the core (it was 85, against 93 then), and deliberately a DIFFERENT population "
-      + "from the same file's `entryPoints()` discovery, which enumerates invocation sources and is "
-      + "inherently incomplete. Two populations in one file answering two questions: whether a guard has "
-      + "the right FORM (the file declares itself, complete) and whether a file NEEDS one (the sources, "
-      + "not complete). This entry covers the first; the second has no floor because there is no honest "
-      + "number to floor it at.",
+    guard: null,
+    note: "RETIRED WITH ITS PACKAGE, 2026-10-07 (a11ign/a11ign#3972). `packages/control` is a LAID layer of a11ign/control since a11ign/a11ign#3506 (`d8d9a02fc`): the core lays `src`, `ansible`, `CLAUDE.md` and `README.md` and no `*.test.*`, "
+      + "so this test is not in the tree this repository's suite runs over. It lives, and runs, in a11ign/control. It was guarded by `declared.length >= 70`, #211's FORM population of sources declaring `import.meta.url ===`. Kept as an entry rather than deleted, the convention of the three above.",
   },
   "packages/lab/src/packaging/tracked-source-leak-guard.test.ts": {
     guard: "files.length >= MIN_TRACKED_SOURCE_FILES",
@@ -642,13 +645,13 @@ test("#1180: an entry whose file is gone must DECLARE the retirement, or it is i
     "a file that EXISTS needs no retirement note, or every ordinary entry becomes a finding");
 });
 
-test("#1180: the real table satisfies it, and the three retirements are the reason rather than luck", () => {
+test("#1180: the real table satisfies it, and the seven retirements are the reason rather than luck", () => {
   const absent = Object.entries(CLASSIFICATION).filter(([f]) => !existsSync(join(REPO, f)));
-  assert.equal(absent.length, 3,
-    "three entries name a file that is gone -- #907 retired two and #954 one; if this number moves, the "
+  assert.equal(absent.length, 7,
+    "seven entries name a file that is gone -- #907 retired two, #954 one, and a11ign/a11ign#3506 four (the extraction's own scan and three tests that went with `packages/control`); if this number moves, the "
     + "table gained or lost a tombstone and the note below should say which");
   assert.deepEqual(undeclaredRetirements(CLASSIFICATION), [],
-    "and all three declare it, which is what makes the assertion above a guard rather than a wish");
+    "and all seven declare it, which is what makes the assertion above a guard rather than a wish");
 });
 
 test("MUTATION: a git-population call is discovered even split across lines, comments stripped", () => {

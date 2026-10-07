@@ -138,16 +138,13 @@ const REGION_AT_BASE_2244 = [
 ];
 
 /**
- * What of #2244's eight is STILL guarded after `worker-fleet` left (#3504): the two tests that moved with their reading to
- * `packages/control/src/fleet-layer/` and `cli.test.ts`. The other five left this repository with the fleet's code, so they cannot be
- * GUARDED any more; `CONTROL ON REAL HISTORY` reads the old text out of git under `REGION_AT_BASE_2244`, where those files still exist, so
- * the control keeps the population it was measured on rather than being quietly weakened (the same shape as `REGION_AT_BASE_2155`).
+ * What of #2244's eight is STILL guarded: only `cli.test.ts`. The two that moved with their reading to `packages/control/src/fleet-layer/`
+ * (#3504) left again with the code, because `packages/control` is a LAID layer of a11ign/control now (#3506) and a laid layer carries no `*.test.*`:
+ * they are not in this tree for a scan to read, so they cannot be GUARDED here. `CONTROL ON REAL HISTORY` reads the old text out of git under
+ * `REGION_AT_BASE_2244`, where those files still exist, so the control keeps the population it was measured on rather than being quietly weakened
+ * (the same shape as `REGION_AT_BASE_2155`).
  */
-const GUARDED_2244 = [
-  "packages/control/src/fleet-layer/protocol-guard.test.ts",
-  "packages/control/src/fleet-layer/lab-job.test.ts",
-  "packages/cli/src/cli.test.ts",
-];
+const GUARDED_2244 = ["packages/cli/src/cli.test.ts"];
 
 const GUARDED = [...GUARDED_2155, ...GUARDED_2244];
 
@@ -313,9 +310,9 @@ test("the guarded list reaches no dated record -- nothing under docs/, and nothi
   const REGION_FILES_2155 = 4;
   assert.equal(GUARDED_2155.length, REGION_FILES_2155,
     "#2155's Region names four files that still exist (its fifth, nvda-worker/CLAUDE.md, left in #3447); a fifth is a deliberate edit here, not a glob's doing");
-  const REGION_FILES_2244 = 3;
+  const REGION_FILES_2244 = 1;
   assert.equal(GUARDED_2244.length, REGION_FILES_2244,
-    "#2244's Region still guards three existing files (five left with the fleet's code, #3504, and are read from history instead); a fourth "
+    "#2244's Region still guards one existing file (seven left with the fleet's and control's code, #3504 and #3506, and are read from history instead); a second "
     + "is a deliberate edit here, with the reason it is guarded written above the list");
   assert.equal(REGION_AT_BASE_2244.length, 8, "the population the history control was measured on is #2244's eight, and is not edited when a file leaves");
   assert.equal(GUARDED.length, REGION_FILES_2155 + REGION_FILES_2244);
