@@ -86,8 +86,6 @@ jobs:
         working-directory: core
       - run: pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
         working-directory: core
-      # This repository's own checks: the workflows, the arming filter, the composition above. THIS STEP IS WHERE `tsc --noEmit` RUNS FOR THE REQUIRED CHECK (a11ign/a11ign#3959): `typecheck` is the root's
-      # `tsc --noEmit` over `scripts/`, and a type error here fails `gate`, the one check the ruleset requires. `test` is `rstest run` on `scripts/rstest/rstest.config.mjs`, the toolchain's config
-      # (ADR 0043): no `tsx --test` is left in this repository.
+      # This repository's own checks: the workflows, the arming filter, the composition above.
       - run: pnpm install --frozen-lockfile && pnpm run typecheck && pnpm test
         working-directory: lab
