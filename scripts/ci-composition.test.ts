@@ -28,18 +28,14 @@ test("this repository's package replaces the core's own AFTER the install and th
   assert.ok(lay < ci.indexOf("pnpm exec rstest run"), "laid before the tests");
 });
 
-test("the laid package is staged, then given its `@a11ign/control` package, in that order", () => {
-  // Staged because the core's `packages/lab` is gitignored and the lab's tests walk `git ls-files`; the package comes AFTER, so it is not a tracked entry.
-  // It is control's own manifest plus a link to the laid `src`, because since a11ign/a11ign#3506 the core's `packages/control` is a laid layer with NO `package.json`: a plain link has no `exports` to resolve `@a11ign/control/fleet-wake` through.
+test("the laid package is staged, then given its `@a11ign/control` link, in that order", () => {
+  // Staged because the core's `packages/lab` is gitignored and the lab's tests walk `git ls-files`; linked AFTER, so the link is not a tracked entry.
   const stage = ci.indexOf("git add -f packages/lab");
-  const manifest = ci.indexOf("/packages/control/package.json");
-  const src = ci.indexOf('ln -s ../../../../control/src "$control/src"');
+  const link = ci.indexOf("ln -s ../../../control packages/lab/node_modules/@a11ign/control");
   assert.ok(stage > 0, "positive control: the staging is found");
-  assert.ok(manifest > stage, "the manifest comes after the staging");
-  assert.ok(src > manifest, "the src link comes after the manifest");
-  assert.match(ci, /control=packages\/lab\/node_modules\/@a11ign\/control\n/, "both land in the lab's own node_modules");
+  assert.ok(link > stage, "the link comes after the staging");
   assert.ok(stage > ci.indexOf("cp -R ../lab/packages/lab packages/lab"), "staged after it is laid");
-  assert.ok(src < ci.indexOf("pnpm exec rstest run"), "installed before the tests");
+  assert.ok(link < ci.indexOf("pnpm exec rstest run"), "linked before the tests");
 });
 
 test("the lab is linted with the ignore removed, and typechecked by its own program, not the core's", () => {
