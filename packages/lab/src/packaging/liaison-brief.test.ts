@@ -23,12 +23,13 @@ const read = (relPath: string) => readFileSync(resolve(ROOT, relPath), "utf8");
 const BRIEF = ".agent-org/roles/liaison.md";
 const SESSIONS = ".agent-org/roles/sessions.json";
 
-/** B3's `PLACEHOLDER_NAMES`, restated (a11ign/agent-org `src/messaging/placeholders.mjs`, read at 6849076). */
+/** B3's `PLACEHOLDER_NAMES`, restated (a11ign/agent-org `src/messaging/placeholders.mjs`, as of a11ign/agent-org#335, which adds `open.count`). */
 const VOCABULARY = [
   "issue:<number>.number", "issue:<number>.state", "issue:<number>.labels",
   "pr:<number>.number", "pr:<number>.state", "pr:<number>.review",
   "run:<id>.status", "run:<id>.conclusion",
   "ready.count",
+  "open.count",
   "last-merge.age",
   "unit:<unit>.state",
   "comment:<id>.quote",
