@@ -276,7 +276,7 @@ export async function leasePageServer({ root, port, probePath }) {
   const log = openSync(logPath, "a");
   process.stderr.write(`Serving dataset pages on :${port} (log: ${logPath}) ...\n`);
   // `serve` is declared by the CORE's root manifest (a11ign/a11ign#3977), so `exec` from the root finds its bin. This used to be
-  // `--filter @a11ign/lab exec serve`, which needs `packages/lab` to be a workspace project: on a host that holds the lab LAID
+  // a pnpm project filter on `@a11ign/lab`, which needs `packages/lab` to be a workspace project: on a host that holds the lab LAID
   // there is none (no `package.json` laid, and the core's workspace excludes the path), so pnpm printed `No projects matched the
   // filters`, nothing bound :5050, and the gate died 90 s later on a page that was never going to be served.
   const pnpm = pnpmCliInvocation(["exec", "serve", resolve(root), "-l", String(port)]);
