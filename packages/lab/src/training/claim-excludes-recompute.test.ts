@@ -20,6 +20,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { SCORED_CRITERIA } from "@a11ign/judge/coverage";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 import { floorRows } from "../../scripts/calibrate-abstention.mjs";
 import { recompute, render } from "../../scripts/claim-excludes-recompute.mjs";
@@ -145,7 +146,7 @@ test("ONE COPY: the per-floor loop exists only in floorRows, and both callers us
 
 /** Whether the checkout the command runs in has a first-parent commit for the corpus file: the question the command itself asks of git before it prints a provenance line. */
 function corpusHasHistory(): boolean {
-  const log = spawnSync("git", ["-C", REPO, "log", "-1", "--first-parent", "--format=%h", "--", "packages/lab/src/training/real-page-corpus.mjs"], { encoding: "utf8" });
+  const log = spawnSync("git", ["-C", REPO, "log", "-1", "--first-parent", "--format=%h", "--", "packages/lab/src/training/real-page-corpus.mjs"], { encoding: "utf8", env: sandboxGitEnv() });
   assert.equal(log.status, 0, log.stderr);
   return log.stdout.trim() !== "";
 }

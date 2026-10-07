@@ -315,6 +315,12 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "by-name sources. The tracked-fleet-directory check is the EMPTINESS claim, and its positive control is the fixture "
       + "lockfile and fixture tree in the same file that must be refused.",
   },
+  "packages/lab/src/training/claim-excludes-recompute.test.ts": {
+    guard: "corpusHasHistory()",
+    note: "guarded by BRANCHING ON the answer, not by asserting over it: `git log --first-parent` for the corpus file is asked once, and a non-empty answer asserts the command prints its provenance "
+      + "table while an empty one asserts the command REFUSES with its \"no first-parent commit\" message. Neither outcome is a silent pass, which is what an emptiness assertion over this "
+      + "listing would be. Added by a11ign/a11ign#3904: the lab is laid over a depth-2 core checkout where the answer is empty, and the old test asserted the table unconditionally.",
+  },
   "packages/guards/src/lab-delete.test.ts": {
     guard: "Object.keys(RELOCATED).length >= MIN_RELOCATED",
     note: "guarded -- #3505's own test. \"No file under packages/lab is tracked\" is an EMPTINESS claim over `git ls-files`, so its positive control is "
