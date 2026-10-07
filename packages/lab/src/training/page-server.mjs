@@ -275,8 +275,11 @@ export async function leasePageServer({ root, port, probePath }) {
   const logPath = resolve(root, "..", "page-server.log");
   const log = openSync(logPath, "a");
   process.stderr.write(`Serving dataset pages on :${port} (log: ${logPath}) ...\n`);
-  // `serve` is declared in `packages/lab/package.json`, so `--filter` finds its bin: `exec` from the root sees only the root's own.
-  const pnpm = pnpmCliInvocation(["--filter", "@a11ign/lab", "exec", "serve", resolve(root), "-l", String(port)]);
+  // `serve` is declared by the CORE's root manifest (a11ign/a11ign#3977), so `exec` from the root finds its bin. This used to be
+  // `--filter @a11ign/lab exec serve`, which needs `packages/lab` to be a workspace project: on a host that holds the lab LAID
+  // there is none (no `package.json` laid, and the core's workspace excludes the path), so pnpm printed `No projects matched the
+  // filters`, nothing bound :5050, and the gate died 90 s later on a page that was never going to be served.
+  const pnpm = pnpmCliInvocation(["exec", "serve", resolve(root), "-l", String(port)]);
   const child = spawn(pnpm.command, pnpm.args, {
     stdio: ["ignore", log, log],
     detached: true, // its own process group, so release() cannot orphan the child

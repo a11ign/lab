@@ -37,7 +37,7 @@ const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs
 
 import { guestReachableUrl } from "@a11ign/screenreader-fleet";
 import { leasePageServer } from "../src/training/page-server.mjs";
-import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { renderVerdict, exitCodeFor, crashVerdict } from "../src/gates/verdict.mjs";
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
@@ -435,4 +435,16 @@ function reportFleet(/** @type {any[]} */ outcomes, /** @type {number} */ worker
   process.exit(exitCodeFor(verdict));
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();
+/**
+ * A throw out of `main` is a crash of the HARNESS, not a reading of a canary, and Node would exit 1 for it -- the code that
+ * means "a canary was found UNSTABLE" (a11ign/a11ign#3977). The error is printed in full first: the code says THAT no verdict
+ * was read, the stack says why.
+ */
+function exitOnCrash(/** @type {unknown} */ error) {
+  console.error(error);
+  const verdict = crashVerdict("gate:stability", error);
+  process.stdout.write(`\n${renderVerdict(verdict)}\n`);
+  process.exit(exitCodeFor(verdict));
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main().catch(exitOnCrash);

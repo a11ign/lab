@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gateVerdict, exitCodeFor, renderVerdict } from "./verdict.mjs";
+import { gateVerdict, exitCodeFor, renderVerdict, crashVerdict } from "./verdict.mjs";
 
 /**
  * determinism-plan D6. The rule is not "print the population" — `evidence-check` printed its coverage and
@@ -50,4 +50,22 @@ test("every verdict names its SOURCE, because a count means nothing without what
     gateVerdict({ examined: 5, of: 5, source: "inventory.yml" })]) {
     assert.match(renderVerdict(v), /inventory\.yml/);
   }
+});
+
+/**
+ * a11ign/a11ign#3977. A harness that threw read nothing, and Node exits 1 for an uncaught throw -- the code for "a real
+ * failure". `gate:stability` crashed on a page server that never came up and was posted as an UNSTABLE canary.
+ */
+test("a crashed harness is INCONCLUSIVE (exit 2), never a FAIL (exit 1), and says no verdict was read", () => {
+  const v = crashVerdict("gate:stability", new Error("page server did not serve form-unlabelled/good.html on :5050"));
+  assert.equal(v.verdict, "INCONCLUSIVE");
+  assert.equal(exitCodeFor(v), 2);
+  assert.notEqual(exitCodeFor(v), 1, "1 is what an uncaught throw already exits with; sharing it is the defect");
+  assert.match(renderVerdict(v), /NO VERDICT: gate:stability crashed/);
+  assert.match(renderVerdict(v), /form-unlabelled\/good\.html/, "the cause travels with it");
+  assert.equal(v.failures, 0, "a crash found no failing page");
+});
+
+test("a thrown non-Error is still a readable crash verdict", () => {
+  assert.match(crashVerdict("gate:stability", "boom").why, /: boom$/);
 });
