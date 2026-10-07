@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # a11ign/a11ign at the commit `packages/lab` was last synced from (a66b1ae39, 2026-10-06; first cut from d533ad216136, 2026-10-05). A sha and never a branch: a branch moves under a pull request that did not touch it.
+  # a11ign/a11ign at `275635da6`: a commit of a11ign/a11ign#3837's branch (its squash on main is 77af91b4d), kept reachable by refs/pull/3837/head. A PRE-#3505 core ON PURPOSE (a11ign/a11ign#3839): this suite cannot run green over a post-split core, where 154 tests in 65 files fail until the lab owns the baseline and the lint exemptions the core held for it (a11ign/a11ign#3904). So it is NOT "the commit last synced from" (that was a66b1ae39, the previous value): do not bump it to main. Replace it with a pin on main when #3904 lands. A sha and never a branch: a branch moves under a pull request that did not touch it.
   CORE_REF: 275635da6f45eae0cbd747ee1f9b2666935cde16
 
 jobs:
