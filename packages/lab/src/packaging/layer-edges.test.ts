@@ -336,6 +336,23 @@ test("the lab's baseline names the two directed pairs that leave lab for worker-
   assert.ok([...pairs.values()].every((n) => n > 0));
 });
 
+test("every baseline entry carries a disposition and a reason", () => {
+  const baseline = readLabBaseline();
+  assert.ok(baseline.length > 0, "POSITIVE CONTROL: the loop below has an entry to hold to account");
+  for (const entry of baseline) {
+    assert.ok(typeof entry.reason === "string" && entry.reason.trim().length >= REASON_AT_LEAST_CHARS, `${entry.from} -> ${entry.to}: a reason is a sentence, not a tag`);
+  }
+});
+
+test("`moves-with` is a TEST's disposition: it names a path a test lives at, and a declared layer", () => {
+  const moving = readLabBaseline().filter((e: { disposition: string }) => e.disposition.startsWith("moves-with:"));
+  assert.ok(moving.length > 0, "POSITIVE CONTROL: tests are recorded as moving with the code they read");
+  for (const entry of moving) {
+    assert.match(entry.from, TEST_PATH, `${entry.from} is code, and code does not move with a test: cut it, name the checkout or give it a row`);
+    assert.ok(LAYER_PACKAGES.includes(entry.disposition.slice("moves-with:".length)), `${entry.disposition} names no declared layer`);
+  }
+});
+
 test("done-when 4: each code edge that leaves worker-fleet for control, lab or nvda-worker, or lab for control, is a cut, a checkout path or a row", () => {
   const back = readLabBaseline().filter((e: { from: string; to: string }) => !TEST_PATH.test(e.from) && (
     (packageOf(e.from) === "worker-fleet" && ["control", "lab", "nvda-worker"].includes(packageOf(e.to) ?? "")) || (packageOf(e.from) === "lab" && packageOf(e.to) === "control")));

@@ -217,6 +217,8 @@ for (const gate of GATES) {
  */
 test("no activation delta was contaminated by a document announcement", () => {
   if (!CORPUS_GUARD.read) return;
+  // After the skip, never before it: a checkout with no corpus skips honestly, and one the guard calls readable has samples (#3904, where the core's lint exemption for this file went).
+  assert.ok(samples.length > 0, "POSITIVE CONTROL: the corpus is readable and holds no sample, so the empty `contaminated` below would be a scan that found nothing to scan");
   const contaminated = samples.flatMap((s) => {
     const changes = (s.capture as {
       interaction?: { formChanges?: { control?: string; after?: string }[] };
