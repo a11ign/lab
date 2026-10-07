@@ -152,12 +152,13 @@ test("POSITIVE CONTROL: a real, tracked file that no runner glob reaches IS repo
 test("the walk really spans packages/ — a floor AND a spread across packages, because a root narrowed to "
   + "one package would still report every file it found as reached", () => {
   const testFiles = trackedTestFiles();
-  const MIN_TEST_FILES = 600;
+  // 546 at core `d8d9a02fc` (measured 2026-10-07): `packages/control`'s tests went with the layer to a11ign/control (a11ign/a11ign#3506, #3972), and a laid layer carries no `*.test.*`.
+  const MIN_TEST_FILES = 500;
   assert.ok(testFiles.length >= MIN_TEST_FILES,
     `only ${testFiles.length} test file(s) found under packages/ — the walk looks broken (626 at #1940)`);
 
   const packages = new Set(testFiles.map((path) => path.split("/")[1]));
-  const MIN_PACKAGES = 7;
+  const MIN_PACKAGES = 6; // cli, evidence, guards, judge, lab, scorer at core `d8d9a02fc`: `packages/control` has no tests laid (a11ign/a11ign#3972)
   assert.ok(packages.size >= MIN_PACKAGES,
     `test files found in only ${packages.size} package(s) (${[...packages].join(", ")}) — a walk rooted `
     + "at one package answers a narrower question than this guard asks");

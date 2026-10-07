@@ -33,6 +33,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { laidControlFiles } from "./laid-control.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const PRIVATE_PACKAGE_READMES = [
@@ -351,7 +352,9 @@ function git(args: string[]): string {
 }
 
 function regionFiles(): string[] {
-  return git(["ls-files", "--", ...REGION]).split("\n").filter((f) => f !== "" && /\.(md|json)$/.test(f));
+  // `packages/control/README.md` is LAID, not tracked, since a11ign/a11ign#3506: the listing gets the laid layer's files that the Region names (`laid-control.ts`, #3972).
+  const laid = laidControlFiles(REPO_ROOT.replace(/\/$/, "")).filter((f) => REGION.includes(f));
+  return [...git(["ls-files", "--", ...REGION]).split("\n"), ...laid].filter((f) => f !== "" && /\.(md|json)$/.test(f));
 }
 
 const readRegion = (): Record<string, string> =>

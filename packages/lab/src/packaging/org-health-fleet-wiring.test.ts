@@ -36,8 +36,15 @@ const IDLE_LEDGER: Ledger = {
 };
 
 const readerOf = (ledger: unknown) => (() => JSON.stringify(ledger)) as never;
+// #3943 (agent-org 0.62.0): org-health reads every open row for `row-without-exactly-one-state`, so a fixture row that stands for real work carries a state
+// label as a real row does. `backlog`, NOT `ready`: a `ready` row nobody offered is `idle-with-open-rows`' own reading, and the fixtures here are about
+// the fleet signal alone (and see `HELD_BY_AN_ENGINEER`). `fleetBatchRows` selects on `fleet-gated` and never on the state, so the label changes no selection below.
 const gatedRow = (number: number, extra: Record<string, unknown> = {}) =>
-  ({ number, title: `row ${number}`, labels: [{ name: "fleet-gated" }], body: "", blockedBy: { nodes: [] }, ...extra });
+  ({ number, title: `row ${number}`, labels: [{ name: "fleet-gated" }, { name: "backlog" }], body: "", blockedBy: { nodes: [] }, ...extra });
+
+// #3943 (agent-org 0.62.0): `idle-with-open-rows` trips when NO engineer holds a row and any open row is not date-held, backlog included. These ticks are about
+// the fleet signal, and an org with work in hand is the shape they assume, so every read of the open rows carries one claimed by a spawned engineer's seat.
+const HELD_BY_AN_ENGINEER = { number: 9001, title: "row 9001", labels: [{ name: "in-progress" }, { name: "session:worker-9001" }], body: "", blockedBy: { nodes: [] } };
 
 const decideArgs = { prs: [], required: [], readyRows: [], prFiles: new Map(), rowBranches: [], openRows: [], primaryDrift: null, claimRefusals: [] };
 
@@ -49,7 +56,7 @@ const decideArgs = { prs: [], required: [], readyRows: [], prFiles: new Map(), r
 function tickOver(ledger: unknown, openRowsRead: unknown[] | null, over: { readCaptures?: (now: number) => unknown } = {}) {
   const said: string[] = [];
   const orders = orgHealthNow(
-    { prsRead: [], readyRead: [], openRowsRead, decideArgs, decided: [] } as never,
+    { prsRead: [], readyRead: [], openRowsRead: openRowsRead === null ? null : [HELD_BY_AN_ENGINEER, ...openRowsRead], decideArgs, decided: [] } as never,
     {
       now: NOW, lastMergedAt: () => NOW - HOUR_MS, log: (line: string) => said.push(line), readCopies: () => [] as never, readLabJobs: () => [],
       readCaptures: (over.readCaptures ?? ((at: number) => readFleetCaptures({ now: at, read: readerOf(ledger) }))) as never,

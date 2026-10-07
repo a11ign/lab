@@ -165,6 +165,11 @@ const DOCUMENTED: Record<string, string> = {
     "its one exit call is a direct, unmodified passthrough of ansible-playbook's own raw exit status — "
     + "0/1/2/3/4/5/99/250 are ANSIBLE's documented codes, not this script's own, and a caller reading them "
     + "as a verdict about the JOB is reading Ansible's verdict about the PLAYBOOK",
+  "packages/control/src/lab-laid-copy.mjs":
+    "0 the lab's code is laid at the tag `layers.json`'s `pinned.lab` declares NOW; 4 it is not (absent, a clone rather than the laid shape, "
+    + "missing something `lays` names, or laid at an older tag after a pull that moved the pin) and the play REFUSES before the lab script runs -- "
+    + "deliberately not 1, which a play would read as the check itself crashing. It does not adopt the verdict helpers: one predicate over one "
+    + "directory, so there is no partial coverage of a subject to report. (a11ign/a11ign#3972: new in the control at the pin that moved here)",
   "packages/control/src/with-control-plane-fleet.mjs":
     "2 usage error, no <bin> argument given; otherwise a direct, unmodified passthrough of the wrapped "
     + "worker-fleet bin's own exit status (doctor.mjs/check-worker-code.mjs, already documented under "

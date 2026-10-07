@@ -26,6 +26,7 @@ import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { laidControlFiles } from "../packaging/laid-control.ts";
 
 const DECLARATION = JSON.parse(readFileSync(
   fileURLToPath(new URL("../../baselines/real-page-unexaminable.json", import.meta.url)), "utf8")) as {
@@ -169,6 +170,11 @@ test("#1030 SWEEP: no path in lab-job.yml's operator-facing prose is one that no
     if (existsSync(resolve(REPO_ROOT, path))) return false;
     // `git grep -F` over the tree MINUS this file: a path only ever spelled in this YAML is named by
     // nobody who could act on it. `--` with an exclude pathspec keeps lab-job.yml from vouching for itself.
+    // The rest of the control layer is LAID, untracked since a11ign/a11ign#3506, so `git grep` cannot see the playbooks and tasks that spell these paths: they are read from the
+    // laid layer (`laid-control.ts`, #3972), and the tracked tree is still asked through git.
+    const laidReaders = laidControlFiles(REPO_ROOT.replace(/\/$/, ""))
+      .filter((file) => file !== "packages/control/ansible/lab-job.yml" && readFileSync(resolve(REPO_ROOT, file), "utf8").includes(path));
+    if (laidReaders.length > 0) return false;
     try {
       const readers = execFileSync("git",
         ["grep", "-l", "-F", path, "--", ":!packages/control/ansible/lab-job.yml"],

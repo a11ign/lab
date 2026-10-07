@@ -90,9 +90,6 @@ const SPAWNS_NPM_CLI = /\b(\w+)\(\s*["'](npx|npm)["']/g;
 const NPM_CLI_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
   "packages/lab/src/gates/gate-partial-corpus-contract.test.ts":
     '`tokens[0]?.includes("npm")` -- a string-membership check on an already-captured argv token, not a spawn',
-  "packages/control/src/fleet-layer/lab-job.test.ts":
-    '`argv[0]?.endsWith("npm")` and `tokens[0]?.includes("npm")` -- string-membership checks on captured '
-    + "argv, not a spawn (two occurrences)",
   // THIS FILE'S OWN MUTATION/CONTROL FIXTURES, caught by its own discovery on the first real run --
   // exactly the #446 shape (`acceptance-prose.test.ts` above) reproduced one level in. Each fixture is a
   // STRING containing source text handed to `npmCliCalls`/`callsBareNpmCli` as data to classify, never
@@ -110,10 +107,6 @@ const NPM_CLI_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
   "packages/lab/src/packaging/no-npm-spawn.test.ts":
     "its fixtures are STRINGS containing `spawnSync(\"npm\", ...)`-shaped source text, fed to refusals() as the DATA "
     + "under test -- never code this file itself executes. The same trap as this file's own fixtures above.",
-  "packages/control/src/fleet-layer/npm-cli-executable.test.ts":
-    "imports npmCliScriptCandidates/resolveNpmCliScript/npmCliInvocation under aliases (root*/local*) to "
-    + "compare the root and worker-fleet copies side by side -- the call site's identifier is the alias, "
-    + "not the literal name this file's classifier matches, though both resolve to the real, safe functions",
 };
 
 /** Every `(identifier, literal)` pair the file's stripped source contains, for `"npx"`/`"npm"` literals. */

@@ -25,7 +25,8 @@ import { readFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
+import { trackedAndLaidPaths } from "./laid-control.ts";
 import { stripComments } from "../../../guards/src/local-import-closure.mjs";
 import { main as resolverMain, newestStableTag } from "../../../../scripts/agent-org-newest-tag.mjs";
 
@@ -46,7 +47,8 @@ const REMOVED_ALIASES = [
 ];
 
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
-const tracked = () => walkTree({ kind: "all", roots: [] }).map((file) => file.path).filter((path) => path !== SELF);
+// The tracked tree plus the LAID control layer, whose sources a guard over "nothing imports agent-org" must still read (untracked since a11ign/a11ign#3506; `laid-control.ts`, #3972).
+const tracked = () => trackedAndLaidPaths().filter((path) => path !== SELF);
 
 // --- (1) package.json and the lockfile -------------------------------------------------------------------------------------------------
 

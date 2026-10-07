@@ -18,11 +18,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { laidControlFiles } from "./laid-control.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const ANSIBLE = "packages/control/ansible/";
@@ -30,13 +29,9 @@ const ANSIBLE = "packages/control/ansible/";
 /** `collections/` is VENDORED third-party content, not ours to gate on. What it removes is counted below. */
 const VENDORED = `${ANSIBLE}collections/`;
 
-const committedYml = () =>
-  // `sandboxGitEnv()` is CALLED, not merely imported: git exports GIT_DIR into every hook environment, so
-  // a spawn with an inherited env reads whatever repository the caller was in -- which on 2026-09-06 put
-  // stray commits on real refs. A test that walks the tree is exactly the shape that inherits one.
-  execFileSync("git", ["-C", REPO, "ls-files", `${ANSIBLE}**/*.yml`, `${ANSIBLE}*.yml`],
-    { encoding: "utf8", env: sandboxGitEnv() })
-    .split("\n").filter(Boolean);
+// The population is the LAID layer on disk, not `git ls-files`: `packages/control` is a layer of a11ign/control since a11ign/a11ign#3506, untracked in the core, and the header's
+// reason for `git` (two gitignored operator files `find` counts and CI does not have) is what `laidControlFiles` excludes by name (a11ign/a11ign#3972).
+const committedYml = () => laidControlFiles(REPO).filter((path) => path.startsWith(ANSIBLE) && path.endsWith(".yml"));
 
 // 47 until #1980 added `tasks/require-inventory-group.yml`, the one spelling of the zero-host refusal
 // that ten playbooks had been carrying a hand-copied copy of. Moved deliberately, as the message below

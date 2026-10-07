@@ -144,15 +144,16 @@ test("classify: a python file under a package fires python, and (bluntly) ts for
   assert.deepEqual(result.packages, ["scorer"]);
 });
 
-test("classify: the ansible layer fires ansible, and (bluntly, like changedPackages elsewhere) ts for control", () => {
-  // `packages/control/ansible/**` sits INSIDE the `control` workspace, so `changedPackages` -- reused
-  // here rather than re-derived, matching the pre-push hook's own "blunt, not dependency-aware"
-  // philosophy -- correctly reads it as touching `control` too. Running `control`'s (fast) unit tests
-  // alongside the ansible job is a harmless extra, not a wrong answer.
-  const result = classify(["packages/control/ansible/deploy.yml"], ["control"]);
-  assert.equal(result.ansible, true);
-  assert.equal(result.ts, true);
-  assert.deepEqual(result.packages, ["control"]);
+test("classify: the ansible job fires when the control's PIN moves, and on no diff of the playbooks themselves", () => {
+  // a11ign/a11ign#3506: the playbooks are `a11ign/control`'s and LAID into the core, so no diff of the core can touch `packages/control/ansible/**`; what can change
+  // them is the tag `layers.json` pins, and the job lays that tag before it checks it. `classify` reads `layers.json` (and nothing under `packages/control`) as the
+  // reason to re-read the playbooks. The earlier form of this test fed it a playbook path and a `control` package, which is a diff the core can no longer produce
+  // and a package whose manifest (`packages/control/package.json`) the laid layer does not carry (a11ign/a11ign#3972).
+  const pin = classify(["layers.json"], ["lab"]);
+  assert.equal(pin.ansible, true, "moving the pin is the one reason to re-read the playbooks");
+  assert.equal(pin.ts, false, "and it asks for no TypeScript job: the pin moves a layer, not a package of this workspace");
+  const playbook = classify(["packages/lab/src/gates/x.mjs"], ["lab"]);
+  assert.equal(playbook.ansible, false, "a diff that does not move the pin never re-reads the laid playbooks");
 });
 
 test("classify: a private package never demands a changeset, whatever it packs", () => {
@@ -272,12 +273,12 @@ test("classify: a multi-package, multi-category diff sets every category it touc
     "packages/lab/src/training/case-matrix.mjs",
     "packages/judge/src/rules.ts",
     "docs/known-gaps.md",
-    "packages/control/ansible/deploy.yml",
+    "layers.json",
     "packages/scorer/tests/test_runtime_versions.py",
-  ], ["lab", "judge", "control", "scorer"], { getPackedFiles });
+  ], ["lab", "judge", "scorer"], { getPackedFiles });
   assert.equal(result.ts, true);
-  // `control` is here too -- the ansible file sits inside `packages/control/`, same as the test above.
-  assert.deepEqual(result.packages, ["control", "judge", "lab", "scorer"]);
+  // `layers.json` is the ansible reason now (the test above): the playbooks are laid, so a diff names the PIN and never a playbook path.
+  assert.deepEqual(result.packages, ["judge", "lab", "scorer"]);
   assert.equal(result.docs, true);
   assert.equal(result.ansible, true);
   assert.equal(result.python, true);
@@ -288,7 +289,8 @@ test("knownPackages finds the real repo's workspace directories, and refuses a s
   const packages = knownPackages(REPO);
   // A floor, not a target -- matches the same convention `control-plane-hygiene.test.ts` uses for the
   // same reason: adding or retiring a package must not itself break this guard.
-  assert.ok(packages.length >= 7, `found ${packages.length} package(s); the packages/* walk is broken`);
+  // 6 at core `d8d9a02fc` (cli, evidence, guards, judge, lab, scorer; measured 2026-10-07): 7 while `packages/control` was tracked, and it is a laid, untracked layer since a11ign/a11ign#3506 (#3972).
+  assert.ok(packages.length >= 6, `found ${packages.length} package(s); the packages/* walk is broken`);
   assert.ok(packages.includes("lab") && packages.includes("judge"));
   // `packages/README.md` is a real tracked file directly under `packages/`, two path segments deep -- not
   // a package directory. The dependency-graph reader (since removed) was the first consumer that ever tried

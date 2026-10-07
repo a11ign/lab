@@ -48,10 +48,10 @@ const LEAK_GUARDS = [
   "packages/lab/src/gates/inventory-is-control-plane-only.test.ts",
 ];
 
+// `packages/control`'s `protocol-guard.test.ts` and `entry-points.test.ts` were two of the pins until a11ign/a11ign#3506 made `packages/control` a LAID layer (no `*.test.*`):
+// they run in a11ign/control now, so they cannot be kept on THIS repository's pull-request path (a11ign/a11ign#3972).
 const PRODUCT_FACT_PINS = [
   "packages/judge/src/asserting-subtypes.test.ts",
-  "packages/control/src/fleet-layer/protocol-guard.test.ts",
-  "packages/control/src/fleet-layer/entry-points.test.ts",
   "packages/lab/src/referenced-scripts.test.ts",
   "packages/lab/src/packaging/generated-paths.test.ts",
 ];
@@ -66,7 +66,7 @@ export const KEPT_ON_PR_PATH = [...LEAK_GUARDS, ...PRODUCT_FACT_PINS, SELF];
  * derived from `KEPT_ON_PR_PATH` itself could not catch `KEPT_ON_PR_PATH` shrinking. It changes only when a
  * row changes what is kept, which is a decision somebody writes down.
  */
-const KEPT_COUNT = 10;
+const KEPT_COUNT = 8;
 
 /**
  * Every problem with the kept set, given the list and a way to ask whether a path exists. PURE, and it takes
@@ -137,7 +137,7 @@ test("#931 MUTATION TARGET: dropping an entry from the kept list, while it stays
   const dropped = KEPT_ON_PR_PATH.filter((path) => path !== "packages/lab/src/packaging/generated-paths.test.ts");
   const problems = keptSetProblems(dropped, onDisk, KEPT_COUNT);
   assert.equal(problems.length, 1, `expected exactly the length problem; got ${JSON.stringify(problems)}`);
-  assert.match(problems[0], /has 9 entries, pinned at 10\. An entry was removed/);
+  assert.match(problems[0], /has 7 entries, pinned at 8\. An entry was removed/);
 });
 
 test("#931: a kept file deleted from disk still fails, and the message names it by path", () => {

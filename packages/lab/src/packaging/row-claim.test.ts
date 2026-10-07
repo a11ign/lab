@@ -225,6 +225,12 @@ const isLabelSet = (args: string[]) => args[0] === "api" && args[1] === "--metho
   && /\/issues\/\d+\/labels$/.test(args[3]);
 const labelsSetBy = (args: string[]) => args.filter((a) => a.startsWith("labels[]=")).map((a) => a.slice("labels[]=".length));
 
+// #3942 (agent-org 0.61.0): `declineRow` re-reads the row and REFUSES to report DECLINED over an OPEN row left in no state label. A decline removes
+// `in-progress`, so a fixture that stands for "a row somebody claimed" must say what state it goes back to: `was-ready` (restores `ready`) or a state
+// label the claim never removed, which is what a row claimed from `backlog` carries all along. These fixtures carry the second, the one that leaves
+// nothing to restore, so the tests that say "does NOT invent `ready`" still mean it.
+const STATE_KEPT_THROUGH_CLAIM = "backlog";
+
 function boardRun(initial: string[], { number = 176, state = "OPEN", interleave, failWhen }: {
   number?: number,
   state?: "OPEN" | "CLOSED",
@@ -448,7 +454,7 @@ test("#656/#987 MUTATION: losing the claim race leaves NO claim record behind --
 
 test("#656 ACCEPTANCE: declineRow removes the recorded branch label when releasing a row", () => {
   const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-config", STARTED_LABEL,
-    "branch:agent/row-claim-branch-656"], { number: 656 });
+    "branch:agent/row-claim-branch-656", STATE_KEPT_THROUGH_CLAIM], { number: 656 });
   const result = declineRow(656, "worker-config", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.equal(result.declined, true);
   const editCall = calls.find((a) => a[1] === "edit")!;
@@ -506,7 +512,7 @@ test("#987 ACCEPTANCE: declineRow removes the worktree the CLAIM COMMENT names -
   + "worth keeping if the release reads the same place the claim wrote", () => {
   const path = "/Users/danielbeck/Documents/repos/personal/a11y-wt-declined-987";
   const removed: string[] = [];
-  const { run } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL], { number: 987 });
+  const { run } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, STATE_KEPT_THROUGH_CLAIM], { number: 987 });
   const comments = [claimRecordComment({ session: "worker-judge", branch: "agent/x-987", worktree: path })];
   const result = declineRow(987, "worker-judge", { run, fetchComments: () => comments,
     moveStatus: () => ({ moved: true }),
@@ -519,7 +525,7 @@ test("#987: a RELEASE record supersedes the claim record, so `check` stops namin
   + "already removed -- the stale-record failure a label removal used to handle for free", () => {
   const path = "/private/tmp/wt-987";
   const posted: string[] = [];
-  const { run: boardRunFn } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL], { number: 987 });
+  const { run: boardRunFn } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, STATE_KEPT_THROUGH_CLAIM], { number: 987 });
   const run = (cmd: string, args: string[]) => {
     if (args[1] === "comment") { posted.push(args[args.indexOf("--body") + 1]); return ""; }
     return boardRunFn(cmd, args);
@@ -540,7 +546,7 @@ test("#987: a RELEASE record supersedes the claim record, so `check` stops namin
 test("#987: a decline that had NOTHING recorded posts no release record -- noise a later "
   + "`claimRecordFrom` would then have to read past", () => {
   const posted: string[] = [];
-  const { run: boardRunFn } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL], { number: 987 });
+  const { run: boardRunFn } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, STATE_KEPT_THROUGH_CLAIM], { number: 987 });
   const run = (cmd: string, args: string[]) => {
     if (args[1] === "comment") { posted.push(args[args.indexOf("--body") + 1]); return ""; }
     return boardRunFn(cmd, args);
@@ -723,7 +729,7 @@ test("#665 ACCEPTANCE: declineRow calls removeWorktree with the recorded path, a
   + "once it succeeds", () => {
   const removeCalls: string[] = [];
   const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-config", STARTED_LABEL,
-    "worktree:/tmp/a11y-wt-665"], { number: 665 });
+    "worktree:/tmp/a11y-wt-665", STATE_KEPT_THROUGH_CLAIM], { number: 665 });
   const removeWorktree = (path: string) => { removeCalls.push(path); return { removed: true } as const; };
   const result = declineRow(665, "worker-config", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }), removeWorktree });
   assert.equal(result.declined, true);
@@ -788,7 +794,7 @@ test("#444: a runner: label is NEVER removed by a claim -- it survives, unlike r
 
 test("declineRow returns a dispatched-but-not-started row to genuinely unclaimed, and does NOT invent "
   + "`ready` when there is no was-ready marker (#449)", () => {
-  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-contracts"], { number: 176 });
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-contracts", STATE_KEPT_THROUGH_CLAIM], { number: 176 });
   const result = declineRow(176, "worker-contracts", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
@@ -798,7 +804,7 @@ test("declineRow returns a dispatched-but-not-started row to genuinely unclaimed
 });
 
 test("declineRow also clears STARTED_LABEL when a started row is declined", () => {
-  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-contracts", STARTED_LABEL], { number: 176 });
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-contracts", STARTED_LABEL, STATE_KEPT_THROUGH_CLAIM], { number: 176 });
   const result = declineRow(176, "worker-contracts", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
@@ -2238,7 +2244,7 @@ test("#2782: a removal whose log cannot be written does not happen, and a failed
 
 test("#2782: declineRow hands its session and the recorded branch to the remover, so the claim check can excuse the right session", () => {
   const seen: { path: string; session?: string; branch?: string | null }[] = [];
-  const { run } = boardRun([CLAIM_LABEL, "session:worker-config", STARTED_LABEL, "worktree:/tmp/a11y-wt-665", "branch:agent/x-665"], { number: 665 });
+  const { run } = boardRun([CLAIM_LABEL, "session:worker-config", STARTED_LABEL, "worktree:/tmp/a11y-wt-665", "branch:agent/x-665", STATE_KEPT_THROUGH_CLAIM], { number: 665 });
   const removeWorktree = (path: string, deps?: { session?: string; branch?: string | null }) => {
     seen.push({ path, session: deps?.session, branch: deps?.branch });
     return { removed: true } as const;

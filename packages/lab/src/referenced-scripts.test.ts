@@ -103,13 +103,19 @@ function trackedFiles(): Set<string> {
 const isTracked = (path: string): boolean => trackedFiles().has(path);
 
 /**
- * The directories of the layers that live in their OWN repository and are laid beside this tree (`packages/control/layers.json`, entries with a
- * `remote`; #3504 added the fleet's). A program under one is not tracked here BY DESIGN: `package.json`'s `doctor`, `worker:*` and `fleet:*` run it
- * where it is laid (a host's checkout, or `scripts/lay-layer.mjs` in a worktree or CI).
+ * The directories of the layers that live in their OWN repository and are laid beside this tree (`layers.json` at the ROOT since a11ign/a11ign#3506, which moved it out of
+ * `packages/control`, and `lay-layer` leaves a copy there; entries with a `remote`, under `layers` since #3504 added the fleet's and under `pinned` for the two laid at a tag, `lab` and `control`). A program under
+ * one is not tracked here BY DESIGN: `package.json`'s `doctor`, `worker:*` and `fleet:*` run it where it is laid (a host's checkout, or `scripts/lay-layer.mjs` in a
+ * worktree or CI), and `fleet:*` and `lab:*` run the control's `packages/control/src/*.mjs` that way.
  */
-const declaredLayerPaths = (): string[] => Object.values(
-  (JSON.parse(readFileSync("packages/control/layers.json", "utf8")) as { layers: Record<string, { path: string; remote?: string }> }).layers)
-  .filter((layer) => layer.remote !== undefined).map((layer) => layer.path);
+// The laid copy of the root `layers.json`, not the root file: `lay-layer.mjs` writes it over whatever the tag holds ("so the two cannot differ"), and the core's `forceRerunTriggers` names
+// the root file nowhere, so `verify-affected-set` refuses a by-name read of it (a11ign/a11ign#3972).
+const LAID_DECLARATION = "packages/control/layers.json";
+type LayerDeclaration = Record<string, { path: string; remote?: string }>;
+const declaredLayerPaths = (): string[] => {
+  const manifest = JSON.parse(readFileSync(LAID_DECLARATION, "utf8")) as { layers: LayerDeclaration; pinned?: LayerDeclaration };
+  return Object.values({ ...manifest.layers, ...manifest.pinned }).filter((layer) => layer.remote !== undefined).map((layer) => layer.path);
+};
 
 /**
  * The referenced programs this repository cannot run. A tracked one is fine; so is one under a declared layer, with two refusals so that
