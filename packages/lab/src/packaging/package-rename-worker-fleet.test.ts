@@ -139,7 +139,8 @@ function changesetsNamingAnUnknownPackage(dir: string, known: Set<string>): stri
 
 test("every pending changeset names a package that exists, so `changeset version` can run", () => {
   const known = new Set(workspaceManifests().map((file) => readManifest(file).name).filter((name): name is string => name !== undefined));
-  assert.ok(known.has("a11ign") && known.size >= 8, "the set of known workspace packages was not read");
+  // 6 at core `d8d9a02fc` (a11ign, evidence, guards, judge, lab, scorer): `packages/control` is a laid layer with no manifest since a11ign/a11ign#3506 (#3972).
+  assert.ok(known.has("a11ign") && known.size >= 6, "the set of known workspace packages was not read");
   assert.ok(!known.has(NEW_NAME), "the fleet is in the workspace again: #3504 took it out, and a changeset for it belongs to its own repository");
   assert.deepEqual(changesetsNamingAnUnknownPackage(join(REPO, ".changeset"), known), []);
 });

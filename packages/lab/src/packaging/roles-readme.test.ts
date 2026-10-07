@@ -728,7 +728,6 @@ test("#2076 CONTROL: the detector fires on the dangerous shape and declines the 
 const CALL_SITES = [
   "packages/control/ansible/lab-reset.yml",
   "packages/judge/src/codex-backend.test.ts",
-  "packages/control/src/fleet-layer/lab-job-lock-two-rows.test.ts",
   "scripts/git-hooks/pre-commit",
   "scripts/git-hooks/pre-push",
 ] as const;
@@ -737,8 +736,10 @@ const CALL_SITES = [
  * 13 `rm`-through-a-variable lines across the nine at `67f30071f`, and 16 shell-executed tracked files. #3504 took the four call sites that were
  * the fleet's own shell scripts with that code (`worker-fleet/src/local-worker/*.sh`, `provisioning/bare-metal/serve-bootstrap.sh`), leaving five
  * sites, eight lines and eight shell-executed files: the same measurement taken again, not the floor lowered to make room.
+ * a11ign/a11ign#3506 then made `packages/control` a laid layer with no `*.test.*`, so `lab-job-lock-two-rows.test.ts` (whose one `rm -f "$dir/result"` line was a call site, and which runs
+ * in a11ign/control from then on) is not in the tree: four sites here, and the line floor is 7, re-measured at `d8d9a02fc` (a11ign/a11ign#3972).
  */
-const MEASURED_CALL_SITE_LINES = 8;
+const MEASURED_CALL_SITE_LINES = 7;
 const SHELL_FILE_FLOOR = 8;
 
 const REPO_ROOT = resolve(import.meta.dirname, "../../../..");
@@ -758,7 +759,7 @@ test("#2076: the five tracked call sites are a real, non-empty population and no
         + '`.claude/rules/agent-practices.md` says to write as `"${VAR:?}"/*`');
     }
   }
-  // A FLOOR, NOT A PIN -- 13 at `67f30071f`, 8 once the fleet's shell left, and a further legitimate call site raises it. The floor exists
+  // A FLOOR, NOT A PIN -- 13 at `67f30071f`, 8 once the fleet's shell left, 7 once `packages/control`'s tests did, and a further legitimate call site raises it. The floor exists
   // only to catch the other failure: `removesThroughAVariable` breaking and finding nothing, which would
   // make every assertion in the loop above pass having examined no lines.
   assert.ok(found >= MEASURED_CALL_SITE_LINES,

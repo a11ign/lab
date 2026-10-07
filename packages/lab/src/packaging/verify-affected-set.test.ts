@@ -129,6 +129,14 @@ function uncovered(patterns: readonly string[], reads: Map<string, string[]>): s
   return [...new Set(files)].filter((file) => !covers(patterns, file)).sort();
 }
 
+/**
+ * What the core's own tests read by name and its trigger list does not cover: a REAL gap in the core, found by this guard and filed (a11ign/a11ign#3980), not a thing to
+ * be excused for good. `layers.json` moved to the root in #3506 and the seven tests of `packages/guards/src` that read it by name were left without a trigger. Each entry is asserted
+ * to be STILL uncovered, so the lab pull request that moves the pin to a core which fixes it goes red here until the entry is deleted.
+ */
+const KNOWN_UNCOVERED_BY_THE_CORE: Record<string, string> = { "layers.json": "a11ign/a11ign#3980" };
+const unexempted = (files: readonly string[]) => files.filter((file) => !(file in KNOWN_UNCOVERED_BY_THE_CORE));
+
 const READS = readsByPath();
 const TSCONFIG_FLOOR = 3;
 /** The derived population was 241 targets when this was written; under half of that is a floor a broken walk cannot reach. */
@@ -139,23 +147,33 @@ test("the derived population holds a known data directory and a known doc file (
   assert.ok(READS.size > POPULATION_FLOOR, `only ${READS.size} by-path targets were derived, so every coverage assertion below could pass on nothing`);
   const filesUnder = (dir: string) => tracked.filter((file) => file.startsWith(`${dir}/`));
   const covered = [...READS.keys()].flatMap((target) => (trackedSet.has(target) ? [target] : filesUnder(target)));
-  assert.ok(covered.some((file) => file.startsWith("packages/control/ansible/")), "no ansible file is in the population");
+  // `packages/control/ansible/` was the known data directory until a11ign/a11ign#3506 laid it (untracked, and no diff of the core touches it, so the core's config no longer lists it):
+  // `docs/adr/` is one the config still lists and a test reads (a11ign/a11ign#3972).
+  assert.ok(covered.some((file) => file.startsWith("docs/adr/")), "no ADR file is in the population");
   assert.ok(covered.includes("CONTRIBUTING.md"), "CONTRIBUTING.md, which verify-matches-ci.test.ts reads, is not in the population");
 });
 
 test("every path a non-tree-wide test reads by name is covered by a forceRerunTriggers entry", async () => {
-  assert.deepEqual(uncovered(await configTriggers(), READS), [],
+  assert.deepEqual(unexempted(uncovered(await configTriggers(), READS)), [],
     "each path above is read by a test whose module graph cannot see it: add a pattern to scripts/rstest/rstest.config.mjs");
 });
 
 test("control: the trigger list with one directory removed is RED, and so is one with one file removed", async () => {
   const triggers = await configTriggers();
-  const withoutDirectory = triggers.filter((pattern) => pattern !== "packages/control/ansible/**");
+  const withoutDirectory = triggers.filter((pattern) => pattern !== "docs/adr/**");
   assert.notEqual(withoutDirectory.length, triggers.length, "the directory pattern is not in the config, so the control removed nothing");
-  assert.ok(uncovered(withoutDirectory, READS).some((file) => file.startsWith("packages/control/ansible/")));
+  assert.ok(uncovered(withoutDirectory, READS).some((file) => file.startsWith("docs/adr/")));
   const withoutFile = triggers.filter((pattern) => pattern !== "CONTRIBUTING.md");
   assert.notEqual(withoutFile.length, triggers.length, "CONTRIBUTING.md is not a pattern of its own in the config");
-  assert.deepEqual(uncovered(withoutFile, READS), ["CONTRIBUTING.md"]);
+  assert.deepEqual(unexempted(uncovered(withoutFile, READS)), ["CONTRIBUTING.md"]);
+});
+
+test("every KNOWN_UNCOVERED_BY_THE_CORE entry is still uncovered, so the core's fix turns this red", async () => {
+  assert.ok(Object.keys(KNOWN_UNCOVERED_BY_THE_CORE).length > 0, "the loop below would pass over an empty table");
+  const still = uncovered(await configTriggers(), READS);
+  for (const [file, row] of Object.entries(KNOWN_UNCOVERED_BY_THE_CORE)) {
+    assert.ok(still.includes(file), `${file} is covered now (${row}): delete it from KNOWN_UNCOVERED_BY_THE_CORE`);
+  }
 });
 
 test("the lockfile, every tsconfig and .npmrc, and rstest's default patterns are triggers", async () => {

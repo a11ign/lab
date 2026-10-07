@@ -27,6 +27,7 @@ import {
   BASELINE_PATH, LAYER_PACKAGES, countByDisposition, describeVerdict, findEdges, isScanned, judgeEdges, packageOf,
   trackedFiles,
 } from "../../../guards/src/layer-edges.mjs";
+import { laidControlFiles } from "./laid-control.ts";
 
 // #3610: "the real tree agrees with the committed baseline" walks `trackedFiles()`, so this file's population is the whole
 // tracked tree and no import graph from a changed file reaches it -- the edge a new file adds is in the new file.
@@ -47,7 +48,9 @@ const LAB_BASELINE_PATH = "packages/lab/baselines/layer-edges.baseline.json";
 const readLabBaseline = () => JSON.parse(readFileSync(join(ROOT, LAB_BASELINE_PATH), "utf8"));
 /** Edges FROM a lab file. The edges INTO lab are the core's to decide and the core's own guard cannot see them (the lab is laid, untracked, and not there); the core's edges are its guard's. */
 const fromLab = (e: { from: string }) => packageOf(e.from) === "lab";
-const labEdges = () => findEdges({ root: ROOT, tracked: trackedFiles(ROOT) }).filter(fromLab);
+// Tracked PLUS the laid control layer: its files are untracked since a11ign/a11ign#3506, and an edge into one is real (`laid-control.ts`, #3972).
+const trackedAndLaid = (root: string) => [...trackedFiles(root), ...laidControlFiles(root.replace(/\/$/, ""))];
+const labEdges = () => findEdges({ root: ROOT, tracked: trackedAndLaid(ROOT) }).filter(fromLab);
 
 const TARGET = "packages/other/src/x.mjs";
 const LAYER_FILE = "packages/nvda-worker/src/x.mjs";
@@ -297,7 +300,7 @@ test("the lab's edges agree with its own baseline: no new edge, no stale entry, 
 });
 
 test("the widened guard finds `const`-carried edges in the real tree that a literal-only reading did not, each with its declaration and read", () => {
-  const carried = findEdges({ root: ROOT, tracked: trackedFiles(ROOT) }).filter((e) => e.via !== undefined);
+  const carried = findEdges({ root: ROOT, tracked: trackedAndLaid(ROOT) }).filter((e) => e.via !== undefined);
   assert.ok(carried.length >= 1, "POSITIVE CONTROL: no edge in the real tree was found through a const, so the widening matched nothing");
   const froms = carried.map((e) => e.from);
   for (const file of ["corpus-size-figures.test.ts", "content-preservation.test.ts"]) {
@@ -363,7 +366,7 @@ test("done-when 4: each code edge that leaves worker-fleet for control, lab or n
 });
 
 test("a layer that has LEFT is still read: the host declaration naming agent-org's old directory is an edge, not a tree without one", () => {
-  const edges = findEdges({ root: ROOT, tracked: trackedFiles(ROOT) });
+  const edges = findEdges({ root: ROOT, tracked: trackedAndLaid(ROOT) });
   assert.ok(edges.some((e) => e.from === ".agent-org/host.json" && e.to === "packages/agent-org"), "the fix for a token naming no package must not hide a declared layer that has departed");
   assert.ok(!edges.some((e) => e.to.includes("githubcli-archive-keyring")), "and the URL's `/packages/` is read as no package");
 });

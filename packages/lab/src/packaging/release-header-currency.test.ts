@@ -71,11 +71,11 @@ const SEVEN_GATES = Array.from({ length: GATE_COUNT }, (_unused, index) => index
 const FEWEST_PLAUSIBLE_MACHINERY_FILES = 10;
 
 /**
- * The same kind of floor for `packages/`, which the changelog walk below must be SEEN to reach. Seven
- * package directories carry a manifest today (eleven before #3447 took `nvda-worker` and `nvda-speech` out of the workspace, nine before #3504 took `worker-fleet`, eight before #3625 took `toolchain`); a run that enumerates fewer than this has lost the
+ * The same kind of floor for `packages/`, which the changelog walk below must be SEEN to reach. Six
+ * package directories carry a manifest today (seven before #3506 made `packages/control` a laid layer with no manifest, eleven before #3447 took `nvda-worker` and `nvda-speech` out of the workspace, nine before #3504 took `worker-fleet`, eight before #3625 took `toolchain`); a run that enumerates fewer than this has lost the
  * directory, and the emptiness assertion it feeds would then be reporting a walk that never looked.
  */
-const FEWEST_PLAUSIBLE_PACKAGES = 7;
+const FEWEST_PLAUSIBLE_PACKAGES = 6;
 
 /**
  * The three files #2052 measured as carrying a stale claim, and therefore the three that must still be
@@ -661,7 +661,7 @@ function assertVersionsAsTheNearSideHoldsThem(publicManifests: { name: string; v
  * THE EMPTINESS AND ITS POSITIVE CONTROL ARE HALVES OF ONE PARTITION, COMPUTED IN ONE RUN.
  * `public and not 0.0.0` must be exactly the four published packages, by NAME, each reading `0.1.0` — a
  * fifth public manifest drifting off `0.0.0` is the case that has to be loudest. `private and not
- * 0.0.0` must be exactly `@a11ign/control` and `@a11ign/lab`, and `public and 0.0.0` exactly the two
+ * 0.0.0` must be exactly `@a11ign/lab` (and `@a11ign/control` until #3506 laid it with no manifest), and `public and 0.0.0` exactly the two
  * never-published: each is a NON-EMPTY population produced by the same read of the same files, so a walk
  * that returned nothing, a narrowing that matched nothing, or a `version` field this code failed to read
  * turns an assertion red rather than letting another pass by vacuity.
@@ -685,10 +685,10 @@ test("#2159/#3347: the versions claim is true of the set changesets versions, sp
     + "an older one and could move `latest` back (#3130, #3167)");
   if (!firstReleaseCut()) assertVersionsAsTheNearSideHoldsThem(publicManifests);
   assert.deepEqual(namesOf(manifests.filter((manifest) => manifest.isPrivate && manifest.version !== "0.0.0")),
-    ["@a11ign/control", "@a11ign/lab"],
-    "THE POSITIVE CONTROL for the emptiness claims: these two private manifests are hand-set to 0.1.0 and "
-    + "changesets never touches them, so this list is non-empty in any run where the manifests were "
-    + "actually read");
+    ["@a11ign/lab"],
+    "THE POSITIVE CONTROL for the emptiness claims: this private manifest is hand-set to 0.1.0 and "
+    + "changesets never touches it, so this list is non-empty in any run where the manifests were "
+    + "actually read (two before a11ign/a11ign#3506 made `@a11ign/control` a laid layer with no manifest, a11ign/a11ign#3972)");
   assert.equal(publicManifests.length, 4,
     `the document says FOUR versioned manifests and this tree has ${publicManifests.length} — a package added, `
     + "published or made private changes the sentence, and it is corrected here rather than left to rot");

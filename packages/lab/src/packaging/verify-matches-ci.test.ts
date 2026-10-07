@@ -63,11 +63,13 @@ test("CI_ONLY names only jobs gate needs, and none of them is also a step", () =
 const source = (env: Record<string, string>, present: string[]) =>
   agentOrgSource({ env, sibling: "/w/agent-org", cache: "/w/.git/verify-agent-org", isCheckout: (dir) => present.includes(dir) });
 
-test("agentOrgSource: the env var wins, then a sibling checkout, then a clone in the git dir, made only when absent", () => {
-  assert.deepEqual(source({ A11Y_AGENT_ORG_REPO: "/x" }, ["/w/agent-org"]), { dir: "/x", clone: false });
-  assert.deepEqual(source({}, ["/w/agent-org"]), { dir: "/w/agent-org", clone: false });
-  assert.deepEqual(source({}, []), { dir: "/w/.git/verify-agent-org", clone: true }, "no checkout to hand must clone, not fail");
-  assert.deepEqual(source({}, ["/w/.git/verify-agent-org"]), { dir: "/w/.git/verify-agent-org", clone: false });
+test("agentOrgSource: the env var wins, then a sibling checkout, then a clone in the git dir, made only when absent and REFRESHED when it is an earlier run's", () => {
+  // `refresh` is new in the core (a11ign/a11ign#3931): true for the clone an EARLIER run made and for nothing else, so a clone made a moment ago is not fetched and the caller's own
+  // checkouts (the env var, the sibling) are never moved. Pinned here at core `d8d9a02fc`, where the result carries it (a11ign/a11ign#3972).
+  assert.deepEqual(source({ A11Y_AGENT_ORG_REPO: "/x" }, ["/w/agent-org"]), { dir: "/x", clone: false, refresh: false });
+  assert.deepEqual(source({}, ["/w/agent-org"]), { dir: "/w/agent-org", clone: false, refresh: false });
+  assert.deepEqual(source({}, []), { dir: "/w/.git/verify-agent-org", clone: true, refresh: false }, "no checkout to hand must clone, not fail, and a clone made now needs no refresh");
+  assert.deepEqual(source({}, ["/w/.git/verify-agent-org"]), { dir: "/w/.git/verify-agent-org", clone: false, refresh: true });
 });
 
 test("an explicit A11Y_AGENT_ORG_REPO that is not a checkout is never replaced by a clone", () => {

@@ -118,7 +118,10 @@ test("#3133 POSITIVE CONTROL: the manifests declare range dependencies", () => {
 });
 
 test("#3133: `ignore` is exactly the workspace members the manifests depend on", () => {
-  const members = new Set(manifests().map((m) => m.name));
+  // `@a11ign/control` has no manifest in the core since a11ign/a11ign#3506 (a laid layer of a11ign/control), but a manifest here still declares it, the registry does not
+  // hold it, and `ci.yml` links it by hand: it is exactly as pinned-and-linked as a member, so it belongs on the list (a11ign/a11ign#3972).
+  const LAID_AND_LINKED = ["@a11ign/control"];
+  const members = new Set([...manifests().map((m) => m.name), ...LAID_AND_LINKED]);
   const internal = [...new Set(declared().map(([name]) => name).filter((name) => members.has(name)))].sort();
   const ignored = (read().updates?.[0]?.ignore ?? []).map((i) => i["dependency-name"]).sort();
   assert.ok(internal.includes("@a11ign/evidence"), "the derivation finds a member it must find");

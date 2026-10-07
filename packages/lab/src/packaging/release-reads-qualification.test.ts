@@ -201,9 +201,13 @@ test("every package directory is classified exactly once, so adding one fails HE
   // A PACKAGE is a directory with a manifest: `packages/worker-fleet/` is a layer checkout where `pnpm run build` laid it (#3504), with no manifest, untracked.
   const directories = readdirSync("packages", { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
     .filter((name) => !["node_modules"].includes(name) && existsSync(`packages/${name}/package.json`));
-  assert.ok(directories.length >= 7, "the discovery found the packages (positive control for the emptiness; ten until #3447 took nvda-speech out, with nvda-worker the eleventh, nine until #3504 took worker-fleet, and eight until #3625 took toolchain)");
+  assert.ok(directories.length >= 6, "the discovery found the packages (positive control for the emptiness; seven until #3506 laid `packages/control` with no manifest, ten until #3447 took nvda-speech out, with nvda-worker the eleventh, nine until #3504 took worker-fleet, and eight until #3625 took toolchain)");
   const classified = [...FLEET_GATED_PACKAGES, ...RUNNER_ONLY_PACKAGES, ...PRIVATE_PACKAGES];
-  assert.deepEqual([...classified].sort(), [...directories].sort());
+  // `control` is classified by the core's tables (private, never gated) but is a LAID layer with no manifest since a11ign/a11ign#3506, so no directory with a
+  // manifest names it: it is EXPECTED in `classified` and absent from `directories`, in both directions (a core that drops the entry, or a layer that gains a
+  // manifest, turns this red and says to delete this line). The entry is the core's to drop (a11ign/a11ign#3972).
+  const LAID_LAYERS_THE_TABLES_STILL_NAME = ["control"];
+  assert.deepEqual([...classified].sort(), [...directories, ...LAID_LAYERS_THE_TABLES_STILL_NAME].sort());
   assert.equal(new Set(classified).size, classified.length, "no package is in two tables");
 });
 
