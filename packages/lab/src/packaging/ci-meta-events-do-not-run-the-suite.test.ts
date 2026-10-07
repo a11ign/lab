@@ -4,8 +4,8 @@
  * The chairman's sample, 2026-10-03 (278 pull-request runs of `ci.yml` since 2026-10-01; #3212 reconciles it with a larger
  * count): 158 were on a head SHA that had ALREADY been tested, 134 of those were cancelled. One concurrency group per ref meant a label added while `ts` was
  * running cancelled `ts`, and the run that replaced it began the whole suite again. The workflow's own header said a
- * body edit "changes no files, so the heavy jobs skip"; three runs of one head (1d96ebe0b) show `ts`, `guardSweep` and
- * `agentOrg` running in full each time, because `changed` diffs against the BASE, so on a body edit the diff is the
+ * body edit "changes no files, so the heavy jobs skip"; three runs of one head (1d96ebe0b) show `ts` and `guardSweep`
+ * (and `agentOrg`, since deleted) running in full each time, because `changed` diffs against the BASE, so on a body edit the diff is the
  * whole pull request.
  *
  * THE DESIGN CONSTRAINT IS WHAT MAKES THIS MORE THAN A TRIGGER EDIT. `gate` is the one required check, and a meta run
@@ -130,7 +130,7 @@ const heavyJobsRunningOn = (doc: Workflow, action: string): string[] =>
 test("the discovery finds the jobs it is about, so no assertion below examines an empty set", () => {
   assert.deepEqual([...bodyChecks(CI)].sort(), ["acceptance", "deliberateRefusals", "ownedPaths"],
     "the jobs that read the pull request's body or number changed; read why each one needs the meta events before editing this list");
-  for (const named of ["ts", "guardSweep", "agentOrg"]) {
+  for (const named of ["ts", "guardSweep"]) {
     assert.ok(heavyJobs(CI).includes(named), `${named} is not among the heavy jobs: ${heavyJobs(CI).join(", ")}`);
   }
 });

@@ -316,8 +316,8 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "lockfile and fixture tree in the same file that must be refused.",
   },
   "packages/control/src/fleet-layer/protocol-guard.test.ts": {
-    guard: "clients.length >= 2",
-    note: "guarded — the two known deploy call sites (check-worker-code.mjs, deploy-worker.mjs)",
+    guard: "clients.length >= 1",
+    note: "guarded — the one known deploy call site (fleet-playbook.mjs); the UTM one, deploy-worker.mjs, left with screenreader-fleet 0.4.0 (#3803)",
   },
   "packages/control/src/fleet-layer/lab-job.test.ts": {
     guard: "referenced.length >= 5",

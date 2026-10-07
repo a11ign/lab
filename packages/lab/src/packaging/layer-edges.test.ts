@@ -373,9 +373,9 @@ test("done-when 4: each code edge that leaves worker-fleet for control, lab or n
   }
 });
 
-test("a layer that has LEFT is still read: the CI job that lays agent-org over its old directory is an edge, not a tree without one", () => {
+test("a layer that has LEFT is still read: the host declaration naming agent-org's old directory is an edge, not a tree without one", () => {
   const edges = findEdges({ root: ROOT, tracked: trackedFiles(ROOT) });
-  assert.ok(edges.some((e) => e.from === ".github/workflows/ci.yml" && e.to === "packages/agent-org"), "the fix for a token naming no package must not hide a declared layer that has departed");
+  assert.ok(edges.some((e) => e.from === ".agent-org/host.json" && e.to === "packages/agent-org"), "the fix for a token naming no package must not hide a declared layer that has departed");
   assert.ok(!edges.some((e) => e.to.includes("githubcli-archive-keyring")), "and the URL's `/packages/` is read as no package");
 });
 

@@ -18,8 +18,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,21 @@ import { fileURLToPath } from "node:url";
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const VERIFY = join(REPO, "scripts/verify.mjs");
 const SLOTTED_EXIT = 41;
+
+// <scratch-dirs>
+/**
+ * THE TREES THIS FILE MAKES GO ON EVERY EXIT A PROCESS CAN CHOOSE, A KILL BY SIGTERM OR SIGINT INCLUDED (#3856, incident #3846, 1a). A `finally` does not run
+ * when a signal ends the process, so a run killed mid-test left its tool checkout in `/tmp`. SIGKILL reaches no handler: what survives it is the janitor's.
+ * It is made here, not taken from `scripts/verify.mjs`'s `makeScratch`, because an import of that file is a new lab-to-core edge for the layer-edges baseline.
+ */
+const scratch = new Set<string>();
+const removeScratch = (dir: string) => { rmSync(dir, { recursive: true, force: true }); scratch.delete(dir); };
+const removeAllScratch = () => scratch.forEach(removeScratch);
+const makeScratch = (prefix: string) => { const dir = mkdtempSync(join(tmpdir(), prefix)); scratch.add(dir); return dir; };
+process.once("exit", removeAllScratch);
+// `once` takes the listener off first, so the re-raise meets the default action and the process ends exactly as it would have without it.
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.once(signal, () => { removeAllScratch(); process.kill(process.pid, signal); });
+// </scratch-dirs>
 
 /** A stand-in for the tool's `suite-slots.mjs`: the four names verify reads, and a log of every call. */
 const stubModule = (log: string) => `
@@ -46,13 +61,13 @@ export async function runUnderSlot(options) {
 
 /** A tool checkout with the stub (or without a `suite-slots.mjs` at all), and the log its calls go to. */
 function toolCheckout(withModule: boolean) {
-  const root = mkdtempSync(join(tmpdir(), "verify-takes-a-slot-"));
+  const root = makeScratch("verify-takes-a-slot-");
   const log = join(root, "calls.log");
   mkdirSync(join(root, "tool", ".git"), { recursive: true });
   mkdirSync(join(root, "tool", "src"), { recursive: true });
   if (withModule) writeFileSync(join(root, "tool", "src", "suite-slots.mjs"), stubModule(log));
   const calls = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)) : []);
-  return { tool: join(root, "tool"), calls, done: () => rmSync(root, { recursive: true, force: true }) };
+  return { tool: join(root, "tool"), calls, done: () => removeScratch(root) };
 }
 
 function verify(args: string[], env: Record<string, string | undefined>) {
@@ -134,4 +149,78 @@ test("the two ways verify takes NO slot: `--check` (it runs nothing) and a runne
   } finally {
     done();
   }
+});
+
+// #3856: THE TREE THIS FILE MAKES IS REMOVED ON A SIGNAL TOO. The child runs the helper's OWN TEXT, cut out of this file between its two markers, so what is
+// killed is the code that ships and not a copy of it. POSITIVE CONTROLS: the same child run to completion leaves nothing, the kill is only sent once the test
+// has READ the tree standing, and the child must have ended BY the signal (the re-raise), so a handler that swallowed it and exited cleanly is not green.
+const SELF = join(REPO, "packages/lab/src/packaging/verify-takes-a-slot.test.ts");
+const SCRATCH_BLOCK = /^\/\/ <scratch-dirs>\n([\s\S]*?)^\/\/ <\/scratch-dirs>$/m;
+const TREE_PREFIX = "verify-takes-a-slot-";
+const READY_WAIT_MS = 15_000;
+const POLL_MS = 50;
+
+function helperChild(): { dir: string; tmp: string; ready: string; program: string } {
+  const block = SCRATCH_BLOCK.exec(readFileSync(SELF, "utf8"))?.[1];
+  assert.ok(block, "this file has no <scratch-dirs> block, so there is no helper to kill");
+  const dir = makeScratch("verify-takes-a-slot-signal-");
+  const [tmp, ready, program] = [join(dir, "tmp"), join(dir, "ready"), join(dir, "child.mts")];
+  mkdirSync(tmp);
+  writeFileSync(program, `import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+${block}
+makeScratch("verify-takes-a-slot-");
+writeFileSync(${JSON.stringify(ready)}, "1");
+if (process.env.TEST_RUNS_TO_COMPLETION !== "1") await new Promise(() => setInterval(() => {}, 1000));
+`);
+  return { dir, tmp, ready, program };
+}
+
+async function runHelperChild(kill: NodeJS.Signals | null) {
+  const { dir, tmp, ready, program } = helperChild();
+  const env = { ...process.env, TMPDIR: tmp, TEST_RUNS_TO_COMPLETION: kill === null ? "1" : "0" };
+  const child = spawn(process.execPath, ["--import", "tsx", program], { cwd: REPO, env, stdio: ["ignore", "ignore", "pipe"] });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const ended = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) => child.on("close", (code, signal) => done({ code, signal })));
+  let before: string[] = [];
+  if (kill !== null) {
+    for (let waited = 0; !existsSync(ready); waited += POLL_MS) {
+      assert.ok(waited < READY_WAIT_MS, `the child never made its tree in ${READY_WAIT_MS} ms\n${stderr}`);
+      await new Promise((done) => setTimeout(done, POLL_MS));
+    }
+    before = readdirSync(tmp);
+    child.kill(kill);
+    // A handler that swallows the signal would leave the child waiting for ever: bound it, so that is a failed assertion and not a hang.
+    setTimeout(() => child.kill("SIGKILL"), READY_WAIT_MS).unref();
+  }
+  // `tsx` keeps its own `tsx-<uid>` directory in the TMPDIR it is given: not a tree of the helper's.
+  return { ...(await ended), stderr, before, left: readdirSync(tmp).filter((name) => name.startsWith(TREE_PREFIX)), dir };
+}
+
+for (const signal of [null, "SIGTERM", "SIGINT", "SIGHUP"] as const) {
+  test(`the scratch helper: ${signal ? `a ${signal} in the middle of a test` : "a run to completion (the positive control)"} leaves no verify-takes-a-slot-* tree`, async () => {
+    const run = await runHelperChild(signal);
+    try {
+      if (signal) {
+        assert.ok(run.before.some((name) => name.startsWith("verify-takes-a-slot-")), `the tree did not stand before the kill: ${run.before.join(", ")}\n${run.stderr}`);
+        assert.equal(run.signal, signal, `the child must still END by ${signal} once it has cleaned up: code ${run.code}\n${run.stderr}`);
+      } else {
+        assert.equal(run.code, 0, run.stderr);
+      }
+      assert.deepEqual(run.left, [], `${signal ?? "a clean exit"} left a tree behind\n${run.stderr}`);
+    } finally {
+      removeScratch(run.dir);
+    }
+  });
+}
+
+test("the one bare directory-maker in this file is the scratch helper's own, so no tree is made outside the cleanup", () => {
+  const source = readFileSync(SELF, "utf8");
+  const block = SCRATCH_BLOCK.exec(source);
+  assert.ok(block, "this file has no <scratch-dirs> block");
+  const sites = [...source.matchAll(/\bmkdtempSync\(/g)].map((match) => match.index ?? -1);
+  assert.equal(sites.length, 1, `the helper's own call is the positive control and must be the only one: ${sites.join(", ")}`);
+  assert.ok(sites[0] > block.index && sites[0] < block.index + block[0].length, "the one call is outside the <scratch-dirs> block");
 });

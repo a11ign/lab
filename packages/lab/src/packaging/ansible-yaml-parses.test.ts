@@ -53,7 +53,8 @@ const committedYml = () =>
 // 58 with #3396's two task includes (`tasks/lab-layer-checkouts.yml`, `tasks/lab-layer-reset.yml`): the lab's
 // fetch and reset halves for a layer that lives in its own repository, a real addition to the population this
 // parses, moved deliberately as the message below asks.
-const EXPECTED_FILES = 58;
+// 59 with #3851's `gate-heartbeat-schedule.yml`: the control plane's external heartbeat timer, a playbook of its own.
+const EXPECTED_FILES = 59;
 const EXPECTED_VENDORED = 2;
 
 test("#1274: every committed Ansible .yml parses, and the file list is NAMED not globbed", () => {

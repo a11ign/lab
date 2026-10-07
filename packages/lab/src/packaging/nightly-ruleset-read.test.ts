@@ -58,7 +58,7 @@ import { parse as parseYaml } from "yaml";
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const NIGHTLY = ".github/workflows/nightly.yml";
 /** The guard the job runs. Not reserved by this row's Region -- read here, never written. */
-const GUARD = "packages/lab/src/packaging/branch-protection.test.ts";
+const GUARD = "packages/guards/src/branch-protection.test.ts";
 /** The job, named so a rename is a single red assertion rather than an empty scan everywhere below. */
 const JOB = "mainRulesetBinds";
 /** The hourly cron the nightly jobs skip; this job skips it too, so it runs once a day, not 24 times. */
@@ -622,7 +622,7 @@ test("#2120 EXECUTED: `set -o pipefail` -- a runner that FAILS is red even with 
 // own test (#2358) pins that count at two. It reads ALL repositories in one run, so it follows the loop.
 
 /** The test the table runs. Not reserved by this row's Region -- read here, never written. */
-const TABLE_GUARD = "packages/lab/src/packaging/layer-repository-protection.test.ts";
+const TABLE_GUARD = "packages/guards/src/layer-repository-protection.test.ts";
 
 /** The table's runner, as a command rather than as tokens (the shape `RUNNER_INVOCATION` demands of the first). */
 function tableRunnerLine(): string {

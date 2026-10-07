@@ -133,10 +133,13 @@ test("a derived unit with no repository copy is CANNOT_TELL", () => {
   assert.equal(reading.verdict, VERDICT.CANNOT_TELL);
 });
 
-test("over the REAL playbooks the derivation finds the auto-off pair and not the lab's corpus pair", () => {
+// #3851: the heartbeat pair is the second set the control plane ships, installed by `gate-heartbeat-schedule.yml`.
+const HEARTBEAT_UNITS = ["a11y-gate-heartbeat.service", "a11y-gate-heartbeat.timer"];
+
+test("over the REAL playbooks the derivation finds the auto-off and heartbeat pairs and not the lab's corpus pair", () => {
   const derived = deriveShippedUnits(checkoutSource);
   assert.ok("units" in derived, "positive control: the real playbooks derive a non-empty set");
-  assert.deepEqual(derived.units, [SERVICE, TIMER].sort());
+  assert.deepEqual(derived.units, [SERVICE, TIMER, ...HEARTBEAT_UNITS].sort());
   assert.ok(!derived.units.some((unit) => unit.startsWith("a11y-corpus-snapshot")),
     "the corpus-snapshot pair ships to a11y_lab, not the control host");
   // And the repository agrees with itself: the shipped copies read back as a clean host.
