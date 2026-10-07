@@ -263,6 +263,7 @@ const NAMES_IT_AS_DATA = new Set([
   "packages/lab/src/packaging/pnpm-publish-path.test.ts",
   "packages/lab/src/packaging/ci-installs-with-pnpm.test.ts",
   "packages/lab/src/packaging/one-package-manager.test.ts", // #2897's lock: asserts the name is ignored, and plants it as a fixture
+  "packages/guards/src/one-package-manager.test.ts", // the same lock, relocated to the core by #3505 -- the walk is over the core tree the lab is laid on
   "packages/lab/src/repo/lockfile-in-sync.test.ts",
   "packages/lab/src/packaging/row-claim-file-overlap-rule.test.ts",
   "packages/lab/src/packaging/pr-open-region.test.ts", // plants it as a neighbour of the exempt pnpm-lock.yaml

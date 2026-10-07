@@ -87,11 +87,18 @@ function namedPaths(literal: string, testFile: string): string[] {
   return candidates.map((path) => path.replace(/\/$/, "")).filter((path) => trackedSet.has(path) || (directories.has(path) && path.includes("/")));
 }
 
+/**
+ * What the core's trigger list does not cover, on purpose (#3505, `scripts/rstest/rstest.config.mjs`): the lab is LAID there, untracked, so a change to it is never in a core diff and a
+ * trigger naming it would select nothing. Run from this repository the lab is staged and its files look tracked, so the population is cut here, in code, and not by a trigger list that
+ * names a directory the core does not track.
+ */
+const LAID_LAB = "packages/lab/";
+
 /** The by-path targets one test names that its own import closure does not contain. */
 function targetsOf(testFile: string, packages: ReturnType<typeof packageIndex>): string[] {
   const closure = new Set([...sourceClosure(join(ROOT, testFile), ROOT, packages)].map((path) => relative(ROOT, path)));
   const named = literalsOf(stripComments(read(testFile))).flatMap((literal) => namedPaths(literal, testFile));
-  const isTarget = (path: string) => (trackedSet.has(path) ? !SOURCE.test(path) : !hasSourceUnder(path));
+  const isTarget = (path: string) => !path.startsWith(LAID_LAB) && (trackedSet.has(path) ? !SOURCE.test(path) : !hasSourceUnder(path));
   return [...new Set(named)].filter((path) => isTarget(path) && !closure.has(path) && path !== testFile);
 }
 

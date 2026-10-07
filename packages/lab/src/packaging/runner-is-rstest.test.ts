@@ -100,9 +100,10 @@ test("#1319, #3573: the test step runs `pnpm run test:all`, and it asks the floo
   // the diff, so it must be the glob that covers every package -- `test:ts` here would run a third of the
   // suite and still read green, which is the defect this whole file exists to pin.
   assert.deepEqual(codeLines(STEPS[stepNamed(TESTS)].run ?? "").map((line) => line.trim()), ["pnpm run test:all"]);
-  // The whole-package glob and its floor live on `test:all` now; `test:ts` carries the product brace list.
+  // The whole-package glob and its floor live on `test:all` now; `test:ts` carries the product brace list. The floor is any number, not the core's current one (500, then 159 when #3505 took the lab out):
+  // a core that moves it must not turn this repository red, and the floor's PRESENCE is what the assertion is about.
   assert.match(SCRIPTS["test:all"],
-    /assert-glob-not-empty\.mjs "packages\/\*\/src\/\*\*\/\*\.test\.ts" --min=500 --run --runner=rstest /);
+    /assert-glob-not-empty\.mjs "packages\/\*\/src\/\*\*\/\*\.test\.ts" --min=\d+ --run --runner=rstest /);
   assert.match(SCRIPTS["test:ts"], /assert-glob-not-empty\.mjs "packages\/\{[a-z,-]+\}\/src\/\*\*\/\*\.test\.ts" --min=95 --run --runner=rstest /);
 });
 

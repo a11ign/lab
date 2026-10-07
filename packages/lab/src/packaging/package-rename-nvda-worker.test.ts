@@ -98,12 +98,20 @@ test("positive control: the walk finds the old name in a fixture and refuses it,
   }
 });
 
+/** The lab is laid here untracked and is NOT an importer of this lockfile (#3505): its own repository's lockfile resolves it. Its manifest is held to the same standard below, by its range. */
+const LAB_MANIFEST = "packages/lab/package.json";
+
+test("the lab's manifest declares the new name by a registry range, never a link or a workspace reference", () => {
+  const range = DEPENDENCY_SECTIONS.map((name) => readManifest(LAB_MANIFEST)[name]?.[NEW_NAME]).find((value) => value !== undefined);
+  assert.match(range ?? "", /^\^?\d+\.\d+\.\d+$/, `${LAB_MANIFEST} declares ${NEW_NAME} as ${range ?? "nothing"}, not a registry range`);
+});
+
 test("every importer that declares the new name resolves it in pnpm-lock.yaml, to a registry version, never a link", () => {
   const lock = parse(readFileSync(join(REPO, "pnpm-lock.yaml"), "utf8")) as { importers: Record<string, LockImporter> };
   const declarers = workspaceManifests().filter((file) => declaresNewName(readManifest(file)));
   // Derived a second way: the three manifests `git grep` finds naming it, so a walk that lost one is not "enough".
   assert.deepEqual(declarers, ["package.json", "packages/lab/package.json"]);
-  for (const file of declarers) {
+  for (const file of declarers.filter((declarer) => declarer !== LAB_MANIFEST)) {
     const importer = dirname(file);
     const section = DEPENDENCY_SECTIONS.find((name) => lock.importers[importer]?.[name]?.[NEW_NAME]);
     const resolved = section === undefined ? undefined : lock.importers[importer]?.[section]?.[NEW_NAME]?.version;

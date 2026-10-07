@@ -6,9 +6,16 @@
 # unexported files of four published packages by relative path (569 `checkout-path` edges in the core's layer-edge baseline, #3501's finding 2), and its manifest names the
 # monorepo's WORKSPACE versions of `@a11ign/evidence`, `judge`, `scorer`, `screenreader-fleet` and `a11ign`, which are not what the registry holds (0.1.0 where it pins 0.2.x), plus
 # `@a11ign/control` and `@a11ign/nvda-speech`, which the registry does not have at all. So nothing in `packages/lab` installs on its own. The job therefore LAYS `packages/lab` OVER
-# a checkout of a11ign/a11ign at the commit pinned in `CORE_REF`, installs THERE (the workspace resolves what the registry cannot), and runs the core's own eslint, tsc and rstest
-# config over it: the one toolchain, not a copy of it. `pnpm install` is not frozen because a pull request here may change `packages/lab/package.json` (Dependabot does), and the core's
-# lockfile cannot know it; the install is ephemeral and its lockfile is thrown away with the runner.
+# a checkout of a11ign/a11ign at the commit pinned in `CORE_REF`, installs THERE (the workspace resolves what the registry cannot), and runs the core's own eslint and rstest
+# config over it: the one toolchain, not a copy of it. `pnpm install` is not frozen because the core's own dependencies move with `CORE_REF`; the install is ephemeral and its lockfile is
+# thrown away with the runner.
+#
+# THE LAB IS NOT A MEMBER OF THE CORE'S WORKSPACE ANY MORE (a11ign/a11ign#3505: `pnpm-workspace.yaml` excludes `!packages/lab`), and three consequences are built into the steps below, each of
+# which was a red run before it was a comment: (1) the core's `pnpm install` LAYS its own pinned `packages/lab`, WITHOUT the `*.test.*` files and the manifest, over whatever was put there, so
+# the lab's package is laid AFTER the install and the build, not before ("No test files found"); (2) `packages/lab` is untracked in the core, and the lab's tests walk `git ls-files`, so it is
+# staged with `git add -f`; (3) the lab has no `node_modules` of its own, so `@a11ign/control` (a package no registry holds) is linked to the core's `packages/control` by hand, which is what
+# the workspace link was. The core's tsconfig EXCLUDES `packages/lab`, so the core's `tsc` does not check it: the typecheck of THIS repository's own scripts is the last step, and the lab's
+# `src` is typechecked by nothing here (a11ign/a11ign#3904 follow-up). The lint exemptions the core used to hold for the lab are not held any more: the lab's tests pin their populations.
 #
 # BUMPING `CORE_REF` IS A PULL REQUEST, and the only way the core's changes reach this repository's CI: Dependabot cannot read a commit pin, so `scripts/ci-composition.test.ts` holds
 # it to a full commit sha and nothing else. Ubuntu only, and a two-commit checkout of the core: the tests that need the full history say so and skip by name (`lab-extraction.test.ts`); the
@@ -27,8 +34,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # a11ign/a11ign at `275635da6`: a commit of a11ign/a11ign#3837's branch (its squash on main is 77af91b4d), kept reachable by refs/pull/3837/head. A PRE-#3505 core ON PURPOSE (a11ign/a11ign#3839): this suite cannot run green over a post-split core, where 154 tests in 65 files fail until the lab owns the baseline and the lint exemptions the core held for it (a11ign/a11ign#3904). So it is NOT "the commit last synced from" (that was a66b1ae39, the previous value): do not bump it to main. Replace it with a pin on main when #3904 lands. A sha and never a branch: a branch moves under a pull request that did not touch it.
-  CORE_REF: 275635da6f45eae0cbd747ee1f9b2666935cde16
+  # a11ign/a11ign at `2af2b40e7`, a commit on its `main` AFTER #3505 deleted `packages/lab` from the core (merged as 7a17b8070). Was `275635da6`, a pre-#3505 core kept on purpose (a11ign/a11ign#3839) because this suite could not run green over a post-split one; a11ign/a11ign#3904 made the lab own what it needed (its own layer-edge baseline, populations pinned instead of exempted, the core's changed classifications) and moved the pin. Bumping it is a pull request here that runs this job at the new sha: a newer core's tests can fail the lab's, and that is the pin doing its job. A sha and never a branch: a branch moves under a pull request that did not touch it.
+  CORE_REF: 2af2b40e788f281412f7daa4ecd8faebfee49cd5
 
 jobs:
   gate:
@@ -39,10 +46,6 @@ jobs:
       - uses: actions/checkout@v7
         # fetch-depth 2, not the default 1: `verify-affected-set.test.ts` runs rstest `--changed=HEAD~1`, which needs a parent (measured: depth 1 fails it, 2026-10-05).
         with: { repository: a11ign/a11ign, ref: "${{ env.CORE_REF }}", path: core, fetch-depth: 2 }
-      - name: Lay this repository's package over the core's own
-        run: |
-          rm -rf core/packages/lab
-          cp -R lab/packages/lab core/packages/lab
       # pnpm/action-setup reads the version out of `packageManager`, and comes before setup-node because `cache: pnpm` shells out to it.
       - uses: pnpm/action-setup@v6
         with: { package_json_file: core/package.json }
@@ -53,19 +56,32 @@ jobs:
       # The packages' `dist` is what `@a11ign/*` imports resolve to, in the typecheck and in the tests alike: unbuilt, both fail on the first import (the monorepo's `pretest` does this).
       - run: pnpm run build
         working-directory: core
+      # AFTER the install and the build, never before: both run the core's `prepare`, which lays the core's PINNED `packages/lab` (tag in `packages/control/layers.json`) over this one, and that
+      # copy has no `*.test.*` and no `package.json`. Then STAGED, because the core's `packages/lab` is gitignored and a lab test that walks `git ls-files` for "every tracked source file" would
+      # otherwise walk nothing. Then the `@a11ign/control` link, AFTER the staging so the link is not itself a tracked entry (`git ls-files` would list a directory). The lab is not a
+      # workspace member, so pnpm gave it no `node_modules`, and without the link rstest cannot resolve `@a11ign/control/fleet-wake`, treats it as an external, and `require()`s a module
+      # graph with a top-level `await` (7 test files, measured 2026-10-07).
+      - name: Lay this repository's package over the core's own, stage it, and link `@a11ign/control`
+        run: |
+          rm -rf packages/lab
+          cp -R ../lab/packages/lab packages/lab
+          git add -f packages/lab
+          mkdir -p packages/lab/node_modules/@a11ign
+          ln -s ../../../control packages/lab/node_modules/@a11ign/control
+        working-directory: core
       # The core's packaging tests read the TOOL (a11ign/agent-org) by path, and `/home/agent/repos/agent-org` is a host's, not a runner's: the core's own jobs clone it at the newest release tag and export where
       # (`scripts/agent-org-newest-tag.mjs`, #3534), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
       # (measured on the sync pull request, a11ign/a11ign#3791).
       - name: The tool at the newest release tag, cloned for this run, with `agent-org` on PATH (a11ign/a11ign#3534)
         run: node scripts/agent-org-newest-tag.mjs --dest="$RUNNER_TEMP/agent-org"
         working-directory: core
-      # Lint and typecheck run before the tests so a style or type failure reads red without waiting for the suite.
-      - run: pnpm exec eslint packages/lab
+      # Lint runs before the tests so a style failure reads red without waiting for the suite. `--no-ignore`, because the core's eslint config IGNORES `packages/lab/**` (it is a laid copy of
+      # another repository there), and a plain `eslint packages/lab` over an ignored path lints nothing and exits 0.
+      - run: pnpm exec eslint --no-ignore packages/lab
         working-directory: core
-      # The core's OWN program, not a copy of it for lab alone: a second tsconfig laid at the core's root is a file naming lab's paths, which the layer-edge test reads as a new edge, and a
-      # reduced `include` lost the declarations the core's program carries (`agent-org`'s modules: TS7016). Lab is in that program once it is laid, so this checks it, and the core with it.
-      - run: pnpm exec tsc --noEmit
-        working-directory: core
+      # The core's `tsc --noEmit` is NOT run: its tsconfig excludes `packages/lab` (the laid copy is not the core's to typecheck), so it would check the core and say nothing about the lab. A
+      # second tsconfig laid at the core's root is a file naming lab's paths, which the layer-edge test reads as a new edge, and a reduced `include` lost the declarations the core's program carries
+      # (`agent-org`'s modules: TS7016). Typechecking the lab's `src` is therefore a gap, filed on a11ign/a11ign#3904's close-out rather than papered over by a step that passes vacuously.
       - run: pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
         working-directory: core
       # This repository's own checks: the workflows, the arming filter, the composition above.

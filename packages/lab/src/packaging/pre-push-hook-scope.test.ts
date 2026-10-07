@@ -200,9 +200,9 @@ test("THE LEAK SCAN names both guards by file, EXECUTES them, and both files exi
   assert.match(site!.command, /^pnpm exec tsx --test\b/,
     `the leak scan must be EXECUTED by its runner, not merely named: ${site!.command}`);
   for (const guard of ["tracked-source-leak-guard", "tracked-prose-leak-guard"]) {
-    assert.match(site!.command, new RegExp(`packages/lab/src/packaging/${guard}\\.test\\.ts`),
+    assert.match(site!.command, new RegExp(`packages/guards/src/${guard}\\.test\\.ts`),
       `${guard} must be named by the hook -- it is the one check whose value is being before the push`);
-    assert.ok(existsSync(`${REPO}packages/lab/src/packaging/${guard}.test.ts`),
+    assert.ok(existsSync(`${REPO}packages/guards/src/${guard}.test.ts`),
       `${guard}.test.ts does not exist; the hook names a file that is gone`);
   }
 });
