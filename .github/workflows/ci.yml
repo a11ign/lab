@@ -14,8 +14,8 @@
 # which was a red run before it was a comment: (1) the core's `pnpm install` LAYS its own pinned `packages/lab`, WITHOUT the `*.test.*` files and the manifest, over whatever was put there, so
 # the lab's package is laid AFTER the install and the build, not before ("No test files found"); (2) `packages/lab` is untracked in the core, and the lab's tests walk `git ls-files`, so it is
 # staged with `git add -f`; (3) the lab has no `node_modules` of its own, so `@a11ign/control` (a package no registry holds) is linked to the core's `packages/control` by hand, which is what
-# the workspace link was. The core's tsconfig EXCLUDES `packages/lab`, so the core's `tsc` does not check it: the typecheck of THIS repository's own scripts is the last step, and the lab's
-# `src` is typechecked by nothing here (a11ign/a11ign#3904 follow-up). The lint exemptions the core used to hold for the lab are not held any more: the lab's tests pin their populations.
+# the workspace link was. The core's tsconfig EXCLUDES `packages/lab`, so the core's `tsc` does not check it: the lab has its own, `packages/lab/tsconfig.json`, run in the core, and the typecheck of THIS repository's own
+# scripts is the last step (a11ign/a11ign#3927). The lint exemptions the core used to hold for the lab are not held any more: the lab's tests pin their populations.
 #
 # BUMPING `CORE_REF` IS A PULL REQUEST, and the only way the core's changes reach this repository's CI: Dependabot cannot read a commit pin, so `scripts/ci-composition.test.ts` holds
 # it to a full commit sha and nothing else. Ubuntu only, and a two-commit checkout of the core: the tests that need the full history say so and skip by name (`lab-extraction.test.ts`); the
@@ -79,9 +79,11 @@ jobs:
       # another repository there), and a plain `eslint packages/lab` over an ignored path lints nothing and exits 0.
       - run: pnpm exec eslint --no-ignore packages/lab
         working-directory: core
-      # The core's `tsc --noEmit` is NOT run: its tsconfig excludes `packages/lab` (the laid copy is not the core's to typecheck), so it would check the core and say nothing about the lab. A
-      # second tsconfig laid at the core's root is a file naming lab's paths, which the layer-edge test reads as a new edge, and a reduced `include` lost the declarations the core's program carries
-      # (`agent-org`'s modules: TS7016). Typechecking the lab's `src` is therefore a gap, filed on a11ign/a11ign#3904's close-out rather than papered over by a step that passes vacuously.
+      # The core's `tsc --noEmit` is NOT run: its tsconfig excludes `packages/lab` (the laid copy is not the core's to typecheck), so it would check the core and say nothing about the lab. The lab's own
+      # program is `packages/lab/tsconfig.json`, which extends the core's and includes the lab's `src`, `scripts`, `nightly` and `tests` (a11ign/a11ign#3927). It lives INSIDE `packages/lab`: a second tsconfig
+      # laid at the core's root is a file naming lab's paths, which the layer-edge test reads as a new edge.
+      - run: pnpm exec tsc -p packages/lab/tsconfig.json --noEmit
+        working-directory: core
       - run: pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
         working-directory: core
       # This repository's own checks: the workflows, the arming filter, the composition above.

@@ -17,13 +17,13 @@ The root [`LICENSE`](LICENSE) is the core's, byte for byte (`lab` shipped none o
 `packages/lab` reaches the core's `scripts/`, the private `guards` package, root files and files of other packages that no published tarball ships, by relative path
 (569 `checkout-path` edges in `a11ign/a11ign`'s `packages/guards/layer-edges.baseline.json`). Its manifest also names the monorepo's workspace versions of its siblings, which
 the registry does not hold. CI (`.github/workflows/ci.yml`) therefore lays it over a checkout of `a11ign/a11ign` at the commit in `CORE_REF`, installs there, and runs the
-core's eslint, tsc and rstest config on it. To do the same by hand:
+core's eslint and rstest config on it, and typechecks it with `packages/lab/tsconfig.json`, which extends the core's. To do the same by hand:
 
 ```bash
 git clone https://github.com/a11ign/a11ign core && git -C core checkout <CORE_REF>
 rm -rf core/packages/lab && cp -R packages/lab core/packages/lab
 cd core && pnpm install --no-frozen-lockfile && pnpm run build
-pnpm exec eslint packages/lab && pnpm exec tsc --noEmit
+pnpm exec eslint --no-ignore packages/lab && pnpm exec tsc -p packages/lab/tsconfig.json --noEmit
 pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
 ```
 
