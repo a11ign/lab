@@ -63,6 +63,7 @@ import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
+import { laidControlFiles } from "./laid-control.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -92,7 +93,8 @@ function stripFor(path: string, text: string): string {
  * the whole thing that makes this guard usable rather than switched off within a week.
  */
 function tracked(): string[] {
-  return walkTree({ kind: "all", roots: [] }).map((f) => f.path)
+  // The tracked tree PLUS the laid control layer: its two live sites are in `packages/control/ansible`, which is laid and untracked since a11ign/a11ign#3506 (`laid-control.ts`, #3972).
+  return [...walkTree({ kind: "all", roots: [] }).map((f) => f.path), ...laidControlFiles(REPO.replace(/\/$/, ""))]
     .filter((f) => /\.(mjs|sh|ya?ml)$/.test(f) && !f.includes("/dist/") && !f.includes("/node_modules/"));
 }
 

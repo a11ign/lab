@@ -13,8 +13,8 @@
 # THE LAB IS NOT A MEMBER OF THE CORE'S WORKSPACE ANY MORE (a11ign/a11ign#3505: `pnpm-workspace.yaml` excludes `!packages/lab`), and three consequences are built into the steps below, each of
 # which was a red run before it was a comment: (1) the core's `pnpm install` LAYS its own pinned `packages/lab`, WITHOUT the `*.test.*` files and the manifest, over whatever was put there, so
 # the lab's package is laid AFTER the install and the build, not before ("No test files found"); (2) `packages/lab` is untracked in the core, and the lab's tests walk `git ls-files`, so it is
-# staged with `git add -f`; (3) the lab has no `node_modules` of its own, so `@a11ign/control` (a package no registry holds) is linked to the core's `packages/control` by hand, which is what
-# the workspace link was. The core's tsconfig EXCLUDES `packages/lab`, so the core's `tsc` does not check it: the lab has its own, `packages/lab/tsconfig.json`, run in the core, and the typecheck of THIS repository's own
+# staged with `git add -f`; (3) the lab has no `node_modules` of its own, so `@a11ign/control` (a package no registry holds) is assembled by hand: control's own manifest at the laid tag, and `src` linked to the core's laid `packages/control/src`
+# (what the workspace link was, before #3506 laid control without a manifest). The core's tsconfig EXCLUDES `packages/lab`, so the core's `tsc` does not check it: the lab has its own, `packages/lab/tsconfig.json`, run in the core, and the typecheck of THIS repository's own
 # scripts is the last step (a11ign/a11ign#3927). The lint exemptions the core used to hold for the lab are not held any more: the lab's tests pin their populations.
 #
 # BUMPING `CORE_REF` IS A PULL REQUEST, and the only way the core's changes reach this repository's CI: Dependabot cannot read a commit pin, so `scripts/ci-composition.test.ts` holds
@@ -34,8 +34,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # a11ign/a11ign at `2af2b40e7`, a commit on its `main` AFTER #3505 deleted `packages/lab` from the core (merged as 7a17b8070). Was `275635da6`, a pre-#3505 core kept on purpose (a11ign/a11ign#3839) because this suite could not run green over a post-split one; a11ign/a11ign#3904 made the lab own what it needed (its own layer-edge baseline, populations pinned instead of exempted, the core's changed classifications) and moved the pin. Bumping it is a pull request here that runs this job at the new sha: a newer core's tests can fail the lab's, and that is the pin doing its job. A sha and never a branch: a branch moves under a pull request that did not touch it.
-  CORE_REF: 2af2b40e788f281412f7daa4ecd8faebfee49cd5
+  # a11ign/a11ign at `d8d9a02fc`, the commit that carries #3506's repoint (`layers.json` at the root, `packages/control` a LAID layer with no tests and no manifest). Was `2af2b40e7`, 23 commits earlier, which still had `packages/control/layers.json`: agent-org's copy of `isolation-gate.mjs` (header: copied at `d8d9a02fc`) names the root file, so `agent-org-wiring` [36] was red at the newest tag until this pin moved (a11ign/a11ign#3972). Why THIS sha and not a later one (measured 2026-10-07, this suite at the newest tool tag, v0.64.0): `d8d9a02fc` leaves 40 of 4,744 red before the lab's tests were taught the layout, core `main` at `9caf1ab3c` leaves 81, and the red set at `d8d9a02fc` is a strict subset of the later one's, so no later sha is better. Older still is #3904's rule: a pre-#3505 core was kept on purpose (a11ign/a11ign#3839) until this suite could run green over a post-split one. Bumping it is a pull request here that runs this job at the new sha: a newer core's tests can fail the lab's, and that is the pin doing its job. A sha and never a branch: a branch moves under a pull request that did not touch it.
+  CORE_REF: d8d9a02fc701532c23a61a9ee1e48a9d7f0d3f39
 
 jobs:
   gate:
@@ -56,18 +56,22 @@ jobs:
       # The packages' `dist` is what `@a11ign/*` imports resolve to, in the typecheck and in the tests alike: unbuilt, both fail on the first import (the monorepo's `pretest` does this).
       - run: pnpm run build
         working-directory: core
-      # AFTER the install and the build, never before: both run the core's `prepare`, which lays the core's PINNED `packages/lab` (tag in `packages/control/layers.json`) over this one, and that
+      # AFTER the install and the build, never before: both run the core's `prepare`, which lays the core's PINNED `packages/lab` (tag in `layers.json`) over this one, and that
       # copy has no `*.test.*` and no `package.json`. Then STAGED, because the core's `packages/lab` is gitignored and a lab test that walks `git ls-files` for "every tracked source file" would
-      # otherwise walk nothing. Then the `@a11ign/control` link, AFTER the staging so the link is not itself a tracked entry (`git ls-files` would list a directory). The lab is not a
-      # workspace member, so pnpm gave it no `node_modules`, and without the link rstest cannot resolve `@a11ign/control/fleet-wake`, treats it as an external, and `require()`s a module
-      # graph with a top-level `await` (7 test files, measured 2026-10-07).
-      - name: Lay this repository's package over the core's own, stage it, and link `@a11ign/control`
+      # otherwise walk nothing. Then `@a11ign/control` installed by hand, AFTER the staging so it is not itself a tracked entry (`git ls-files` would list a directory). The lab is not a
+      # workspace member, so pnpm gave it no `node_modules`, and without the package rstest cannot resolve `@a11ign/control/fleet-wake`, treats it as an external, and `require()`s a module
+      # graph with a top-level `await` (7 test files, measured 2026-10-07). It was a link to the core's `packages/control` until a11ign/a11ign#3506, which made that a LAID layer: `src` and the
+      # playbooks, and NO `package.json`, so a link has no `exports` to resolve a subpath through (the same 7 files, measured at core `d8d9a02fc`, a11ign/a11ign#3972). The package is what a workspace
+      # used to be: the manifest control publishes at the tag the core laid (`.layer-ref`, written by the lay), and `src` linked from where it was laid.
+      - name: Lay this repository's package over the core's own, stage it, and install `@a11ign/control` beside it
         run: |
           rm -rf packages/lab
           cp -R ../lab/packages/lab packages/lab
           git add -f packages/lab
-          mkdir -p packages/lab/node_modules/@a11ign
-          ln -s ../../../control packages/lab/node_modules/@a11ign/control
+          control=packages/lab/node_modules/@a11ign/control
+          mkdir -p "$control"
+          curl -fsSL "https://raw.githubusercontent.com/a11ign/control/$(cat packages/control/.layer-ref)/packages/control/package.json" -o "$control/package.json"
+          ln -s ../../../../control/src "$control/src"
         working-directory: core
       # The core's packaging tests read the TOOL (a11ign/agent-org) by path, and `/home/agent/repos/agent-org` is a host's, not a runner's: the core's own jobs clone it at the newest release tag and export where
       # (`scripts/agent-org-newest-tag.mjs`, #3534), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`

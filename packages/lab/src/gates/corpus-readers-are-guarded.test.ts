@@ -124,9 +124,6 @@ const NOT_A_CORPUS_READ: Record<string, string> = {
   "packages/lab/src/gates/veto-audit-corpus.test.ts":
     "Asserts an ansible command string does NOT contain a stale export path -- a comparison against a "
     + "literal, which is what its own dataset-paths EXEMPT entry says too.",
-  "packages/control/src/lab-pipeline.test.ts":
-    "Asserts the expected output-file argument each pipeline job is dispatched with, a literal it compares "
-    + "against rather than a path it resolves or reads. Its dataset-paths EXEMPT entry says the same.",
   "packages/lab/src/training/real-page-corpus-freshness.test.ts":
     "It reads SOURCE FILES, never a capture: it walks packages/lab's own tree looking for files that both "
     + "resolve realCorpusRoot() and call readdirSync, and its only readFileSync takes a path under "
@@ -134,9 +131,6 @@ const NOT_A_CORPUS_READ: Record<string, string> = {
     + "its own header says so, and it excludes itself from its own walk for the identical reason. Note it "
     + "is the guard that polices corpus readers for age-reporting, so wiring it would have been a reader "
     + "exempting itself from a guard it does not need; the classification is what keeps that visible.",
-  "packages/control/src/fleet-layer/lab-job.test.ts":
-    "Reads the lab-job.yml catalogue and asserts on the argv it declares; the runs/ paths it matches are "
-    + "job arguments in that YAML, not a corpus this test opens.",
   "packages/lab/src/gates/exit-code-contract.test.ts":
     "Reads SOURCE ONLY: every readFileSync/readdirSync here takes a path under REPO (the repository root, "
     + "not a corpus root) and opens a script, a .py file, or docs/gate-exit-codes.md, to discover which "

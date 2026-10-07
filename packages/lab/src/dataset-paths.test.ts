@@ -133,20 +133,12 @@ const EXEMPT: Record<string, string> = {
   "packages/lab/src/packaging/row-claim.test.ts":
     "#1373: the same planted fixture records `prune-worktrees.test.ts` planted (now in a11ign/agent-org), for row-claim decline's remover "
     + "(removeClaimedWorktree), inside a temp repository's linked worktree -- never the dataset's runs root.",
-  "packages/control/src/lab-pipeline.test.ts":
-    "Asserts the EXPECTED output-file argument each pipeline job is dispatched with (e.g. "
-    + "\"runs/screenreader-dataset/with-realism.jsonl\") -- a literal it compares against, not a path this "
-    + "file resolves for itself.",
   "packages/lab/src/gates/veto-audit-corpus.test.ts":
     "Checks that an ansible command string does NOT contain a stale export path -- comparing against "
     + "another file's output, not resolving its own.",
   "packages/lab/scripts/lab-inventory.mjs":
     "The runs/ literal is inside a human-readable report line (\"no runs/model-* to speak of\") describing "
     + "what was NOT found, not a path this file resolves -- RUNS itself already comes from runsRoot().",
-  "packages/control/src/fleet-layer/lab-job.test.ts":
-    "Asserts the ansible job catalogue's DECLARED default roots (lab-job.yml's own DATASET_ROOT/env "
-    + "defaults) and a --describe help string naming an output file -- comparing against another file's "
-    + "content, not resolving a path itself. (It was worker-fleet's own test until #3504 relocated it beside the control it reads.)",
   "packages/lab/scripts/explain-capture.mjs":
     "The runs/ literal is inside a human-readable error message naming where the search already looked "
     + "(findCaptures, a few lines above, builds those same roots through realCorpusRoot()/captureRoot()/ "
@@ -177,9 +169,6 @@ const EXEMPT: Record<string, string> = {
     + "runs/fleet-watch-state.json is not a dataset root this module owns at all: a tiny local ledger of "
     + "how long each worker has been non-ready between one fleet-watch tick and the next, unrelated to "
     + "the training corpus.",
-  "packages/control/src/fleet-watch.test.ts":
-    "Same reason as fleet-watch.mjs: the literal is the fixture state path these tests drive through an "
-    + "injected in-memory read/write, never a real file under the dataset's runs root.",
   "packages/control/src/fleet-auto-off.mjs":
     "#2656: the identical shape fleet-watch.mjs is exempted for, one field over -- ADR 0012's "
     + "@a11ign/control cannot import @a11ign/lab, and runs/fleet-auto-off-state.json is a tiny local "
