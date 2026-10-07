@@ -1,3 +1,6 @@
+// WHY THE LAB KEEPS ITS OWN COPY OF THIS FILE (a11ign/a11ign#3925): `packages/guards/src/tracked-source-leak-guard.test.ts` is the core's, and runs over the core's tree. This one runs
+// over the tree the lab's CI composes (the lab laid and staged over the core), so it is the only walk that reads the LAB's files for what leaks. Apart from
+// the paths it is the same file, and its patterns are the core's own (`../../../guards/src/leak-patterns.mjs`, imported), so the part that could drift is the walk.
 /**
  * #83: `tracked-prose-leak-guard.test.ts` was scoped to `.md` — per its OWN brief's wording, "prose" — and
  * a real fleet address sat the whole time in a SOURCE COMMENT, in `worker-http.mjs`, outside that
@@ -100,7 +103,7 @@ import assert from "node:assert/strict";
 import { readFileSync, openSync, readSync, closeSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { LEAK_PATTERNS, allLeaksIn } from "./leak-patterns.mjs";
+import { LEAK_PATTERNS, allLeaksIn } from "../../../guards/src/leak-patterns.mjs";
 import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here

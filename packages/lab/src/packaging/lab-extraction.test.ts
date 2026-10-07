@@ -252,7 +252,8 @@ const isText = (buffer: Buffer) => !buffer.subarray(0, 8192).includes(0);
 
 test("the tree that becomes the first commit carries nothing the purge rules redact and no credential", () => {
   const files = firstCommitFiles();
-  assert.ok(files.length > 700, `only ${files.length} files in the tree: the scan read the wrong place`);
+  // Was 700 over a tree of 742 tracked files; deleting the lab's second copies (#3925: 75 fixture files and 5 more) leaves 662 by `git ls-files packages/lab`, so the floor is 600.
+  assert.ok(files.length > 600, `only ${files.length} files in the tree: the scan read the wrong place`);
   const buffers = files.map((file) => ({ file, buffer: readFileSync(join(REPO_ROOT, file)) })).filter(({ buffer }) => isText(buffer));
   assert.ok(buffers.length > 600, "too few text files in the tree: the binary filter read the wrong thing");
   assert.deepEqual(buffers.flatMap(({ file, buffer }) => treeRefusals(buffer.toString("utf8"), file)), []);

@@ -1,3 +1,6 @@
+// WHY THE LAB KEEPS ITS OWN COPY OF THIS FILE (a11ign/a11ign#3925): `packages/guards/src/tracked-prose-leak-guard.test.ts` is the core's, and runs over the core's tree. This one runs
+// over the tree the lab's CI composes (the lab laid and staged over the core), so it is the only walk that reads the LAB's files for what leaks. Apart from
+// the paths it is the same file, and its patterns are the core's own (`../../../guards/src/leak-patterns.mjs`, imported), so the part that could drift is the walk.
 /**
  * This repo went public on 2026-09-06. Tracked Markdown prose must never carry a named SSH private key
  * file or the retired `pct exec` container-hop idiom (ADR 0013, REDACTED the same day) — `inventory.yml`
@@ -24,7 +27,7 @@
  * ## Why this reuses `LEAK_PATTERNS` rather than writing a second detector
  *
  * `.agent-org/roles/memory/nvda-worker-vm-access.md` already had a leak guard (`roles-memory.test.ts`) scoped to
- * one directory. This is the SAME regexes (`packages/lab/src/packaging/leak-patterns.mjs`), walking every
+ * one directory. This is the SAME regexes (`packages/guards/src/leak-patterns.mjs`), walking every
  * tracked `.md` file instead — a second, independently-typed copy of the rule is exactly the "a fact
  * stated twice, and the copies drifted" shape this repo's own CLAUDE.md names as its most expensive
  * recurring defect.
@@ -47,7 +50,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { LEAK_PATTERNS, allLeaksIn } from "./leak-patterns.mjs";
+import { LEAK_PATTERNS, allLeaksIn } from "../../../guards/src/leak-patterns.mjs";
 import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
