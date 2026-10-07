@@ -33,13 +33,31 @@ interface Importer { dependencies?: Record<string, { specifier: string; version:
 const importers = (): Record<string, Importer> =>
   (parse(readFileSync(resolve(ROOT, "pnpm-lock.yaml"), "utf8")) as { importers: Record<string, Importer> }).importers;
 
-/** Directories under packages/ that are real workspaces — those with a package.json. */
+/** The directories `pnpm-workspace.yaml` takes OUT of the workspace (`!packages/<layer>`): a layer is laid there and is not a member (#3760, #3505). */
+function excludedDirs(): string[] {
+  const { packages } = parse(readFileSync(resolve(ROOT, "pnpm-workspace.yaml"), "utf8")) as { packages: string[] };
+  return packages.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
+}
+
+/**
+ * Directories under packages/ that are real workspaces — those with a package.json that the workspace file does not exclude. This test runs in `a11ign/lab`'s CI
+ * over a core with the lab laid at `packages/lab`, manifest and all, and the lab is not a member of the core's lockfile (#3505): without the exclusion it would be
+ * reported missing from it on every run.
+ */
 function workspaceDirs(): string[] {
+  const excluded = excludedDirs();
   return readdirSync(resolve(ROOT, "packages"))
     .filter((entry) => existsSync(resolve(ROOT, "packages", entry, "package.json")))
     .map((entry) => `packages/${entry}`)
+    .filter((dir) => !excluded.includes(dir))
     .sort();
 }
+
+test("the workspace file excludes the laid lab, so a laid copy's manifest is not read as a member", () => {
+  assert.ok(excludedDirs().includes("packages/lab"), "pnpm-workspace.yaml no longer excludes packages/lab: the core takes it as a member again, or this reader is not reading the exclusions");
+  assert.ok(!workspaceDirs().includes("packages/lab"));
+  assert.ok(workspaceDirs().length > 0, "POSITIVE CONTROL: the real members are still found, so the exclusion did not empty the list");
+});
 
 test("every workspace on disk is present in pnpm-lock.yaml", () => {
   const lock = importers();
@@ -103,5 +121,6 @@ test("the discovery is real, so this cannot pass having examined nothing", () =>
   assert.ok(workspaceDirs().length >= 5,
     `found only ${workspaceDirs().length} workspaces; the walk is broken, not the repo clean`);
   const declaring = workspaceDirs().filter((dir) => Object.keys(readManifest(dir).dependencies ?? {}).length > 0);
-  assert.ok(declaring.length >= 5, "the dependency comparison above would pass over nothing");
+  // Floor 3: measured 4 at the core's 2af2b40e7 (cli, guards, judge, scorer) once the lab, a fifth, stopped being a member (#3505). Five before.
+  assert.ok(declaring.length >= 3, "the dependency comparison above would pass over nothing");
 });

@@ -164,9 +164,9 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "(#1067): the count that is also a claim gets an equality, the vacuity guard gets the floor. "
       + "Measured at 132 walked and 11 sending when written.",
   },
-  "packages/lab/src/packaging/control-extraction.test.ts": {
+  "packages/guards/src/control-extraction.test.ts": {
     guard: 'diffs.includes("diff --git")',
-    note: "guarded -- #2704's history scan spawns `git log -p` over the moving package and expects nothing the purge rules would "
+    note: "guarded -- (relocated to the core's guards by #3505) #2704's history scan spawns `git log -p` over the moving package and expects nothing the purge rules would "
       + "leave behind after `--replace-text`. A clean result is the EXPECTED answer, so 'the history is clean' and 'the log read "
       + "nothing' would be the same observation; the assertion that the output contains a `diff --git` header tells them apart, "
       + "and a positive control asserts the RAW history still needs `--replace-text` (46 lines of `10.0.0.x` fixture addresses "
@@ -315,9 +315,26 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "by-name sources. The tracked-fleet-directory check is the EMPTINESS claim, and its positive control is the fixture "
       + "lockfile and fixture tree in the same file that must be refused.",
   },
+  "packages/lab/src/training/claim-excludes-recompute.test.ts": {
+    guard: "corpusHasHistory()",
+    note: "guarded by BRANCHING ON the answer, not by asserting over it: `git log --first-parent` for the corpus file is asked once, and a non-empty answer asserts the command prints its provenance "
+      + "table while an empty one asserts the command REFUSES with its \"no first-parent commit\" message. Neither outcome is a silent pass, which is what an emptiness assertion over this "
+      + "listing would be. Added by a11ign/a11ign#3904: the lab is laid over a depth-2 core checkout where the answer is empty, and the old test asserted the table unconditionally.",
+  },
+  "packages/guards/src/lab-delete.test.ts": {
+    guard: "Object.keys(RELOCATED).length >= MIN_RELOCATED",
+    note: "guarded -- #3505's own test. \"No file under packages/lab is tracked\" is an EMPTINESS claim over `git ls-files`, so its positive control is "
+      + "the fixture workspace and lockfile in the same file that must be refused; the population it enumerates positively (the tests relocated "
+      + "to `packages/guards`) is held by a floor on the table it walks.",
+  },
+  "packages/guards/src/one-package-manager.test.ts": {
+    guard: "files.length > 800",
+    note: "guarded -- `git ls-files` for lockfiles in any directory, and the floor asserts the listing is not nearly empty, so a clean tree "
+      + "is not read from a listing that broke. Relocated to the core's guards by #3505.",
+  },
   "packages/control/src/fleet-layer/protocol-guard.test.ts": {
-    guard: "clients.length >= 2",
-    note: "guarded — the two known deploy call sites (check-worker-code.mjs, deploy-worker.mjs)",
+    guard: "clients.length >= 1",
+    note: "guarded — the one known deploy call site (fleet-playbook.mjs); the UTM one, deploy-worker.mjs, left with screenreader-fleet 0.4.0 (#3803)",
   },
   "packages/control/src/fleet-layer/lab-job.test.ts": {
     guard: "referenced.length >= 5",
@@ -338,13 +355,13 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "reporting a false pass on the same empty population. Kept as an entry rather than deleted, the "
       + "same as `backlog-ready.test.ts` above, so the record says RETIRED rather than quietly dropped.",
   },
-  "packages/lab/nightly/bounded-window-reads.test.ts": {
+  "packages/guards/nightly/bounded-window-reads.test.ts": {
     guard: null,
     note: "RETIRED WITH ITS POPULATION, 2026-10-03 (#2976). It walked `git ls-files` for every file whose CODE reads "
       + "`statusCheckRollup` off an object (#634) and held a by-name list of the readers it must still find, each "
       + "lived in the tool's directory: `merge-queue.mjs`, `queue-stalled.mjs` and `update-branch-sweep.mjs`. They "
       + "went to `a11ign/agent-org` with the directory, so the list could only pass having examined nothing, and the "
-      + "discovery and its list were removed. The file stays for the newest-per-name fixtures, which read no tree. "
+      + "discovery and its list were removed. The file stays for the newest-per-name fixtures, which read no tree (relocated to the core's `packages/guards/nightly` by #3505). "
       + "Kept as an entry rather than deleted, as `action-reference.test.ts` above is, so the record says RETIRED.",
   },
   "packages/lab/src/packaging/guest-paths-are-measured.test.ts": {
@@ -389,8 +406,8 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "floor at all; an empty result reported zero offenders having examined nothing",
   },
   "packages/judge/src/rule-oracles.test.ts": {
-    guard: "callers.length >= 8",
-    note: "guarded — `git grep -l ruleFindings` across packages",
+    guard: "callers.length >= 4",
+    note: "guarded — `git grep -l ruleFindings` across packages (floor 4 since #3505 took the lab's callers out of the core)",
   },
   "packages/lab/src/packaging/tracked-prose-leak-guard.test.ts": {
     guard: "files.length >= MIN_TRACKED_MARKDOWN_FILES",
@@ -406,9 +423,9 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "the repository population were to empty entirely.",
   },
   "packages/control/src/fleet-layer/entry-points.test.ts": {
-    guard: "declared.length >= 85",
+    guard: "declared.length >= 70",
     note: "guarded — #211's FORM population, walked via `git ls-files`: every tracked source declaring "
-      + "`import.meta.url ===`. Floored at 85 against 93 today, and deliberately a DIFFERENT population "
+      + "`import.meta.url ===`. Floored at 70 since #3505 took the lab's declaring sources out of the core (it was 85, against 93 then), and deliberately a DIFFERENT population "
       + "from the same file's `entryPoints()` discovery, which enumerates invocation sources and is "
       + "inherently incomplete. Two populations in one file answering two questions: whether a guard has "
       + "the right FORM (the file declares itself, complete) and whether a file NEEDS one (the sources, "
@@ -563,6 +580,7 @@ test("the discovery finds a non-trivial population -- vacuity guard for the walk
 
 test("every discovered git-population test is classified, and its guard still exists", () => {
   const discovered = discoverGitPopulationTests();
+  assert.ok(discovered.length > 0, "POSITIVE CONTROL: no git-population test was discovered, so the empty `unclassified` below would be the discovery's silence and not a fully classified population");
   const unclassified = discovered.filter((f) => !(f in CLASSIFICATION));
   assert.deepEqual(unclassified, [],
     `these tests spawn git to enumerate a population and are classified nowhere -- prove the population `

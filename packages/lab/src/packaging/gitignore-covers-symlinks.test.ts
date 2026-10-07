@@ -85,11 +85,27 @@ function uncovered(gitignore: string, shape: Shape): string[] {
   return withGitSandbox((sandbox) => {
     mkdirSync(join(sandbox.dir, ".symlink-target"));
     writeFileSync(join(sandbox.dir, ".gitignore"), gitignore);
-    return entriesOf(gitignore).filter((entry) => {
+    const entries = entriesOf(gitignore);
+    return entries.filter((entry) => {
       const path = samplePath(entry);
+      if (shape === "symlink" && liesBeyondAnotherEntry(path, entries)) return false;
       materialise(sandbox, path, shape);
       return !isIgnored(sandbox, path);
     });
+  });
+}
+
+/**
+ * Git cannot look through a symlink, so an entry BENEATH another entry's path (the core ignores `/packages/lab`,
+ * a layer checkout, AND `packages/lab/.corpus-*-mutation-*`) cannot be driven once its parent is the symlink:
+ * `check-ignore` refuses it as "beyond a symbolic link". The parent entry is itself driven, and covers
+ * everything under it -- so skipping the child loses no claim. Only an entry whose parent is ANOTHER entry
+ * is skipped; the real-directory pass still drives every one.
+ */
+function liesBeyondAnotherEntry(path: string, entries: string[]): boolean {
+  return entries.some((other) => {
+    const parent = samplePath(other);
+    return parent !== path && path.startsWith(`${parent}/`);
   });
 }
 

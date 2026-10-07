@@ -121,7 +121,8 @@ test("the most-imported subpath in the repo is one a consumer could actually imp
   // READ FROM THE INSTALLED COPY since #3504 moved the package out of the workspace: that is the manifest a consumer receives, so the
   // question "could a consumer import it" is asked of the published thing rather than of a source tree.
   const manifest = JSON.parse(
-    readFileSync(join(PACKAGES, "lab", "node_modules", "@a11ign", "screenreader-fleet", "package.json"), "utf8")) as Manifest;
+    // The ROOT's install, not the lab's own `node_modules`: the lab is laid over a core (#3505) whose install does not reach into it, and the root takes the package from the registry too.
+    readFileSync(join(PACKAGES, "..", "node_modules", "@a11ign", "screenreader-fleet", "package.json"), "utf8")) as Manifest;
   const target = exportTargets(manifest.exports).find((e) => e.subpath === "./cli-flags")?.target;
   assert.ok(target, "@a11ign/screenreader-fleet must still export ./cli-flags");
   assert.ok(shipped(manifest.files, target!), `./cli-flags points at ${target}, which is not shipped`);

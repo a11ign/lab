@@ -12,12 +12,14 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   extractDocumentedJobsBlock, pinActionRef, substituteTarget, extractJobName, extractPinnedSha,
-  buildConsumerGateWorkflow, generate, currentHeadSha, refuseDirtyGenerationInputs, README_PATH, OUT,
+  buildConsumerGateWorkflow, generate, currentHeadSha, ACTION_DEFINITION, refuseDirtyGenerationInputs, README_PATH, OUT,
 } from "../../../../scripts/generate-consumer-gate.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
@@ -357,8 +359,128 @@ test("#3788: check-pin asks whether the CONTENT is stale, not whether a path tha
   const jobsYaml = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
   const workflow = buildConsumerGateWorkflow(jobsYaml);
   const checkPinBlock = workflow.slice(workflow.indexOf("  check-pin:"), workflow.indexOf("  a11y:"));
-  assert.doesNotMatch(checkPinBlock, /git diff/, "a path-touched proxy refuses prose edits that change nothing");
+  // #3864 added a diff of the Action's own definition, which IS what the a11y job runs; the proxies #3788 removed were
+  // README.md and the generator, files the generated workflow is built from and does not execute.
+  assert.doesNotMatch(checkPinBlock, /git diff[^\n]*(README|generate-consumer-gate)/,
+    "a path-touched proxy for the generator's inputs refuses prose edits that change nothing");
   assert.match(checkPinBlock, /pnpm install --frozen-lockfile/, "--check imports the workspace, so it must be installed first");
+});
+
+// --- #3828: `--check` imports repo-identity.mjs, which needs $AGENT_ORG_TOOL, and only the resolver sets it on a runner ---
+
+const CHECK_PIN_RESOLVER = /node scripts\/agent-org-newest-tag\.mjs --dest="\$RUNNER_TEMP\/agent-org"/;
+const CHECK_PIN_CHECK = /node scripts\/generate-consumer-gate\.mjs --check/;
+
+function checkPinBlockOf(workflow: string): string {
+  return workflow.slice(workflow.indexOf("  check-pin:"), workflow.indexOf("  a11y:"));
+}
+
+/** The index of the first step of `block` whose text matches, or -1: `-1` is "no such step", never "first". */
+function stepIndexMatching(block: string, pattern: RegExp): number {
+  return block.split(/^ {6}- /m).findIndex((step) => pattern.test(step));
+}
+
+/** Both orderings are answered by this one question, so the real job and the mutant are judged by the same code. */
+function resolverRunsBeforeCheck(block: string): boolean {
+  const resolver = stepIndexMatching(block, CHECK_PIN_RESOLVER);
+  const check = stepIndexMatching(block, CHECK_PIN_CHECK);
+  return resolver !== -1 && check !== -1 && resolver < check;
+}
+
+const GENERATED_JOBS = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
+
+test("#3828: the generated check-pin job runs the tool resolver BEFORE the step that imports repo-identity.mjs", () => {
+  const block = checkPinBlockOf(buildConsumerGateWorkflow(GENERATED_JOBS));
+  assert.ok(resolverRunsBeforeCheck(block), "AGENT_ORG_TOOL must be exported by an earlier step than `--check`");
+});
+
+test("#3828 CONTROL: the ordering question answers NO for a job with the resolver missing, and for one with it AFTER", () => {
+  const block = checkPinBlockOf(buildConsumerGateWorkflow(GENERATED_JOBS));
+  const resolverStep = block.split(/^ {6}- /m).find((step) => CHECK_PIN_RESOLVER.test(step));
+  assert.ok(resolverStep, "the real job has a resolver step to remove, or this control proves nothing");
+  const withoutResolver = block.replace(`      - ${resolverStep}`, "");
+  assert.ok(!CHECK_PIN_RESOLVER.test(withoutResolver), "the mutant really has no resolver");
+  assert.ok(!resolverRunsBeforeCheck(withoutResolver), "no resolver: the job fails on a runner");
+  const resolverLast = `${withoutResolver.trimEnd()}\n      - ${resolverStep}`;
+  assert.ok(!resolverRunsBeforeCheck(resolverLast), "resolver after `--check`: too late to help it");
+});
+
+test("#3828: `--check` is not wrapped in a message that claims a mismatch the run did not measure", () => {
+  const block = checkPinBlockOf(buildConsumerGateWorkflow(GENERATED_JOBS));
+  assert.match(block, /^ {8}run: node scripts\/generate-consumer-gate\.mjs --check$/m,
+    "the step is the bare command, so a crash reaches the log as itself and the step fails with its exit code");
+  assert.doesNotMatch(block, /does not match what README/, "only `--check`'s own STALE line may say the file is stale");
+});
+
+// --- #3864: a pin that is an ancestor can still predate a change to the Action it pins ---
+
+// The generator's own list, not a path written here: a path literal out of the layer is an edge `layer-edges` counts.
+const [ACTION_FILE] = ACTION_DEFINITION;
+const ACTION_FRESHNESS_STEP = "Refuse a pin that predates a change to the Action's own definition";
+const GIT_IDENTITY = {
+  GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid",
+};
+
+/** The `run:` script of the generated step named `name`, with the pin and `github.sha` substituted as the runner would. */
+function stepScript(workflow: string, name: string, shas: { pin: string, runningAt: string }): string {
+  const step = checkPinBlockOf(workflow).split(/^ {6}- /m).find((text) => text.startsWith(`name: ${name}`));
+  assert.ok(step, `the generated check-pin job has a step named "${name}"`);
+  const script = step.split(/^ {8}run: \|\n/m)[1];
+  assert.ok(script, "the step is a multi-line run: block");
+  return script.replaceAll("${{ github.sha }}", shas.runningAt).replaceAll(/^ {10}/gm, "");
+}
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, { cwd, env: sandboxGitEnv(GIT_IDENTITY), encoding: "utf8" }).trim();
+}
+
+/** A throwaway repository: a pin commit, then `afterPin` files changed one commit each. Returns the pin, the tip and the dir. */
+function repoWithChangesAfterPin(afterPin: string[]): { pin: string, tip: string, dir: string } {
+  const dir = mkdtempSync(join(tmpdir(), "consumer-gate-freshness-"));
+  git(dir, "init", "-q");
+  writeFileSync(join(dir, ACTION_FILE), "name: v1\n");
+  writeFileSync(join(dir, "README.md"), "v1\n");
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", "pin");
+  const pin = git(dir, "rev-parse", "HEAD");
+  afterPin.forEach((file, at) => {
+    writeFileSync(join(dir, file), `changed ${at}\n`);
+    git(dir, "commit", "-q", "-am", `edit ${file}`);
+  });
+  return { pin, tip: git(dir, "rev-parse", "HEAD"), dir };
+}
+
+/** Runs the generated freshness step the way the runner would, in `dir`; the exit status and what it printed. */
+function runFreshnessStep(repo: { pin: string, tip: string, dir: string }): { status: number, output: string } {
+  const workflow = buildConsumerGateWorkflow(`jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n      - uses: a11ign/a11ign@${repo.pin}`);
+  const script = stepScript(workflow, ACTION_FRESHNESS_STEP, { pin: repo.pin, runningAt: repo.tip });
+  try {
+    return { status: 0, output: execFileSync("bash", ["-e", "-c", script], { cwd: repo.dir, encoding: "utf8", stdio: "pipe" }) };
+  } catch (error) {
+    const failed = error as { status: number, stdout: string, stderr: string };
+    return { status: failed.status, output: failed.stdout + failed.stderr };
+  }
+}
+
+test("#3864: a pin older than a change to action.yml is REFUSED, naming the file and both commits", () => {
+  const repo = repoWithChangesAfterPin(["README.md", ACTION_FILE]);
+  try {
+    const { status, output } = runFreshnessStep(repo);
+    assert.equal(status, 1, output);
+    assert.ok(output.includes(`${ACTION_FILE} changed between the pin`), output);
+    assert.ok(output.includes(repo.pin) && output.includes(repo.tip), "the refusal names the pin and the commit running");
+  } finally { rmSync(repo.dir, { recursive: true, force: true }); }
+});
+
+test("#3864 CONTROL: a pin AFTER the last action.yml change passes, and so does one with only other files changed since", () => {
+  const unchanged = repoWithChangesAfterPin(["README.md", "README.md"]);
+  try {
+    assert.equal(runFreshnessStep(unchanged).status, 0, "other files moving is not this guard's business (#3788)");
+  } finally { rmSync(unchanged.dir, { recursive: true, force: true }); }
+  const none = repoWithChangesAfterPin([]);
+  try {
+    assert.equal(runFreshnessStep(none).status, 0, "a pin that IS the running commit has nothing newer to be behind");
+  } finally { rmSync(none.dir, { recursive: true, force: true }); }
 });
 
 test("buildConsumerGateWorkflow: check-pin's refusal names the ref and how the run was triggered, "

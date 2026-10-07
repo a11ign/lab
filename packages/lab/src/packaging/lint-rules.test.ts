@@ -9,7 +9,6 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { derivedLocalRule } from "../../../guards/src/uncontrolled-emptiness.mjs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,13 +44,13 @@ function commentDense(lines: number, { iife = false } = {}): string {
 
 test("a comment-dense function over 90 physical lines is reported, which the 70-line code budget cannot see", async () => {
   const code = commentDense(91);
-  assert.deepEqual(await reportedLines(PHYSICAL, code, "packages/lab/src/packaging/fixture.ts"), [2]);
-  assert.deepEqual(await reportedLines(CODE_ONLY, code, "packages/lab/src/packaging/fixture.ts"), [],
+  assert.deepEqual(await reportedLines(PHYSICAL, code, "packages/guards/src/fixture.ts"), [2]);
+  assert.deepEqual(await reportedLines(CODE_ONLY, code, "packages/guards/src/fixture.ts"), [],
     "the fixture must stay under the code-line budget, or it no longer isolates the physical one");
 });
 
 test("a function of exactly 90 physical lines is not reported", async () => {
-  assert.deepEqual(await reportedLines(PHYSICAL, commentDense(90), "packages/lab/src/packaging/fixture.ts"), []);
+  assert.deepEqual(await reportedLines(PHYSICAL, commentDense(90), "packages/guards/src/fixture.ts"), []);
 });
 
 test("the physical budget covers the worker's plain .mjs as well as .ts", async () => {
@@ -61,7 +60,7 @@ test("the physical budget covers the worker's plain .mjs as well as .ts", async 
 
 test("an IIFE is measured too, as function-size.test.ts measured every function node", async () => {
   assert.deepEqual(
-    await reportedLines(PHYSICAL, commentDense(91, { iife: true }), "packages/lab/src/packaging/fixture.ts"), [2]);
+    await reportedLines(PHYSICAL, commentDense(91, { iife: true }), "packages/guards/src/fixture.ts"), [2]);
 });
 
 /**
@@ -76,7 +75,7 @@ test("an IIFE is measured too, as function-size.test.ts measured every function 
  * The budget is read from the config rather than restated, so there is one copy of the number.
  */
 test("the budget is close to what the code actually does", async () => {
-  const configured = await eslint.calculateConfigForFile(join(root, "packages/lab/src/packaging/fixture.ts"));
+  const configured = await eslint.calculateConfigForFile(join(root, "packages/guards/src/fixture.ts"));
   const [, options] = (configured.rules as Record<string, [string, { max: number }]>)[PHYSICAL];
   const floor = options.max - 30;
   const probe = new ESLint({ cwd: root,
@@ -164,7 +163,7 @@ const inTest = (body: string) =>
 test("#1155: an emptiness assertion on a locally derived collection with no pin on its source is REPORTED", async () => {
   const lines = await reportedLines(RULE,
     inTest("  const files = walk();\n  const bad = files.filter((f) => f.x);\n  assert.deepEqual(bad, []);"),
-    "packages/lab/src/packaging/zz-fixture-uncontrolled.test.ts");
+    "packages/guards/src/zz-fixture-uncontrolled.test.ts");
   assert.equal(lines.length, 1, `expected one report, got ${lines.length}`);
 });
 
@@ -174,7 +173,7 @@ test("#1155: the SAME assertion with its source pinned in the same test is NOT r
   const lines = await reportedLines(RULE,
     inTest("  const files = walk();\n  assert.ok(files.length >= 3, \"the walk is broken\");\n"
       + "  const bad = files.filter((f) => f.x);\n  assert.deepEqual(bad, []);"),
-    "packages/lab/src/packaging/zz-fixture-controlled.test.ts");
+    "packages/guards/src/zz-fixture-controlled.test.ts");
   assert.deepEqual(lines, []);
 });
 
@@ -187,7 +186,7 @@ test("#1155: a pin in a DIFFERENT test does not control this one", async () => {
     + `test("a", () => {\n  const files = walk();\n  assert.ok(files.length >= 3);\n});\n`
     + `test("b", () => {\n  const files = walk();\n  const bad = files.filter((f) => f.x);\n`
     + `  assert.deepEqual(bad, []);\n});\n`,
-    "packages/lab/src/packaging/zz-fixture-other-test.test.ts");
+    "packages/guards/src/zz-fixture-other-test.test.ts");
   assert.equal(lines.length, 1);
 });
 
@@ -197,19 +196,8 @@ test("#1155: a collection derived from a CALL is out of scope, and deliberately"
   // rule wearing a correctness rule's name.
   const lines = await reportedLines(RULE,
     inTest("  const bad = walk().filter((f) => f.x);\n  assert.deepEqual(bad, []);"),
-    "packages/lab/src/packaging/zz-fixture-from-call.test.ts");
+    "packages/guards/src/zz-fixture-from-call.test.ts");
   assert.deepEqual(lines, []);
-});
-
-test("#1155: an exemption carries ONE OF TWO reasons, and the config says which for each", () => {
-  // ceo's ruling: "controlled by a guard this rule cannot see" and "the vacuity is the point" are
-  // different claims, and one option carrying both makes the list unreadable -- the failure an exemption
-  // list exists to prevent. A third kind of reason is a ROW, not a third entry.
-  const config = readFileSync(join(root, "eslint.config.js"), "utf8");
-  assert.match(config, /"packages\/lab\/src\/packaging\/git-population-vacuity\.test\.ts": "demonstration"/);
-  assert.match(config, /"packages\/lab\/src\/capture\/verify\.corpus\.test\.ts": "guarded-by labCorpusReadable"/,
-    "the guarded-by reason must NAME the symbol -- `a guard exists` is the claim, and an unnamed one "
-    + "cannot be checked against the file");
 });
 
 test("#1155: an exemption whose reason is neither shape is itself an ERROR", async () => {

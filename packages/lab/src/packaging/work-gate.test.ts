@@ -4682,6 +4682,7 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // history, and its pull request declares `History: full`.
   // #2704 added `control-extraction.test.ts`: checked -- the same `--is-shallow-repository` ask before `git log` over `packages/control`, for the same
   // first-commit leak scan, so it genuinely needs history, and its pull request declares `History: full`.
+  // #3505 RELOCATED `control-extraction.test.ts` to the core's `packages/guards/src`: it left this set by leaving the lab, not by a blind spot of the walk.
   // #2703 added `lab-extraction.test.ts`: checked -- the same `--is-shallow-repository` ask before `git log` over `packages/lab`, for the same
   // first-commit leak scan, so it genuinely needs history, and its pull request declares `History: full`.
   // #3534 LEFT this set again: this file now loads the tool by PATH (`toolModule`), a computed call the walk cannot follow, exactly as it left at #2975 PR 3. No
@@ -4691,7 +4692,7 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // added, the walk got able to see one that was already here. No Acceptance names this file, so no pull request owes a `History: full` for it.
   // #3504 DELETED `screenreader-fleet-extraction.test.ts` with the directory it read history over (the fleet's own repository holds the leak scan): it left the set
   // by ceasing to exist, not by a blind spot of the walk, and nothing joined.
-  assert.deepEqual(charged, ["control-extraction.test.ts", "lab-extraction.test.ts", "pre-push-resolve-toward-main.test.ts"],
+  assert.deepEqual(charged, ["lab-extraction.test.ts", "pre-push-resolve-toward-main.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
 });

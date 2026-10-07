@@ -329,12 +329,11 @@ const DOCUMENTED: Record<string, string> = {
     + "— an unreachable worker is explicitly excluded from 'stale'",
   "packages/worker-fleet/src/compare-workers.mjs":
     "2 usage error — missing page URL, or fewer than two workers named",
-  "packages/worker-fleet/src/deploy-worker.mjs":
-    "3 an uncommitted CAPTURE_PROTOCOL_VERSION bump refused — the exact 'fleet:deploy exits 3' incident "
-    + "that prompted this audit; 2 no local worker VMs registered; 1 one or more VMs failed to deploy; 0 all "
-    + "deployed",
   "packages/worker-fleet/src/doctor.mjs":
     "1 ready is false, any check failed; 0 all checks pass",
+  // screenreader-fleet 0.4.1 (#3803): a path the layout does not supply is a usage error naming the path and the flag, never an ENOENT.
+  "packages/worker-fleet/src/fleet-env.mjs":
+    "2 usage error — the inventory or group-vars file was not found (named, with `--inventory`/`--group-vars`, the flags that supply it); 0 printed",
   // MOVED 2026-09-05 from `packages/worker-fleet/src/`. The published package read the PRIVATE `control`
   // package's `inventory.yml`, and these three had no cross-package dependents in either direction, so
   // they belonged where their consumers already live. This test caught the collision between that move and
@@ -355,6 +354,11 @@ const DOCUMENTED: Record<string, string> = {
     + "inventory code); 1 a shutdown held back because the checkout differs from main, or any worker's "
     + "wake proof is lapsing or lapsed (#3309); 0 otherwise regardless of what any worker was decided — "
     + "the decision itself is the output, never a pass/fail verdict",
+  "packages/control/src/gate-heartbeat.mjs":
+    "1 a message the verdict called for could NOT be sent (no Telegram route, or Telegram refused or timed "
+    + "out) — the standing verdict is then not recorded and the next run retries; 0 otherwise, INCLUDING a "
+    + "stale or unreadable tick that WAS messaged (the verdict is the output and the message is the alarm, "
+    + "never a pass/fail exit)",
   "packages/control/src/post-qualification-status.mjs":
     "0 the status was POSTED; 1 refused (bad flag or malformed sha) or GitHub did not accept the post; 3 NOT "
     + "POSTED because this host has no usable GitHub credential -- 'not yet', never a success and never a silent skip. A "

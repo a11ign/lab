@@ -146,7 +146,7 @@ test("a minor bump of the manifests gets a body the shipped Acceptance and Close
   const verdict = shippedVerdict(out.body);
   assert.equal(verdict.ok, true, verdict.lines.join("\n"));
   assert.deepEqual(verdict.ran.length, 1, "the Acceptance command is read once");
-  assert.match(verdict.ran[0], /^pnpm exec rstest run --config=scripts\/rstest\/rstest\.config\.mjs --include packages\/lab\/src\/packaging\/one-package-manager\.test\.ts$/);
+  assert.match(verdict.ran[0], /^pnpm exec rstest run --config=scripts\/rstest\/rstest\.config\.mjs --include packages\/guards\/src\/one-package-manager\.test\.ts$/);
   assert.match(out.body, /^Closes: none -- dependency update by dependabot\[bot\] \(ADR 0041\)$/m);
   // the versions are the title's own: a fragment saying `2.8 to 2.8` for 2.8.1 -> 2.8.2 reads as no change at all (#3155)
   assert.match(out.body, /bump yaml from 2\.8\.1 to 2\.8\.2\./);

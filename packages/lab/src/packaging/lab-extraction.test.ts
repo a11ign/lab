@@ -12,7 +12,8 @@
  *      the core beside it (ADR 0039 item 6a), since none could be `by-name` (guards is private, and the rest are files no published tarball ships).
  *      A `checkout-path` edge is only a decision if its target EXISTS in the core, so each is resolved. THE CONTROL: one `owned-by:#2703` entry, and
  *      one `checkout-path` edge to a path the core does not have, are each REFUSED.
- *   4. The edges INTO lab are not this row's: they belong to the delete (#3505) or move with lab, never to `#2703`.
+ *   4. (Retired by #3904.) The edges INTO lab were the delete's (#3505); the delete is done, and the core's guard cannot see an edge into a package that is laid, untracked,
+ *      and not there. The lab's own baseline holds the edges FROM lab only.
  *   5. The tree-wide guards, by count: the ones inside `packages/lab` move, the ones outside stay and are still discovered when lab is absent.
  *   6. The first commit's leak scan: the TREE carries nothing `scripts/history-purge-replacements.txt` would redact and no credential shape, and the
  *      package's history carries neither once the cut's `--replace-text` and `--replace-message` have run (it does need both: 10 diff lines and 7
@@ -30,7 +31,6 @@ import { tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { readBaseline } from "../../../guards/src/layer-edges.mjs";
 import { MARKER_MODULE, treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.mjs";
 import { applyReplacementRules, parseReplacementRules } from "../../../../scripts/history-purge-rehearsal.mjs";
 
@@ -155,9 +155,9 @@ test("control: an undeclared sibling package and a dependency that is a path are
 
 type Edge = { from: string; to: string; kind: string; direction: "in" | "out"; disposition: string; reason: string };
 const edge = (over: Partial<Edge>): Edge => ({ from: `${LAB}/src/a.test.ts`, to: "scripts/x.mjs", kind: "import", direction: "out", disposition: "checkout-path", reason: "r", ...over });
-const baselineOf = (root: string) => readBaseline(root) as Edge[];
+/** The lab's OWN baseline (a11ign/a11ign#3904): #3505 took the lab's entries out of the core's. */
+const baselineOf = (root: string) => JSON.parse(readFileSync(join(root, `${LAB}/baselines/layer-edges.baseline.json`), "utf8")) as Edge[];
 const outOfLab = (baseline: Edge[]) => baseline.filter((e) => e.direction === "out" && e.from.startsWith(`${LAB}/`));
-const intoLab = (baseline: Edge[]) => baseline.filter((e) => e.direction === "in" && e.to.startsWith(`${LAB}/`) || e.to === LAB && e.direction === "in");
 
 /** An edge this row still owns is a decision nobody made: the row's whole claim is that there are none. */
 const undecided = (baseline: Edge[]) => baseline.filter((e) => e.disposition === THIS_ROW).map((e) => `${e.from} -> ${e.to}`);
@@ -183,24 +183,6 @@ test("control: an edge still owned by #2703 and a checkout-path edge to a path t
   const baseline = [edge({}), edge({ to: "scripts/gone.mjs" }), edge({ disposition: THIS_ROW, to: "scripts/y.mjs" })];
   assert.deepEqual(undecided(baseline), [`${LAB}/src/a.test.ts -> scripts/y.mjs`]);
   assert.deepEqual(unresolvable(baseline, (path) => path === "scripts/x.mjs"), [`${LAB}/src/a.test.ts -> scripts/gone.mjs`]);
-});
-
-// ---- 4. the edges into lab are the delete's ---------------------------------------------------------------
-
-/** An edge INTO lab is the product reaching for what leaves: the delete's (`owned-by:#<another row>`) or a test that goes with lab, and never a lab-side decision. */
-const NOT_THE_PRODUCTS_TO_KEEP = /^(?:owned-by:#(?!2703\b)\d+|moves-with:lab)$/;
-const enteringUnowned = (baseline: Edge[]) => intoLab(baseline).filter((e) => !NOT_THE_PRODUCTS_TO_KEEP.test(e.disposition)).map((e) => `${e.from} -> ${e.to}`);
-
-test("an edge INTO lab is another row's (the delete, #3505) or moves with lab, never this row's and never a path the core would resolve", () => {
-  const entering = intoLab(baselineOf(REPO_ROOT));
-  assert.ok(entering.length > 50, "too few edges into lab read: the baseline was read wrongly");
-  assert.deepEqual(enteringUnowned(baselineOf(REPO_ROOT)), []);
-});
-
-test("control: an edge into lab held by this row or given a checkout path is REFUSED, and the delete's and a moves-with one are not", () => {
-  const into = (disposition: string) => edge({ from: "scripts/x.mjs", to: `${LAB}/src/a.mjs`, direction: "in", disposition });
-  const baseline = [into("owned-by:#3505"), into("moves-with:lab"), into(THIS_ROW), into("checkout-path")];
-  assert.deepEqual(enteringUnowned(baseline), [`scripts/x.mjs -> ${LAB}/src/a.mjs`, `scripts/x.mjs -> ${LAB}/src/a.mjs`]);
 });
 
 // ---- 5. the tree-wide guards, by count ---------------------------------------------------------------------

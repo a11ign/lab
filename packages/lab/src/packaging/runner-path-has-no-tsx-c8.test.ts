@@ -119,25 +119,9 @@ function tsxTestSpawns(source: Source): string[] {
   return source.lines.filter((line) => TSX_TEST.test(line));
 }
 
-/**
- * THE ONE `tsx --test` THE PROJECT DOES NOT OWN (#3105): the step that runs ANOTHER repository's suite. `a11ign/agent-org`'s tests
- * are `node:test` files and its own `gate` runs them as `node --import tsx --test`; `ci.yml`'s `agentOrg` job lays that tool over
- * the layout its own tests expect and runs the identical command, so the reading is the tool's own and not a project reimplementation of it.
- * Measured 2026-10-03 on that layout: this runner 4669 tests, 0 failed, 1 skipped, 4m10s; this project's rstest runner 5 of 4649
- * failed (one of them a fixture `import()` the node:test alias hook could not resolve) in 5m24s.
- * The rstest adoption (#1317) is about THIS project's own tests going through one runner; it was never a claim about the
- * tool's. A NAMED entry, matched on file AND the exact line, so the same words in any other step are still refused.
- */
-const RUNS_THE_TOOLS_OWN_SUITE: { file: string; line: string }[] = [
-  { file: ".github/workflows/ci.yml",
-    line: 'run: node --import tsx --test "packages/agent-org/src/**/*.test.ts" "packages/agent-org/src/**/*.test.mjs"' },
-];
-
-/** Every `tsx --test` spawn the guard refuses: those in `sources` that no named entry above excuses. */
+/** Every `tsx --test` spawn the guard refuses: all of them, since no step may run one (#3885 deleted the one named exception). */
 function unnamedTsxTestSpawns(sources: Source[]): string[] {
-  return sources.flatMap((source) => tsxTestSpawns(source)
-    .filter((line) => !RUNS_THE_TOOLS_OWN_SUITE.some((e) => e.file === source.label && e.line === line))
-    .map((line) => `${source.label}: ${line}`));
+  return sources.flatMap((source) => tsxTestSpawns(source).map((line) => `${source.label}: ${line}`));
 }
 
 function c8Spawns(source: Source): string[] {
@@ -202,19 +186,6 @@ test("ACCEPTANCE: no test or coverage invocation in the manifest scripts, the wo
   const sources = [...manifestScriptSources(), ...workflowSources(), ...scriptsDirectorySources()];
   assert.ok(sources.length > 0, "the population is empty -- this would pass vacuously");
   assert.deepEqual(unnamedTsxTestSpawns(sources), []);
-});
-
-// The exception is a named allowance, not a hole: it is LIVE (it excuses a real line, so deleting the step makes it fail
-// rather than linger), and it excuses that file's exact line only. These are the positive controls for the test above.
-test("the named tool-suite exception excuses exactly one real line, and the same words anywhere else are refused", () => {
-  const [entry] = RUNS_THE_TOOLS_OWN_SUITE;
-  const excused = workflowSources().flatMap((source) => tsxTestSpawns(source).map((line) => ({ file: source.label, line })))
-    .filter((spawn) => spawn.file === entry.file && spawn.line === entry.line);
-  assert.equal(excused.length, 1, "the excused line is not in ci.yml exactly once: the step moved, or the exception is stale");
-  const elsewhere: Source = { label: ".github/workflows/other.yml", kind: "shell", lines: [entry.line] };
-  assert.deepEqual(unnamedTsxTestSpawns([elsewhere]), [`.github/workflows/other.yml: ${entry.line}`]);
-  const reworded: Source = { label: entry.file, kind: "shell", lines: [entry.line.replace("agent-org", "lab")] };
-  assert.equal(unnamedTsxTestSpawns([reworded]).length, 1, "a different command in the same file is not excused");
 });
 
 // Same population, same positive controls (the two fixture tests above, shell and JS shapes), for `c8`.

@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { classifyCoverageFailure, KIND } from "../../../../scripts/coverage-failure-classifier.mjs";
-import { thresholdMissLines } from "../../../../scripts/coverage.mjs";
+import { coverageVerdict, takeProviderExitCode, thresholdMissLines } from "../../../../scripts/coverage.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPTS = (JSON.parse(readFileSync(`${REPO}package.json`, "utf8")) as { scripts: Record<string, string> }).scripts;
@@ -92,4 +92,66 @@ test("#1320: a real threshold miss from scripts/coverage.mjs is classified REGRE
   const verdict = classifyCoverageFailure({ ciOutcome: "success", buildOutcome: "success", coverageLog: line });
   assert.equal(verdict.kind, KIND.REGRESSION, JSON.stringify(verdict));
   assert.deepEqual(verdict.thresholdMisses, [{ metric: "lines", actual: 71.2, threshold: C8RC.lines }]);
+});
+
+// --- #3865: scripts/coverage.mjs never exits non-zero without saying why -----------------------------------
+
+const TOTALS_ABOVE = { lines: { pct: C8RC.lines + 1 }, statements: { pct: C8RC.statements + 1 } };
+const TOTALS_BELOW = { lines: { pct: C8RC.lines - 1 }, statements: { pct: C8RC.statements - 1 } };
+
+const verdictFor = (reading: Partial<Parameters<typeof coverageVerdict>[0]>) => coverageVerdict({
+  mergedReport: true, mergeStatus: 0, providerExitCode: 0, totals: TOTALS_ABOVE as never, c8rc: C8RC, ...reading });
+
+test("#3865: the release's silent exit 1 -- every file passed, and @rstest/coverage-v8 set process.exitCode = 1 for a child "
+  + "entry it could not read -- is exit 0, and the provider's exit code is NAMED rather than inherited", () => {
+  const verdict = verdictFor({ providerExitCode: 1 });
+  assert.equal(verdict.code, 0);
+  assert.match(verdict.stderr.join("\n"), /could not process coverage for some files.*set exit code 1/);
+});
+
+test("#3865: a child run that exits 1 with zero failed tests and a passing reading says the suite did not pass -- the "
+  + "positive control: a non-zero exit this script DOES make carries its reason", () => {
+  const verdict = verdictFor({ mergeStatus: 1 });
+  assert.equal(verdict.code, 1);
+  assert.match(verdict.stderr.join("\n"), /the suite did not pass/);
+});
+
+test("#3865: a threshold miss still exits 1 when the provider also complained, in c8's own wording", () => {
+  const verdict = verdictFor({ providerExitCode: 1, totals: TOTALS_BELOW as never });
+  assert.equal(verdict.code, 1);
+  assert.equal(verdict.stderr.filter((line) => line.startsWith("ERROR: Coverage for ")).length, 2);
+});
+
+test("#3865: EVERY reading that exits non-zero has a stderr line saying why, and the enumeration reaches non-zero exits", () => {
+  const readings = [true, false].flatMap((mergedReport) => [0, 1, 2, null].flatMap((mergeStatus) =>
+    [0, 1].flatMap((providerExitCode) => [TOTALS_ABOVE, TOTALS_BELOW].map((totals) =>
+      ({ mergedReport, mergeStatus, providerExitCode, totals: mergedReport ? totals as never : null })))));
+  const failing = readings.map((reading) => ({ reading, verdict: verdictFor(reading) })).filter(({ verdict }) => verdict.code !== 0);
+  // The positive control, counted a second way: a reading exits non-zero when it has no report, a child run that did not
+  // pass, or totals under threshold -- never for the provider's exit code alone.
+  const expected = readings.filter((reading) => !reading.mergedReport || reading.mergeStatus !== 0 || reading.totals === TOTALS_BELOW);
+  assert.equal(failing.length, expected.length);
+  assert.equal(expected.length, 30);
+  assert.deepEqual(failing.filter(({ verdict }) => verdict.stderr.length === 0).map(({ reading }) => reading), []);
+});
+
+test("#3865: takeProviderExitCode returns what the provider left in process.exitCode and clears it, so the script's own "
+  + "exit decides", () => {
+  const before = process.exitCode;
+  try {
+    process.exitCode = 1;
+    assert.equal(takeProviderExitCode(), 1);
+    assert.equal(process.exitCode, undefined);
+    assert.equal(takeProviderExitCode(), 0);
+  } finally {
+    process.exitCode = before;
+  }
+});
+
+test("#3865: main() exits only through the verdict or after naming the vacuity floor's failure", () => {
+  const lines = COVERAGE_SOURCE.split("\n");
+  const exits = lines.flatMap((line, index) => (line.includes("process.exit(") && !line.trim().startsWith("*") ? [index] : []));
+  assert.equal(exits.length, 2, "the floor's exit and the verdict's");
+  const named = exits.filter((index) => lines[index - 1].includes("stderr.write(") || lines[index].includes("if (code !== 0) process.exit(code)"));
+  assert.deepEqual(named, exits);
 });

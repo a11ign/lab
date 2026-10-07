@@ -146,7 +146,8 @@ test("MUTATION: the real run() function reports FAILED on a genuine lint/typeche
 });
 
 /** Where the planted violation sits, relative to the tree root -- inside `treeExport()`'s copy only. */
-const PLANTED = "packages/lab/src/packaging/_scratch-run-fn-proof.test.ts";
+// In `packages/guards/src`, not the lab: the core's eslint ignores and its tsconfig excludes `packages/lab` since #3505, so a violation planted there is seen by neither (#3904).
+const PLANTED = "packages/guards/src/_scratch-run-fn-proof.test.ts";
 
 /**
  * #944: HEAD, exported to a temp directory, with this checkout's `node_modules` linked in -- a tree lint and
@@ -172,8 +173,11 @@ function treeExport(): string {
   for (const name of readdirSync(join(REPO, "packages"))) {
     // Each package's OWN `node_modules`: under pnpm a package sees only what it declares, so `pdf-lib` and
     // `@a11ign/documents` live at `packages/<name>/node_modules`, not in the root's. npm hoists and has none (#2297).
+    // A laid layer is COPIED in whole by `stageLayers`, and the lab's copy carries the `node_modules/@a11ign/control` link its CI makes (the lab is not a workspace
+    // member, so pnpm gives it none): listing the directory, not `existsSync`, because that link is relative and may be dangling here.
     const own = join(REPO, "packages", name, "node_modules");
-    if (existsSync(own) && existsSync(join(dir, "packages", name))) symlinkSync(own, join(dir, "packages", name, "node_modules"), "dir");
+    if (!existsSync(own) || !existsSync(join(dir, "packages", name))) continue;
+    if (!readdirSync(join(dir, "packages", name)).includes("node_modules")) symlinkSync(own, join(dir, "packages", name, "node_modules"), "dir");
   }
   return dir;
 }
@@ -199,7 +203,9 @@ function treeExport(): string {
  * (#2250). A layer declared with a remote and not laid is a NAMED failure, not a compiler error about a path.
  */
 function stageLayers({ from, into }: { from: string; into: string }): void {
-  const { layers } = JSON.parse(readFileSync(join(from, "packages/control/layers.json"), "utf8")) as { layers: Record<string, { path: string; remote?: string }> };
+  const declaration = JSON.parse(readFileSync(join(from, "packages/control/layers.json"), "utf8")) as { layers: Record<string, { path: string; remote?: string }>; pinned: Record<string, { path: string; remote?: string }> };
+  // `pinned` too (#3505): the lab is laid by `build` at a tag of its own declaration, so `layers` alone has no entry for a name `build` lays.
+  const layers = { ...declaration.layers, ...declaration.pinned };
   // The layers `pnpm run build` lays are the ones a missing copy is a failure for; a host-laid one (`nvda-worker`) is staged when it is there.
   const { scripts } = JSON.parse(readFileSync(join(from, "package.json"), "utf8")) as { scripts: Record<string, string> };
   const laidByBuild = [...scripts.build.matchAll(/lay-layer\.mjs\s+([\w-]+)/g)].map((match) => match[1]);

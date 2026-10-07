@@ -87,11 +87,18 @@ function namedPaths(literal: string, testFile: string): string[] {
   return candidates.map((path) => path.replace(/\/$/, "")).filter((path) => trackedSet.has(path) || (directories.has(path) && path.includes("/")));
 }
 
+/**
+ * What the core's trigger list does not cover, on purpose (#3505, `scripts/rstest/rstest.config.mjs`): the lab is LAID there, untracked, so a change to it is never in a core diff and a
+ * trigger naming it would select nothing. Run from this repository the lab is staged and its files look tracked, so the population is cut here, in code, and not by a trigger list that
+ * names a directory the core does not track.
+ */
+const LAID_LAB = "packages/lab/";
+
 /** The by-path targets one test names that its own import closure does not contain. */
 function targetsOf(testFile: string, packages: ReturnType<typeof packageIndex>): string[] {
   const closure = new Set([...sourceClosure(join(ROOT, testFile), ROOT, packages)].map((path) => relative(ROOT, path)));
   const named = literalsOf(stripComments(read(testFile))).flatMap((literal) => namedPaths(literal, testFile));
-  const isTarget = (path: string) => (trackedSet.has(path) ? !SOURCE.test(path) : !hasSourceUnder(path));
+  const isTarget = (path: string) => !path.startsWith(LAID_LAB) && (trackedSet.has(path) ? !SOURCE.test(path) : !hasSourceUnder(path));
   return [...new Set(named)].filter((path) => isTarget(path) && !closure.has(path) && path !== testFile);
 }
 
@@ -218,12 +225,14 @@ test("a run with no record, a non-zero exit, or a failed test is not a pass", ()
 });
 
 // THE PREMISE OF THE FLOOR, MEASURED ON THE REAL RSTEST: a broken include under `--changed` exits 0 with no files.
+// The diff is `HEAD`, not `HEAD~1`: a broken include yields no files whatever the diff, and `HEAD...HEAD` resolves in a
+// depth-1 checkout (nightly's `coverage` job) where `HEAD~1` does not exist (#3878).
 test("rstest itself exits 0 with zero files for a broken include under --changed, which is why the floor is separate", () => {
   const dir = mkdtempSync(join(tmpdir(), "affected-premise-"));
   const summary = join(dir, "summary.json");
   try {
     const { command, args } = pnpmCliInvocation(["exec", "rstest", "run", "--config", "scripts/rstest/rstest.config.mjs",
-      "--include", "nothing-here/**/*.test.ts", "--changed=HEAD~1"]);
+      "--include", "nothing-here/**/*.test.ts", "--changed=HEAD"]);
     // This test runs inside an rstest worker, whose variable would make the child's config ignore the summary file.
     const env = { ...sandboxGitEnv({ A11Y_RSTEST_RECORD_DIR: dir, A11Y_RSTEST_SUMMARY_FILE: summary }) } as Record<string, string | undefined>;
     delete env.RSTEST_WORKER_ID;

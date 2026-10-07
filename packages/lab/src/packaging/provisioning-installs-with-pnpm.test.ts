@@ -113,11 +113,13 @@ test("#2890: the Windows provisioner installs with the SAME flags as the worker 
     "corepack is reached from the Node install, not from a global pnpm");
 });
 
-test("#2890: doctor.mjs spawns pnpm through the shared helper, never npm, and prints pnpm remedies", () => {
+test("#2890: doctor.mjs spawns no package manager, never npm, and prints pnpm remedies", () => {
   const text = read(DOCTOR);
-  assert.match(text, /import \{ pnpmCliInvocation \} from "\.\/npm-cli-executable\.mjs"/);
+  // It spawned pnpm through `pnpmCliInvocation` for `tsc --build --dry` until screenreader-fleet 0.5.1 (#3803) read `missingExportTargets` instead,
+  // so the import is gone with its only caller; what stays true is that npm does not come back by the other door.
+  assert.doesNotMatch(text, /\bpnpmCliInvocation\b/, "doctor spawns no package manager now; one that returns should be asserted here, not assumed");
   assert.deepEqual(linesWhere(DOCTOR, text, (command) => /\bnpmCliInvocation\(/.test(command)), [],
-    "doctor spawns pnpm; a call to npmCliInvocation is the old install path coming back");
+    "a call to npmCliInvocation is the old install path coming back");
   assert.deepEqual(installProblems(DOCTOR, text), []);
   assert.ok(linesWhere(DOCTOR, text, (command) => /\bpnpm run \S+/.test(command)).length >= 5,
     "positive control: doctor prints its remedies as `pnpm run ...`; fewer found means the scan, not the file, has changed");

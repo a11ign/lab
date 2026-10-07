@@ -46,8 +46,8 @@ function ownCompilerOptions(path: string): Record<string, unknown> {
 
 // 1. THE DEPENDENCY -------------------------------------------------------------------------------------------------------------
 
-/** Every importer that declares the package, as the lockfile records it. The packages build with its presets, `lab`'s tests import it, and the root runs its test config. */
-const CONSUMERS = [".", "packages/cli", "packages/judge", "packages/lab", "packages/scorer"];
+/** Every importer that declares the package, as the lockfile records it. The packages build with its presets and the root runs its test config. `lab` is NOT here since #3505: it is laid, untracked, and its own repository's lockfile records it, so its manifest is held to the same pin by the test below instead. */
+const CONSUMERS = [".", "packages/cli", "packages/judge", "packages/scorer"];
 
 /** What is wrong with the way a set of importers takes the package: one exact registry version, the same everywhere, and never a link. */
 function dependencyProblems(consumers: Record<string, { specifier: string; version: string } | undefined>): string[] {
@@ -63,8 +63,14 @@ function dependencyProblems(consumers: Record<string, { specifier: string; versi
 
 const lockedConsumers = () => Object.fromEntries(CONSUMERS.map((importer) => [importer, lock.importers[importer].devDependencies?.[NAME]]));
 
-test("the root, lab and the three building packages pin one exact registry version of the toolchain, and the lockfile resolves it without a link", () => {
-  assert.equal(CONSUMERS.length, 5, "the positive control for the loop below: five importers are read");
+test("the lab's manifest pins the same exact version of the toolchain as the root", () => {
+  const pinned = readJson<Manifest>(join(REPO, "packages/lab/package.json")).devDependencies?.[NAME];
+  assert.match(pinned ?? "", /^\d+\.\d+\.\d+$/, "lab's manifest does not pin an exact version of the toolchain");
+  assert.equal(pinned, lock.importers["."].devDependencies?.[NAME]?.specifier, "lab and the root pin different versions: lab's tests import what the root's config builds with");
+});
+
+test("the root and the three building packages pin one exact registry version of the toolchain, and the lockfile resolves it without a link", () => {
+  assert.equal(CONSUMERS.length, 4, "the positive control for the loop below: four importers are read");
   assert.deepEqual(dependencyProblems(lockedConsumers()), []);
   for (const importer of CONSUMERS) {
     const manifest = readJson<Manifest>(join(REPO, importer === "." ? "package.json" : `${importer}/package.json`));
