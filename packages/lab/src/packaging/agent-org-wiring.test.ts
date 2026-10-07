@@ -623,18 +623,38 @@ test("[36] control: the real tree's declared copies are discovered, every origin
   assert.equal(reading.status, "clear", reading.detail);
 });
 
-test("[37] control: the REAL isolation-gate pair with ONE BYTE changed in the original trips, naming both paths -- and the same byte in the copy trips too", () => {
+/**
+ * `count` lines of `text` that open a `const` declaration, each with ONE byte changed (`const ` to `cnst `). Refuses when `text` has fewer such
+ * lines, because a control that mutated nothing would read "clear" for the wrong reason.
+ */
+function withConstLinesBroken(text: string, count: number): string {
+  let broken = 0;
+  const lines = text.split("\n").map((line) => {
+    if (broken >= count || !/^(export )?const /.test(line)) return line;
+    broken += 1;
+    return line.replace("const ", "cnst ");
+  });
+  assert.equal(broken, count, `the text holds ${count} lines opening a const declaration, so the mutation can be applied`);
+  return lines.join("\n");
+}
+
+test("[37] control: the REAL isolation-gate pair with ONE BYTE changed on more lines than its header names, in the original, trips, naming both paths -- and the same bytes in the copy trip too", () => {
   const ISOLATION = "src/lib/isolation-gate.mjs";
   const pairs = declaredCopies();
   const real = pairs.find((pair) => pair.copy === ISOLATION);
   assert.ok(real, "the pair #2921 edited by hand is among the declared copies");
   assert.equal(real.original, "packages/guards/src/isolation-gate.mjs", "and its original is a11ign's own file");
-  assert.ok(real.originalText !== null && real.originalText.includes("const "), "the byte this mutates must exist");
-  const changedOriginal = pairs.map((pair) => (pair === real ? { ...pair, originalText: (real.originalText as string).replace("const ", "cnst ") } : pair));
+  assert.ok(real.originalText !== null, "the text this mutates is readable");
+  // THE HEADER'S COUNT IS THE ALLOWANCE (`judgePair`, agent-org `org-health.mjs`): a single changed line is inside it once the header names any, which is
+  // what the tool's own copy has said since #3830 (3 named lines), so the control breaks ONE MORE line than the header allows, read off the pair
+  // and not typed here -- a number typed here is the second list of one fact, and is what went stale when the header's count moved.
+  assert.ok(real.allowedLines !== null && real.allowedLines >= 0, "the copy's header says how many lines it changed");
+  const broken = real.allowedLines + 1;
+  const changedOriginal = pairs.map((pair) => (pair === real ? { ...pair, originalText: withConstLinesBroken(real.originalText as string, broken) } : pair));
   const reading = copyDriftReading({ pairs: changedOriginal });
   assert.equal(reading.status, "tripped");
   assert.match(reading.detail, /src\/lib\/isolation-gate\.mjs against packages\/guards\/src\/isolation-gate\.mjs/);
-  const changedCopy = pairs.map((pair) => (pair === real ? { ...pair, copyText: pair.copyText.replace("const ", "cnst ") } : pair));
+  const changedCopy = pairs.map((pair) => (pair === real ? { ...pair, copyText: withConstLinesBroken(pair.copyText, broken) } : pair));
   assert.equal(copyDriftReading({ pairs: changedCopy }).status, "tripped");
   assert.equal(copyDriftReading({ pairs: changedCopy.filter((pair) => pair.copy !== ISOLATION) }).status, "clear",
     "the other pairs are untouched, so the trip is the one pair's");
