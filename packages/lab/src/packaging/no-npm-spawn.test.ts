@@ -15,7 +15,7 @@
  *     `npm publish`, so the rehearsal reads the npm the publish would use.
  *   - `packages/guards/src/isolation-gate.mjs`: the CONSUMER half of the isolation gate installs the packed tarballs with npm
  *     into a directory that is not a workspace, for the registry gate's reason (its header, "Two package managers, on
- *     purpose", and `pnpm-publish-path.test.ts` pin it). The row named two files; this is a third, found by reading the
+ *     purpose", and the core's `pnpm-publish-path.test.ts` pin it). The row named two files; this is a third, found by reading the
  *     Region and reported on #2889 rather than silently widened or silently ported.
  *
  * Each carries a one-line `STAYS npm` comment saying why, and THIS FILE pins that by file name, so the reason sits where a
@@ -29,7 +29,7 @@
  * in this tree has, and the Windows guard beside it covers the rest of the shapes.
  *
  * Test files are not scanned: a fixture is a STRING holding a spawn, as this file's own are, and a test that drives npm on
- * purpose (the consumer-side assertions in `pnpm-publish-path.test.ts`) is observing the registry, not choosing a manager.
+ * purpose (the consumer-side assertions in the core's `pnpm-publish-path.test.ts`) is observing the registry, not choosing a manager.
  * This file READS source as text and imports no script, so it carries no corpus requirement.
  */
 import { test } from "node:test";

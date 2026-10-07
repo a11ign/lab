@@ -13,7 +13,7 @@
  *     lockfile it is meant to be checking.
  *
  * `release.yml` WAS EXEMPT until #2301 moved the publish path (it had to prove `gate:isolation` and a green dry run
- * first), and is covered here like every other workflow now. `pnpm-publish-path.test.ts` pins what is specific to it.
+ * first), and is covered here like every other workflow now. The core's `packages/guards/src/pnpm-publish-path.test.ts` pins what is specific to it (a11ign/a11ign#3926).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
