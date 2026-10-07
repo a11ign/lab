@@ -67,3 +67,14 @@ test("the first release has a CHANGELOG entry for the version the package declar
   assert.match(version, /^\d+\.\d+\.\d+$/);
   assert.match(read("packages/lab/CHANGELOG.md"), new RegExp(`^## ${version.replaceAll(".", "\\.")}$`, "m"));
 });
+
+test("the gate runs this repository's typecheck and its tests on the toolchain's rstest, and no `tsx --test` is left", () => {
+  // ADR 0043: tests on rstest through `@a11ign/toolchain`, and `tsc --noEmit` inside the one job the ruleset requires (a11ign/a11ign#3959).
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string>; devDependencies: Record<string, string> };
+  assert.match(pkg.scripts.test, /^rstest run --config scripts\/rstest\/rstest\.config\.mjs$/);
+  assert.equal(pkg.scripts.typecheck, "tsc --noEmit");
+  assert.ok(pkg.devDependencies["@a11ign/toolchain"], "positive control: the toolchain is a dev dependency");
+  assert.ok(pkg.devDependencies["@rstest/core"]);
+  assert.doesNotMatch(JSON.stringify(pkg.scripts) + ci, /tsx --test/);
+  assert.match(ci, /pnpm run typecheck && pnpm test\n {8}working-directory: lab/, "the gate job runs the typecheck and the tests in the repository's own directory");
+});
