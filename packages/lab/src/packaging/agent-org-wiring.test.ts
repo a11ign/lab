@@ -291,7 +291,7 @@ function tokenlessJobs(jobs: JobFacts[]): string[] {
 }
 
 const allJobFacts = () => workflowFiles().flatMap(jobFactsOf);
-const CHROME_RESOLVER = join(ROOT, "packages/lab/src/packaging/board-document-chrome-resolver.test.ts");
+const CHROME_RESOLVER = join(ROOT, "packages/guards/src/board-document-chrome-resolver.test.ts");
 
 test("[14] ci.yml parses into real jobs -- a scrape that finds nothing must FAIL, not pass vacuously", () => {
   const names = Object.keys(workflow("ci.yml").jobs);
@@ -326,7 +326,7 @@ test("[12] every ci.yml job whose tests can reach a `gh` spawn declares GH_TOKEN
 });
 
 test("[12] control: the same walk flags a job that reaches `gh` with no token, and clears it once the token is declared", () => {
-  const offender: JobFacts = { where: "fixture.yml:board", globs: ["packages/lab/src/packaging/board-document-chrome-resolver.test.ts"], hasToken: false };
+  const offender: JobFacts = { where: "fixture.yml:board", globs: ["packages/guards/src/board-document-chrome-resolver.test.ts"], hasToken: false };
   assert.deepEqual(tokenlessJobs([offender]), ["fixture.yml:board"]);
   assert.deepEqual(tokenlessJobs([{ ...offender, hasToken: true }]), []);
 });

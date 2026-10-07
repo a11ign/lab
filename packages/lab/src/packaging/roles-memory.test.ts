@@ -27,7 +27,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { LEAK_PATTERNS } from "./leak-patterns.mjs";
+import { LEAK_PATTERNS } from "../../../guards/src/leak-patterns.mjs";
 // #905: the index <-> file rules live in the doc cross-reference check the nightly report also runs.
 import {
 

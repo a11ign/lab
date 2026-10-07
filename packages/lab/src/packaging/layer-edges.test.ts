@@ -35,7 +35,7 @@ declareTreeWideGuard();
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const GUARD = join(ROOT, "packages/guards/src/layer-edges.mjs");
-const FIXTURES = join(ROOT, "packages/lab/src/packaging/fixtures/layer-edges");
+const FIXTURES = join(ROOT, "packages/guards/src/fixtures/layer-edges");
 
 const fixture = (name: string) => join(FIXTURES, name);
 const edgesOf = (name: string) => findEdges({ root: fixture(name), tracked: trackedFiles(fixture(name)) });

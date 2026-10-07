@@ -1,3 +1,6 @@
+// WHY THE LAB KEEPS ITS OWN COPY OF THIS FILE (a11ign/a11ign#3925): `packages/guards/src/one-package-manager.test.ts` is the core's and no longer holds the last
+// section here, the claim about the lab's OWN manifest and `.npmrc` (#2962), which the core says it left with the lab. The rest is the core's file with its paths
+// moved, and it reads the tree the lab's CI composes, so its lockfile walk covers the lab's files too. A change to the core's file belongs here as well.
 /**
  * THE LOCK: A MIXED TREE CANNOT COME BACK (#2897, row 10 of 10 of "Finish the move to pnpm", #57's follow-through).
  *
