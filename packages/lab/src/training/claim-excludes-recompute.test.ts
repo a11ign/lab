@@ -143,6 +143,13 @@ test("ONE COPY: the per-floor loop exists only in floorRows, and both callers us
   assert.match(recomputeSource, /floorRows\(sweep\.scored, floors\)/, "the control runs through floorRows");
 });
 
+/** Whether the checkout the command runs in has a first-parent commit for the corpus file: the question the command itself asks of git before it prints a provenance line. */
+function corpusHasHistory(): boolean {
+  const log = spawnSync("git", ["-C", REPO, "log", "-1", "--first-parent", "--format=%h", "--", "packages/lab/src/training/real-page-corpus.mjs"], { encoding: "utf8" });
+  assert.equal(log.status, 0, log.stderr);
+  return log.stdout.trim() !== "";
+}
+
 test("CLI: over a stored sweep built from real corpus entries it prints the table; a tampered copy exits REFUSED with nothing on stdout", () => {
   const pages = REAL_PAGES.filter((p: { role?: string; publishedClaim?: string }) => p.role === "calibration" && p.publishedClaim === "conformant").slice(0, 2);
   assert.equal(pages.length, 2, "the corpus must hold two conformant calibration pages for this fixture");
@@ -154,10 +161,18 @@ test("CLI: over a stored sweep built from real corpus entries it prints the tabl
     const good = join(dir, "sweep.json");
     writeFileSync(good, JSON.stringify({ scored, rows: floorRows(scored, floors) }));
     const ok = spawnSync(process.execPath, [RECOMPUTE, `--sweep=${good}`, "--run=fixture-run"], { cwd: REPO, encoding: "utf8" });
-    assert.equal(ok.status, 0, ok.stderr);
-    assert.match(ok.stdout, /^control: the stored claimExcludes reproduce all 2 stored rows exactly$/m);
-    assert.match(ok.stdout, /^claimExcludes changed by the corpus since the run: 0$/m);
-    assert.ok(!ok.stdout.includes(dir), "the printed text carries no local path");
+    if (corpusHasHistory()) {
+      assert.equal(ok.status, 0, ok.stderr);
+      assert.match(ok.stdout, /^control: the stored claimExcludes reproduce all 2 stored rows exactly$/m);
+      assert.match(ok.stdout, /^claimExcludes changed by the corpus since the run: 0$/m);
+      assert.ok(!ok.stdout.includes(dir), "the printed text carries no local path");
+    } else {
+      // The lab's CI lays this package over a SHALLOW core checkout (a11ign/a11ign#3505): the laid corpus file is untracked there, so git has no commit for it, and the command's own
+      // answer to that is a refusal rather than a provenance line it cannot back. That is the behaviour asserted here, by name, instead of a skip that would read as a pass.
+      assert.equal(ok.status, REFUSED, ok.stderr);
+      assert.equal(ok.stdout, "", "nothing is printed when the provenance cannot be read");
+      assert.match(ok.stderr, /git has no first-parent commit for packages\/lab\/src\/training\/real-page-corpus\.mjs/);
+    }
     const bad = join(dir, "tampered.json");
     const rows = floorRows(scored, floors);
     rows[1].referred += 1;
