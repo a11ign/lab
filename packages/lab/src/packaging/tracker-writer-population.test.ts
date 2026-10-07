@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 import { TRACKER_WRITERS, TRACKER_WRITER_DIRS, sendsABody, bodyFromArgv, assertNoLeakInArgv }
-  from "../../../../packages/lab/src/packaging/leak-patterns.mjs";
+  from "../../../guards/src/leak-patterns.mjs";
 import { localImports, stripComments } from "../../../guards/src/local-import-closure.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
@@ -38,13 +38,20 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 // (`scripts/`, `packages/guards/src`), and the guard those writers REACH is the INSTALLED tool's `lib/leak-patterns.mjs` (see below). The same census
 // over the tool's own writers is a11ign/agent-org's to hold, where `tracker-writer-spawn-guard.test.ts` already lives.
 
+/**
+ * The module that DEFINES what a body-sender looks like (`sendsABody`'s pattern spells `"--body"`), so the census reads it as one. It sends nothing; it is the guard
+ * the writers reach, and it is excluded in code, here, rather than declared a writer. It lived outside the walk's roots until #3505 relocated it to `packages/guards/src`,
+ * and the positive control below (the census finds exactly the declared senders) is what notices a REAL writer that stops being found.
+ */
+const THE_DETECTOR = "packages/guards/src/leak-patterns.mjs";
+
 /** Every `.mjs` a tracker writer could live in, from git rather than a glob, so an untracked scratch file
  * is not a writer. TWO ROOTS, not one: the repo-hygiene guards live in `packages/guards/src`, and a census pointed at `scripts/` alone would walk
  * what is left and report a clean population having never looked at the writers. */
 const trackedScripts = () =>
   execFileSync("git", ["ls-files", "scripts", "packages/guards/src"],
     { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
-    .split("\n").filter((f) => f.endsWith(".mjs"));
+    .split("\n").filter((f) => f.endsWith(".mjs") && f !== THE_DETECTOR);
 
 // #3534: a script here takes the tool by PATH (`toolModule("src/board-data.mjs")`), a call `localImports` does not follow, so
 // `scripts/npm-token-liveness.mjs` would read as reaching no guard though it reaches the very one it did. The walk follows

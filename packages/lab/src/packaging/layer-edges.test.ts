@@ -43,7 +43,7 @@ const textOf = (name: string, path: string) => readFileSync(join(fixture(name), 
 const cli = (...args: string[]) => spawnSync(process.execPath, [GUARD, ...args], { encoding: "utf8" });
 
 /** The lab's OWN baseline (a11ign/a11ign#3904): #3505 took the lab's edges out of the core's `BASELINE_PATH`, so the lab records the reaches it makes by path into the core it is laid over. */
-const LAB_BASELINE_PATH = "packages/lab/layer-edges.baseline.json";
+const LAB_BASELINE_PATH = "packages/lab/baselines/layer-edges.baseline.json";
 const readLabBaseline = () => JSON.parse(readFileSync(join(ROOT, LAB_BASELINE_PATH), "utf8"));
 /** Edges FROM a lab file. The edges INTO lab are the core's to decide and the core's own guard cannot see them (the lab is laid, untracked, and not there); the core's edges are its guard's. */
 const fromLab = (e: { from: string }) => packageOf(e.from) === "lab";

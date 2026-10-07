@@ -797,11 +797,11 @@ test("ci.yml's board job runs exactly the board guards and the claim guard, and 
   };
   const runLines = Object.values(reusable.jobs).flatMap((j) => j.steps ?? [])
     .map((s) => String(s.run ?? "")).join("\n");
-  assert.match(runLines, /packages\/lab\/src\/packaging\/board-\*\.test\.ts/,
+  assert.match(runLines, /packages\/guards\/src\/board-\*\.test\.ts/,
     "the board job must run the board-*.test.ts glob -- board-liveness, board-schedule, board-markdown, "
     + "board-achievement-staleness, board-style and board-summary-origin, discovered rather than "
     + "hand-listed");
-  assert.match(runLines, /packages\/lab\/src\/packaging\/public-claim\.test\.ts/,
+  assert.match(runLines, /packages\/guards\/src\/public-claim\.test\.ts/,
     "the board job must also run public-claim.test.ts -- \"the claim guard\", which reads "
     + "docs/board/reported.json but does not match the board-*.test.ts glob by name");
   // A BUILD IS NEEDED, and the first version of this test asserted the opposite on the strength of a grep

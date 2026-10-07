@@ -156,7 +156,7 @@ test("control: an undeclared sibling package and a dependency that is a path are
 type Edge = { from: string; to: string; kind: string; direction: "in" | "out"; disposition: string; reason: string };
 const edge = (over: Partial<Edge>): Edge => ({ from: `${LAB}/src/a.test.ts`, to: "scripts/x.mjs", kind: "import", direction: "out", disposition: "checkout-path", reason: "r", ...over });
 /** The lab's OWN baseline (a11ign/a11ign#3904): #3505 took the lab's entries out of the core's. */
-const baselineOf = (root: string) => JSON.parse(readFileSync(join(root, `${LAB}/layer-edges.baseline.json`), "utf8")) as Edge[];
+const baselineOf = (root: string) => JSON.parse(readFileSync(join(root, `${LAB}/baselines/layer-edges.baseline.json`), "utf8")) as Edge[];
 const outOfLab = (baseline: Edge[]) => baseline.filter((e) => e.direction === "out" && e.from.startsWith(`${LAB}/`));
 
 /** An edge this row still owns is a decision nobody made: the row's whole claim is that there are none. */

@@ -246,6 +246,10 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
     + "names the directory LITERALLY and must: a human pastes it into PowerShell, and a shell cannot "
     + "import a constant. Not this file's fact, and listed rather than derived so the duplication is "
     + "visibly decided.",
+  "replaced": "the word after `git clone` in a TEST TITLE of `packages/guards/src/lay-layer.test.ts` (\"a git clone is replaced when it is disposable\"): the `git clone <url> <dir>` shape matches the sentence, which is prose and not a directory. "
+    + "Relocated into the core's guards by #3505, where this population now finds it.",
+  "${unsafe};": "the interpolation after `git clone` inside the Error message of `scripts/lay-layer.mjs`'s refusal (`... is a git clone and ${unsafe}; push or discard that work ...`): the same "
+    + "`git clone <url> <dir>` shape matching a sentence, where the word is the reason a clone is not disposable. Not a directory, and that script clones into a layer's path, never the control plane's checkout.",
   "${primary}": "the AGENT HOST's primary checkout, in the command `wake.mjs`'s `launchAdvice` (#2405) hands a standing "
     + "engineer with no `role-<you>` worktree: `git -C ${primary} worktree add --detach ...`. It is a parameter there "
     + "(defaulting to `PRIMARY_CHECKOUT`, the directory the order text has always named), and it is the checkout a "
