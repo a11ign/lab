@@ -1,8 +1,7 @@
-// @ts-check
 /**
  * Is the scorer's abstention (`cantTell`) higher on pages that show a data table or a filter? (a11ign/a11ign#4242, outcome 3 of #4084)
  *
- *   node packages/lab/scripts/cantell-by-page-shape.mjs [path/to/abstention-sweep.json]
+ *   node packages/lab/scripts/cantell-by-page-shape.ts [path/to/abstention-sweep.json]
  *
  * ## Why this exists
  *
@@ -35,35 +34,38 @@ const TWICE = 2;
 const NO_SWEEP_EXIT = 2;
 
 /** The two groups, in print order. */
-export const SHAPES = /** @type {const} */ (["table-or-filter", "other"]);
+export const SHAPES = ["table-or-filter", "other"] as const;
 
-/**
- * Which group a corpus page belongs to, from what the corpus says it demonstrates.
- * @param {{ demonstrates: string }} page
- * @returns {"table-or-filter" | "other"}
- */
-export function shapeOf(page) {
+export type Shape = (typeof SHAPES)[number];
+
+export interface ShapeRow {
+  shape: Shape;
+  n: number;
+  meanCantTell: number | null;
+  share413: number | null;
+  share331: number | null;
+  undeclared: number;
+}
+
+/** Which group a corpus page belongs to, from what the corpus says it demonstrates. */
+export function shapeOf(page: { demonstrates: string }): Shape {
   return TABLE_OR_FILTER.test(page.demonstrates) ? "table-or-filter" : "other";
 }
 
-/** @param {readonly number[]} values @returns {number | null} null, not NaN, when there is nothing to average. */
-function mean(values) {
+/** null, not NaN, when there is nothing to average. */
+function mean(values: readonly number[]): number | null {
   return values.length === 0 ? null : values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
-/** @param {readonly { cantTell: readonly string[] }[]} pages @param {string} criterion @returns {number | null} */
-function shareCantTell(pages, criterion) {
+function shareCantTell(pages: readonly { cantTell: readonly string[] }[], criterion: string): number | null {
   return mean(pages.map((p) => (p.cantTell.includes(criterion) ? 1 : 0)));
 }
 
-/**
- * One row per group. A group with no pages has `n: 0` and every figure `null`.
- * @param {readonly { url: string, cantTell: readonly string[] }[]} scored  the sweep's per-page rows
- * @param {(url: string) => { demonstrates: string } | undefined} [lookup]
- * @returns {{ shape: "table-or-filter" | "other", n: number, meanCantTell: number | null,
- *   share413: number | null, share331: number | null, undeclared: number }[]}
- */
-export function summariseByShape(scored, lookup = realPageFor) {
+/** One row per group, from the sweep's per-page rows. A group with no pages has `n: 0` and every figure `null`. */
+export function summariseByShape(
+  scored: readonly { url: string; cantTell: readonly string[] }[],
+  lookup: (url: string) => { demonstrates: string } | undefined = realPageFor,
+): ShapeRow[] {
   const declared = scored.flatMap((row) => {
     const page = lookup(row.url);
     return page ? [{ shape: shapeOf(page), cantTell: row.cantTell }] : [];
@@ -85,31 +87,26 @@ export function summariseByShape(scored, lookup = realPageFor) {
 /**
  * The row's verdict: is the table/filter mean at least twice the other group's? `null` when either mean is unknown, or the other is zero
  * (a ratio over zero says nothing; the caller reports the two means).
- * @param {ReturnType<typeof summariseByShape>} rows @returns {boolean | null}
  */
-export function atLeastTwice(rows) {
+export function atLeastTwice(rows: readonly ShapeRow[]): boolean | null {
   const [shaped, other] = rows;
-  if (shaped.meanCantTell === null || other.meanCantTell === null || other.meanCantTell === 0) return null;
+  if (!shaped || !other || shaped.meanCantTell === null || other.meanCantTell === null || other.meanCantTell === 0) return null;
   return shaped.meanCantTell >= TWICE * other.meanCantTell;
 }
 
-/** @param {number | null} value @param {(v: number) => string} format */
-const orNone = (value, format) => (value === null ? "-" : format(value));
+const orNone = (value: number | null, format: (v: number) => string): string => (value === null ? "-" : format(value));
 
-/** @param {ReturnType<typeof summariseByShape>} rows @returns {string[]} */
-export function tableLines(rows) {
+export function tableLines(rows: readonly ShapeRow[]): string[] {
   const head = `${"shape".padEnd(17)}${"n".padEnd(5)}${"mean cantTell".padEnd(15)}${"4.1.3 cantTell".padEnd(16)}3.3.1 cantTell`;
   const body = rows.map((r) => `${r.shape.padEnd(17)}${String(r.n).padEnd(5)}${orNone(r.meanCantTell, (v) => v.toFixed(2)).padEnd(15)}`
     + `${orNone(r.share413, (v) => `${(100 * v).toFixed(0)}%`).padEnd(16)}${orNone(r.share331, (v) => `${(100 * v).toFixed(0)}%`)}`);
   return [head, ...body];
 }
 
-/** @param {string} path */
-const noSweepMessage = (path) => `no recorded sweep at ${path}. This script reads \`calibrate-abstention.mjs\`'s output and scores nothing itself: `
+const noSweepMessage = (path: string): string => `no recorded sweep at ${path}. This script reads \`calibrate-abstention.mjs\`'s output and scores nothing itself: `
   + "the sweep is recorded by a `calibrate-abstention.mjs` run on a host with the corpus, and an absent file is not a rate of zero.";
 
-/** @param {string} path @returns {{ scored: { url: string, cantTell: string[] }[] }} */
-function readSweep(path) {
+function readSweep(path: string): { scored: { url: string; cantTell: string[] }[] } {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
@@ -126,7 +123,7 @@ function main() {
   const rows = summariseByShape(scored);
   process.stdout.write(`  sweep: ${path}\n  pages in the sweep: ${scored.length}; calibration pages in the corpus: ${calibrationPageCount()}\n\n`);
   for (const line of tableLines(rows)) process.stdout.write(`  ${line}\n`);
-  const undeclared = rows[0].undeclared;
+  const undeclared = rows[0]?.undeclared ?? 0;
   if (undeclared > 0) process.stdout.write(`\n  NOTE: ${undeclared} scored page(s) are not in real-page-corpus.mjs and are in neither group.\n`);
   const verdict = atLeastTwice(rows);
   process.stdout.write(`\n  table/filter mean at least twice the other group's: ${verdict === null ? "cannot tell (a group is empty, or the other mean is 0)" : verdict ? "YES" : "NO"}\n`);

@@ -1,5 +1,5 @@
 /**
- * `cantell-by-page-shape.mjs` groups the calibration pages by the shape their corpus entry declares. The controls are the REAL corpus's own
+ * `cantell-by-page-shape.ts` groups the calibration pages by the shape their corpus entry declares. The controls are the REAL corpus's own
  * pages, named by url: the GOV.UK table page must land in `table-or-filter` and the skip-link page in `other`, so a regex that matched
  * everything, or nothing, fails one of the two.
  */
@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { REAL_PAGES, pagesFor, realPageFor } from "../training/real-page-corpus.mjs";
-import { atLeastTwice, shapeOf, summariseByShape, tableLines } from "../../scripts/cantell-by-page-shape.mjs";
+import { atLeastTwice, shapeOf, summariseByShape, tableLines } from "../../scripts/cantell-by-page-shape.ts";
 
 const TABLE_PAGE = "https://design-system.service.gov.uk/components/table/";
 const SKIP_LINK_PAGE = "https://design-system.service.gov.uk/components/skip-link/";

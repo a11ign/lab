@@ -166,7 +166,7 @@ const DOCUMENTED: Record<string, string> = {
     + "20% the total falls, and gives no verdict on anything. 0 it printed a table, including a total of 0 "
     + "referrals (read as 'no referrals', never as a share); 2 usage, no input file named. An input file "
     + "it cannot parse throws and exits 1 with the file named, which is a crash and not a finding",
-  "packages/lab/scripts/cantell-by-page-shape.mjs":
+  "packages/lab/scripts/cantell-by-page-shape.ts":
     "#4242, a MEASUREMENT rather than a gate: prints, per page shape (table-or-filter / other), how often the scorer "
     + "abstains, and whether the table/filter mean is at least twice the other's, and gives no verdict on any page. "
     + "0 it printed the table, including a group of n=0 (shown as '-', never a rate of zero); 2 CANNOT TELL, no "
