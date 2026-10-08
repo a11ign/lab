@@ -45,7 +45,7 @@ const { MAX_ROW_ORDERS_PER_TICK, decide, checksSettledGreen, readPrs, readReadyR
   PROMOTION_ASK_PERIOD_MS, PROMOTION_ASK_WINDOW_MS, HOUR_MS,
   claimedRowAmendedOrders, constraintsAfterClaim, amendmentsOn, readClaimedRowComments,
   CONSTRAINT_COMMENT_MARKER, CONSTRAINT_BODY_PREFIX,
-  readEpics, answersOwed, answerOrders,
+  epicRowsOf, answersOwed, answerOrders,
   readOpenRows, withAnswerLabel, rowsOwingAnswers, readClosedAnswerRows, withoutEndedAnswerSessions, endedSessionLabels,
   blockedWithoutReferent, blockedReferentOrders, CHAIRMAN_LABEL, PARKED_LABEL,
   ANSWER_PREFIX, redOnlyBySupersededRun, cannotAskReport,
@@ -1992,6 +1992,7 @@ test("a SUPERSEDED red run does not wake anyone -- the newest run per name is wh
  * sentence. This test is why the next person inherits a checked number.
  */
 test("the gate's read count is counted, not remembered", () => {
+  // TWELVE since #4001 added the release-run read (`readReleaseRuns`: one REST call, core pool) that `org-health.mjs`'s release-run-failed signal needs.
   // ELEVEN since #2936 added the last-merge read (`readLastMergedAt`: one REST call, core pool) that `org-health.mjs`'s no-merge signal needs.
   // TEN since #2641 added the merged-or-closed pull request answer read (`readClosedAnswerRows`'s third call; one
   // `label list` still serves both searches).
@@ -2001,14 +2002,17 @@ test("the gate's read count is counted, not remembered", () => {
   // `answer-owed` landed. This pin caught that read within a minute of it being added, which
   // is exactly why it exists: the number it replaced ("two `gh` calls") had been wrong for months
   // because three readers arrived and nobody re-counted.
-  assert.equal(GH_READS.unconditional.length, 11,
+  assert.equal(GH_READS.unconditional.length, 12,
     "if you add or remove an unconditional read, this number and every comment quoting it move together");
   // #1938 REMOVED THE SILENCE-CONDITIONAL READ ENTIRELY: the dead man's switch now derives its
   // answer from the rows the unconditional read already fetched. The key is GONE rather than empty,
   // so a reader cannot quote a name that no longer exists.
   assert.ok(!("conditionalOnSilence" in GH_READS),
     "nothing is conditional on silence any more -- the second open-rows read was deleted");
-  assert.ok(GH_READS.conditionalOnEmptyShelf.includes("readEpics"));
+  // #4042 REMOVED THE EMPTY-SHELF-CONDITIONAL READ (`readEpics`): the epics are filtered out of the all-open list the tick already holds (`epicRowsOf`), so a tick pays one call fewer
+  // on an empty shelf and none more on a busy one. The key is GONE rather than empty, like the silence-conditional one above.
+  assert.ok(!("conditionalOnEmptyShelf" in GH_READS),
+    "nothing is conditional on an empty shelf any more -- the epic read was deleted, its rows ride the all-open read");
   assert.ok(GH_READS.conditionalOnRed.includes("requiredCheckNames"));
   // #2110: THE CLAIMED-ROW READ IS CONDITIONAL AND SERVER-SIDE FILTERED, and both halves are pinned
   // because both are what keep it bounded. `--label in-progress` is the filter; without it this would be
@@ -2337,11 +2341,14 @@ test("the prompt points at the fleet, because that is where the idle capacity is
     "a durable answer already on the epic must not be re-derived from scratch");
 });
 
-test("readEpics refuses rather than reporting an empty backlog", () => {
-  assert.equal(readEpics(() => { throw new Error("HTTP 502"); }), null);
-  assert.equal(readEpics(() => "not json"), null);
-  assert.deepEqual(readEpics(() => JSON.stringify([epic(34)]))?.map((e: { number: number }) => e.number),
-    [34]);
+// #4042: `readEpics` is gone. The epics are filtered out of the all-open list the tick already holds, so the refusal that matters ("a read that failed is not an empty backlog") is
+// `readOpenRows`'s own, and what `epicRowsOf` adds is that it asks nothing of its own.
+test("the epics come out of the all-open read, which refuses rather than reporting an empty backlog", () => {
+  assert.equal(readOpenRows(() => { throw new Error("HTTP 502"); }), null);
+  assert.equal(readOpenRows(() => "not json"), null);
+  assert.deepEqual(epicRowsOf(readOpenRows(() => JSON.stringify([epic(34), { number: 35, labels: [{ name: "ready" }] }])) ?? [])
+    .map((e: { number: number }) => e.number), [34], "only the `epic`-labelled row of a mixed population is an epic");
+  assert.deepEqual(epicRowsOf([]), [], "and an empty list is no epics, not a refusal");
 });
 
 test("epic-unfiled is classified in all three registries", () => {
@@ -2618,11 +2625,11 @@ test("a CLEARED blocker makes the epic unfiled again, with no human involved", (
   assert.deepEqual(unfiledEpics([cleared], "2026-09-20").map((e: UntypedTool) => e.number), [57]);
 });
 
-test("readEpics fetches the fields a waiting condition lives in", () => {
+test("the all-open read fetches the fields an epic's waiting condition lives in", () => {
   // Without `body` and `blockedBy` on the read, `waitingOn` can only ever answer null -- the filter
-  // would look correct and do nothing, which is the worst kind of wrong.
+  // would look correct and do nothing, which is the worst kind of wrong. Since #4042 the epics ride `readOpenRows`.
   const calls: string[][] = [];
-  readEpics((args: string[]) => { calls.push(args); return "[]"; });
+  readOpenRows((args: string[]) => { calls.push(args); return "[]"; });
   const json = calls[0][calls[0].indexOf("--json") + 1];
   assert.match(json, /body/);
   assert.match(json, /blockedBy/);
@@ -2858,10 +2865,11 @@ test("#1848: a WAITING epic is waiting, not finished -- #1780's filter, same as 
     + "by an edge that resolved months ago");
 });
 
-test("#1848: it fires only when the shelf is EMPTY, and goes to product-manager keyed per epic", () => {
-  assert.deepEqual(finishedEpicOrders([doneEpic(1317, 10)], [{ number: 9 }]), [],
-    "claimable work outranks tidying the epic list");
-  const [order] = finishedEpicOrders([doneEpic(1317, 10)], []) as
+test("#1848: it fires whatever is Ready (#4042), and goes to product-manager keyed per epic", () => {
+  // It was shelf-empty until #4042: the chairman reads the board when the queue is NOT dry, and a finished epic is a false row on it on every tick it sits there
+  // (#2899 at 13 of 13 for three days). The order takes the epics alone, so there is no shelf for it to be bounded by.
+  assert.equal(finishedEpicOrders([doneEpic(1317, 10)]).length, 1, "a finished epic is announced with or without claimable work");
+  const [order] = finishedEpicOrders([doneEpic(1317, 10)]) as
     { session: string, cause: string, discriminator: string, causeKey: string }[];
   assert.equal(order.cause, "epic-finished");
   assert.equal(order.session, "product-manager", "filing is product-manager's lane");
@@ -2875,7 +2883,7 @@ test("#1848: THE ORDER ASKS, IT DOES NOT ASSERT -- 'file the next tranche' must 
   // filed, which is the more valuable answer and the one a "close this" order would talk the reader
   // out of. If this prompt ever reads as an instruction to close, the cause becomes a tidy-up that
   // destroys supply.
-  const [order] = finishedEpicOrders([doneEpic(34, 2)], []) as { prompt: string }[];
+  const [order] = finishedEpicOrders([doneEpic(34, 2)]) as { prompt: string }[];
   assert.match(order.prompt, /never been filed/, "the unfiled-supply reading must be offered explicitly");
   assert.match(order.prompt, /--parent 34/, "and the epic->child link stays DATA, not prose");
   assert.match(order.prompt, /2 of 2/, "the counts it judged on are in the prompt, not left to be re-read");
@@ -2884,14 +2892,14 @@ test("#1848: THE ORDER ASKS, IT DOES NOT ASSERT -- 'file the next tranche' must 
 });
 
 test("#1848 POSITIVE CONTROL: a backlog with nothing finished says nothing at all", () => {
-  assert.deepEqual(finishedEpicOrders([epic(69), epic(149, 6)], []), [],
+  assert.deepEqual(finishedEpicOrders([epic(69), epic(149, 6)]), [],
     "this cause must be capable of finding nothing, or product-manager learns to ignore it");
-  assert.deepEqual(finishedEpicOrders([], []), []);
+  assert.deepEqual(finishedEpicOrders([]), []);
 });
 
 test("#1848: one order per finished epic, capped like every other row cause", () => {
   const many = Array.from({ length: MAX_ROW_ORDERS_PER_TICK + 3 }, (_, i) => doneEpic(i + 1));
-  assert.equal(finishedEpicOrders(many, []).length, MAX_ROW_ORDERS_PER_TICK,
+  assert.equal(finishedEpicOrders(many).length, MAX_ROW_ORDERS_PER_TICK,
     "nine finished epics in one tick must not become nine orders");
 });
 
@@ -3295,7 +3303,7 @@ test("#2161: decide() hands the cause the pull requests it already read", () => 
 });
 
 test("#2161: the narrowing spends no `gh` call -- it reads what `draftOrder` already has", () => {
-  assert.equal(GH_READS.unconditional.length, 11, "#2161 adds no unconditional read (8 since #2202, 9 since #2075, 10 since #2641, 11 since #2936)");
+  assert.equal(GH_READS.unconditional.length, 12, "#2161 adds no unconditional read (8 since #2202, 9 since #2075, 10 since #2641, 11 since #2936, 12 since #4001)");
   const gate = readFileSync(toolUrl("src/work-gate.mjs"), "utf8");
   const body = gate.slice(gate.indexOf("function rowsWithOpenPr"), gate.indexOf("export function blockerClearedOrders"));
   assert.ok(body.length > 0 && !/\brun\(|spawnSync|defaultRun/.test(body),
@@ -4023,7 +4031,7 @@ test("#2110: main pays for it only when something is actually claimed", () => {
     "the condition is answered from rows already in hand, so asking it costs no call of its own");
   assert.match(gate, /claimedComments: claimedRowCommentsWhenHeld\(allOpen, read\)/,
     "the follow-up batch asks the conditional helper, never `readClaimedRowComments` directly");
-  assert.equal(GH_READS.unconditional.length, 11,
+  assert.equal(GH_READS.unconditional.length, 12,
     "#2110 adds no UNCONDITIONAL read -- the comment page is conditional on a claim existing");
 });
 
@@ -4210,7 +4218,7 @@ test("#2003: the pool reading has ONE definition, and the gate pays for it only 
 
   // AND THE READ COUNT IS UNCHANGED, which is the other half of done-when 2: this row adds no
   // unconditional read, and `GH_READS` is the pin that would catch it if it ever did.
-  assert.equal(GH_READS.unconditional.length, 11,
+  assert.equal(GH_READS.unconditional.length, 12,
     "#2003 must not add an unconditional read -- the refusal path is where the extra call lives");
 
   // A SECOND COPY OF "HOW TO READ A POOL" IS REFUSED (#2003's Region says so). The header name is the
@@ -4436,7 +4444,7 @@ test("#2031: the detection makes NO `gh` call -- the pool is gone in the outage 
     + "the exhausted-pool outage that produces the staleness it detects");
   assert.deepEqual(found, [{ branch: BRANCH_2000, head: SHA_2000, row: 2000 }],
     "`main` is not a row branch: the trailing `-<digits>` is the whole match");
-  assert.equal(GH_READS.unconditional.length, 11, "#2031 adds NO gh read -- it is a local git call");
+  assert.equal(GH_READS.unconditional.length, 12, "#2031 adds NO gh read -- it is a local git call");
   assert.ok(GIT_READS.unconditional.some((r: string) => r.includes("ls-remote")),
     "and the free read is COUNTED rather than left out because it is free -- `GH_READS`'s own header "
     + "records what happened last time a read went unwritten-down");
