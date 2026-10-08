@@ -1133,19 +1133,19 @@ test("#546: notRun defaults to a fresh array when the caller does not pass one -
     + "refusal -- it is simply not recorded anywhere the caller can see, same as before this test existed");
 });
 
-test("CHECKS names all nineteen, so the partial-audit sentence states a true denominator", () => {
-  // #1130 added the twelfth, #1163 the thirteenth, and the waits-in-prose witness the fourteenth, #3942's "state labels" the nineteenth (agent-org 0.61.0). This pin is why: the audit's own "N of M check(s) did
+test("CHECKS names all twenty, so the partial-audit sentence states a true denominator", () => {
+  // #1130 added the twelfth, #1163 the thirteenth, and the waits-in-prose witness the fourteenth, #3942's "state labels" the nineteenth (agent-org 0.61.0), #4005's "edges onto umbrella rows" the twentieth (agent-org 0.66.0). This pin is why: the audit's own "N of M check(s) did
   // not answer" sentence reads M from `CHECKS.length`, so a check added without updating the denominator
   // would make every partial-audit report understate what it failed to examine.
   //
   // It caught #1163's entry within a minute of it being added, and the fourteenth the same way,
   // which is the whole of its job.
-  assert.equal(CHECKS.length, 19);
+  assert.equal(CHECKS.length, 20);
   assert.deepEqual(CHECKS.map(([what]: UntypedTool[]) => what), [
     "open issues", "hand claims", "labelless rows", "state labels", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
     "closing PR never merged", "coverage vs tracker", "release declaration", "filing guidance",
-    "waits stated in prose", "rows no cause can reach", "half-promoted rows", "unclaimable ready rows",
+    "waits stated in prose", "edges onto umbrella rows", "rows no cause can reach", "half-promoted rows", "unclaimable ready rows",
     "status vs ready label",
   ]);
 });
