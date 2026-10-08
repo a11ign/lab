@@ -389,10 +389,14 @@ export function floorRows(scored, floors) {
  * `lab-fetch-paths.test.ts` can name ONE producer. A named `model` writes its own file for the reason the
  * sweep does -- a candidate's findings must not overwrite the shipped model's.
  *
- * @param {string} [outDir]
+ * `outDir` has no default, unlike `abstentionSweepPath`'s: this function is imported by a test that writes
+ * to a scratch directory, and a default of `abstentionRoot()` would make the acceptance job charge that test
+ * a `runs/` read it never makes. Callers say where (`main` passes `OUT_DIR`; a reader passes `abstentionRoot()`).
+ *
+ * @param {string} outDir
  * @param {string} [model]
  */
-export function calibrationJudgmentsPath(outDir = abstentionRoot(), model = undefined) {
+export function calibrationJudgmentsPath(outDir, model = undefined) {
   return resolve(outDir, model ? "calibration-judgments.candidate.json" : "calibration-judgments.json");
 }
 

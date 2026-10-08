@@ -16,7 +16,6 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { calibrationJudgmentsPath, scoredPage, writeCalibrationJudgments } from "../../scripts/calibrate-abstention.mjs";
-import { abstentionSweepPath } from "../dataset-paths.mjs";
 
 const SCORED_AT = "2026-10-08T22:00:00.000Z";
 
@@ -93,7 +92,7 @@ test("the sweep's own row is unchanged: no findings key, and the keys in the ord
 
 test("abstention-sweep.json already in the directory is left byte-for-byte as it was", () => {
   const outDir = scratch();
-  const sweep = abstentionSweepPath(outDir);
+  const sweep = join(outDir, "abstention-sweep.json");
   const before = JSON.stringify({ model: "shipped", calibrationPages: 2, scored: results().map((r) => r.page), rows: [] }, null, 2);
   writeFileSync(sweep, before);
   writeCalibrationJudgments(results(), { outDir, scoredAt: SCORED_AT });
