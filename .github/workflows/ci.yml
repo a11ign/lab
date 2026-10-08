@@ -87,7 +87,7 @@ jobs:
       # graph with a top-level `await` (7 test files, measured 2026-10-07). It was a link to the core's `packages/control` until a11ign/a11ign#3506, which made that a LAID layer: `src` and the
       # playbooks, and NO `package.json`, so a link has no `exports` to resolve a subpath through (the same 7 files, measured at core `d8d9a02fc`, a11ign/a11ign#3972). The package is what a workspace
       # used to be: the manifest control publishes at the tag the core laid (`.layer-ref`, written by the lay), and `src` linked from where it was laid.
-      # The whole repository is laid, `.github/` and the changesets included: this repository's own tests (`scripts/*.test.ts`) read its workflows by relative path, and they are collected by the
+      # The whole repository is laid, `.github/` and the changesets included: this repository's own tests (`src/packaging/*.test.ts`) read its workflows by relative path, and they are collected by the
       # same `packages/lab/**/*.test.ts` below. Only `.git` stays behind, which would make the laid directory a repository of its own.
       - name: Lay this repository over the core's own `packages/lab`, stage it, and install `@a11ign/control` beside it
         run: |
@@ -123,7 +123,7 @@ jobs:
       # laid at the core's root is a file naming lab's paths, which the layer-edge test reads as a new edge.
       - run: pnpm exec tsc -p packages/lab/tsconfig.json --noEmit
         working-directory: core
-      # The package's tests AND this repository's own (`scripts/*.test.ts`: the workflows, the arming filter, the composition above, the .mjs ratchet), which are typechecked by the program above and run here too.
+      # The package's tests AND this repository's own (`src/packaging/*.test.ts`: the workflows, the arming filter, the composition above, the .mjs ratchet), which are typechecked by the program above and run here too.
       - run: pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
         working-directory: core
 
