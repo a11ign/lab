@@ -5,12 +5,11 @@ name: release
 # release in bash. It is now a CALLER of a11ign/toolchain's `release-per-merge.yml`, which reads what the last tag consumed, builds the release commit on no branch, checks the version and
 # the CHANGELOG entry, pushes the tag (one atomic push, never forced) and creates the Release. Its own header holds the reasoning; it is not repeated here.
 #
-# `kind: tag` PUBLISHES NOTHING. `lone-package-dir: packages/lab` is because the repository's one versioned package is `packages/lab/package.json` (a changesets monorepo of one package,
-# `lerna.json`, not a pnpm workspace) and not a root manifest: that is what makes the tag `v<version>` and not `@a11ign/lab@<version>`, which is the shape consumers pin
-# (`a11ign/a11ign` `packages/control/layers.json`), and what releases a private package under `kind: tag` (a11ign/toolchain#11, a11ign/a11ign#3966).
+# `kind: tag` PUBLISHES NOTHING. The repository's one versioned package is the ROOT `package.json` (a11ign/a11ign#4215 flattened `packages/lab` into the root), so the shared workflow tags it `v<version>` with no
+# `lone-package-dir`, which is the shape consumers pin (`a11ign/a11ign` `packages/control/layers.json`), and releases a private root package under `kind: tag`. There is NO LOCKFILE (the manifest names packages no
+# registry holds, so none could be written), and the shared workflow then runs `pnpm dlx @changesets/cli` instead of `pnpm install --frozen-lockfile`.
 #
-# THE PIN IS A FULL SHA, and the `github-actions` entry in `dependabot.yml` moves it in a pull request that is reviewed here. It is toolchain `main`'s head at the merge of #11, which holds
-# `lone-package-dir`: a sha before it has no such input and would tag `@a11ign/lab@<version>` or nothing.
+# THE PIN IS A FULL SHA, and the `github-actions` entry in `dependabot.yml` moves it in a pull request that is reviewed here. It is toolchain `main`'s head at the merge of #11, and it holds the lockfile-less path.
 #
 # `id-token: write` IS GRANTED ONLY BECAUSE A CALLED WORKFLOW CAN KEEP OR REDUCE ITS CALLER'S PERMISSIONS, NEVER RAISE THEM: the shared file's `publish` job asks for it, so a caller that
 # withheld it would not load. Under `kind: tag` that job is SKIPPED, so no token is minted and nothing is published. NOT VERIFIED until the first run reads it on the row.
@@ -84,4 +83,3 @@ jobs:
     with:
       kind: tag
       gate-check: gate
-      lone-package-dir: packages/lab

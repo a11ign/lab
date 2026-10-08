@@ -5,7 +5,7 @@
 # THIS REPOSITORY IS NOT SELF-CONTAINED, AND CI SAYS SO BY CONSTRUCTION (a11ign/a11ign#2703). `lab` reaches the core's `scripts/`, the private `guards` package, root files and
 # unexported files of four published packages by relative path (569 `checkout-path` edges in the core's layer-edge baseline, #3501's finding 2), and its manifest names the
 # monorepo's WORKSPACE versions of `@a11ign/evidence`, `judge`, `scorer`, `screenreader-fleet` and `a11ign`, which are not what the registry holds (0.1.0 where it pins 0.2.x), plus
-# `@a11ign/control` and `@a11ign/nvda-speech`, which the registry does not have at all. So nothing in `packages/lab` installs on its own. The job therefore LAYS `packages/lab` OVER
+# `@a11ign/control` and `@a11ign/nvda-speech`, which the registry does not have at all. So nothing here installs on its own: the one manifest names them, and there is no lockfile because one could not be written. The job therefore LAYS this repository, whole, AS `packages/lab` (the path the core's own tests name) OVER
 # a checkout of a11ign/a11ign at the commit pinned in `CORE_REF`, installs THERE (the workspace resolves what the registry cannot), and runs the core's own eslint and rstest
 # config over it: the one toolchain, not a copy of it. `pnpm install` is not frozen because the core's own dependencies move with `CORE_REF`; the install is ephemeral and its lockfile is
 # thrown away with the runner.
@@ -14,10 +14,9 @@
 # which was a red run before it was a comment: (1) the core's `pnpm install` LAYS its own pinned `packages/lab`, WITHOUT the `*.test.*` files and the manifest, over whatever was put there, so
 # the lab's package is laid AFTER the install and the build, not before ("No test files found"); (2) `packages/lab` is untracked in the core, and the lab's tests walk `git ls-files`, so it is
 # staged with `git add -f`; (3) the lab has no `node_modules` of its own, so `@a11ign/control` (a package no registry holds) is assembled by hand: control's own manifest at the laid tag, and `src` linked to the core's laid `packages/control/src`
-# (what the workspace link was, before #3506 laid control without a manifest). The core's tsconfig EXCLUDES `packages/lab`, so the core's `tsc` does not check it: the lab has its own, `packages/lab/tsconfig.json`, run in the core, and the typecheck of THIS repository's own
-# scripts is the last step (a11ign/a11ign#3927). The lint exemptions the core used to hold for the lab are not held any more: the lab's tests pin their populations.
+# (what the workspace link was, before #3506 laid control without a manifest). The core's tsconfig EXCLUDES `packages/lab`, so the core's `tsc` does not check it: the lab has its own, `packages/lab/tsconfig.json`, run in the core: it is this repository's ONE tsconfig, and its `scripts/**/*.ts` population is this repository's own tests (a11ign/a11ign#3927, #4215). The lint exemptions the core used to hold for the lab are not held any more: the lab's tests pin their populations.
 #
-# BUMPING `CORE_REF` IS A PULL REQUEST, and the only way the core's changes reach this repository's CI: Dependabot cannot read a commit pin, so `scripts/ci-composition.test.ts` holds
+# BUMPING `CORE_REF` IS A PULL REQUEST, and the only way the core's changes reach this repository's CI: Dependabot cannot read a commit pin, so `src/packaging/ci-composition.test.ts` holds
 # it to a full commit sha and nothing else. Ubuntu only, and a two-commit checkout of the core: the tests that need the full history say so and skip by name (`lab-extraction.test.ts`); the
 # ones that need the corpus, the fleet or the lab's host skip on their own guards. No test here is a verdict on the corpus: that is the lab's, run by the agent driving it.
 name: ci
@@ -53,7 +52,7 @@ jobs:
       pull-requests: read
     uses: a11ign/toolchain/.github/workflows/changeset-required.yml@745b552ed550f44cc15c9d797718d350730540ce
     with:
-      releasable-paths: packages/lab/
+      releasable-paths: src/ scripts/ baselines/ rule-ownership.json CLAUDE.md
 
   checks:
     runs-on: ubuntu-latest
@@ -63,6 +62,14 @@ jobs:
       - uses: actions/checkout@v7
         # fetch-depth 2, not the default 1: `verify-affected-set.test.ts` runs rstest `--changed=HEAD~1`, which needs a parent (measured: depth 1 fails it, 2026-10-05).
         with: { repository: a11ign/a11ign, ref: "${{ env.CORE_REF }}", path: core, fetch-depth: 2 }
+      # The shared layout check (a11ign/toolchain, ADR 0043; a11ign/a11ign#4210, #4215): a single-package repository keeps its package at the root, with one README and no workspace file. It runs FIRST, so a
+      # layout failure reads red without waiting for the install. The toolchain is installed by npm into the runner's temp directory, beside nothing: this repository has no lockfile and its manifest names packages
+      # no registry holds, so `pnpm install` here cannot run. The bin has no shebang (`npx … layout-check` is handed to `sh` and dies with exit 2), so the module is run by path with `node`.
+      - name: The layout check, on this repository's own tree
+        run: |
+          version=$(jq -r '.devDependencies["@a11ign/toolchain"]' lab/package.json)
+          npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$RUNNER_TEMP/toolchain" "@a11ign/toolchain@$version"
+          node "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain/dist/layout-check.mjs" lab
       # pnpm/action-setup reads the version out of `packageManager`, and comes before setup-node because `cache: pnpm` shells out to it.
       - uses: pnpm/action-setup@v6
         with: { package_json_file: core/package.json }
@@ -80,15 +87,26 @@ jobs:
       # graph with a top-level `await` (7 test files, measured 2026-10-07). It was a link to the core's `packages/control` until a11ign/a11ign#3506, which made that a LAID layer: `src` and the
       # playbooks, and NO `package.json`, so a link has no `exports` to resolve a subpath through (the same 7 files, measured at core `d8d9a02fc`, a11ign/a11ign#3972). The package is what a workspace
       # used to be: the manifest control publishes at the tag the core laid (`.layer-ref`, written by the lay), and `src` linked from where it was laid.
-      - name: Lay this repository's package over the core's own, stage it, and install `@a11ign/control` beside it
+      # The whole repository is laid, `.github/` and the changesets included: this repository's own tests (`scripts/*.test.ts`) read its workflows by relative path, and they are collected by the
+      # same `packages/lab/**/*.test.ts` below. Only `.git` stays behind, which would make the laid directory a repository of its own.
+      - name: Lay this repository over the core's own `packages/lab`, stage it, and install `@a11ign/control` beside it
         run: |
           rm -rf packages/lab
-          cp -R ../lab/packages/lab packages/lab
+          mkdir packages/lab
+          cp -R ../lab/. packages/lab
+          rm -rf packages/lab/.git
           git add -f packages/lab
           control=packages/lab/node_modules/@a11ign/control
           mkdir -p "$control"
           curl -fsSL "https://raw.githubusercontent.com/a11ign/control/$(cat packages/control/.layer-ref)/packages/control/package.json" -o "$control/package.json"
           ln -s ../../../../control/src "$control/src"
+        working-directory: core
+      # This repository's own tests import `@a11ign/toolchain/mjs-ratchet` and `/layout-check`, which the toolchain the core pins (0.1.3) does not have. The version the manifest names, installed by the
+      # layout step above, is linked into the laid package's own `node_modules`, which resolution reads before the core's, so only the lab's files see it.
+      - name: Link the toolchain this repository names beside the laid package
+        run: |
+          mkdir -p packages/lab/node_modules/@a11ign
+          ln -s "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain" packages/lab/node_modules/@a11ign/toolchain
         working-directory: core
       # The core's packaging tests read the TOOL (a11ign/agent-org) by path, and `/home/agent/repos/agent-org` is a host's, not a runner's: the core's own jobs clone it at the newest release tag and export where
       # (`scripts/agent-org-newest-tag.mjs`, #3534), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
@@ -105,11 +123,9 @@ jobs:
       # laid at the core's root is a file naming lab's paths, which the layer-edge test reads as a new edge.
       - run: pnpm exec tsc -p packages/lab/tsconfig.json --noEmit
         working-directory: core
+      # The package's tests AND this repository's own (`scripts/*.test.ts`: the workflows, the arming filter, the composition above, the .mjs ratchet), which are typechecked by the program above and run here too.
       - run: pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
         working-directory: core
-      # This repository's own checks: the workflows, the arming filter, the composition above.
-      - run: pnpm install --frozen-lockfile && pnpm run typecheck && pnpm test
-        working-directory: lab
 
   # THE REQUIRED CHECK. `main`'s protection and the `merge-queue-main` ruleset name `gate`, so it stays the one check that answers for the run. It waits for both jobs above and accepts `success`
   # ONLY: `always()` because a job whose need failed is SKIPPED, and a skipped required check counts as passed; and no `skipped` allowance, because the changeset job succeeds on a merge-group

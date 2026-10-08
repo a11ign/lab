@@ -66,7 +66,7 @@ jobs:
             export GH_TOKEN="$FALLBACK_TOKEN"
           fi
           # `--limit 200` and not the default 30: a list that silently stops at 30 is a sweep that quietly arms 30.
-          # The selection is `.github/auto-arm.jq`, which `scripts/auto-arm-filter.test.ts` runs in the gate.
+          # The selection is `.github/auto-arm.jq`, which `src/packaging/auto-arm-filter.test.ts` runs in the gate.
           numbers=$(gh pr list --state open --base main --limit 200 \
             --json number,isDraft,labels,autoMergeRequest | jq -r -f .github/auto-arm.jq)
           failed=0
