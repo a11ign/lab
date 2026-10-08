@@ -82,12 +82,16 @@ test("the layout check runs first, from the toolchain this repository names, by 
 });
 
 test("this repository's own tests run in the core's job: the toolchain is linked beside the laid package, and no root install is left", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { devDependencies: Record<string, string> };
   // No lockfile, because the manifest names packages no registry holds: a frozen install here could not run.
   assert.equal(existsSync(new URL("../../pnpm-lock.yaml", import.meta.url)), false, "a lockfile that could not be written is a lockfile that is stale");
   assert.doesNotMatch(ci, /pnpm install --frozen-lockfile/);
   const link = ci.indexOf('ln -s "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain" packages/lab/node_modules/@a11ign/toolchain');
   assert.ok(link > ci.indexOf("cp -R ../lab/. packages/lab"), "linked into the package after it is laid");
   assert.ok(link < ci.indexOf("pnpm exec rstest run"), "linked before the tests");
+  // The toolchain's `merge-child-coverage` imports `@rstest/coverage-v8`, an OPTIONAL peer npm does not install; the link resolves from the install's own directory, so it is installed beside it.
+  assert.ok(pkg.devDependencies["@rstest/coverage-v8"], "positive control: the coverage provider is a dev dependency, and the install reads its version from there");
+  assert.match(ci, /"@a11ign\/toolchain@\$version" "@rstest\/coverage-v8@\$coverage"/);
 });
 
 test("the layout check passes on this repository's own tree, and fails the shape it was written for", () => {

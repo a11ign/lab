@@ -68,7 +68,8 @@ jobs:
       - name: The layout check, on this repository's own tree
         run: |
           version=$(jq -r '.devDependencies["@a11ign/toolchain"]' lab/package.json)
-          npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$RUNNER_TEMP/toolchain" "@a11ign/toolchain@$version"
+          coverage=$(jq -r '.devDependencies["@rstest/coverage-v8"]' lab/package.json)
+          npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$RUNNER_TEMP/toolchain" "@a11ign/toolchain@$version" "@rstest/coverage-v8@$coverage"
           node "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain/dist/layout-check.mjs" lab
       # pnpm/action-setup reads the version out of `packageManager`, and comes before setup-node because `cache: pnpm` shells out to it.
       - uses: pnpm/action-setup@v6
