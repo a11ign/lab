@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { pageShare, referralsOf, repeatShare, render, GROUPING_THRESHOLD } from "../../scripts/referral-repeat-share.mjs";
+import { pageShare, pagesOf, referralsOf, repeatShare, render, GROUPING_THRESHOLD } from "../../scripts/referral-repeat-share.mjs";
 
 const r = (criterion: string, text: string) => ({ criterion, text });
 
@@ -57,4 +57,18 @@ test("the rendering names which side of the line the total falls", () => {
   assert.match(above, /AT OR ABOVE/);
   assert.match(below, /BELOW/);
   assert.equal(GROUPING_THRESHOLD, 0.2);
+});
+
+test("the sweep's one file yields a page per record, named by url, a page with no findings kept", () => {
+  const sweep = {
+    scoredAt: "2026-10-08T00:00:00Z",
+    pages: [
+      { url: "https://a.test/", claim: "x", findings: [{ wcag: "2.4.4", evidence: "more" }, { wcag: "2.4.4", evidence: "more" }], cantTell: ["2.4.4"] },
+      { url: "https://b.test/", claim: "x", findings: [], cantTell: [] },
+    ],
+  };
+  const pages = pagesOf(sweep, "calibration-judgments.json");
+  assert.deepEqual(pages.map((p) => p.page), ["https://a.test/", "https://b.test/"]);
+  assert.deepEqual(repeatShare(pages).total, { pages: 2, referrals: 2, repeats: 1, share: 0.5 });
+  assert.deepEqual(pagesOf({ findings: [] }, "dir/one.json"), [{ page: "one", referrals: [] }]);
 });
