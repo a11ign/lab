@@ -65,7 +65,7 @@ test("the lab's tsconfig includes the lab's populations and the core's declarati
 
 test("the first release has a CHANGELOG entry for the version the package declares", () => {
   const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
-  const { version } = JSON.parse(read("package.json")) as { version: string };
+  const { version } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string };
   assert.match(version, /^\d+\.\d+\.\d+$/);
   assert.match(read("CHANGELOG.md"), new RegExp(`^## ${version.replaceAll(".", "\\.")}$`, "m"));
 });
