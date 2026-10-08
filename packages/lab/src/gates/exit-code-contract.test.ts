@@ -161,6 +161,11 @@ const DOCUMENTED: Record<string, string> = {
     + "prints the same reassuring small number as a cheap run. 0 is a real total. It does not adopt "
     + "the verdict helpers because it is a REPORT rather than a gate: there is no pass/fail subject "
     + "to have partial coverage of, only a sum and the captures it could not bill, which it names",
+  "packages/lab/scripts/referral-repeat-share.mjs":
+    "#4241, a MEASUREMENT rather than a gate: prints the repeat share of a page's referrals and which side of "
+    + "20% the total falls, and gives no verdict on anything. 0 it printed a table, including a total of 0 "
+    + "referrals (read as 'no referrals', never as a share); 2 usage, no input file named. An input file "
+    + "it cannot parse throws and exits 1 with the file named, which is a crash and not a finding",
   "packages/control/src/lab-job.mjs":
     "its one exit call is a direct, unmodified passthrough of ansible-playbook's own raw exit status — "
     + "0/1/2/3/4/5/99/250 are ANSIBLE's documented codes, not this script's own, and a caller reading them "
