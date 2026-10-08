@@ -16,3 +16,4 @@ export function capturedText(/** @type {any} */ r) {
     ...(r.interaction.postSubmitFields ?? []),
   ].join(" | ");
 }
+// throwaway: live check of the changeset-required call (a11ign/a11ign#4134); never merged
