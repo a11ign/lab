@@ -20,7 +20,8 @@
  *
  * ## Input
  *
- * One JSON file per page, either `{ "referrals": [{ "criterion", "text" }] }` or a recorded `Judgment`, whose
+ * Either the calibration sweep's one file, `{ "pages": [{ "url", "findings": [...] }] }` (`runs/abstention/
+ * calibration-judgments.json`, a11ign/a11ign#4293), or one JSON file per page, either `{ "referrals": [{ "criterion", "text" }] }` or a recorded `Judgment`, whose
  * `findings` are referrals unless `mapping` is `conformance` (an absent `mapping` is `secondary`, so a model
  * finding is a referral). A `cantTell` outcome carries a reason and no quoted text; it is one per criterion, so it
  * cannot repeat, and is read here only when given as a `referrals` entry with its reason as `text`.
@@ -99,11 +100,24 @@ export function render(result) {
   ].join("\n");
 }
 
+/**
+ * One file is one page, or, for the calibration sweep's `calibration-judgments.json` (#4293), a `pages` array of
+ * records that each carry their own `url`.
+ * @param {any} record @param {string} file @returns {PageReferrals[]}
+ */
+export function pagesOf(record, file) {
+  if (!Array.isArray(record?.pages)) return [{ page: basename(file, ".json"), referrals: referralsOf(record) }];
+  return record.pages.map((/** @type {any} */ page, /** @type {number} */ index) => ({
+    page: String(page?.url ?? `${basename(file, ".json")}[${index}]`),
+    referrals: referralsOf(page),
+  }));
+}
+
 /** @param {readonly string[]} files @returns {PageReferrals[]} */
 function readPages(files) {
-  return files.map((file) => {
+  return files.flatMap((file) => {
     try {
-      return { page: basename(file, ".json"), referrals: referralsOf(JSON.parse(readFileSync(file, "utf8"))) };
+      return pagesOf(JSON.parse(readFileSync(file, "utf8")), file);
     } catch (cause) {
       throw new Error(`cannot read referrals from ${file}`, { cause });
     }
