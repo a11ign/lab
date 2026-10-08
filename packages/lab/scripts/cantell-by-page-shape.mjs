@@ -17,13 +17,14 @@
  * never a zero. The shape comes from the CORPUS (`demonstrates`), joined by url, for the reason `calibrate-abstention.mjs` gives: a capture's
  * own stamp is only as fresh as its last recapture.
  *
- * The path defaults to the sweep's place under `runs/`, spelled out here rather than imported from `dataset-paths.mjs`, because anything that
- * reaches that module is classed as needing a corpus and this pure grouping does not.
+ * The path defaults to `abstentionSweepPath()` from `dataset-paths.mjs`, the one resolution of `runs/`, so the sweep this reads is the sweep
+ * `calibrate-abstention.mjs` writes (`dataset-paths.test.ts` refuses a second spelling of that path).
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { abstentionSweepPath } from "../src/dataset-paths.mjs";
 import { REAL_PAGES, realPageFor } from "../src/training/real-page-corpus.mjs";
 
 const TABLE_OR_FILTER = /table|filter/i;
@@ -32,7 +33,6 @@ const ERROR_IDENTIFICATION = "3.3.1";
 const TWICE = 2;
 // 2, the repository's "cannot tell" exit: nothing was measured, which is not the same as nothing found.
 const NO_SWEEP_EXIT = 2;
-const DEFAULT_SWEEP = "runs/abstention/abstention-sweep.json";
 
 /** The two groups, in print order. */
 export const SHAPES = /** @type {const} */ (["table-or-filter", "other"]);
@@ -106,7 +106,7 @@ export function tableLines(rows) {
 
 /** @param {string} path */
 const noSweepMessage = (path) => `no recorded sweep at ${path}. This script reads \`calibrate-abstention.mjs\`'s output and scores nothing itself: `
-  + "the sweep is the lab's to run (ask `orchestrator`), and an absent file is not a rate of zero.";
+  + "the sweep is recorded by a `calibrate-abstention.mjs` run on a host with the corpus, and an absent file is not a rate of zero.";
 
 /** @param {string} path @returns {{ scored: { url: string, cantTell: string[] }[] }} */
 function readSweep(path) {
@@ -117,7 +117,7 @@ function readSweep(path) {
 const calibrationPageCount = () => REAL_PAGES.filter((p) => p.role === "calibration").length;
 
 function main() {
-  const path = resolve(process.argv[2] ?? DEFAULT_SWEEP);
+  const path = resolve(process.argv[2] ?? abstentionSweepPath());
   if (!existsSync(path)) {
     process.stderr.write(`${noSweepMessage(path)}\n`);
     process.exit(NO_SWEEP_EXIT);

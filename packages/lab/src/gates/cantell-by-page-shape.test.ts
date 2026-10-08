@@ -6,8 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { REAL_PAGES, pagesFor, realPageFor } from "../src/training/real-page-corpus.mjs";
-import { atLeastTwice, shapeOf, summariseByShape, tableLines } from "./cantell-by-page-shape.mjs";
+import { REAL_PAGES, pagesFor, realPageFor } from "../training/real-page-corpus.mjs";
+import { atLeastTwice, shapeOf, summariseByShape, tableLines } from "../../scripts/cantell-by-page-shape.mjs";
 
 const TABLE_PAGE = "https://design-system.service.gov.uk/components/table/";
 const SKIP_LINK_PAGE = "https://design-system.service.gov.uk/components/skip-link/";
