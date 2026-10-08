@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Sign in</title>
+<style>body{font-family:system-ui,sans-serif;max-width:24rem;margin:2rem auto}label{display:block;margin-top:1rem}input{width:100%;box-sizing:border-box}</style>
+</head>
+<body>
+<!--
+  WCAG 3.3.8 Accessible Authentication (Minimum) corpus pair. The two files differ in ONE thing: whether the
+  password field carries a paste-cancelling handler. Understanding 3.3.8 says users who are "prevented from
+  copy and paste operations (as they may rely on standalone/external third party password managers)" mean
+  "the page would fail this criterion unless an alternative is provided"
+  (https://www.w3.org/WAI/WCAG22/Understanding/accessible-authentication-minimum).
+  The cited text is the Understanding page's own body, not F109, which is titled "preventing password or code
+  re-entry in the same format".
+-->
+<h1>Sign in</h1>
+<form action="#" method="post">
+  <label for="username">Username</label>
+  <input id="username" name="username" type="text" autocomplete="username">
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password">
+  <p><button type="submit">Sign in</button></p>
+</form>
+</body>
+</html>
