@@ -160,17 +160,32 @@ function scoreOne(/** @type {any} */ entry) {
   const out = JSON.parse(execFileSync(PYTHON, args, {
     input: JSON.stringify(annotateCapture(entry.capture)), encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
   }));
-  const record = out.records[0];
+  return scoredPage({ entry, record: out.records[0], claimExcludes: claimExcludesFor(entry) });
+}
+
+/**
+ * One page's scored row, and the findings it was built from -- kept apart, because `page` is what
+ * `abstention-sweep.json` stores (its keys and their order are what PLAN.md's numbers were read from) and
+ * `findings` is what only `calibration-judgments.json` stores (#4293). Spreading the findings into the row
+ * would rewrite the sweep file.
+ *
+ * Pure past the scorer, so a test can hand it a scorer record without Python.
+ */
+export function scoredPage(/** @type {{entry: any, record: any, claimExcludes: string[]}} */ { entry, record, claimExcludes }) {
+  const { outcomes, findings } = productOutcomes(record, entry.capture);
   return {
-    url: entry.capture.url,
-    claim: entry.publishedClaim,
-    cosine: record.novelty?.nearestTrainingCosine ?? null,
-    // `predictions` is the scorer's own per-criterion verdict at its trained thresholds, BEFORE the
-    // abstention gate. That is what would be reported if the page were accepted.
-    ...productOutcomes(record, entry.capture),
-    // From the CORPUS, because a captured file does not carry the publisher's exceptions. A miss throws
-    // rather than defaulting to "no exceptions" -- see `realPageFor`.
-    claimExcludes: claimExcludesFor(entry),
+    page: {
+      url: entry.capture.url,
+      claim: entry.publishedClaim,
+      cosine: record.novelty?.nearestTrainingCosine ?? null,
+      // `predictions` is the scorer's own per-criterion verdict at its trained thresholds, BEFORE the
+      // abstention gate. That is what would be reported if the page were accepted.
+      ...outcomes,
+      // From the CORPUS, because a captured file does not carry the publisher's exceptions. A miss throws
+      // rather than defaulting to "no exceptions" -- see `realPageFor`.
+      claimExcludes,
+    },
+    findings,
   };
 }
 
@@ -195,7 +210,7 @@ function scoreOne(/** @type {any} */ entry) {
  * into `cantTell`, per criterion, citing WCAG Conformance Requirement 2. That mechanism existed before
  * today and this sweep was bypassing it.
  */
-function productOutcomes(/** @type {any} */ record, /** @type {any} */ capture) {
+export function productOutcomes(/** @type {any} */ record, /** @type {any} */ capture) {
   const { findings } = findingsFromScores(record, capture);
   // `oracleCounts`, NOT the bare capture. A raw capture records both censuses as DIAGNOSTICS, so every
   // census-reading rule (1.3.1's no-headings, 1.1.1's unnamed-graphics) returned on its first line here —
@@ -203,13 +218,14 @@ function productOutcomes(/** @type {any} */ record, /** @type {any} */ capture) 
   // steers by. Fixed in the two audits on 2026-08-26 and this caller was not among them: the shape this
   // repo names most often, found only by making the extraction one named step and asking who skips it.
   const rules = ruleFindings({ ...capture, ...oracleCounts(capture) });
+  const allFindings = [...findings, ...rules];
   const outcomes = criterionOutcomes({
     capture,
     // Same second truncation source the CLI reads. This script scores REAL pages through
     // the product path, so a divergence here would be the calibration measuring something the product
     // does not do — which is exactly what this file was corrected for once already.
     completeness: oracleCounts(capture).completeness,
-    findings: [...findings, ...rules],
+    findings: allFindings,
     // `abstained` stays false because THIS script models abstention itself, one floor per row -- passing
     // it here as well would count the same refusal twice.
     abstained: false,
@@ -223,10 +239,14 @@ function productOutcomes(/** @type {any} */ record, /** @type {any} */ capture) 
     truncatedSweeps: truncatedSweeps(sweepOutcomes(capture.diagnostics ?? [])),
   });
   return {
-    // An ASSERTION: the tool states this criterion is not satisfied.
-    predicted: outcomes.filter((o) => o.outcome === "failed").map((o) => o.criterion),
-    // Referred to a human. Neither an accusation nor a pass, and counted as neither.
-    cantTell: outcomes.filter((o) => o.outcome === "cantTell").map((o) => o.criterion),
+    outcomes: {
+      // An ASSERTION: the tool states this criterion is not satisfied.
+      predicted: outcomes.filter((o) => o.outcome === "failed").map((o) => o.criterion),
+      // Referred to a human. Neither an accusation nor a pass, and counted as neither.
+      cantTell: outcomes.filter((o) => o.outcome === "cantTell").map((o) => o.criterion),
+    },
+    // The very list `criterionOutcomes` was given, so the outcomes above recount from it (#4293).
+    findings: allFindings,
   };
 }
 
@@ -364,6 +384,56 @@ export function floorRows(scored, floors) {
   });
 }
 
+/**
+ * Where the per-page findings go: beside the sweep, so `lab-fetch.yml`'s `calibration-judgments` entry and
+ * `lab-fetch-paths.test.ts` can name ONE producer. A named `model` writes its own file for the reason the
+ * sweep does -- a candidate's findings must not overwrite the shipped model's.
+ *
+ * `outDir` has no default, unlike `abstentionSweepPath`'s: this function is imported by a test that writes
+ * to a scratch directory, and a default of `abstentionRoot()` would make the acceptance job charge that test
+ * a `runs/` read it never makes. Callers say where (`main` passes `OUT_DIR`; a reader passes `abstentionRoot()`).
+ *
+ * @param {string} outDir
+ * @param {string} [model]
+ */
+export function calibrationJudgmentsPath(outDir, model = undefined) {
+  return resolve(outDir, model ? "calibration-judgments.candidate.json" : "calibration-judgments.json");
+}
+
+/**
+ * One page as the judgments file stores it: the quoted evidence and the criteria `abstention-sweep.json`
+ * keeps, side by side, so a referral can be re-read per page (#4241 counts how many REPEAT).
+ *
+ * `mapping` is copied as found: absent stays absent, because `RequirementMapping` defines absent as
+ * `secondary` and writing `"secondary"` here would be a claim the finding never made.
+ */
+export function judgmentRecord(/** @type {{page: any, findings: any[]}} */ { page, findings }) {
+  return {
+    url: page.url,
+    claim: page.claim,
+    findings: findings.map(({ wcag, evidence, mapping }) => ({ wcag, evidence, mapping })),
+    cantTell: page.cantTell,
+    predicted: page.predicted,
+  };
+}
+
+/**
+ * Write `calibration-judgments.json`: ONE file, because the fetch catalogue names a path and not a
+ * directory. A page with no findings keeps its record (`findings: []`) -- its absence from the file would
+ * read as "never scored", and the 395 `cantTell` outcomes recount only if every scored page is here.
+ *
+ * @returns {string} the path written
+ */
+export function writeCalibrationJudgments(
+  /** @type {{page: any, findings: any[]}[]} */ results,
+  /** @type {{outDir: string, model?: string, scoredAt: string}} */ { outDir, model, scoredAt },
+) {
+  mkdirSync(outDir, { recursive: true });
+  const path = calibrationJudgmentsPath(outDir, model);
+  writeFileSync(path, JSON.stringify({ scoredAt, pages: results.map(judgmentRecord) }, null, 2));
+  return path;
+}
+
 function main() {
   refuseIfRunsReadonly(OUT_DIR);
   const pages = calibrationPages();
@@ -377,7 +447,8 @@ function main() {
   const captureProtocols = captureProtocolCensus(pages);
   process.stdout.write(`  Capture protocols of the fitted captures: ${JSON.stringify(captureProtocols)}\n`);
   process.stdout.write(`Model: ${MODEL ?? "packages/scorer/models/screenreader-scorer (shipped)"}\n\n`);
-  const scored = pages.map(scoreOne).sort((a, b) => (b.cosine ?? 0) - (a.cosine ?? 0));
+  const results = pages.map(scoreOne).sort((a, b) => (b.page.cosine ?? 0) - (a.page.cosine ?? 0));
+  const scored = results.map((result) => result.page);
 
   for (const page of scored) {
     process.stdout.write(`  ${String(page.cosine).padEnd(7)} ${page.claim.padEnd(12)} `
@@ -424,6 +495,8 @@ function main() {
   const outPath = MODEL ? resolve(OUT_DIR, "abstention-sweep.candidate.json") : abstentionSweepPath(OUT_DIR);
   writeFileSync(outPath, JSON.stringify({ model: MODEL ?? "shipped", calibrationPages: n, captureProtocols, scored, rows }, null, 2));
   process.stdout.write(`\n  written: ${outPath}\n`);
+  const judgmentsPath = writeCalibrationJudgments(results, { outDir: OUT_DIR, model: MODEL, scoredAt: new Date().toISOString() });
+  process.stdout.write(`  written: ${judgmentsPath}\n`);
 
   reportRegression(rows);
 }
