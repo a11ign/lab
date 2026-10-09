@@ -313,7 +313,7 @@ test("#2120: there is NO fallback to `github.token` -- a swapped subject is wors
  * from the floor's exported `RSTEST_CONFIG` instead of going through its `--run`. Same ruling, same answer:
  * the literal appears in one file, and the two cannot drift apart.
  */
-const FLOOR = "packages/guards/src/assert-glob-not-empty.mjs";
+const FLOOR = "packages/guards/src/assert-glob-not-empty.ts";
 /** Exactly what `entry-points.test.ts` matches, so this cannot disagree with the guard it exists to satisfy. */
 const WORKFLOW_SCRIPT_INVOCATION = /(?:^|\s)((?:packages|scripts)\/[^\s]+\.(?:mjs|ts))/g;
 
@@ -321,17 +321,17 @@ test("positive control: the entry-point pattern DOES fire on the spelling that t
   // The emptiness asserted below is worth nothing unless this same regex catches the real thing. The first
   // is the exact text committed at `26f4d80f8`; the second is a comment, because the scan does not strip
   // them and a prose mention is matched on identical terms.
-  const asCommitted = '          A11Y_CHECK_MAIN_RULESET=1 npx rstest run --config scripts/rstest/rstest.config.mjs \\';
-  const inAComment = "  # the runner reads scripts/rstest/rstest.config.mjs, which is imported and not run";
+  const asCommitted = '          A11Y_CHECK_MAIN_RULESET=1 npx rstest run --config scripts/rstest/rstest.config.ts \\';
+  const inAComment = "  # the runner reads scripts/rstest/rstest.config.ts, which is imported and not run";
   for (const text of [asCommitted, inAComment]) {
     assert.deepEqual([...text.matchAll(WORKFLOW_SCRIPT_INVOCATION)].map((m) => m[1]),
-      ["scripts/rstest/rstest.config.mjs"], `the pattern stopped matching: ${text}`);
+      ["scripts/rstest/rstest.config.ts"], `the pattern stopped matching: ${text}`);
   }
   // THE ONE SPELLING IT DOES NOT SEE, and `reusable-build-test.yml` depends on it: the match must be
   // preceded by whitespace or line start, so a path wrapped in backticks -- how this repo writes a path in
   // prose -- is invisible to it. That is not a loophole to exploit, it is why the workflow comment above
   // names rstest's config DIRECTORY rather than trusting a punctuation mark to stay put.
-  const backticked = "  # `scripts/rstest/rstest.config.mjs` turns `performance.buildCache` on only when `CI` is set";
+  const backticked = "  # `scripts/rstest/rstest.config.ts` turns `performance.buildCache` on only when `CI` is set";
   assert.deepEqual([...backticked.matchAll(WORKFLOW_SCRIPT_INVOCATION)].map((m) => m[1]), []);
 });
 

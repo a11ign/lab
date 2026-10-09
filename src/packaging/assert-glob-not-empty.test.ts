@@ -17,9 +17,9 @@ import path from "node:path";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { underFloor } from "../../../guards/src/assert-glob-not-empty.mjs";
+import { underFloor } from "../../../guards/src/assert-glob-not-empty.ts";
 
-const SCRIPT = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.mjs", import.meta.url));
+const SCRIPT = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.ts", import.meta.url));
 // The script lives in packages/guards/src, so the repo root is three levels up -- not one, as it was
 // when it sat in scripts/. A wrong root here makes the glob match nothing and the floor check fail.
 const REPO = path.resolve(path.dirname(SCRIPT), "../../..");

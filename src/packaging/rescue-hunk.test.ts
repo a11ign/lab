@@ -40,7 +40,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const { conflictRegions, decide, linesGained, mergeThreeWay } = await toolModule("src/rescue-hunk.mjs");
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { toolModule } from "../../scripts/tool-source.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));

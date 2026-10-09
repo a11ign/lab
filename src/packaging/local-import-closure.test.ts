@@ -29,11 +29,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { stripComments, localImports } from "../../../guards/src/local-import-closure.mjs";
-import { toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { stripComments, localImports } from "../../../guards/src/local-import-closure.ts";
+import { toolRoot } from "../../../../scripts/agent-org-newest-tag.ts";
 import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -94,7 +94,7 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
     + "above 1 means it started eating real ones");
   // The one that decides what CI runs, and a SIGHTED control so this cannot pass by the walk finding
   // nothing anywhere.
-  assert.equal(localImports(`${REPO}scripts/ci-changed.mjs`).length, 5);
+  assert.equal(localImports(`${REPO}scripts/ci-changed.ts`).length, 5);
   // A SIGHTED CONTROL, and the number is incidental to it: it says the walk finds this file's imports
   // rather than nothing. It read `3` until #1969 added `./api-pool.mjs`, and the message then sent the
   // reader after a broken walker for a count that had moved for a perfectly good reason. So it now pins
@@ -124,13 +124,13 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   // THE SIXTH IS `lane-ownership.mjs` (agent-org v0.3.0, #3254): `authorshipVerdict`, which refuses to arm a PR
   // a lane owner's own login authored into a review-only lane. Moved here with the pin to v0.4.2 (#3151).
   //
-  // THE SEVENTH IS THE RENAME (agent-org#435, a11ign/a11ign#4427): the tool's `src/*.mjs` are `src/*.ts` (`toolPath` returns `arm-pr.ts`), except `lib/cli-flags.mjs`, which the tool kept as `.mjs`. The `.ts`
+  // THE SEVENTH IS THE RENAME (agent-org#435, a11ign/a11ign#4427): the tool's `src/*.mjs` are `src/*.ts` (`toolPath` returns `arm-pr.ts`). `lib/cli-flags.mjs`, which the tool kept as `.mjs` until v0.103.0, is `lib/cli-flags.ts` at v0.104.0 (agent-org#524's follow-through, measured in lab#53's `checks`). The `.ts`
   // source also names `api-pool.ts` and `lane-ownership.ts` in TYPE positions (`import("./api-pool.ts").Pool`), which the walk reads as imports too, so the same file appears three times; the pin is
   // WHICH files are seen, so the list is deduplicated and a legitimate extra type annotation does not falsify it.
   assert.deepEqual(
     [...new Set(localImports(toolPath("src/arm-pr.mjs")).map((p: string) => p.replace(`${toolRoot()}/`, "")))].sort(),
     ["src/acceptance-commands.ts", "src/api-pool.ts",
-      "src/lane-ownership.ts", "src/lib/cli-flags.mjs", "src/pr-armed-state.ts",
+      "src/lane-ownership.ts", "src/lib/cli-flags.ts", "src/pr-armed-state.ts",
       "src/pr-hold-state.ts", "src/project-roles.ts",
       "src/project-vocabulary.ts", "src/trunk-red.ts"],
     "arm-pr.mjs's local imports must all be visible to the walk");

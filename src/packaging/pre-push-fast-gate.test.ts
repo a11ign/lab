@@ -4,7 +4,7 @@
  * against `origin/main`. CI (`.github/workflows/ci.yml`) is what runs the full check for a branch now --
  * not on the push itself (agent/lead pushes stopped triggering CI directly the same day `ci.yml` replaced
  * `lint.yml`), but on the PR that follows it, which every unit's workflow now opens immediately after
- * pushing. See the hook's own header and `packages/guards/src/changed-packages.mjs`'s header for why.
+ * pushing. See the hook's own header and `packages/guards/src/changed-packages.ts`'s header for why.
  *
  * DRIVES THE REAL FILES rather than reimplementing their logic, for the reason `pre-commit-hook.test.ts`
  * and `pre-push-git-scrub.test.ts` already state: a second copy of a decision drifts from the first. The
@@ -22,8 +22,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const HOOK = readFileSync(`${REPO}scripts/git-hooks/pre-push`, "utf8");
@@ -198,7 +198,7 @@ function treeExport(): string {
  * uses -- and a build that is absent or EMPTY is a named failure, not a compiler error about a path.
  */
 /**
- * #3504: a layer that lives in its OWN repository is laid, untracked, at its monorepo path (`scripts/lay-layer.mjs`), so `git archive HEAD` does
+ * #3504: a layer that lives in its OWN repository is laid, untracked, at its monorepo path (`scripts/lay-layer.ts`), so `git archive HEAD` does
  * not carry it and `tsc` cannot resolve `control`'s relative imports into it (TS2307). It is COPIED in from the live tree for the reason `dist` is
  * (#2250). A layer declared with a remote and not laid is a NAMED failure, not a compiler error about a path.
  */
@@ -208,7 +208,7 @@ function stageLayers({ from, into }: { from: string; into: string }): void {
   const layers = { ...declaration.layers, ...declaration.pinned };
   // The layers `pnpm run build` lays are the ones a missing copy is a failure for; a host-laid one (`nvda-worker`) is staged when it is there.
   const { scripts } = JSON.parse(readFileSync(join(from, "package.json"), "utf8")) as { scripts: Record<string, string> };
-  const laidByBuild = [...scripts.build.matchAll(/lay-layer\.mjs\s+([\w-]+)/g)].map((match) => match[1]);
+  const laidByBuild = [...scripts.build.matchAll(/lay-layer\.ts\s+([\w-]+)/g)].map((match) => match[1]);
   assert.ok(laidByBuild.length > 0, "`build` lays no layer: the scan of its script found nothing to require");
   const unlaid = laidByBuild.filter((name) => !existsSync(join(from, layers[name].path)));
   assert.deepEqual(unlaid, [], `the export has no laid layer for ${unlaid.join(", ")} -- run \`pnpm run build\` first (it lays them)`);
@@ -280,7 +280,7 @@ test("#2250: an export whose live build is missing or empty fails NAMED, and its
  * claim ("no file this push touches is one npm actually ships") from a check that had examined nothing.
  *
  * The gate is now CI's `changeset` job alone, which is where it always also ran. The class those tests
- * guarded against is held tree-wide by `packages/guards/src/piped-exit-status-guard.mjs` and its own test, which is a
+ * guarded against is held tree-wide by `packages/guards/src/piped-exit-status-guard.ts` and its own test, which is a
  * rule about every reader rather than about this one call site -- so deleting the instance does not delete
  * the lesson. `git log -S"changeset_precise_status"` is where the three tests themselves live now.
  */

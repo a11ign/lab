@@ -50,7 +50,7 @@ const HISTORICAL: readonly Allowed[] = [
     why: "the dated incident" },
   { file: ".agent-org/roles/migrate.md", line: 195, anchor: "ran clean after",
     why: "what the reconstitution drill ran on a date" },
-  { file: ".agent-org/roles/reviewer.md", line: 273, anchor: "unavailable (0/4;",
+  { file: ".agent-org/roles/reviewer.md", line: 276, anchor: "unavailable (0/4;", // line 273 until core 989c2bcc3 (a11ign/a11ign#4569): the lines above it grew by three
     why: "a dated incident: `npx` failed before execution" },
   { file: ".agent-org/roles/worker-loop-orchestrator.md", line: 216, anchor: "had already been tried",
     why: "what a worker tried in an incident" },

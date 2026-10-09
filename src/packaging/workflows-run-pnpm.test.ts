@@ -18,7 +18,7 @@
  *     `promote` (the `dist-tag add`, which has no checkout and so cannot borrow the other's npm). The step name is the same
  *     in both, so an exception names its JOB too.
  *   - `registry-consumer-gate.yml`'s consumer half. The row named `npm install a11ign`; that command runs inside
- *     `scripts/registry-consumer-gate.mjs` (which `no-npm-spawn.test.ts` pins), not in a step. What IS a step is what
+ *     `scripts/registry-consumer-gate.ts` (which `no-npm-spawn.test.ts` pins), not in a step. What IS a step is what
  *     the consumer types AFTER the install, three steps that call `npx` in the clean directory. That job installs
  *     nothing from the repository, so there is no pnpm project for `pnpm exec` to resolve in, `pnpm dlx` is the run-time
  *     fetch the move forbids, and a gate that ran the consumer's commands through pnpm would test a different consumer.

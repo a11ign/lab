@@ -21,7 +21,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { SCORED_CRITERIA } from "@a11ign/judge/coverage";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 import { floorRows } from "../../scripts/calibrate-abstention.mjs";
 import { recompute, render } from "../../scripts/claim-excludes-recompute.ts";

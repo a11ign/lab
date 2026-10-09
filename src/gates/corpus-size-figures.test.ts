@@ -85,7 +85,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { REPO_ROOT } from "../dataset-paths.ts";
 
 /**
@@ -99,7 +99,7 @@ const GUARDED_2155 = [
   "packages/lab/src/training/README.md",
   "packages/lab/src/training/capture-cache.mjs",
   "packages/cli/src/cli.ts",
-  "packages/control/src/fleet-status.mjs",
+  "packages/control/src/fleet-status.ts",
 ];
 
 /**

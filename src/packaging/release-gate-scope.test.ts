@@ -2,7 +2,7 @@
 /**
  * #3277: `scripts/release-gate-scope.ts` PARSED ZERO STAGES and printed it as a count.
  *
- * `release:gate` changed its links from `pnpm run <stage>` to `node scripts/pnpm.mjs run <stage>`, the script's
+ * `release:gate` changed its links from `pnpm run <stage>` to `node scripts/pnpm.ts run <stage>`, the script's
  * pattern (`npm run ...`) stopped matching, and its subset check passed `0 + 0 === 0`, so the release workflow
  * warned "ran 0 of release:gate's 0 stages". The positive control is the count DERIVED from the real chain by
  * splitting on `&&`, which shares no code with the script's pattern.
@@ -46,7 +46,7 @@ test("a chain that parses to zero stages is refused, naming the pattern expected
 });
 
 test("both spellings of a link parse", () => {
-  const node = "node scripts/pnpm.mjs run x && node scripts/pnpm.mjs run y";
+  const node = "node scripts/pnpm.ts run x && node scripts/pnpm.ts run y";
   assert.deepEqual(stagesOf({ c: node }, "c"), ["x", "y"]);
   assert.deepEqual(stagesOf({ c: "pnpm run x" }, "c"), ["x"]);
   assert.deepEqual(stagesOf({ c: "npm run x && npm run z:w" }, "c"), ["x", "z:w"]);
@@ -54,8 +54,8 @@ test("both spellings of a link parse", () => {
 
 test("gateScope separates what ci runs from what it leaves to the lab", () => {
   const scope = gateScope({
-    "release:gate": "node scripts/pnpm.mjs run a && node scripts/pnpm.mjs run b && node scripts/pnpm.mjs run c",
-    "release:gate:ci": "node scripts/pnpm.mjs run a",
+    "release:gate": "node scripts/pnpm.ts run a && node scripts/pnpm.ts run b && node scripts/pnpm.ts run c",
+    "release:gate:ci": "node scripts/pnpm.ts run a",
   });
   assert.deepEqual(scope, { full: ["a", "b", "c"], ci: ["a"], skipped: ["b", "c"] });
 });

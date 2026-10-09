@@ -150,7 +150,7 @@ const INFRASTRUCTURE: Record<string, string> = {
  * all, so deriving this list is the exact defect this file exists to prevent.
  */
 const DOCUMENTED: Record<string, string> = {
-  "packages/control/src/fleet-playbook.mjs":
+  "packages/control/src/fleet-playbook.ts":
     "2 five distinct argument/precondition refusals share one code; 3 a CAPTURE_PROTOCOL_VERSION refusal — "
     + "a SECOND, different meaning for 3 from promote-model's; 1 wrong commit OR a passed-through unit "
     + "status; 4 `followUnit` gave up watching a still-running unit — the clearest confirmed instance of "
@@ -172,39 +172,39 @@ const DOCUMENTED: Record<string, string> = {
     + "0 it printed the table, including a group of n=0 (shown as '-', never a rate of zero); 2 CANNOT TELL, no "
     + "recorded abstention sweep at the path, so nothing was measured, which is not the same as nothing found. "
     + "A sweep file it cannot parse throws and exits 1 with the file named, which is a crash and not a finding",
-  "packages/control/src/lab-job.mjs":
+  "packages/control/src/lab-job.ts":
     "its one exit call is a direct, unmodified passthrough of ansible-playbook's own raw exit status — "
     + "0/1/2/3/4/5/99/250 are ANSIBLE's documented codes, not this script's own, and a caller reading them "
     + "as a verdict about the JOB is reading Ansible's verdict about the PLAYBOOK",
-  "packages/control/src/lab-laid-copy.mjs":
+  "packages/control/src/lab-laid-copy.ts":
     "0 the lab's code is laid at the tag `layers.json`'s `pinned.lab` declares NOW; 4 it is not (absent, a clone rather than the laid shape, "
     + "missing something `lays` names, or laid at an older tag after a pull that moved the pin) and the play REFUSES before the lab script runs -- "
     + "deliberately not 1, which a play would read as the check itself crashing. It does not adopt the verdict helpers: one predicate over one "
     + "directory, so there is no partial coverage of a subject to report. (a11ign/a11ign#3972: new in the control at the pin that moved here)",
-  "packages/control/src/with-control-plane-fleet.mjs":
+  "packages/control/src/with-control-plane-fleet.ts":
     "2 usage error, no <bin> argument given; otherwise a direct, unmodified passthrough of the wrapped "
     + "worker-fleet bin's own exit status (doctor.mjs/check-worker-code.mjs, already documented under "
     + "packages/worker-fleet/src/) -- the same passthrough shape as lab-job.mjs's own 0/1/2/... above. A "
     + "control-plane refusal is a stderr warning, never its own exit code -- the child still runs (#1356)",
-  "packages/control/src/lab-pipeline.mjs":
+  "packages/control/src/lab-pipeline.ts":
     "2 seven distinct usage/precondition causes share one code; 3 'NOT LOADED' — no pipeline of this name "
     + "has run, a fourth distinct meaning for 3 in this table; 1 the unit's own Result/ExecMainStatus read "
     + "as failed; 0 covers three states on purpose (--list, still-running, and dispatch-succeeded, "
     + "explicitly NOT the same as 'the pipeline passed') — the --follow status exit passes through a "
     + "stage's own code, non-literal the same way lab-job.mjs's 1 is",
-  "packages/control/src/lab-failed-units.mjs":
+  "packages/control/src/lab-failed-units.ts":
     "#866, a REPORT rather than a gate: `--report` exits 0 QUIET when no a11y-job-* unit is failed, 1 "
     + "ATTENTION when at least one is (named with its own age); 2 usage when neither --list-failed nor "
     + "--report is given, or an unrecognised flag (refuseUnknownFlags, already documented below)",
-  "packages/control/src/lab-watch.mjs":
+  "packages/control/src/lab-watch.ts":
     "#866's unattended half, the same three-state shape org-watch.mjs uses: 0 QUIET nothing needs "
     + "attention; 1 ATTENTION a failed unit was found and named (posted to #928 only under --post); 2 "
     + "CANNOT_ASK — lab-status.yml's own JSON report task did not run or produced nothing",
-  "packages/control/src/fleet-watch.mjs":
+  "packages/control/src/fleet-watch.ts":
     "#1815, lab-watch.mjs's identical three-state shape one subsystem over: 0 QUIET no worker has been "
     + "non-ready past the threshold; 1 ATTENTION at least one has, named with its own age and reason "
     + "(posted to #928 only under --post); 2 CANNOT_ASK — fleet:status itself could not be read",
-  "packages/control/src/control-unit-drift.mjs":
+  "packages/control/src/control-unit-drift.ts":
     "#2800, fleet-watch.mjs's three-state shape for the control host's installed units: 0 QUIET every unit "
     + "the control-plane playbooks ship is installed as shipped; 1 ATTENTION at least one differs, is "
     + "missing on the host, or is installed and shipped by nobody (each named); 2 CANNOT_ASK — the host "
@@ -355,27 +355,27 @@ const DOCUMENTED: Record<string, string> = {
   // they belonged where their consumers already live. This test caught the collision between that move and
   // this catalogue landing on the same day — in BOTH directions at once: a phantom (classified, no longer
   // there) and a hole (present, unclassified). Neither alone would have been visible in either diff.
-  "packages/control/src/fleet-discover.mjs":
+  "packages/control/src/fleet-discover.ts":
     "2 usage error, could not determine a subnet to scan; 1 a declared worker moved, or an unenrolled "
     + "worker remains after --enroll; 0 no mismatch — absence is explicitly not a fault",
-  "packages/control/src/fleet-status.mjs":
+  "packages/control/src/fleet-status.ts":
     "1 zero workers reachable; 0 otherwise, INCLUDING when the fleet is reported SPLIT/inconsistent code — a "
     + "real operational problem invisible in the exit code entirely, not merely under-coded",
-  "packages/control/src/fleet-wake.mjs":
+  "packages/control/src/fleet-wake.ts":
     "2 no workers matched, or an empty inventory; 1 a requested worker timed out waking (does not "
     + "distinguish never-woke from woke-too-slowly — a softer version of 'gave up observing') OR has no MAC "
     + "on file; 0 every requested worker answered",
-  "packages/control/src/fleet-auto-off.mjs":
+  "packages/control/src/fleet-auto-off.ts":
     "2 usage error — inventory unreadable or empty (precondition, matching fleet-wake.mjs's own empty-"
     + "inventory code); 1 a shutdown held back because the checkout differs from main, or any worker's "
     + "wake proof is lapsing or lapsed (#3309); 0 otherwise regardless of what any worker was decided — "
     + "the decision itself is the output, never a pass/fail verdict",
-  "packages/control/src/gate-heartbeat.mjs":
+  "packages/control/src/gate-heartbeat.ts":
     "1 a message the verdict called for could NOT be sent (no Telegram route, or Telegram refused or timed "
     + "out) — the standing verdict is then not recorded and the next run retries; 0 otherwise, INCLUDING a "
     + "stale or unreadable tick that WAS messaged (the verdict is the output and the message is the alarm, "
     + "never a pass/fail exit)",
-  "packages/control/src/post-qualification-status.mjs":
+  "packages/control/src/post-qualification-status.ts":
     "0 the status was POSTED; 1 refused (bad flag or malformed sha) or GitHub did not accept the post; 3 NOT "
     + "POSTED because this host has no usable GitHub credential -- 'not yet', never a success and never a silent skip. A "
     + "poster, not a gate: the verdict it posts is `qualificationStatus`'s, and a missing or unreadable one "

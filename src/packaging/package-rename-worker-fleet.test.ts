@@ -31,7 +31,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { parse } from "yaml";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const NEW_NAME = "@a11ign/screenreader-fleet";

@@ -148,7 +148,7 @@ test("#2940: a comment is not a refusal, and naming a session is not telling it"
 test("#2940: the scope reaches the tools a SESSION runs, not only the files a workflow runs", () => {
   const files = refusalSourceFiles().map((f) => relative(REPO_ROOT, f));
   assert.ok(files.length > 300, "the population is real");
-  for (const must of ["packages/control/src/fleet-status.mjs", "packages/control/src/fleet-playbook.mjs"]) {
+  for (const must of ["packages/control/src/fleet-status.ts", "packages/control/src/fleet-playbook.ts"]) {
     assert.ok(files.includes(must), `${must} is in the walk`);
   }
   assert.ok(files.some((f) => f.startsWith(".github/workflows/")), "and the workflows still are");
@@ -168,11 +168,11 @@ test("#2940 sweep: every refusal that tells a session or the chairman is mapped 
 });
 
 test("#2940 sweep: a planted new \"Tell `product-manager` ...\" in a tool file makes it red, and an exemption makes it green again", () => {
-  const planted = [{ file: "packages/control/src/fleet-status.mjs", text: "  \"  Tell `product-manager` the box is off.\"," }];
+  const planted = [{ file: "packages/control/src/fleet-status.ts", text: "  \"  Tell `product-manager` the box is off.\"," }];
   const hits = hitsIn(planted);
   assert.equal(unaccounted(hits, Object.keys(EXEMPT_WITH_A_REASON)).length, 1);
-  assert.equal(unaccounted(hits, ["packages/control/src/fleet-status.mjs:Tell `product-manager` the box"]).length, 0, "the control for the red above");
-  assert.equal(unaccounted(hits, ["packages/control/src/fleet-playbook.mjs:Tell `product-manager` the box"]).length, 1,
+  assert.equal(unaccounted(hits, ["packages/control/src/fleet-status.ts:Tell `product-manager` the box"]).length, 0, "the control for the red above");
+  assert.equal(unaccounted(hits, ["packages/control/src/fleet-playbook.ts:Tell `product-manager` the box"]).length, 1,
     "an exemption for a DIFFERENT file does not cover it");
 });
 

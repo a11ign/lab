@@ -33,7 +33,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { satisfies } from "../../../guards/src/isolation-gate.mjs";
+import { satisfies } from "../../../guards/src/isolation-gate.ts";
 
 const SDK = "@anthropic-ai/sdk";
 const readJson = (path: string) => JSON.parse(readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8"));

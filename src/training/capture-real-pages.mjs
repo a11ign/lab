@@ -32,7 +32,7 @@ import { realCorpusRoot, datasetRoot, refuseIfRunsReadonly, runsRoot } from "../
 import { hostAddressForWorker } from "@a11ign/screenreader-fleet";
 import { assertOneBrowserAcross as refuseSplitFleet } from "./capture-fleet-guard.mjs";
 import { absentFrom, appendRunRecord, buildRunRecord, captureRunsFile } from "./capture-run-record.mjs";
-import { probeWorker } from "../../../control/src/fleet-wake.mjs";
+import { probeWorker } from "../../../control/src/fleet-wake.ts";
 import { assertFleetRunsThisCheckout } from "@a11ign/screenreader-fleet/worker-code-check";
 import { wakeNamedWorkers, survivingNamedWorkers } from "./wake-by-hand.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";

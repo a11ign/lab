@@ -163,13 +163,13 @@ const EXEMPT: Record<string, string> = {
     + "\"runs/screenreader-dataset/** (gitignored)\" and \"runs/screenreader-acceptance/** (gitignored)\" "
     + "as plain descriptive strings -- what those generators write, quoted for a human reading the sweep's "
     + "own classification, never a path this file resolves or reads for itself.",
-  "packages/control/src/fleet-watch.mjs":
+  "packages/control/src/fleet-watch.ts":
     "ADR 0012: @a11ign/control is deliberately dependency-free and cannot import @a11ign/lab -- the same "
     + "direction dataset-paths.mjs's own header already exempts lab-job.mjs/lab-pipeline.mjs for. Its "
     + "runs/fleet-watch-state.json is not a dataset root this module owns at all: a tiny local ledger of "
     + "how long each worker has been non-ready between one fleet-watch tick and the next, unrelated to "
     + "the training corpus.",
-  "packages/control/src/fleet-auto-off.mjs":
+  "packages/control/src/fleet-auto-off.ts":
     "#2656: the identical shape fleet-watch.mjs is exempted for, one field over -- ADR 0012's "
     + "@a11ign/control cannot import @a11ign/lab, and runs/fleet-auto-off-state.json is a tiny local "
     + "ledger of idle-since/shutdown-requested-at timestamps between one auto-off tick and the next, not "

@@ -44,7 +44,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
