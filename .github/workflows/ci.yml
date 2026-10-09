@@ -39,12 +39,8 @@ concurrency:
 env:
   # a11ign/a11ign at `d8d9a02fc`, the commit that carries #3506's repoint (`layers.json` at the root, `packages/control` a LAID layer with no tests and no manifest). Was `2af2b40e7`, 23 commits earlier, which still had `packages/control/layers.json`: agent-org's copy of `isolation-gate.mjs` (header: copied at `d8d9a02fc`) names the root file, so `agent-org-wiring` [36] was red at the newest tag until this pin moved (a11ign/a11ign#3972). Why THIS sha and not a later one (measured 2026-10-07, this suite at the newest tool tag, v0.64.0): `d8d9a02fc` leaves 40 of 4,744 red before the lab's tests were taught the layout, core `main` at `9caf1ab3c` leaves 81, and the red set at `d8d9a02fc` is a strict subset of the later one's, so no later sha is better. Older still is #3904's rule: a pre-#3505 core was kept on purpose (a11ign/a11ign#3839) until this suite could run green over a post-split one. Bumping it is a pull request here that runs this job at the new sha: a newer core's tests can fail the lab's, and that is the pin doing its job. A sha and never a branch: a branch moves under a pull request that did not touch it.
   # a11ign/a11ign#4305: MOVED to `8d59c95e5` (core #4227), the first core commit that pins control at `v0.1.14` (`layers.json`, measured with `git show 8d59c95e5:layers.json`). At `d8d9a02fc` the laid control (`v0.1.12`) has no `calibration-judgments` entry in `packages/control/ansible/lab-fetch.yml`, so `lab-fetch-paths.test.ts`, which now names it, failed 2 of 9 ('names entries lab-fetch.yml no longer has'); `v0.1.14` is the first control tag containing control#22. The comment above describes the previous pin and its reasoning, which this bump supersedes.
-  CORE_REF: 8d59c95e530eaea134db74c101ab9c59b2a6dc4e
-  # The agent-org release tag the tests read the TOOL at, held HERE and nowhere else (ceo's ruling on a11ign/a11ign#4372, option A). WHY IT IS PINNED: v0.87.10 turned agent-org's `src/*.mjs` into `.ts`
-  # (no `.mjs` at v0.87.10, v0.88.1, v0.90.0, v0.91.0), and the core at `CORE_REF` reads the `.mjs` names, so the newest tag ran 47 of 418 files red on `Cannot find module '.../src/<x>.mjs'`
-  # (lab#39, run 37898585447). `v0.87.9` is the last tag that ships `acceptance-commands.mjs`. A stable `vX.Y.Z` and never a branch, as the resolver insists. THE EXIT, as a row: a11ign/a11ign#4427,
-  # blocked-by #4408, #4409 and #4411 (the core moving off agent-org's `src/` paths); when `CORE_REF` has moved past them this goes back to `scripts/agent-org-newest-tag.mjs` and this line goes.
-  AGENT_ORG_PIN: v0.87.9
+  # a11ign/a11ign#4427: MOVED to `e45068f59` (core #4491, the merge that closes #4408), past all three migrations that took the core off agent-org's `src/` paths (#4408 scripts, #4409 packages and guards, #4411 workflows). The core at `8d59c95e5` read `src/*.mjs` names the newest agent-org tag no longer ships, which is why the tool was pinned to `v0.87.9` (#4372) until now. The comment above describes older pins and their reasoning, which this bump supersedes.
+  CORE_REF: e45068f59f3721d444d835552fa821829c9849da
 
 jobs:
   # A releasable change needs a changeset or a `no-release:` line (a11ign/a11ign#4127, the class fix of #4084: screenreader-worker#25 and #26 changed shipped code with no changeset and released
@@ -116,20 +112,10 @@ jobs:
           ln -s "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain" packages/lab/node_modules/@a11ign/toolchain
         working-directory: core
       # The core's packaging tests read the TOOL (a11ign/agent-org) by path, and `/home/agent/repos/agent-org` is a host's, not a runner's: the core's own jobs clone it at the newest release tag and export where
-      # (`scripts/agent-org-newest-tag.mjs`, #3534). THIS job does not run that script, because it cannot be told a tag (`--dest` and `--tags` are all it takes, and `--tags` only prints): it clones `AGENT_ORG_PIN`
-      # (see `env:`, and why) and does what the script's `fetchTool` and `exportTool` do, so everything below sees the same `AGENT_ORG_TOOL`, `AGENT_ORG_TAG` and an `agent-org` on PATH. Without a tool
-      # 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'` (measured on the sync pull request, a11ign/a11ign#3791). EXIT: a11ign/a11ign#4427.
-      - name: The tool at the newest release tag, PINNED to AGENT_ORG_PIN, cloned for this run, with `agent-org` on PATH (a11ign/a11ign#3534, #4372)
-        run: |
-          git clone --quiet --depth=1 --branch="$AGENT_ORG_PIN" https://github.com/a11ign/agent-org "$RUNNER_TEMP/agent-org"
-          # npm, as the resolver's own `fetchTool` does: the tool's repository declares its three dependencies (`yaml`, `tsx`, `typescript`) for npm, and the clone is outside any workspace.
-          (cd "$RUNNER_TEMP/agent-org" && npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund)
-          mkdir -p "$RUNNER_TEMP/agent-org-bin"
-          printf '#!/usr/bin/env bash\nexec node "%s/agent-org/src/bin.mjs" "$@"\n' "$RUNNER_TEMP" > "$RUNNER_TEMP/agent-org-bin/agent-org"
-          chmod 755 "$RUNNER_TEMP/agent-org-bin/agent-org"
-          echo "AGENT_ORG_TOOL=$RUNNER_TEMP/agent-org" >> "$GITHUB_ENV"
-          echo "AGENT_ORG_TAG=$AGENT_ORG_PIN" >> "$GITHUB_ENV"
-          echo "$RUNNER_TEMP/agent-org-bin" >> "$GITHUB_PATH"
+      # (`scripts/agent-org-newest-tag.mjs`, #3534), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
+      # (measured on the sync pull request, a11ign/a11ign#3791). It was PINNED to `v0.87.9` from lab#39 until `CORE_REF` moved past a11ign/a11ign#4408, #4409 and #4411 (#4372, #4427).
+      - name: The tool at the newest release tag, cloned for this run, with `agent-org` on PATH (a11ign/a11ign#3534)
+        run: node scripts/agent-org-newest-tag.mjs --dest="$RUNNER_TEMP/agent-org"
         working-directory: core
       # Lint runs before the tests so a style failure reads red without waiting for the suite. `--no-ignore`, because the core's eslint config IGNORES `packages/lab/**` (it is a laid copy of
       # another repository there), and a plain `eslint packages/lab` over an ignored path lints nothing and exits 0.
