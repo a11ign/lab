@@ -64,7 +64,7 @@ function trackedFiles(): string[] {
 test("the walk reads a real tree: ci.yml, package.json and a script under scripts/ are in it (the positive control)", () => {
   const files = trackedFiles();
   // verify.mjs became verify.ts in #4273/#4274 (the core's scripts/ moved to TypeScript).
-  for (const expected of [".github/workflows/ci.yml", "package.json", "scripts/ci-changed.mjs", "scripts/verify.ts"]) {
+  for (const expected of [".github/workflows/ci.yml", "package.json", "scripts/ci-changed.ts", "scripts/verify.ts"]) {
     assert.ok(files.includes(expected), `${expected} is not tracked, so every assertion below read the wrong tree`);
   }
 });
@@ -162,11 +162,11 @@ function importsOf(entry: string): { files: string[]; bare: string[] } {
   return { files: [...files], bare };
 }
 
-test("the changed job runs scripts/ci-changed.mjs before any install, and nothing it imports needs node_modules", () => {
+test("the changed job runs scripts/ci-changed.ts before any install, and nothing it imports needs node_modules", () => {
   const job = jobBlock(CI(), "changed");
   assert.ok(job.length > 3, "ci.yml has no `changed` job");
   const script = job.map((line) => /\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/.exec(line)?.[1]).find(Boolean);
-  assert.equal(script, "scripts/ci-changed.mjs");
+  assert.equal(script, "scripts/ci-changed.ts");
   assert.ok(!job.some((line) => /\b(?:npm|pnpm)\s+(?:ci|install)\b/.test(line)), "the changed job installs, so it is no longer the cheap first job");
   const { files, bare } = importsOf(script as string);
   assert.ok(files.length >= 2, "the walk reached no import of ci-changed.mjs, so `bare` is empty by not looking");

@@ -1,7 +1,7 @@
 /**
  * THE REGISTRY GATE REFUSES WHAT A CONSUMER COULD NOT RUN, AND PASSES WHAT THEY COULD -- #2519 (#69).
  *
- * `scripts/registry-consumer-gate.mjs` installs what the registry SERVES into an empty directory. Its decisions
+ * `scripts/registry-consumer-gate.ts` installs what the registry SERVES into an empty directory. Its decisions
  * are pure over an install tree read as data, so every refusal here has a fixture that trips it and a clean one
  * that passes, with no network. The fixtures are the REAL `a11ign@0.1.0` install (the packages the gate reads,
  * trimmed to ours), with ONE thing changed per file, and each is asserted to be refused for that reason ALONE:
@@ -19,9 +19,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   decide, formatDecision, isLoaderFailure, loadFixtures, lookupPaths, readInstalledTree, selfCheckProblems, RULES,
-} from "../../../../scripts/registry-consumer-gate.mjs";
+} from "../../../../scripts/registry-consumer-gate.ts";
 
-const SCRIPT = fileURLToPath(new URL("../../../../scripts/registry-consumer-gate.mjs", import.meta.url));
+const SCRIPT = fileURLToPath(new URL("../../../../scripts/registry-consumer-gate.ts", import.meta.url));
 
 type Reading = Parameters<typeof decide>[0];
 interface Fixture { description: string; requireImports?: boolean; expect: unknown; reading: Reading }

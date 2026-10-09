@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * A file of the screenreader-worker's SOURCE, read from where the core LAYS it (`packages/nvda-worker/`, `scripts/lay-layer.mjs`), as `laid-control.ts` does for control.
+ * A file of the screenreader-worker's SOURCE, read from where the core LAYS it (`packages/nvda-worker/`, `scripts/lay-layer.ts`), as `laid-control.ts` does for control.
  *
  * The installed package cannot answer: since the worker went flat (a11ign/a11ign#4156) it publishes `dist`, `README.md` and `LICENSE`, so `layerFile` refuses
  * `src/capture-core.mjs` and a `src` beside the resolved `package.json` holds nothing. A test that asserts something about the SOURCE TEXT of a file it cannot import

@@ -64,13 +64,13 @@ test("#3184: neither gate chain names release:rehearsal-check, and both still na
 });
 
 test("#3184: a chain with the rehearsal check still in it, or with a kept stage gone, is REFUSED (positive control for the line above)", () => {
-  const stillThere = { ...SCRIPTS, "release:gate": `${SCRIPTS["release:gate"]} && node scripts/pnpm.mjs run ${RETIRED}` };
+  const stillThere = { ...SCRIPTS, "release:gate": `${SCRIPTS["release:gate"]} && node scripts/pnpm.ts run ${RETIRED}` };
   assert.match(chainProblems(stillThere).join("\n"), /release:gate still runs release:rehearsal-check/);
-  const swapped = { ...SCRIPTS, "release:gate:ci": SCRIPTS["release:gate:ci"].replace(" && node scripts/pnpm.mjs run release:provenance", "") };
+  const swapped = { ...SCRIPTS, "release:gate:ci": SCRIPTS["release:gate:ci"].replace(" && node scripts/pnpm.ts run release:provenance", "") };
   assert.match(chainProblems(swapped).join("\n"), /release:gate:ci no longer runs release:provenance/);
-  const verifyGone = { ...SCRIPTS, "release:gate": SCRIPTS["release:gate"].replace("node scripts/pnpm.mjs run scorer:verify && ", "") };
+  const verifyGone = { ...SCRIPTS, "release:gate": SCRIPTS["release:gate"].replace("node scripts/pnpm.ts run scorer:verify && ", "") };
   assert.match(chainProblems(verifyGone).join("\n"), /release:gate no longer runs scorer:verify/);
-  const aThirdChain = { ...SCRIPTS, "release:publish": `node scripts/pnpm.mjs run ${RETIRED}` };
+  const aThirdChain = { ...SCRIPTS, "release:publish": `node scripts/pnpm.ts run ${RETIRED}` };
   assert.match(chainProblems(aThirdChain).join("\n"), /release:publish runs release:rehearsal-check/);
 });
 

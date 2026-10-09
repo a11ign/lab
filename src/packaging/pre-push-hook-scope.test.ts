@@ -80,7 +80,7 @@ function runSites(source: string): { label: string; command: string; runner: str
 
 /**
  * #2507: A CHECK MAY START UNDER THE MEMORY CAP, and the site is judged by what the cap STARTS. The one prefix is
- * `node packages/guards/src/test-memory-cap.mjs run <name> --`; strip it and the runner is `npx` again, so `... -- echo
+ * `node packages/guards/src/test-memory-cap.ts run <name> --`; strip it and the runner is `npx` again, so `... -- echo
  * skipped` still reads as `echo` and is refused below. Stripping only this exact prefix is the point: a `node` runner in
  * general would let a gutted site through.
  */
@@ -106,7 +106,7 @@ const NOT_A_CHECK: Record<string, string> = {
   "node -e":
     "the millisecond clock (`now_ms`). `date +%s.%N` is a GNU extension a bare BSD date does not have, "
     + "and node is already a hard dependency of every check here",
-  "node packages/guards/src/changed-files.mjs":
+  "node packages/guards/src/changed-files.ts":
     "builds lint's path list -- the INPUT to a check, not a check. #939's one helper, so the source side "
     + "of a rename is listed too",
   "agent-org merge-guard":

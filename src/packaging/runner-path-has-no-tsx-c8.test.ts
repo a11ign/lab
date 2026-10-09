@@ -48,7 +48,7 @@ const TSX_TEST = /\btsx\s+--test\b/;
  *
  * `SHELL_C8` is for text this repo never writes as prose -- a `package.json` script VALUE, a workflow
  * `run:` line, a `.sh` file -- so a bare word-bounded `c8` is safe: the repo's own FORMER coverage script
- * was exactly this shape, `c8 node packages/guards/src/assert-glob-not-empty.mjs ...` (no `npx`, "c8" as
+ * was exactly this shape, `c8 node packages/guards/src/assert-glob-not-empty.ts ...` (no `npx`, "c8" as
  * the plain leading command). A first version of this file matched ONLY `npx c8` and a call shape, and
  * reviewer's mutation (2026-09-18, restoring that exact bare shape) went uncaught -- the real defect this
  * split fixes.
@@ -140,11 +140,11 @@ test("positive control: a fixture invocation of `tsx --test` is caught, and the 
 test("positive control: a bare shell `c8 <cmd>` invocation is caught -- the repo's own FORMER coverage "
   + "script shape, and reviewer's mutation for this row's exact blocker (2026-09-18)", () => {
   const source: Source = { label: "fixture", kind: "shell", lines: bashCodeLines(
-    'run: c8 node packages/guards/src/assert-glob-not-empty.mjs "packages/*/src/**/*.test.ts" --min=300 --run\n'
+    'run: c8 node packages/guards/src/assert-glob-not-empty.ts "packages/*/src/**/*.test.ts" --min=300 --run\n'
     + "run: node scripts/coverage.mjs\n"
-    + "run: npx rstest run --config scripts/rstest/rstest.config.mjs") };
+    + "run: npx rstest run --config scripts/rstest/rstest.config.ts") };
   assert.deepEqual(c8Spawns(source),
-    ['run: c8 node packages/guards/src/assert-glob-not-empty.mjs "packages/*/src/**/*.test.ts" --min=300 --run']);
+    ['run: c8 node packages/guards/src/assert-glob-not-empty.ts "packages/*/src/**/*.test.ts" --min=300 --run']);
 });
 
 test("positive control: a fixture invocation of `c8` in JS/TS source (`npx c8`, or a spawn call either shape) "

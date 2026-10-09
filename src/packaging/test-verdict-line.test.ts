@@ -2,7 +2,7 @@
 /**
  * #2541: AN AGENT SESSION'S RSTEST REPORT ENDS IN A LINE THAT NAMES WHAT RAN, AND REFUSES ZERO.
  *
- * Measured 2026-09-25: `npx rstest run --config scripts/rstest/rstest.config.mjs --include 'nothing-*.test.ts'` exits 1
+ * Measured 2026-09-25: `npx rstest run --config scripts/rstest/rstest.config.ts --include 'nothing-*.test.ts'` exits 1
  * and its markdown report says `"status": "pass"` over `"tests": 0`. `assert-glob-not-empty.mjs` refuses an empty glob
  * before the runner starts, but the direct form every Acceptance and every hand run uses does not go through it, so a
  * session read "pass" where nothing ran (#2165's false "the mutant survived"). `@a11ign/toolchain/verdict-reporter` is
@@ -30,10 +30,10 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.mjs";
+import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.ts";
 import { verdictLine } from "@a11ign/toolchain/verdict-reporter";
 // #492: every npx call site resolves npm's own CLI script through this helper (`npm-cli-windows-spawn.test.ts`).
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -221,7 +221,7 @@ test("verdictLine reads a run the way the report does not (1)", () => {
     "VERDICT fail: 0 of 1 test failed in 1 file, 1 unhandled error", "an error outside any test fails the run");
 });
 
-const MUTATE = join(REPO, "packages/guards/src/mutation-check.mjs");
+const MUTATE = join(REPO, "packages/guards/src/mutation-check.ts");
 
 /**
  * `mutation-check.mjs` over a probe, its `--test` a REAL rstest run through the wrapper config. The mutation flips the

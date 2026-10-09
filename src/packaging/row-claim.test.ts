@@ -52,7 +52,7 @@ const { refusalCause, PROJECT_UNREADABLE } = await toolModule("src/settle-closed
 const { laneReason } = await toolModule("src/row-claim/runner-rule.mjs");
 import { stripComments } from "@a11ign/evidence/source-text";
 const { READY_LABEL, WAS_READY_LABEL } = await toolModule("src/ready-label-audit.mjs");
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { toolModule, toolUrl } from "../../scripts/tool-source.ts";
 
 // #2782: EVERY REMOVAL WRITES A LINE AND READS THE ROW'S CLAIM, and a fixture must do neither to the host -- a fixture directory

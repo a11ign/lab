@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolRoot } from "../../../../scripts/agent-org-newest-tag.ts";
 
 const EXECUTABLE = 0o755;
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));

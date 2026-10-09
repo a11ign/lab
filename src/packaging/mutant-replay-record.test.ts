@@ -161,11 +161,11 @@ test("wiredIn sees the import, the budget variable and the section heading, and 
   assert.equal(wiredIn('import { survivorsFor } from "../../guards/src/mutant-survivors.mjs";'), true);
   assert.equal(wiredIn("const budget = env.A11Y_SURVIVORS_BUDGET;"), true);
   assert.equal(wiredIn("body + '\\n\\n## Survivors\\n'"), true);
-  assert.equal(wiredIn('import { sandboxGitEnv } from "../../guards/src/git-env.mjs";'), false);
+  assert.equal(wiredIn('import { sandboxGitEnv } from "../../guards/src/git-env.ts";'), false);
 });
 
 test("registeredIn sees a script that runs the generator, and not one that does not", () => {
   assert.equal(registeredIn('{"scripts":{"survivors":"node packages/guards/src/mutant-survivors.mjs run"}}'), true);
-  assert.equal(registeredIn('{"scripts":{"mutate":"node packages/guards/src/mutation-check.mjs"}}'), false);
+  assert.equal(registeredIn('{"scripts":{"mutate":"node packages/guards/src/mutation-check.ts"}}'), false);
   assert.equal(registeredIn("{}"), false);
 });

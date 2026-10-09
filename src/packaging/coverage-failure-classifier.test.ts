@@ -99,7 +99,7 @@ test("commentBody names a different headline for each kind, so a reader does not
  * Run one deliberately failing test and return exactly what it printed.
  *
  * `reporter: null` IS THE PRODUCTION SPELLING and it is not a convenience. The coverage step runs
- * `packages/guards/src/assert-glob-not-empty.mjs ... --run`, whose `refuseUnknownFlags` takes only
+ * `packages/guards/src/assert-glob-not-empty.ts ... --run`, whose `refuseUnknownFlags` takes only
  * `--min`/`--run`/`--test-concurrency` -- **production cannot be told which reporter to use, and exits
  * on being asked.** So a generator that always passes `--test-reporter` exercises a path production
  * cannot take, which is the `NODE_TEST_CONTEXT` defect one step out: the harness shaping the fixture it

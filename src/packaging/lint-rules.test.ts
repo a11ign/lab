@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { derivedLocalRule } from "../../../guards/src/uncontrolled-emptiness.mjs";
+import { derivedLocalRule } from "../../../guards/src/uncontrolled-emptiness.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";

@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import {
   CI_ONLY, agentOrgSource, STEPS, bodyHash, jobsGateNeeds, linkNodeModules, makeScratch, removeScratch, runTs, shAsync, stampVerdict, stepsToRun, unaccountedJobs,
 } from "../../../../scripts/verify.ts";
-import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
+import { classify, knownPackages } from "../../../../scripts/ci-changed.ts";
 
 const ROOT = new URL("../../../../", import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, ROOT), "utf8");

@@ -25,10 +25,10 @@ import {
   runUnderCap,
   supervise,
   verdictLine,
-} from "../../../guards/src/test-memory-cap.mjs";
+} from "../../../guards/src/test-memory-cap.ts";
 
-const CAP_MODULE = fileURLToPath(new URL("../../../guards/src/test-memory-cap.mjs", import.meta.url));
-const ASSERT_GLOB = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.mjs", import.meta.url));
+const CAP_MODULE = fileURLToPath(new URL("../../../guards/src/test-memory-cap.ts", import.meta.url));
+const ASSERT_GLOB = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.ts", import.meta.url));
 const PRE_PUSH = fileURLToPath(new URL("../../../../scripts/git-hooks/pre-push", import.meta.url));
 const REPO = path.resolve(path.dirname(CAP_MODULE), "../../..");
 

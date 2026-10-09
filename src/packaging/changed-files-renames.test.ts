@@ -12,12 +12,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { TOOLING_ROOTS } from "../../../guards/src/tooling-roots.mjs";
+import { TOOLING_ROOTS } from "../../../guards/src/tooling-roots.ts";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { changedFiles } from "../../../guards/src/changed-files.mjs";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { changedFiles } from "../../../guards/src/changed-files.ts";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
@@ -137,7 +137,7 @@ test("#939 THE SHAPE: no script or workflow asks git for changed paths without -
     + "the control belongs on the population, not on `unexplained`");
   assert.deepEqual(unexplained, [],
     "these ask `git diff --name-only` without `--no-renames`, so a file moved OUT of a path they watch is "
-    + `invisible to them. Use packages/guards/src/changed-files.mjs: ${unexplained.join(", ")}`);
+    + `invisible to them. Use packages/guards/src/changed-files.ts: ${unexplained.join(", ")}`);
   // And the exemption cannot outlive its site.
   for (const file of Object.keys(BARE_IS_DELIBERATE)) {
     assert.ok(bare.some((site) => site.startsWith(`${file}:`)),
@@ -147,7 +147,7 @@ test("#939 THE SHAPE: no script or workflow asks git for changed paths without -
 
 test("#939 THE READERS: each surviving one goes through the helper, and board-data asks origin/main", () => {
   const source = (path: string) => readFileSync(resolve(REPO, path), "utf8");
-  for (const reader of ["scripts/ci-changed.mjs", "packages/guards/src/changed-packages.mjs",
+  for (const reader of ["scripts/ci-changed.ts", "packages/guards/src/changed-packages.ts",
     toolPath("src/board-data.mjs")]) {
     assert.match(source(reader), /import \{ changedFiles \} from "[^"]*changed-files\.mjs"/,
       `${reader} does not import the shared helper`);

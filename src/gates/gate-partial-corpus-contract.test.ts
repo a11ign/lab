@@ -77,8 +77,8 @@ function resolvedScriptFile(argv: unknown): string | undefined {
   if (!/npm|corepack/.test(tokens[0] ?? "") || runIndex < 0) return undefined; // `/usr/bin/corepack pnpm run` (#2893) or npm
   const scriptName = tokens[runIndex + 1] === "--silent" ? tokens[runIndex + 2] : tokens[runIndex + 1];
   const command = PACKAGE_SCRIPTS[scriptName ?? ""];
-  // A chained script reaches pnpm as `node scripts/pnpm.mjs run X` (#3141); read it as the `pnpm run X` it passes through
-  // to, or `scripts/pnpm.mjs` would be taken for the gate's own file.
+  // A chained script reaches pnpm as `node scripts/pnpm.ts run X` (#3141); read it as the `pnpm run X` it passes through
+  // to, or `scripts/pnpm.ts` would be taken for the gate's own file.
   return command ? resolvedScriptFile(command.replaceAll(/node scripts\/pnpm\.mjs\b/g, "pnpm").split(/\s+/)) : undefined;
 }
 
@@ -212,7 +212,7 @@ const NO_PARTIAL_POPULATION: Record<string, string> = {
   "packages/lab/src/training/capture-real-pages.mjs":
     "DOCUMENTED: \"0 all pages captured; 1 any page failed\" — a capture dispatcher, not a verdict gate "
     + "over evidence that already exists",
-  "packages/guards/src/isolation-gate.mjs":
+  "packages/guards/src/isolation-gate.ts":
     "confirmed by direct read (2026-09-06): enumerates its OWN full target list (`allPackages()`) before "
     + "running, so there is no external population it can fall short of by construction; its only "
     + "non-zero-besides-1 code (2) is a CLI usage error, not a coverage concept. NOT discovered by "

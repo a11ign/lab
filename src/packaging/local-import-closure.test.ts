@@ -29,11 +29,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { stripComments, localImports } from "../../../guards/src/local-import-closure.mjs";
-import { toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { stripComments, localImports } from "../../../guards/src/local-import-closure.ts";
+import { toolRoot } from "../../../../scripts/agent-org-newest-tag.ts";
 import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -94,7 +94,7 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
     + "above 1 means it started eating real ones");
   // The one that decides what CI runs, and a SIGHTED control so this cannot pass by the walk finding
   // nothing anywhere.
-  assert.equal(localImports(`${REPO}scripts/ci-changed.mjs`).length, 5);
+  assert.equal(localImports(`${REPO}scripts/ci-changed.ts`).length, 5);
   // A SIGHTED CONTROL, and the number is incidental to it: it says the walk finds this file's imports
   // rather than nothing. It read `3` until #1969 added `./api-pool.mjs`, and the message then sent the
   // reader after a broken walker for a count that had moved for a perfectly good reason. So it now pins

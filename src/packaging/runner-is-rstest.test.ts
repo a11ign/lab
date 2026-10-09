@@ -21,11 +21,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { RSTEST_CONFIG, runnerInvocation } from "../../../guards/src/assert-glob-not-empty.mjs";
+import { RSTEST_CONFIG, runnerInvocation } from "../../../guards/src/assert-glob-not-empty.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const FLOOR = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.mjs", import.meta.url));
-const CONFIG_URL = new URL("../../../../scripts/rstest/rstest.config.mjs", import.meta.url).href;
+const FLOOR = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.ts", import.meta.url));
+const CONFIG_URL = new URL("../../../../scripts/rstest/rstest.config.ts", import.meta.url).href;
 const SCRIPTS = (JSON.parse(readFileSync(`${REPO}package.json`, "utf8")) as { scripts: Record<string, string> }).scripts;
 
 type Step = { name?: string; id?: string; if?: string; uses?: string; run?: string; with?: Record<string, string> };
@@ -127,7 +127,7 @@ test("#1319: the command `--run` executes, per runner -- tsx unchanged, rstest w
     ["rstest", "run", "--config", RSTEST_CONFIG, "--include", "a.test.ts", "--include", "b/**/*.test.ts"]);
   assert.deepEqual(runnerInvocation({ runner: "rstest", patterns: ["a.test.ts"], concurrency: "4" }),
     ["rstest", "run", "--config", RSTEST_CONFIG, "--pool.maxWorkers=4", "--include", "a.test.ts"]);
-  assert.ok(RSTEST_CONFIG.endsWith("scripts/rstest/rstest.config.mjs"), RSTEST_CONFIG);
+  assert.ok(RSTEST_CONFIG.endsWith("scripts/rstest/rstest.config.ts"), RSTEST_CONFIG);
   assert.throws(() => runnerInvocation({ runner: "jest", patterns: ["a.test.ts"] }), /--runner=jest is not a runner/);
 });
 

@@ -20,7 +20,7 @@ import {
   QUALIFICATION_CONTEXT, QUALIFICATION_GATE, qualificationStatus,
 } from "../gates/qualification-status.mjs";
 import { gateVerdict } from "../gates/verdict.ts";
-import { QUALIFICATION_CONTEXT as READ_CONTEXT } from "../../../../scripts/release-reads-qualification.mjs";
+import { QUALIFICATION_CONTEXT as READ_CONTEXT } from "../../../../scripts/release-reads-qualification.ts";
 import {
   EXIT, parseArgs, postQualificationStatus, renderResult, requireFullSha,
 } from "../../../control/src/post-qualification-status.mjs";

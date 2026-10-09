@@ -1,9 +1,9 @@
 /**
- * #3283: `scripts/pnpm.mjs` IS RUN, WITH A FAKE `pnpm` FIRST ON `PATH`.
+ * #3283: `scripts/pnpm.ts` IS RUN, WITH A FAKE `pnpm` FIRST ON `PATH`.
  *
  * #3148 changed nine tests that name the launcher only inside script strings, and the mutation reading on #3213 found
  * every mutant of it surviving them (Stryker 18 of 18, the in-house set 17 of 17). A string that names the file proves
- * the file is named. These tests START it, as `node scripts/pnpm.mjs run X` does on a box with no `pnpm` of its own
+ * the file is named. These tests START it, as `node scripts/pnpm.ts run X` does on a box with no `pnpm` of its own
  * (#3141), and read what the chain sees: the exit status, the arguments, and what is said when nothing can be started.
  *
  * The environment is built from NOTHING, never from `process.env`: a parent's `npm_execpath` would otherwise be the
@@ -16,7 +16,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const SCRIPT = resolve(import.meta.dirname, "../../../../scripts/pnpm.mjs");
+const SCRIPT = resolve(import.meta.dirname, "../../../../scripts/pnpm.ts");
 const POSIX_ONLY = process.platform === "win32" ? "the fake pnpm is a /bin/sh script, which a Windows PATH does not run" : false;
 
 /** A scratch directory holding a `pnpm` that runs `body` as a shell script, and the file it logs its arguments to. */

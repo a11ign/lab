@@ -30,7 +30,7 @@ import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 // #2076's tree scan spawns `git ls-files`, and every git spawn in this repo strips the environment through
 // this one function -- see the file's own header for the 2026-09-06 incident that made it a rule.
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { RULES_FILES } from "./rules-files.ts";
 // #2247: the pins are a TABLE that carries its own tier, and the subject a pin is matched against is the
 // loaded rules plus the NAMED destination a narrative sentence may move to (`docs/operational-lessons.md`).

@@ -28,7 +28,7 @@ const {
   linkState, workspacePackages, packagesImportedByName, distTrapReport, rootPrepareBuildsEverything,
   undecidedRefusal, classifyTmpQuota, readTmpQuota, tmpQuotaRow, QUOTACTL_PY,
 } = await toolModule("src/control-plane-hygiene.mjs");
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 
 test("the real repo's dist-trap check finds every package it claims to check, protected by the root's "

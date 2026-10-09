@@ -32,7 +32,7 @@
  * The category's first member, the `update-branch` job, was deleted by #3046: the merge queue builds every
  * PR on `main` and runs `ci` on that merge commit, so nothing pushes `main` into a PR branch any more.
  */
-import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
+import { declareWalkScope } from "../../../guards/src/walk-scope.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

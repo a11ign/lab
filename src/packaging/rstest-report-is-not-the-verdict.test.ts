@@ -40,7 +40,7 @@
  *
  * WHY THIS IS A TEST AND NOT ONLY THE PROSE IN `docs/proving-a-gate.md`: a line alone decays (#1157). If rstest ever
  * fixes the report, this file goes red and the prose is retired deliberately, rather than standing after it stopped
- * being true. The runs go through the repo's OWN `scripts/rstest/rstest.config.mjs`, because a finding about what a
+ * being true. The runs go through the repo's OWN `scripts/rstest/rstest.config.ts`, because a finding about what a
  * session sees when it types the command is worth nothing measured against a different config.
  */
 import { test } from "node:test";
@@ -50,12 +50,12 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.mjs";
+import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.ts";
 // #492: a bare `spawnSync("npx", ...)` is ENOENT on Windows and EINVAL since CVE-2024-27980, so every
 // npx/npm call site in this repo resolves npm's own CLI script through this helper and spawns `node`.
 // `npm-cli-windows-spawn.test.ts` discovers the population by shape and refuses a bare one -- it caught
 // this file's first draft, in CI.
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const PACKAGING = "packages/lab/src/packaging";
@@ -119,7 +119,7 @@ function collapsed(stream: string): string {
 }
 
 /** The glob floor, whose refusal sentence this row corrects. Run, never read: see the last test in this file. */
-const GLOB_FLOOR = "packages/guards/src/assert-glob-not-empty.mjs";
+const GLOB_FLOOR = "packages/guards/src/assert-glob-not-empty.ts";
 
 /**
  * The floor's own refusal, EXERCISED. One pattern in, whatever it wrote out -- no `--run`, so nothing is spawned

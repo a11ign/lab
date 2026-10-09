@@ -21,7 +21,7 @@ test("the core is laid at a full commit sha, never a branch", () => {
 });
 
 test("the tool is resolved at the newest release tag by the core's resolver, with no tag held here (a11ign/a11ign#4427)", () => {
-  const resolve = 'node scripts/agent-org-newest-tag.mjs --dest="$RUNNER_TEMP/agent-org"';
+  const resolve = 'node scripts/agent-org-newest-tag.ts --dest="$RUNNER_TEMP/agent-org"';
   const step = ci.indexOf(resolve);
   assert.ok(step > 0, "positive control: the resolver step is found");
   assert.ok(step < ci.indexOf("pnpm exec eslint"), "resolved before the lint");

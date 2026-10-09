@@ -33,8 +33,8 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
-import { localImports, stripComments } from "../../../guards/src/local-import-closure.mjs";
-import { toolExportPath, toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { localImports, stripComments } from "../../../guards/src/local-import-closure.ts";
+import { toolExportPath, toolRoot } from "../../../../scripts/agent-org-newest-tag.ts";
 import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 const { SPAWNS_GH, SUITE_SCRIPTS } = await toolModule("src/acceptance-commands.mjs");
 const { GUARDED_WORKFLOWS } = await toolModule("src/board-schedule-liveness.mjs");
@@ -668,7 +668,7 @@ test("[37] control: the REAL isolation-gate pair with ONE BYTE changed on more l
   const pairs = declaredCopies();
   const real = pairs.find((pair) => pair.copy === ISOLATION);
   assert.ok(real, "the pair #2921 edited by hand is among the declared copies");
-  assert.equal(real.original, "packages/guards/src/isolation-gate.mjs", "and its original is a11ign's own file");
+  assert.equal(real.original, "packages/guards/src/isolation-gate.ts", "and its original is a11ign's own file");
   assert.ok(real.originalText !== null, "the text this mutates is readable");
   // THE HEADER'S COUNT IS THE ALLOWANCE (`judgePair`, agent-org `org-health.mjs`): a single changed line is inside it once the header names any, which is
   // what the tool's own copy has said since #3830 (3 named lines), so the control breaks ONE MORE line than the header allows, read off the pair

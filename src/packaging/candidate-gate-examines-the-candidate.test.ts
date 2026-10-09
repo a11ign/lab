@@ -33,7 +33,7 @@ function chain(): string[] {
   // `gate` truthy while this regex matches nothing, and every check here would examine no stage at all.
   assert.ok(stages.length >= 5,
     `only found ${stages.length} chained stage(s) in candidate:gate -- the extraction is broken (the `
-    + "script no longer chains via `pnpm run` or `node scripts/pnpm.mjs run`), not the chain shrinking");
+    + "script no longer chains via `pnpm run` or `node scripts/pnpm.ts run`), not the chain shrinking");
   return stages;
 }
 

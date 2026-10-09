@@ -11,8 +11,8 @@
  *
  * THE POPULATION IS THE CATALOGUE, NOT A COPY OF IT: every `lab-job.yml` job whose argv is
  * `corepack pnpm run <script>`. The walk follows that script through the scripts it NAMES (`pnpm run X` or its
- * remedy `node scripts/pnpm.mjs run X`, flags allowed) and through the `pre`/`post` hooks pnpm runs by itself,
- * and refuses a bare package manager in command position at any link. The remedy is `scripts/pnpm.mjs`, which
+ * remedy `node scripts/pnpm.ts run X`, flags allowed) and through the `pre`/`post` hooks pnpm runs by itself,
+ * and refuses a bare package manager in command position at any link. The remedy is `scripts/pnpm.ts`, which
  * reaches pnpm through `pnpmCliInvocation` (`npm_execpath` first), so no unit needs a `pnpm` on PATH.
  */
 import { test } from "node:test";
@@ -42,7 +42,7 @@ function commandOf(segment: string): string | undefined {
   return segment.split(/\s+/).find((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word));
 }
 
-/** The scripts a script value runs, by `pnpm run <name>` or `node scripts/pnpm.mjs run <name>` (flags allowed). */
+/** The scripts a script value runs, by `pnpm run <name>` or `node scripts/pnpm.ts run <name>` (flags allowed). */
 function delegatesOf(value: string): string[] {
   return segmentsOf(value).flatMap((segment) => {
     const match = /^(?:pnpm|node\s+scripts\/pnpm\.mjs)\s+run\s+(?:-{1,2}[\w-]+\s+)*([\w:-]+)/.exec(segment);
@@ -105,7 +105,7 @@ test("a fixture job whose script chains `pnpm run X && pnpm run Y` is REFUSED at
 
 test("the walk follows a script named through the remedy, and through a `pre` hook", () => {
   const scripts = {
-    gate: "node scripts/pnpm.mjs run --silent inner",
+    gate: "node scripts/pnpm.ts run --silent inner",
     inner: "FORCE_COLOR=1 npx tsx check.ts",
     pregate: "npm run build",
   };
@@ -113,8 +113,8 @@ test("the walk follows a script named through the remedy, and through a `pre` ho
     ["gate: pregate -> npm", "gate: inner -> npx"]);
 });
 
-test("a chain that reaches pnpm only through `node scripts/pnpm.mjs` passes, and so does a job outside corepack", () => {
-  const scripts = { gate: "node scripts/pnpm.mjs run a && node scripts/pnpm.mjs run b -- --flag", a: "node a.mjs", b: "node b.mjs" };
+test("a chain that reaches pnpm only through `node scripts/pnpm.ts` passes, and so does a job outside corepack", () => {
+  const scripts = { gate: "node scripts/pnpm.ts run a && node scripts/pnpm.ts run b -- --flag", a: "node a.mjs", b: "node b.mjs" };
   assert.deepEqual(bareCallers({
     gate: corepackJob("gate"),
     elsewhere: { argv: ["/usr/bin/node", "x.mjs"] },
@@ -135,5 +135,5 @@ test("THE REAL CATALOGUE: no corepack job's chain names a bare package manager",
   }
   assert.deepEqual(bareCallers(catalogue, scripts), [],
     "a lab job's script chain names a bare `pnpm`/`npm`/`npx`; the lab has only `corepack pnpm`, so the job exits 1 at "
-    + "the shell's `pnpm: not found`. Chain with `node scripts/pnpm.mjs run <script>` instead (#3141)");
+    + "the shell's `pnpm: not found`. Chain with `node scripts/pnpm.ts run <script>` instead (#3141)");
 });

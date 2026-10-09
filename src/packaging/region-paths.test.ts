@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { toolModule } from "../../scripts/tool-source.ts";
 const { declaredRegionFiles, directoryReservations, extractLabeledSection, extractRegionSection, hasTemplateField, pathInProse, regionCovers, regionPathsFromBody, rootFilesOnMain, slashlessDirectoryEntries, trackedTopLevelDirs, unrecognisedRegionPaths } = await toolModule("src/region-paths.mjs");
 
@@ -107,12 +107,12 @@ const THREE_LINE_REGION = "## Region\n\n```\nscripts/ci-changed.mjs\npackages/la
 
 test("#941 REPRODUCED: the file grammar alone reads only the file out of this block -- the defect's own output", () => {
   // What `declaredRegionFiles` returned for this block before #941: the two directory lines vanished.
-  assert.deepEqual(regionPathsFromBody(extractRegionSection(THREE_LINE_REGION) ?? ""), ["scripts/ci-changed.mjs"]);
+  assert.deepEqual(regionPathsFromBody(extractRegionSection(THREE_LINE_REGION) ?? ""), ["scripts/ci-changed.ts"]);
 });
 
 test("#941: a standalone directory line declares a prefix, beside the files the block names", () => {
   assert.deepEqual(declaredRegionFiles(THREE_LINE_REGION),
-    ["scripts/ci-changed.mjs", "packages/lab/src/packaging/", "docs/"]);
+    ["scripts/ci-changed.ts", "packages/lab/src/packaging/", "docs/"]);
 });
 
 test("#941: a Region of ONLY directories no longer declares the empty set -- the five zero-declaration rows' shapes", () => {
@@ -835,8 +835,8 @@ test("#2233: every NAMED label declares nothing -- and the same sentence unlabel
 
 test("#2233: the exclusion paragraph reaches its continuations and stops at a blank line or a fence", () => {
   const wrapped = regionWith(
-    `**Deliberately NOT in the Region: the docs tree, and\n\`${WORKFLOW}\` on the second line.**\n\nBut \`scripts/ci-changed.mjs\` is this row's.`);
-  assert.deepEqual(declaredRegionFiles(wrapped), [FENCED, "scripts/ci-changed.mjs"]);
+    `**Deliberately NOT in the Region: the docs tree, and\n\`${WORKFLOW}\` on the second line.**\n\nBut \`scripts/ci-changed.ts\` is this row's.`);
+  assert.deepEqual(declaredRegionFiles(wrapped), [FENCED, "scripts/ci-changed.ts"]);
   // A fenced path BENEATH an exclusion label is a declaration: a fence is structured, not prose.
   const fencedAfter = regionWith(`**Not in scope: the docs tree.**\n${FENCE}\n${WORKFLOW}\n${FENCE}`);
   assert.deepEqual(declaredRegionFiles(fencedAfter), [FENCED, WORKFLOW]);

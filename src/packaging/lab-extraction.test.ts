@@ -30,8 +30,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { MARKER_MODULE, treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
+import { MARKER_MODULE, treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.ts";
 import { applyReplacementRules, parseReplacementRules } from "../../../../scripts/history-purge-rehearsal.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

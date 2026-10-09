@@ -213,7 +213,7 @@ test("control, #168 restated: a package-level `prepare` that builds is RED, and 
   const raced = packagesWhoseLifecycleBuilds([{ dir: "judge", manifest: { scripts: { prepack: "rslib build", prepare: "rslib build" } } }]);
   assert.deepEqual(raced, ["judge"]);
   assert.deepEqual(packagesWhoseLifecycleBuilds([{ dir: "judge", manifest: { scripts: { prepack: "rslib build" } } }]), []);
-  assert.equal(buildSteps("node scripts/lay-layer.mjs x && node scripts/pnpm.mjs -r run build && rslib build").length, 2);
+  assert.equal(buildSteps("node scripts/lay-layer.ts x && node scripts/pnpm.ts -r run build && rslib build").length, 2);
   assert.equal(buildSteps("node scripts/install-git-hooks.mjs").length, 0);
 });
 
@@ -365,7 +365,7 @@ test("a PDF scan run through the BUILT CLI bundle reports the untagged PDF", asy
 // 8. THE SCRIPT IS GONE; THE SCORER'S ROOT READ RESOLVES FROM THE BUILT ENTRY ---------------------------------------------------------
 
 test("scripts/build-packages.mjs does not exist, and the check can see a script that does", () => {
-  assert.ok(existsSync(join(REPO, "scripts/lay-layer.mjs")), "the control is blind: a script that exists was not seen");
+  assert.ok(existsSync(join(REPO, "scripts/lay-layer.ts")), "the control is blind: a script that exists was not seen");
   assert.equal(existsSync(join(REPO, "scripts/build-packages.mjs")), false, "scripts/build-packages.mjs is back: `pnpm -r run build` builds every package (#3580)");
 });
 

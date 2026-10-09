@@ -4,7 +4,7 @@
  *
  * `rstest run --changed=<base>` runs the test files whose module graph reaches a changed file. That is a SUBSET, so what the
  * stamp claims must be "the affected set passed at this head" and never "the suite passed" (#3215's misreading), and what the
- * subset cannot see must widen it: `forceRerunTriggers` in `scripts/rstest/rstest.config.mjs`.
+ * subset cannot see must widen it: `forceRerunTriggers` in `scripts/rstest/rstest.config.ts`.
  *
  * WHAT IS DERIVED AND WHAT IS TYPED. The config's trigger list is typed once. The population it must cover is DERIVED here from
  * the tree: every non-source file and every data directory that a non-tree-wide test names in a string literal, outside the
@@ -32,12 +32,12 @@ import { dirname, join, matchesGlob, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
-import { treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.mjs";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { underFloor } from "../../../guards/src/assert-glob-not-empty.mjs";
-import { knownPackages } from "../../../../scripts/ci-changed.mjs";
-import { packageIndex, sourceClosure } from "../../../guards/src/walk-scope-discovery.mjs";
-import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.ts";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
+import { underFloor } from "../../../guards/src/assert-glob-not-empty.ts";
+import { knownPackages } from "../../../../scripts/ci-changed.ts";
+import { packageIndex, sourceClosure } from "../../../guards/src/walk-scope-discovery.ts";
+import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 import {
   AFFECTED_INCLUDE, AFFECTED_MIN_FILES, CI_ONLY, STEPS, affectedVerdict, jobsGateNeeds, readRunSummary, runAffectedSet, runTs,
   stampWording, unaccountedJobs,
@@ -54,7 +54,7 @@ const DIRECTORY_TAIL = "/**";
 
 /** The config's trigger list, from the file on disk: the specifier is computed so rstest does not bundle its own config. */
 async function configTriggers(): Promise<string[]> {
-  const href = new URL("../../../../scripts/rstest/rstest.config.mjs", import.meta.url).href;
+  const href = new URL("../../../../scripts/rstest/rstest.config.ts", import.meta.url).href;
   return (await import(/* webpackIgnore: true */ href)).default.forceRerunTriggers ?? [];
 }
 
@@ -88,7 +88,7 @@ function namedPaths(literal: string, testFile: string): string[] {
 }
 
 /**
- * What the core's trigger list does not cover, on purpose (#3505, `scripts/rstest/rstest.config.mjs`): the lab is LAID there, untracked, so a change to it is never in a core diff and a
+ * What the core's trigger list does not cover, on purpose (#3505, `scripts/rstest/rstest.config.ts`): the lab is LAID there, untracked, so a change to it is never in a core diff and a
  * trigger naming it would select nothing. Run from this repository the lab is staged and its files look tracked, so the population is cut here, in code, and not by a trigger list that
  * names a directory the core does not track.
  */
@@ -173,7 +173,7 @@ test("the derived population holds a known data directory and a known doc file (
 
 test("every path a non-tree-wide test reads by name is covered by a forceRerunTriggers entry", async () => {
   assert.deepEqual(unexempted(uncovered(await configTriggers(), READS)), [],
-    "each path above is read by a test whose module graph cannot see it: add a pattern to scripts/rstest/rstest.config.mjs");
+    "each path above is read by a test whose module graph cannot see it: add a pattern to scripts/rstest/rstest.config.ts");
 });
 
 test("control: the trigger list with one directory removed is RED, and so is one with one file removed", async () => {
@@ -220,9 +220,9 @@ test("the rstest config, what it loads and what every worker preloads are trigge
   const triggers = await configTriggers();
   // The toolchain is installed, not in the tree (#3625): the config's call into it is not a file this walk can follow, so the lockfile that
   // pins its version is the trigger, asserted by name below.
-  const entries = ["scripts/rstest/rstest.config.mjs", "packages/guards/src/walk-scope.mjs"];
+  const entries = ["scripts/rstest/rstest.config.ts", "packages/guards/src/walk-scope.ts"];
   const loaded = [...new Set(entries.flatMap((entry) => [...relativeImportClosure(entry)]))];
-  assert.ok(loaded.includes("packages/guards/src/walk-scope-declaration.mjs"),
+  assert.ok(loaded.includes("packages/guards/src/walk-scope-declaration.ts"),
     `the walk found ${loaded.join(", ")}, so it did not follow the preload's own imports`);
   assert.deepEqual(loaded.filter((file) => !covers(triggers, file)), []);
   assert.ok(covers(triggers, "pnpm-lock.yaml"), "a new version of the installed toolchain changes what every run does, and the lockfile is where it shows");
@@ -267,7 +267,7 @@ test("rstest itself exits 0 with zero files for a broken include under --changed
   const dir = mkdtempSync(join(tmpdir(), "affected-premise-"));
   const summary = join(dir, "summary.json");
   try {
-    const { command, args } = pnpmCliInvocation(["exec", "rstest", "run", "--config", "scripts/rstest/rstest.config.mjs",
+    const { command, args } = pnpmCliInvocation(["exec", "rstest", "run", "--config", "scripts/rstest/rstest.config.ts",
       "--include", "nothing-here/**/*.test.ts", "--changed=HEAD"]);
     // This test runs inside an rstest worker, whose variable would make the child's config ignore the summary file.
     const env = { ...sandboxGitEnv({ A11Y_RSTEST_RECORD_DIR: dir, A11Y_RSTEST_SUMMARY_FILE: summary }) } as Record<string, string | undefined>;
