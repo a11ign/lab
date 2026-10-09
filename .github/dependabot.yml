@@ -1,16 +1,16 @@
 # Dependency updates come from the platform (a11ign/a11ign ADR 0041, decision 4): a new release of anything this repository consumes opens a pull request here, so nobody polls for one.
-# What it consumes by VERSION is the `github-actions` below, the root's dev dependencies, and `packages/lab`'s own third-party dependencies (`@guidepup/guidepup`, `serve`, `typescript`, `yaml`).
+# What it consumes by VERSION is the `github-actions` below and the one manifest's third-party dependencies (`@guidepup/guidepup`, `serve`, `typescript`, `yaml`, the changeset CLI, rstest).
 # Its `@a11ign/*` entries name the monorepo's WORKSPACE versions (0.2.x where the registry holds 0.1.0, and two packages it does not hold at all), so a bump of one is a pull request that
 # `ci.yml` installs through the core's workspace, and the checkout of a11ign/a11ign that CI lays it over is a commit pin Dependabot cannot read: bumping `CORE_REF` is a pull request by hand.
-# NOT VERIFIED until Dependabot has run here once: the `/packages/lab` entry has no lockfile of its own, so it can only rewrite the manifest.
+# NOT VERIFIED until Dependabot has run here once on the flat layout: the repository has no lockfile (the manifest names packages no registry holds, so none could be written), so it can only rewrite the manifest.
 version: 2
 updates:
   - package-ecosystem: npm
-    # The root's own dev dependencies (the changeset CLI, tsx, typescript). `packages/lab` has its own entry below.
+    # The repository root IS the package (a11ign/a11ign#4215): this one entry replaces the two (`/` and `/packages/lab`) of the monorepo layout.
     directory: /
     schedule:
       interval: daily
-    # The `/` run's log checks packages/lab's dependencies too (why is not established), so the same two names reach it. Declared in packages/lab and NOT on the registry (`npm view` E404, measured 2026-10-06), so each is a handled `dependency_file_not_resolvable` that turns the whole run red (a11ign/a11ign#3789).
+    # Declared in the manifest and NOT on the registry (`npm view` E404, measured 2026-10-06), so each is a handled `dependency_file_not_resolvable` that turns the whole run red (a11ign/a11ign#3789).
     # They are workspace members of a11ign/a11ign. Lift the entry when the package is published, or when lab stops declaring it.
     ignore:
       - dependency-name: "@a11ign/control"
@@ -18,17 +18,6 @@ updates:
     # No `groups:` on purpose: each dependency is its own pull request, which is what keeps a bump small and mergeable alone.
     commit-message:
       # The handle the org's gate recognises a dependency pull request by: every title starts `deps:`.
-      prefix: deps
-  - package-ecosystem: npm
-    directory: /packages/lab
-    schedule:
-      interval: daily
-    # Declared in packages/lab and NOT on the registry (`npm view` E404, measured 2026-10-06), so each is a handled `dependency_file_not_resolvable` that turns the whole run red (a11ign/a11ign#3789).
-    # They are workspace members of a11ign/a11ign. Lift the entry when the package is published, or when lab stops declaring it.
-    ignore:
-      - dependency-name: "@a11ign/control"
-      - dependency-name: "@a11ign/nvda-speech"
-    commit-message:
       prefix: deps
   - package-ecosystem: github-actions
     directory: /

@@ -12,10 +12,10 @@ test("a release is a tag and nothing else: no registry, no stored token, no manu
   }
 });
 
-test("the release is the shared workflow, pinned by a full sha, with kind tag and the package that holds the version", () => {
+test("the release is the shared workflow, pinned by a full sha, with kind tag and the root package that holds the version", () => {
   assert.match(callerJob, /^ {4}uses: a11ign\/toolchain\/\.github\/workflows\/release-per-merge\.yml@[0-9a-f]{40}$/m, "positive control: the call is found, by a 40-hex sha and no tag or branch");
   assert.match(callerJob, /^ {6}kind: tag$/m);
-  assert.match(callerJob, /^ {6}lone-package-dir: packages\/lab$/m, "without it the tag is `@a11ign\/lab@<version>`, not the `v<version>` a consumer pins");
+  assert.doesNotMatch(callerJob, /lone-package-dir/, "the package is the root manifest, so the tag is `v<version>` with no directory named: one is a typo for a package that is not there");
   assert.doesNotMatch(release, /git push origin "HEAD:refs\/tags/, "the tag is the shared workflow's to cut, not this file's");
 });
 
