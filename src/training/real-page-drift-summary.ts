@@ -52,10 +52,8 @@ import { documentIdentity } from "@a11ign/evidence/document-identity";
  */
 const STRUCTURE_FIELDS: string[][] = EVIDENCE_FIELDS.filter((field) => field.length === 2 && field[0] === "structure");
 
-/**
- * @typedef {{ url: string, capturedAt: string | null, workerCode: string | null, targetMatch: string | null,
- *   vector: Record<string, number>, incomplete: string[] }} ShapeReading
- */
+type ShapeReading = { url: string, capturedAt: string | null, workerCode: string | null, targetMatch: string | null,
+  vector: Record<string, number>, incomplete: string[] };
 
 /**
  * One capture, reduced to its structure-count vector -- pure, and the only place `EVIDENCE_FIELDS` is
@@ -149,11 +147,9 @@ export function worstFieldSpreadPercent(readings: ShapeReading[]): number {
   return worst;
 }
 
-/**
- * @typedef {{ url: string, n: number, excludedCount: number, refused: string | null, build?: string | null,
- *   shapes?: ReturnType<typeof distinctShapes>, spreadPercent?: number,
- *   notComparable?: ReturnType<typeof incompleteFields> }} PageDrift
- */
+type PageDrift = { url: string, n: number, excludedCount: number, refused: string | null, build?: string | null,
+  shapes?: ReturnType<typeof distinctShapes>, spreadPercent?: number,
+  notComparable?: ReturnType<typeof incompleteFields> };
 
 /**
  * The per-page drift distribution -- #781's whole deliverable. One entry per URL seen, always, so a page
@@ -211,8 +207,8 @@ export function driftSummaryLine(entry: PageDrift): string {
     return `${entry.url}: only ${entry.n} usable capture(s) -- a pair cannot measure a distribution.`
       + `${excludedNote}\n`;
   }
-  const shapes = /** @type {NonNullable<PageDrift["shapes"]>} */ (entry.shapes);
-  const spreadPercent = /** @type {number} */ (entry.spreadPercent);
+  const shapes = entry.shapes as NonNullable<PageDrift["shapes"]>;
+  const spreadPercent = entry.spreadPercent as number;
   const at = shapes.map((shape) => `${shape.count}x at ${shape.capturedAt.join(", ")}`).join("; ");
   const notComparable = entry.notComparable ?? [];
   const notComparableNote = notComparable.length
