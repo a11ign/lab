@@ -753,7 +753,7 @@ test("[37] control: the REAL isolation-gate pair with ONE BYTE changed on more l
   const changedOriginal = pairs.map((pair) => (pair === real ? { ...pair, originalText: withConstLinesBroken(real.originalText, broken) } : pair));
   const reading = copyDriftReading({ pairs: changedOriginal });
   assert.equal(reading.status, "tripped");
-  const escaped = (path: string) => path.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
+  const escaped = (path: string) => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   assert.match(reading.detail, new RegExp(`${escaped(real.copy)} against ${escaped(real.original)}`));
   const changedCopy = pairs.map((pair) => (pair === real ? { ...pair, copyText: withConstLinesBroken(pair.copyText, broken) } : pair));
   assert.equal(copyDriftReading({ pairs: changedCopy }).status, "tripped");
