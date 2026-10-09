@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { provenanceProblems } from "./shipped-provenance.mjs";
+import { provenanceProblems } from "./shipped-provenance.ts";
 
 /** Stands in for `provenanceLines`, which the CLI injects. Shape, not content, is what matters here. */
 const render = (training: { dataset?: { records?: number } }) =>

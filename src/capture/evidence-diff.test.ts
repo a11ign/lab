@@ -9,11 +9,11 @@ import { join } from "node:path";
 import { readdirSync, readFileSync as readFile, existsSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 
-import { captureRoot, datasetRoot } from "../dataset-paths.mjs";
+import { captureRoot, datasetRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 import { compareCapture, summarise, readCapture, isUsableCapture, unusableReason, refuseUnusableEntries,
-  refusalLines, EVIDENCE_FIELDS, NOT_EVIDENCE_KEYS } from "./evidence-diff.mjs";
+  refusalLines, EVIDENCE_FIELDS, NOT_EVIDENCE_KEYS } from "./evidence-diff.ts";
 
 /**
  * A sample of real captures, anchored on THIS FILE rather than `process.cwd()` — a cwd-relative corpus

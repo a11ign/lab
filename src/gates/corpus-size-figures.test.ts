@@ -86,7 +86,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { REPO_ROOT } from "../dataset-paths.mjs";
+import { REPO_ROOT } from "../dataset-paths.ts";
 
 /**
  * The files an operator acts on. #2155's Region, minus this file.

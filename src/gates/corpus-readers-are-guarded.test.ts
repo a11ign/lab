@@ -62,7 +62,7 @@ import { join, relative } from "node:path";
 
 import { stripComments } from "@a11ign/evidence/source-text";
 
-import { REPO_ROOT } from "../dataset-paths.mjs";
+import { REPO_ROOT } from "../dataset-paths.ts";
 
 /** A path into a real corpus directory, or one of the accessors that resolves one. */
 const CORPUS_PATH = /runs\/(screenreader-dataset|real-page-corpus|acceptance)/;

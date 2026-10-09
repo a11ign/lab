@@ -21,7 +21,7 @@
  */
 import { inventoryWorkerUrls } from "@a11ign/screenreader-fleet/fleet-env";
 
-import { gateVerdict } from "./verdict.mjs";
+import { gateVerdict } from "./verdict.ts";
 import { drainAcrossPool } from "../training/worker-pool.mjs";
 
 /**
@@ -40,7 +40,7 @@ import { drainAcrossPool } from "../training/worker-pool.mjs";
  * @param {{ inventory?: () => string[], env?: Record<string, string | undefined> }} [deps]
  * @returns {{ workers: string[], scope: string }} `scope` is what the verdict must SAY it covered
  */
-export function gateWorkers(named, { inventory = inventoryWorkerUrls, env = process.env } = {}) {
+export function gateWorkers(named: string | undefined, { inventory = inventoryWorkerUrls, env = process.env }: { inventory?: () => string[]; env?: Record<string, string | undefined>; } = {}): { workers: string[]; scope: string; } {
   if (named) return { workers: [named], scope: `${named} ONLY — one box, named explicitly` };
 
   // `A11Y_WORKERS` FIRST, AND ON THE LAB IT IS THE ONLY THING THERE IS.
@@ -95,15 +95,15 @@ export function gateWorkers(named, { inventory = inventoryWorkerUrls, env = proc
  * @param {(item: T, worker: string) => Promise<R>} runOne
  * @returns {Promise<{ item: T, worker: string, result: R | null, error: string | null }[]>}
  */
-export async function acrossFleet(items, workers, runOne) {
+export async function acrossFleet<T, R>(items: T[], workers: string[], runOne: (item: T, worker: string) => Promise<R>): Promise<{ item: T; worker: string; result: R | null; error: string | null; }[]> {
   /** @type {{ item: T, worker: string, result: R | null, error: string | null }[]} */
-  const outcomes = [];
+  const outcomes: { item: T; worker: string; result: R | null; error: string | null; }[] = [];
   const { failures } = await drainAcrossPool({
     workers,
     items,
     // Nothing to set up per worker: a gate's boxes are bare metal that is always on. The pool calls this
     // to decide a worker is usable at all, so returning a value rather than throwing says "usable".
-    prepare: async (/** @type {string} */ worker) => ({ worker }),
+    prepare: async (/** @type {string} */ worker: string) => ({ worker }),
     // A THROW IS THAT ITEM'S RESULT, NEVER THE SHARD'S. The pool requeues a failed item onto another
     // worker, so a gate inherits eviction and requeue that the static split never had — but an item that
     // fails everywhere must still appear in the report, or the denominator silently shrinks.
@@ -120,7 +120,7 @@ export async function acrossFleet(items, workers, runOne) {
     // comment described both while the code could only deliver one.
     //
     // Both, now: throw so the pool requeues, then fold `failures` back in below.
-    handle: async (/** @type {any} */ item, /** @type {any} */ { worker }) => {
+    handle: async (/** @type {any} */ item: any, /** @type {any} */ { worker }: any) => {
       outcomes.push({ item, worker, result: await runOne(item, worker), error: null });
     },
     // Gates do not evict on slowness: a gate is minutes, and a box retired mid-gate would shrink coverage
@@ -128,7 +128,7 @@ export async function acrossFleet(items, workers, runOne) {
     isDegraded: async () => false,
     // Items here are pages and canaries, which have no `id`. Keyed on the whole item, which is what the
     // pool uses only to drop failure records.
-    keyOf: (/** @type {any} */ item) => JSON.stringify(item),
+    keyOf: (/** @type {any} */ item: any) => JSON.stringify(item),
   });
   // WHAT THE POOL GAVE UP ON, so the denominator is the item list whatever happened to the machines. An
   // item requeued and then passed is spliced out of `failures` by the pool, so nothing is double-counted;
@@ -155,7 +155,7 @@ export async function acrossFleet(items, workers, runOne) {
  * @param {{ result: unknown, error: string | null }[]} outcomes
  * @param {{ of: number, what: string, workers: number, failed: number, controlPlane?: string }} about
  */
-export function fleetVerdict(outcomes, { of, what, workers, failed, controlPlane }) {
+export function fleetVerdict(outcomes: { result: unknown; error: string | null; }[], { of, what, workers, failed, controlPlane }: { of: number; what: string; workers: number; failed: number; controlPlane?: string; }) {
   return gateVerdict({
     examined: outcomes.filter((o) => o.result !== null).length,
     of,
@@ -176,9 +176,9 @@ export function fleetVerdict(outcomes, { of, what, workers, failed, controlPlane
  * distribution, which is more useful anyway: an uneven split is now EVIDENCE that one box is slower rather
  * than an artefact of how the work was dealt.
  */
-export function renderShards(/** @type {{worker: string}[]} */ outcomes) {
+export function renderShards(/** @type {{worker: string}[]} */ outcomes: { worker: string; }[]) {
   /** @type {Map<string, number>} */
-  const byWorker = new Map();
+  const byWorker: Map<string, number> = new Map();
   for (const o of outcomes) byWorker.set(o.worker, (byWorker.get(o.worker) ?? 0) + 1);
   return [...byWorker].sort().map(([w, n]) => `  ${w.padEnd(28)} ${n} item(s)`).join("\n");
 }

@@ -13,7 +13,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { captureRoot, datasetRoot, realCorpusRoot } from "../src/dataset-paths.mjs";
+import { captureRoot, datasetRoot, realCorpusRoot } from "../src/dataset-paths.ts";
 import { countFirstEvents } from "../src/training/focus-log-first-event.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 

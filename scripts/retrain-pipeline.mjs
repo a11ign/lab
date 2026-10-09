@@ -23,10 +23,10 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "nod
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { releasability } from "../src/packaging/releasability.mjs";
-import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.mjs";
+import { releasability } from "../src/packaging/releasability.ts";
+import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 /**

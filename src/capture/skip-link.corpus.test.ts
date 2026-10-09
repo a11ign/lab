@@ -35,7 +35,7 @@ import { resolve } from "node:path";
 import { ruleFindings } from "@a11ign/judge/rules";
 // The plain-node corpus module. `case-matrix.mjs` carries `// @ts-check`, so its exports are typed.
 import { signalMatches } from "../training/case-matrix.mjs";
-import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 const ROOT = captureRoot(datasetRoot());

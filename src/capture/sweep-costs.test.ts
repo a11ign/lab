@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import {
   captureIn, costCause, MIN_TRIPS_FOR_A_RATE, median, rateAcrossPages, sweepCostsByPage, sweepCostsOf,
   walkRate,
-} from "./sweep-costs.mjs";
+} from "./sweep-costs.ts";
 
 const sweep = (over: Record<string, unknown>) => ({
   event: "sweep", type: "link", found: 40, prevMs: 3000, nextMs: 3000,

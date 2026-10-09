@@ -33,7 +33,7 @@ import { ruleFindings } from "@a11ign/judge/rules";
 import { channelsPresent, CRITERION_COVERAGE } from "@a11ign/judge/internal";
 import { oracleCounts } from "@a11ign/evidence/verify";
 import { REAL_PAGES } from "./real-page-corpus.mjs";
-import { realCorpusRoot } from "../dataset-paths.mjs";
+import { realCorpusRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
 
 /** Same derivation `real-page-corpus.test.ts` uses to pair a fixture with its sibling. */

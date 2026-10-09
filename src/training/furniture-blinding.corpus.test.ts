@@ -24,7 +24,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { CASES, signalMatches } from "./case-matrix.mjs";
-import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
 
 const ROOT = datasetRoot();

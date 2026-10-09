@@ -16,7 +16,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { REPO_ROOT } from "../dataset-paths.mjs";
+import { REPO_ROOT } from "../dataset-paths.ts";
 import {
   sourceBasenameFromFetchOutput,
   flattenedFetchPath,

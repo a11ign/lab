@@ -20,7 +20,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, runsRoot } from "../src/dataset-paths.ts";
 
 /**
  * `--name` and `--weights` appear in this file's prose, not in its argv.

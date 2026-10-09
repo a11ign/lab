@@ -20,7 +20,7 @@ import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { datasetRoot, runsRoot } from "../src/dataset-paths.mjs";
+import { datasetRoot, runsRoot } from "../src/dataset-paths.ts";
 
 /**
  * a mistyped `--out=` writes the snapshot somewhere you will not look for it.

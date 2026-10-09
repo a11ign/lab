@@ -14,7 +14,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newFindingsVerdict, partitionByOutcome } from "./referral-only-verdict.mjs";
+import { newFindingsVerdict, partitionByOutcome } from "./referral-only-verdict.ts";
 
 type Input = Parameters<typeof newFindingsVerdict>[0];
 type Finding = Input["findings"][number];

@@ -11,7 +11,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { identityChecksFor, servedRequestedPageLine } from "./real-page-identity-summary.mjs";
-import { runsRoot } from "../dataset-paths.mjs";
+import { runsRoot } from "../dataset-paths.ts";
 import { corpusReadable, skipLine } from "./corpus-settled.mjs";
 
 // Real `documentIdentity` input, minimal rather than a full capture -- `targetMatchIn` reads only the

@@ -26,7 +26,7 @@ import { pathToFileURL } from "node:url";
 
 import { IMPOSSIBLE_BY_DEFINITION, UNREACHABLE_WITHOUT_PERTURBING } from "./audit-corpus-starvation.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 
 /**
  * Takes no flags: it emits the JS-side declarations for the Python audit to read.

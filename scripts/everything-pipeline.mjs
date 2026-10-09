@@ -27,7 +27,7 @@ import { pathToFileURL } from "node:url";
 
 import { pipeline, run, keepingTranscript } from "./retrain-pipeline.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 
 // This chain is hours long and unattended. A mistyped `--dry-run` would run the REAL thing.
 refuseUnknownFlags(["--dry-run"], { entry: import.meta.url, command: "npm run lab:everything" });

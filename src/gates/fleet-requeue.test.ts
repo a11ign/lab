@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { acrossFleet } from "./fleet.mjs";
+import { acrossFleet } from "./fleet.ts";
 
 /**
  * A GATE MUST SEPARATE "this page is flaky" FROM "that box is broken".

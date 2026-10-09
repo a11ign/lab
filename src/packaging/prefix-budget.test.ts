@@ -53,7 +53,7 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RULES_FILES } from "./rules-files.ts";
-import { BUDGET_BYTES, REMEDY, WARN_BYTES, WARN_REMEDY, prefixBudgetVerdict } from "./prefix-budget.mjs";
+import { BUDGET_BYTES, REMEDY, WARN_BYTES, WARN_REMEDY, prefixBudgetVerdict } from "./prefix-budget.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 

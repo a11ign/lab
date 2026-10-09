@@ -73,7 +73,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { RULES_DIR, RULES_FILES } from "./rules-files.ts";
-import { IMPERATIVE, pinById, readPinSubject, textForPin } from "./prefix-pins.mjs";
+import { IMPERATIVE, pinById, readPinSubject, textForPin } from "./prefix-pins.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 

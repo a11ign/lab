@@ -38,7 +38,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { REPO_ROOT } from "./dataset-paths.mjs";
+import { REPO_ROOT } from "./dataset-paths.ts";
 import { stripComments } from "@a11ign/evidence/source-text";
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
@@ -293,7 +293,7 @@ test("REPO_ROOT resolves whether runs/ is a real directory or the symlink `.giti
  * to this module cannot repeat it.
  */
 test("#930: every runs/-anchored root relocates under RUNS_ROOT, and under A11Y_RUNS_ROOT", async () => {
-  const paths = await import("./dataset-paths.mjs");
+  const paths = await import("./dataset-paths.ts");
   const before = { runs: process.env.RUNS_ROOT, a11y: process.env.A11Y_RUNS_ROOT };
   try {
     for (const varName of ["RUNS_ROOT", "A11Y_RUNS_ROOT"]) {
@@ -326,7 +326,7 @@ test("#930: an explicit REAL_CORPUS_ROOT still wins over RUNS_ROOT — the overr
   // The fix must not take away the ability to point THIS root somewhere specific. Same shape
   // `datasetExportPath()` uses for DATASET_EXPORT, and `runs-write-guard.test.ts` still recognises the
   // name, so removing it would be a silent capability loss rather than a narrowing.
-  const paths = await import("./dataset-paths.mjs");
+  const paths = await import("./dataset-paths.ts");
   const before = { runs: process.env.RUNS_ROOT, real: process.env.REAL_CORPUS_ROOT };
   try {
     process.env.RUNS_ROOT = "/tmp/a11y-relocated-corpus";

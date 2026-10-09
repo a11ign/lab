@@ -18,7 +18,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { dirtyTargets, promotionBlockedBy } from "./promotion-targets.mjs";
+import { dirtyTargets, promotionBlockedBy } from "./promotion-targets.ts";
 
 test("an UNSTAGED modification is found, which is what a stale promotion leaves", () => {
   // ` M path` — the status letters are two columns and the first is a SPACE for an unstaged change. A

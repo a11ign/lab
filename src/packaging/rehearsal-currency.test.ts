@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rehearsalReading, rehearsalMarkerSha, publishedPackagePaths, ageInDays } from "./rehearsal-currency.mjs";
+import { rehearsalReading, rehearsalMarkerSha, publishedPackagePaths, ageInDays } from "./rehearsal-currency.ts";
 
 const SHA = "8849f92df9903660315d0cdc9037e7e04276eece";
 const OTHER_SHA = "f47339e2c1d4a5b6e7f8091a2b3c4d5e6f7a8b9c";

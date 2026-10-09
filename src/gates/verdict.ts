@@ -34,7 +34,7 @@
  *   a count means nothing until you know what it counted over.
  * @returns {GateVerdict}
  */
-export function gateVerdict({ examined, of, source, failures = 0 }) {
+export function gateVerdict({ examined, of, source, failures = 0 }: { examined: number; of: number; source: string; failures?: number; }): GateVerdict {
   const base = { examined, of, source, failures };
   if (failures > 0) {
     // "N problem(s) across M examined", never "N of M failed". Failures are NOT a subset of the units
@@ -63,18 +63,18 @@ export function gateVerdict({ examined, of, source, failures = 0 }) {
  *
  * @param {string} gate @param {unknown} error @returns {GateVerdict}
  */
-export function crashVerdict(gate, error) {
+export function crashVerdict(gate: string, error: unknown): GateVerdict {
   const message = error instanceof Error ? error.message : String(error);
   return { verdict: "INCONCLUSIVE", examined: 0, of: 0, source: `${gate} (the harness crashed)`, failures: 0,
     why: `NO VERDICT: ${gate} crashed before it read one, so this says nothing about the pages: ${message}` };
 }
 
 /** One line, so every gate reads the same way in a log. */
-export function renderVerdict(/** @type {GateVerdict} */ v) {
+export function renderVerdict(/** @type {GateVerdict} */ v: GateVerdict) {
   return `${v.verdict} — ${v.why}`;
 }
 
 /** The process exit code this repo's gates use: 0 clean, 1 a real failure, 2 could not tell. */
-export function exitCodeFor(/** @type {GateVerdict} */ v) {
+export function exitCodeFor(/** @type {GateVerdict} */ v: GateVerdict) {
   return v.verdict === "PASS" ? 0 : v.verdict === "FAIL" ? 1 : 2;
 }

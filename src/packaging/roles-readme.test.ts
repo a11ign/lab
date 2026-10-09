@@ -37,7 +37,7 @@ import { RULES_FILES } from "./rules-files.ts";
 import {
   PINS, IMPERATIVE, NARRATIVE, LOADED_RULES_FILES, NARRATIVE_DESTINATIONS, pinById, pinPattern,
   textForPin, readPinSubject, flatten, pinnedProseReading, coveredByPatterns,
-} from "./prefix-pins.mjs";
+} from "./prefix-pins.ts";
 // #905: the roster parser and the per-file check live in the doc cross-reference check the nightly report
 // also runs -- one copy, which is what this file's own "exercise the exact same logic" comment asked for.
 import { README_PATH, checkRoster, roster } from "../../../../scripts/doc-checks/roles-readme.ts";

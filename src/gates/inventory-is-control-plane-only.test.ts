@@ -84,7 +84,7 @@ test("the classification names no file that has gone", () => {
 });
 
 test("the gate falls back to A11Y_WORKERS, which is the whole remedy", async () => {
-  const { gateWorkers } = await import("./fleet.mjs");
+  const { gateWorkers } = await import("./fleet.ts");
   const got = gateWorkers(undefined, { env: { A11Y_WORKERS: "http://a:8765,http://b:8765" }, inventory: () => [] });
   assert.deepEqual(got.workers, ["http://a:8765", "http://b:8765"]);
   assert.match(got.scope, /from A11Y_WORKERS/, "the scope must SAY where the fleet came from");

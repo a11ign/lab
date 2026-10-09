@@ -50,7 +50,7 @@ import { oracleCounts } from "@a11ign/evidence/verify";
 import { RULE_CRITERIA, SCORED_CRITERIA } from "@a11ign/judge/coverage";
 import { corpusState, minutesSinceLastWrite } from "../src/training/corpus-settled.mjs";
 import { CRITERION_COVERAGE, channelsPresent } from "@a11ign/judge/internal";
-import { REPO_ROOT, datasetRoot, captureRoot, realCorpusRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, datasetRoot, captureRoot, realCorpusRoot } from "../src/dataset-paths.ts";
 // RULE COVERAGE'S REAL POPULATION, imported rather than written here (#955): `field-role.test.ts` asserts
 // through it, so a `field` page's capture never grades a rule "validated on real evidence".
 import { ruleCoverageAdmits } from "../src/training/real-page-selection.mjs";

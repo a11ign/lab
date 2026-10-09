@@ -30,7 +30,7 @@ import { ruleFindings } from "@a11ign/judge/rules";
 // carries `// @ts-check` as of today, so its exports are typed and `tsc` refuses a suppression that
 // suppresses nothing.
 import { focusIsTrappedIn } from "../training/case-matrix.mjs";
-import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 const ROOT = captureRoot(datasetRoot());

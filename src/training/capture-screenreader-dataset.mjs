@@ -25,8 +25,8 @@ import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.ts";
 import { wakeNamedWorkers, survivingNamedWorkers } from "./wake-by-hand.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
-import { datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
-import { captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.mjs";
+import { datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.ts";
+import { captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.ts";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";
 

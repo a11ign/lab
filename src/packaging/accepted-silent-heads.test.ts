@@ -10,8 +10,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { tempDir } from "../../../guards/src/test-tmp.ts";
-import { releasability } from "./releasability.mjs";
-import { readAcceptedSilentHeads } from "./accepted-silent-heads.mjs";
+import { releasability } from "./releasability.ts";
+import { readAcceptedSilentHeads } from "./accepted-silent-heads.ts";
 import { promote } from "../../scripts/promote-model.mjs";
 
 const WAITING = "4.1.3:status-waiting";

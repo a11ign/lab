@@ -38,7 +38,7 @@ import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
 import { floorRows } from "./calibrate-abstention.mjs";
 import { normaliseUrl, realPageFor } from "../src/training/real-page-corpus.mjs";
-import { REPO_ROOT } from "../src/dataset-paths.mjs";
+import { REPO_ROOT } from "../src/dataset-paths.ts";
 
 refuseUnknownFlags(["--sweep=", "--run=", "--urls="], {
   entry: import.meta.url, command: "node packages/lab/scripts/claim-excludes-recompute.mjs",

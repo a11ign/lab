@@ -28,7 +28,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
  */
 
 /** @param {string} path @param {Record<string, any>} entry */
-function assertEntry(path, entry) {
+function assertEntry(path: string, entry: Record<string, any>) {
   const keys = Object.keys(entry).sort();
   if (JSON.stringify(keys) !== JSON.stringify(ENTRY_KEYS)) {
     throw new Error(`${path} entry ${JSON.stringify(entry)} must carry exactly ${ENTRY_KEYS.join(", ")}`);
@@ -46,13 +46,13 @@ function assertEntry(path, entry) {
  * @param {string} [path]
  * @returns {AcceptedSilentHead[]}
  */
-export function readAcceptedSilentHeads(path = ACCEPTED_SILENT_HEADS_FILE) {
+export function readAcceptedSilentHeads(path: string = ACCEPTED_SILENT_HEADS_FILE): AcceptedSilentHead[] {
   const document = JSON.parse(readFileSync(path, "utf8"));
   if (JSON.stringify(Object.keys(document).sort()) !== JSON.stringify(FILE_KEYS)) {
     throw new Error(`${path} keys are ${Object.keys(document).sort().join(", ")}, expected ${FILE_KEYS.join(", ")}`);
   }
   for (const entry of document.heads) assertEntry(path, entry);
-  const ids = document.heads.map((/** @type {{id: string}} */ entry) => entry.id);
+  const ids = document.heads.map((/** @type {{id: string}} */ entry: { id: string; }) => entry.id);
   if (new Set(ids).size !== ids.length) throw new Error(`${path} lists a head twice`);
   return document.heads;
 }

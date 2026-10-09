@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { cacheDecision, cacheKey, environmentKey, hashPageDir, stampProvenance } from "./capture-cache.mjs";
-import { captureFilePath } from "../capture/evidence-diff.mjs";
+import { captureFilePath } from "../capture/evidence-diff.ts";
 import { workerSource } from "../packaging/laid-worker.ts";
 
 const ENV = {

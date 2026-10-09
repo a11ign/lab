@@ -16,7 +16,7 @@ import { captureOf, reachedThePage, reachedTheContent, wasAnythingInTheWay, held
   sweepAgreesWithTheTree, whichProbesRan, INTERACTION_PROBES }
   from "../../scripts/explain-capture.mjs";
 import { readdirSync, readFileSync } from "node:fs";
-import { datasetRoot, captureRoot, realCorpusRoot } from "../dataset-paths.mjs";
+import { datasetRoot, captureRoot, realCorpusRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 const withMarks = (...marks: object[]) => ({ diagnostics: marks, transcript: [] });

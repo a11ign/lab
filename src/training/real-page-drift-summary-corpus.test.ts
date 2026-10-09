@@ -14,7 +14,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { driftDistributionsByUrl, driftSummaryLine } from "./real-page-drift-summary.ts";
-import { runsRoot } from "../dataset-paths.mjs";
+import { runsRoot } from "../dataset-paths.ts";
 import { corpusReadable, skipLine } from "./corpus-settled.mjs";
 
 test("#781: the real hubspot/calendly/ikea witness captures on disk, replayed", (t) => {

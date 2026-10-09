@@ -8,7 +8,7 @@
 import { SWEEP_OF, sweptElsewhere, whatHeldTheSweep } from "@a11ign/evidence/verify";
 
 /** `NOT RECORDED` is a distinct answer from `no`, and collapsing them is this repo's oldest defect. */
-export const absent = (/** @type {string} */ what) => `    NOT RECORDED — this capture cannot say ${what}`;
+export const absent = (/** @type {string} */ what: string) => `    NOT RECORDED — this capture cannot say ${what}`;
 
 /**
  * WHAT DID THIS CAPTURE ASK? — read from `observed`, which the capture records for itself since protocol 10.
@@ -25,7 +25,7 @@ export const absent = (/** @type {string} */ what) => `    NOT RECORDED — this
  * @param {any} capture
  * @returns {string[]}
  */
-export function whatItAsked(capture) {
+export function whatItAsked(capture: any): string[] {
   const observed = capture?.observed;
   if (!observed || typeof observed !== "object") {
     return [absent("which channels it asked about — it predates CAPTURE_PROTOCOL_VERSION 10")];
@@ -53,7 +53,7 @@ export function whatItAsked(capture) {
  * @param {string} channel @param {any} seen the channel's `observed` entry, `undefined` when there is none
  * @param {{ container: string | null } | undefined} [elsewhere] the verdict (#951), when this sweep found far less than the census
  */
-function askedRow(channel, seen, elsewhere) {
+function askedRow(channel: string, seen: any, elsewhere?: { container: string | null; } | undefined) {
   if (seen === undefined) {
     return absent(`whether it finished sweeping ${channel} -- it swept into \`structure.${channel}\` and recorded no verdict`);
   }

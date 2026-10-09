@@ -75,10 +75,10 @@ const DEFAULT_PAGES_PORT = 5050;
  * @param {string | number | null} [fallback]
  */
 // audit §9 "argv parsing": was its own copy of the fifteen-file idiom, now the shared, tested extractor.
-const arg = (name, fallback = null) => flagValue(process.argv, name) ?? fallback;
+const arg = (name: string, fallback: string | number | null = null) => flagValue(process.argv, name) ?? fallback;
 
 /** Every `.html` in a page set, so a page added to the directory is captured without editing a list here. */
-function pagesIn(/** @type {any} */ set) {
+function pagesIn(/** @type {any} */ set: any) {
   const dir = resolve(EVAL_ROOT, "pages", set);
   return readdirSync(dir)
     .filter((f) => f.endsWith(".html"))
@@ -87,7 +87,7 @@ function pagesIn(/** @type {any} */ set) {
 }
 
 /** One capture, over the worker's own HTTP interface — the path production uses. */
-async function captureOverWorker(/** @type {any} */ url, /** @type {any} */ worker, /** @type {any} */ steps) {
+async function captureOverWorker(/** @type {any} */ url: any, /** @type {any} */ worker: any, /** @type {any} */ steps: any) {
   const response = await captureTolerantly({
     worker,
     // `probeForms` ON: these are OUR pages, written to be activated, and the interaction criteria
@@ -102,12 +102,12 @@ async function captureOverWorker(/** @type {any} */ url, /** @type {any} */ work
 }
 
 /** In-process, for the Windows guest. Imported lazily so this file loads on a Mac or on Linux. */
-async function captureInProcess(/** @type {any} */ url, /** @type {any} */ steps) {
+async function captureInProcess(/** @type {any} */ url: any, /** @type {any} */ steps: any) {
   const { captureWithNvda } = await import("@a11ign/screenreader-worker");
   return captureWithNvda(url, { steps, probeForms: true });
 }
 
-function report(/** @type {any} */ name, /** @type {any} */ result, /** @type {any} */ outPath) {
+function report(/** @type {any} */ name: any, /** @type {any} */ result: any, /** @type {any} */ outPath: any) {
   const i = result.interaction ?? {};
   const events = (i.stateChanges ?? []).length + (i.formChanges ?? []).length;
   process.stdout.write(`  wrote ${name.padEnd(22)} ${String(result.transcript?.length ?? 0).padStart(4)}`
@@ -127,7 +127,7 @@ function report(/** @type {any} */ name, /** @type {any} */ result, /** @type {a
  * is no wider pool to narrow the run to.
  * @param {string | null} worker
  */
-async function wakeIfNamed(worker) {
+async function wakeIfNamed(worker: string | null) {
   if (!worker) return;
   const wake = await wakeNamedWorkers([worker]);
   if (!wake.ok) {
@@ -144,7 +144,7 @@ async function main() {
   const worker = workerArg ? assertWorkerUrl(String(workerArg), { source: "--worker" }) : null;
   await wakeIfNamed(worker);
 
-  const names = pagesIn(set).filter((/** @type {string} */ n) => !only || n.includes(String(only)));
+  const names = pagesIn(set).filter((/** @type {string} */ n: string) => !only || n.includes(String(only)));
   if (!names.length) {
     process.stderr.write(`no pages in ${set}${only ? ` matching --only=${only}` : ""}\n`);
     process.exit(2);

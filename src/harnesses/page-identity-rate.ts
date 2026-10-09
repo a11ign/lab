@@ -78,7 +78,7 @@ const PAGES = [
  * two versions of the stale-page detector in this project's history were both wrong — one matched its own
  * regex, the other flagged a shared site template — and each clean result was read as reassurance.
  */
-export function classifyCapture(/** @type {any} */ { transcript, want, previous }) {
+export function classifyCapture(/** @type {any} */ { transcript, want, previous }: any) {
   const text = (transcript ?? []).join(" | ");
   if (!transcript?.length) return "silent";
   if (want.signature.test(text)) return "correct";
@@ -118,7 +118,7 @@ function selfTest() {
  * worker-http.mjs for the measurement.
  */
 
-async function captureOnce(/** @type {any} */ base, /** @type {any} */ page) {
+async function captureOnce(/** @type {any} */ base: any, /** @type {any} */ page: any) {
   let body;
   try {
     const response = await captureTolerantly({
@@ -133,16 +133,16 @@ async function captureOnce(/** @type {any} */ base, /** @type {any} */ page) {
     return { error: `transport: ${/** @type {any} */ (error)?.message ?? error}` };
   }
   if (body.error) return { error: String(body.error) };
-  const marks = (body.diagnostics ?? []).filter((/** @type {any} */ m) => m && typeof m === "object");
+  const marks = (body.diagnostics ?? []).filter((/** @type {any} */ m: any) => m && typeof m === "object");
   return {
     transcript: body.transcript ?? [],
-    reused: marks.some((/** @type {any} */ m) => m.event === "browserReused"),
-    refreshed: marks.some((/** @type {any} */ m) => m.event === "browseBufferRefreshed"),
-    title: marks.find((/** @type {any} */ m) => m.event === "documentReady")?.title ?? null,
+    reused: marks.some((/** @type {any} */ m: any) => m.event === "browserReused"),
+    refreshed: marks.some((/** @type {any} */ m: any) => m.event === "browseBufferRefreshed"),
+    title: marks.find((/** @type {any} */ m: any) => m.event === "documentReady")?.title ?? null,
   };
 }
 
-function report(/** @type {any} */ tally, /** @type {any} */ reusedCount, /** @type {any} */ refreshedCount, /** @type {any} */ total) {
+function report(/** @type {any} */ tally: any, /** @type {any} */ reusedCount: any, /** @type {any} */ refreshedCount: any, /** @type {any} */ total: any) {
   process.stdout.write(`\n  captures            ${total}\n`);
   process.stdout.write(`  on a REUSED window  ${reusedCount}  (the only ones that can express the fault)\n`);
   process.stdout.write(`  buffer refreshed    ${refreshedCount}\n`);
@@ -180,7 +180,7 @@ function report(/** @type {any} */ tally, /** @type {any} */ reusedCount, /** @t
  * Separated from `main` so the narrative there reads as setup, measurement, report — this function is the
  * measurement, and it is the only place that knows a capture's outcome depends on what came before it.
  */
-async function runRounds(/** @type {any} */ base, /** @type {any} */ rounds) {
+async function runRounds(/** @type {any} */ base: any, /** @type {any} */ rounds: any) {
   const tally = { correct: 0, "wrong-page": 0, silent: 0, unrecognised: 0, error: 0 };
   const counts = { reused: 0, refreshed: 0, total: 0 };
   let previous = null;
@@ -212,7 +212,7 @@ async function runRounds(/** @type {any} */ base, /** @type {any} */ rounds) {
 }
 
 /** Anything other than `correct` is called out on its own line, and a stale read names the page it read. */
-function flagFor(/** @type {any} */ outcome, /** @type {any} */ previous) {
+function flagFor(/** @type {any} */ outcome: any, /** @type {any} */ previous: any) {
   if (outcome === "correct") return "";
   const from = outcome === "wrong-page" ? ` (read ${previous?.page})` : "";
   return `  <-- ${outcome.toUpperCase()}${from}`;

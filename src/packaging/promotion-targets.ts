@@ -33,7 +33,7 @@
  * @param {string} porcelain  `git status --porcelain -- <targets>` output
  * @returns {string[]} the paths already modified, in the order git reported them
  */
-export function dirtyTargets(porcelain) {
+export function dirtyTargets(porcelain: string): string[] {
   return String(porcelain)
     .split("\n")
     .filter((line) => line.trim() !== "")
@@ -56,7 +56,7 @@ export function dirtyTargets(porcelain) {
  * @param {string[]} dirty
  * @returns {string | null}
  */
-export function promotionBlockedBy(dirty) {
+export function promotionBlockedBy(dirty: string[]): string | null {
   if (dirty.length === 0) return null;
   return "REFUSING to promote: a previous promotion is still uncommitted where this one would write:\n"
     + dirty.map((path) => `  ${path}`).join("\n")

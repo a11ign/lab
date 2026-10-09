@@ -13,13 +13,13 @@
  * mid-promotion is not. Putting it in the unit suite would make it fail for everyone the moment somebody
  * started a promotion, which is how a check gets deleted.
  */
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { provenanceLines } from "./promote-model.mjs";
-import { provenanceProblems } from "../src/packaging/shipped-provenance.mjs";
+import { provenanceProblems } from "../src/packaging/shipped-provenance.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run release:provenance" });

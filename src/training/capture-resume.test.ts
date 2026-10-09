@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { cacheKey, hashPageDir } from "./capture-cache.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
-import { captureFilePath } from "../capture/evidence-diff.mjs";
+import { captureFilePath } from "../capture/evidence-diff.ts";
 import test from "node:test";
 
 const ENV = {

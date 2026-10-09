@@ -12,7 +12,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { captureFilePath } from "../capture/evidence-diff.mjs";
+import { captureFilePath } from "../capture/evidence-diff.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPT = join(REPO, "packages/lab/scripts/nvda-release-gate.mjs");

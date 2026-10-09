@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { classifyCapture } from "./page-identity-rate.mjs";
+import { classifyCapture } from "./page-identity-rate.ts";
 
 const cityLibrary = { page: "structure-good.html", signature: /City Library/i };
 const faq = { page: "disclosure-good.html", signature: /FAQ|password/i };

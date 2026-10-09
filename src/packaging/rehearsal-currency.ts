@@ -18,7 +18,7 @@ const MARKER = /<!--\s*REHEARSAL:COMMIT\s+([0-9a-f]{7,40})\s*-->/;
  * @param {string | null} releaseMd
  * @returns {string | null}
  */
-export function rehearsalMarkerSha(releaseMd) {
+export function rehearsalMarkerSha(releaseMd: string | null): string | null {
   if (!releaseMd) return null;
   const m = MARKER.exec(releaseMd);
   return m ? m[1] : null;
@@ -41,7 +41,7 @@ export const REHEARSAL_DOCUMENTS = ["README.md", "docs/try-it.md", "docs/github-
  * @param {{ dir: string, manifest: Record<string, unknown> }[]} packages
  * @returns {string[]} one directory pathspec per published package
  */
-export function publishedPackagePaths(packages) {
+export function publishedPackagePaths(packages: { dir: string; manifest: Record<string, unknown>; }[]): string[] {
   return packages.filter(({ manifest }) => manifest.private !== true).map(({ dir }) => `packages/${dir}/`);
 }
 
@@ -54,7 +54,7 @@ const MS_PER_DAY = 86_400_000;
  * @param {number} nowMs
  * @returns {number | null}
  */
-export function ageInDays(committedAt, nowMs) {
+export function ageInDays(committedAt: string | null | undefined, nowMs: number): number | null {
   const then = Date.parse(committedAt ?? "");
   return Number.isNaN(then) ? null : Math.max(0, Math.floor((nowMs - then) / MS_PER_DAY));
 }
@@ -70,7 +70,10 @@ export function ageInDays(committedAt, nowMs) {
  * @returns {{ readable: boolean, lines: string[] }}
  */
 export function rehearsalReading(
-  { releaseMd, releaseSha, isAncestor = null, changedPaths = null, diffError = "", ageDays = null }) {
+  { releaseMd, releaseSha, isAncestor = null, changedPaths = null, diffError = "", ageDays = null }: {
+        releaseMd: string | null; releaseSha: string | null; isAncestor?: boolean | null;
+        changedPaths?: string[] | null; diffError?: string; ageDays?: number | null;
+    }): { readable: boolean; lines: string[]; } {
   const marked = rehearsalMarkerSha(releaseMd);
   if (!marked) {
     return unreadable("RELEASE.md carries no `<!-- REHEARSAL:COMMIT <sha> -->` marker, so there is no hand rehearsal on record to read");
@@ -95,6 +98,6 @@ export function rehearsalReading(
 }
 
 /** @param {string} line @returns {{ readable: false, lines: string[] }} */
-function unreadable(line) {
+function unreadable(line: string): { readable: false; lines: string[]; } {
   return { readable: false, lines: [line] };
 }

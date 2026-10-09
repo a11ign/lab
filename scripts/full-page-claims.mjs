@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { sweepOutcomes, ranOutShortOfTheCensus } from "@a11ign/evidence/conformance";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { realCorpusRoot } from "../src/dataset-paths.mjs";
+import { realCorpusRoot } from "../src/dataset-paths.ts";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 
 // FROM `dataset-paths.mjs`, never resolved here. `runs/` moves (A11Y_RUNS_ROOT, RUNS_ROOT, a mounted

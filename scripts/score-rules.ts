@@ -48,8 +48,8 @@ import { ruleFindings } from "@a11ign/judge/rules";
 
 import { readRuleOwnership } from "../src/training/rule-ownership.js";
 import { CASES } from "../src/training/case-matrix.mjs";
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
-import { REPO_ROOT, datasetExportPath, datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
+import { REPO_ROOT, datasetExportPath, datasetRoot, captureRoot } from "../src/dataset-paths.ts";
 
 /**
  * Subtypes the CASE DEFINITIONS carry, which is a different question from what the export contains.

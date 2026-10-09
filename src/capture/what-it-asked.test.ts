@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { whatItAsked } from "./what-it-asked.mjs";
+import { whatItAsked } from "./what-it-asked.ts";
 
 test("WHAT DID IT ASK: a channel nobody asked about is a QUALIFICATION, not a clean result", () => {
   // This report's closing line — "what it does not report, the page does not have" — was a claim nothing

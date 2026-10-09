@@ -27,11 +27,11 @@ import { join, resolve } from "node:path";
 import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { CASES } from "../training/case-matrix.mjs";
 import { hashPageDir } from "../training/capture-cache.mjs";
-import { captureFilePath } from "../capture/evidence-diff.mjs";
-import { REPO_ROOT } from "../dataset-paths.mjs";
+import { captureFilePath } from "../capture/evidence-diff.ts";
+import { REPO_ROOT } from "../dataset-paths.ts";
 import {
   MEMBER_LAYOUT, countJson, drillVerdict, restoreDrill, targetRefusal,
-} from "./corpus-restore-drill.mjs";
+} from "./corpus-restore-drill.ts";
 
 const SNAPSHOT = resolve(REPO_ROOT, "packages/lab/scripts/corpus-snapshot.mjs");
 const GENERATE = resolve(REPO_ROOT, "packages/lab/src/training/generate-screenreader-dataset.mjs");

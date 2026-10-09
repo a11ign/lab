@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "./stability-canary.mjs";
+import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "./stability-canary.ts";
 
 const SCRIPT = resolve(import.meta.dirname, "../../scripts/stability-gate.mjs");
 

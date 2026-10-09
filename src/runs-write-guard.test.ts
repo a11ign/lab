@@ -33,7 +33,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { REPO_ROOT } from "./dataset-paths.mjs";
+import { REPO_ROOT } from "./dataset-paths.ts";
 import { stripComments } from "@a11ign/evidence/source-text";
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
@@ -183,7 +183,7 @@ test("MUTATION: the write-call regex fires on every real write shape this guard 
 test("MUTATION: a NEW writer reproducing the gap would be caught, not just the ones already fixed", () => {
   const hypotheticalNewWriter =
     'import { writeFileSync } from "node:fs";\n'
-    + 'import { runsRoot } from "../src/dataset-paths.mjs";\n'
+    + 'import { runsRoot } from "../src/dataset-paths.ts";\n'
     + 'function main() {\n'
     + '  writeFileSync(resolve(runsRoot(), "new-report.json"), "{}");\n'
     + '}\n';

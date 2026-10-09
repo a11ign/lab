@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { REAL_PAGES } from "../training/real-page-corpus.mjs";
-import { realCorpusRoot } from "../dataset-paths.mjs";
+import { realCorpusRoot } from "../dataset-paths.ts";
 
 const STAND_IN = "192.0.2.10";
 const CONFORMANT_FIXTURE = REAL_PAGES.find((page) => page.role === "fixture" && page.publishedClaim === "conformant");

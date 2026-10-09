@@ -39,7 +39,7 @@ import {
   RUN_REPORTS, REPORT, OUT, checkoutCommit, latestReportPath, resultRow, runReportName, writeReports,
   writeRunReport,
 } from "../../scripts/evidence-check.mjs";
-import { REPO_ROOT } from "../dataset-paths.mjs";
+import { REPO_ROOT } from "../dataset-paths.ts";
 
 /** The env overrides `dataset-paths.mjs` reads at call time. The lab runs with none, so neither does this. */
 for (const name of ["DATASET_ROOT", "DATASET_CAPTURE_ROOT"]) delete process.env[name];

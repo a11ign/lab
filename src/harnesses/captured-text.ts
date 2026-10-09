@@ -6,13 +6,13 @@
  * at top level, which loads `@guidepup/guidepup`, and guidepup throws at import wherever no screen reader exists. So
  * `capture-check.mjs` imports this, and `state-change-after-null.test.ts` imports this directly.
  */
-export function capturedText(/** @type {any} */ r) {
+export function capturedText(/** @type {any} */ r: any) {
   return [
     ...r.transcript,
     ...r.structure.headings, ...r.structure.landmarks, ...r.structure.formFields,
     // #1616: a failed re-read (`after: null`) names its error instead of printing "null".
-    ...r.interaction.stateChanges.map((/** @type {any} */ s) => (s.after === null ? `${s.control} [re-read failed: ${s.error ?? "no error recorded"}]` : `${s.control} ${s.after}`)),
-    ...r.interaction.formChanges.map((/** @type {any} */ s) => `${s.control} ${s.after}`),
+    ...r.interaction.stateChanges.map((/** @type {any} */ s: any) => (s.after === null ? `${s.control} [re-read failed: ${s.error ?? "no error recorded"}]` : `${s.control} ${s.after}`)),
+    ...r.interaction.formChanges.map((/** @type {any} */ s: any) => `${s.control} ${s.after}`),
     ...(r.interaction.postSubmitFields ?? []),
   ].join(" | ");
 }

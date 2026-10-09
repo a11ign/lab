@@ -67,7 +67,7 @@ export const NARRATIVE_DESTINATIONS = ["docs/operational-lessons.md"];
  */
 
 /** @type {Pin[]} */
-export const PINS = [
+export const PINS: Pin[] = [
   // --- #1157: the emptiness assertion and where its positive control lives ---
   { id: "emptiness.positive-control", tier: IMPERATIVE,
     pattern: /an emptiness assertion names where its positive control lives/i },
@@ -166,22 +166,22 @@ export const PINS = [
 ];
 
 /** The pin with this id. Throws on an unknown id: a pin that is not there must never read as one that passes. */
-export function pinById(/** @type {string} */ id) {
+export function pinById(/** @type {string} */ id: string) {
   const pin = PINS.find((candidate) => candidate.id === id);
   if (pin === undefined) throw new Error(`no pin named ${id} in prefix-pins.mjs`);
   return pin;
 }
 
 /** The pattern of the pin with this id, for the code that mutates or reuses it. */
-export const pinPattern = (/** @type {string} */ id) => pinById(id).pattern;
+export const pinPattern = (/** @type {string} */ id: string) => pinById(id).pattern;
 
 /** The files a pin subject is read from: the loaded rules, then the named narrative destinations. */
 export const pinCorpusFiles = () => [...LOADED_RULES_FILES, ...NARRATIVE_DESTINATIONS];
 
-const readRepoFile = (/** @type {string} */ rel) => readFileSync(join(REPO_ROOT, rel), "utf8");
+const readRepoFile = (/** @type {string} */ rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
 
 /** Whitespace-collapsed, the form every pattern is written against. */
-export const flatten = (/** @type {string} */ text) => text.replace(/\s+/g, " ");
+export const flatten = (/** @type {string} */ text: string) => text.replace(/\s+/g, " ");
 
 /**
  * @typedef {{ loaded: string, destinations: string }} PinSubject
@@ -189,8 +189,8 @@ export const flatten = (/** @type {string} */ text) => text.replace(/\s+/g, " ")
  */
 
 /** @returns {PinSubject} the loaded rules and the narrative destinations, read from disk. */
-export function readPinSubject() {
-  const joined = (/** @type {string[]} */ files) => flatten(files.map(readRepoFile).join("\n"));
+export function readPinSubject(): PinSubject {
+  const joined = (/** @type {string[]} */ files: string[]) => flatten(files.map(readRepoFile).join("\n"));
   return { loaded: joined(LOADED_RULES_FILES), destinations: joined(NARRATIVE_DESTINATIONS) };
 }
 
@@ -202,7 +202,7 @@ export function readPinSubject() {
  * @param {Pin} pin
  * @param {PinSubject} subject
  */
-export const textForPin = (pin, subject) =>
+export const textForPin = (pin: Pin, subject: PinSubject) =>
   pin.tier === NARRATIVE ? `${subject.loaded}\n${subject.destinations}` : subject.loaded;
 
 /**
@@ -210,10 +210,10 @@ export const textForPin = (pin, subject) =>
  * found in the collapsed text can be counted in the ORIGINAL file's bytes.
  * @param {string} text
  */
-function flattenWithOrigin(text) {
+function flattenWithOrigin(text: string) {
   let flat = "";
   /** @type {number[]} */
-  const origin = [];
+  const origin: number[] = [];
   let inSpace = false;
   for (let i = 0; i < text.length; i++) {
     const isSpace = /\s/.test(text[i]);
@@ -229,7 +229,7 @@ function flattenWithOrigin(text) {
 const LAST_BMP_CODE_POINT = 0xffff;
 
 /** Bytes (UTF-8) of the characters `covered` marks -- an em dash is three, so length would under-read. */
-function coveredBytes(/** @type {string} */ text, /** @type {Uint8Array} */ covered) {
+function coveredBytes(/** @type {string} */ text: string, /** @type {Uint8Array} */ covered: Uint8Array) {
   let bytes = 0;
   for (let i = 0; i < text.length;) {
     const codePoint = /** @type {number} */ (text.codePointAt(i));
@@ -247,7 +247,7 @@ function coveredBytes(/** @type {string} */ text, /** @type {Uint8Array} */ cove
  * @param {string} text
  * @param {RegExp[]} patterns
  */
-export function coveredByPatterns(text, patterns) {
+export function coveredByPatterns(text: string, patterns: RegExp[]) {
   const covered = new Uint8Array(text.length);
   const { flat, origin } = flattenWithOrigin(text);
   for (const pattern of patterns) {
@@ -276,12 +276,15 @@ export function coveredByPatterns(text, patterns) {
  * @returns {{ total: number, byTier: Record<string, number>, byFile: Record<string, number>,
  *   loadedSetBytes: number }}
  */
-export function pinnedProseReading() {
-  const patternsOf = (/** @type {Pin[]} */ pins) => pins.map((pin) => pin.pattern);
+export function pinnedProseReading(): {
+    total: number; byTier: Record<string, number>; byFile: Record<string, number>;
+    loadedSetBytes: number;
+} {
+  const patternsOf = (/** @type {Pin[]} */ pins: Pin[]) => pins.map((pin) => pin.pattern);
   /** @type {Record<string, number>} */
-  const byTier = { [IMPERATIVE]: 0, [NARRATIVE]: 0 };
+  const byTier: Record<string, number> = { [IMPERATIVE]: 0, [NARRATIVE]: 0 };
   /** @type {Record<string, number>} */
-  const byFile = {};
+  const byFile: Record<string, number> = {};
   for (const file of LOADED_RULES_FILES) {
     const text = readRepoFile(file);
     byFile[file] = coveredByPatterns(text, patternsOf(PINS));

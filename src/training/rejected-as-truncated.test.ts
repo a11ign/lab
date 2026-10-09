@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { REPO_ROOT } from "../dataset-paths.mjs";
+import { REPO_ROOT } from "../dataset-paths.ts";
 import { rejectedAsTruncated } from "./rejected-as-truncated.mjs";
 
 const gap = (channel: string, kind = "inferred", reason = "repeat") => ({ channel, reason, kind });

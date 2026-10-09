@@ -38,7 +38,7 @@ refuseUnknownFlags(["--expect-activation", "--require-wcag=", "--forbid-wcag=", 
  * @param {unknown} report
  * @returns {string | null} the reason it is unusable, or null
  */
-export function contractFailure(report) {
+export function contractFailure(report: unknown): string | null {
   const r = /** @type {Record<string, any>} */ (report);
   if (!r?.url) return "report has no url";
   if (!r.verdict || !Array.isArray(r.verdict.findings)) {
@@ -54,7 +54,7 @@ export function contractFailure(report) {
 
 /** How many controls the capture operated. Zero on a default run means `probe-forms` silently regressed. */
 /** @param {Record<string, any>} report */
-export function activationCount(report) {
+export function activationCount(report: Record<string, any>) {
   const interaction = report?.capture?.interaction ?? report?.interaction;
   return (interaction?.formChanges ?? []).length + (interaction?.stateChanges ?? []).length;
 }
@@ -77,7 +77,7 @@ export function activationCount(report) {
  * @param {Record<string, any>} report
  * @returns {string | null} the reason it is unusable, or null
  */
-export function ruleLayerFailure(report) {
+export function ruleLayerFailure(report: Record<string, any>): string | null {
   if (report?.ruleBased === null) {
     return "ruleBased is null: the axe-core layer did not run (or threw) despite being requested -- " +
       "the tool announced a layer it did not produce";
@@ -94,8 +94,8 @@ export function ruleLayerFailure(report) {
  * @param {string} wcag
  * @returns {Record<string, any>[]}
  */
-export function findingsFor(report, wcag) {
-  return (report?.verdict?.findings ?? []).filter((/** @type {Record<string, any>} */ f) => String(f?.wcag ?? "").startsWith(wcag));
+export function findingsFor(report: Record<string, any>, wcag: string): Record<string, any>[] {
+  return (report?.verdict?.findings ?? []).filter((/** @type {Record<string, any>} */ f: Record<string, any>) => String(f?.wcag ?? "").startsWith(wcag));
 }
 
 /**
@@ -115,11 +115,11 @@ export function findingsFor(report, wcag) {
  * @param {string} wcag the bare criterion number, e.g. "1.1.1"
  * @returns {string | null} the reason the report accuses the page, or null
  */
-export function accusationFailure(report, wcag) {
+export function accusationFailure(report: Record<string, any>, wcag: string): string | null {
   if (!Array.isArray(report?.outcomes)) {
     return `report has no outcomes, so an assertion of ${wcag} cannot be told from a referral of it`;
   }
-  const asserted = report.outcomes.some((/** @type {Record<string, any>} */ o) =>
+  const asserted = report.outcomes.some((/** @type {Record<string, any>} */ o: Record<string, any>) =>
     o?.criterion === wcag && o?.outcome === "failed");
   if (!asserted) return null;
   return `${wcag} claimed against a page published as conformant: ` +
@@ -127,13 +127,13 @@ export function accusationFailure(report, wcag) {
 }
 
 /** @param {string[]} args @param {string} name */
-function flagValue(args, name) {
+function flagValue(args: string[], name: string) {
   const hit = args.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : null;
 }
 
 /** @param {string[]} argv */
-function main(argv) {
+function main(argv: string[]) {
   const [path, ...flags] = argv;
   if (!path) {
     process.stderr.write("usage: assert-action-report.mjs <report.json> " +
@@ -178,7 +178,7 @@ function main(argv) {
 }
 
 /** @param {string} reason @returns {number} */
-function fail(reason) {
+function fail(reason: string): number {
   process.stderr.write(`::error::${reason}\n`);
   return 1;
 }

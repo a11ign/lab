@@ -13,7 +13,7 @@
 // TypeScript (@a11ign/evidence/verify). Same reason capture-screenreader-dataset.mjs does.
 //
 // Prints a per-case verdict and one recommendation: ship without invalidating the cache, or bump
-// CAPTURE_PROTOCOL_VERSION and recapture. See ../src/capture/evidence-diff.mjs for why this exists --
+// CAPTURE_PROTOCOL_VERSION and recapture. See ../src/capture/evidence-diff.ts for why this exists --
 // briefly, the cache key asks "could this have changed the evidence", never "did it", so before this
 // existed every capture optimisation cost a 2,122-capture recapture to evaluate.
 //
@@ -26,8 +26,8 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { compareCapture, readCapture, summarise } from "../src/capture/evidence-diff.mjs";
-import { REPO_ROOT, datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { compareCapture, readCapture, summarise } from "../src/capture/evidence-diff.ts";
+import { REPO_ROOT, datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 // #1185: every `git` spawn in this tree goes through a GIT_* scrubbing helper, and a read-only one is
 // no exception -- a hook exports `GIT_DIR`, so an inherited environment reads another repository.
 import { sandboxGitEnv } from "../../guards/src/git-env.mjs";

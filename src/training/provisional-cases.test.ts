@@ -41,9 +41,9 @@ import { resolve } from "node:path";
 
 import { CASES, pair } from "./case-matrix.mjs";
 import { checkCase, effectiveVerdict, signalVerdict } from "./check-signals.mjs";
-import { datasetRoot, captureRoot as buildCaptureRoot } from "../dataset-paths.mjs";
+import { datasetRoot, captureRoot as buildCaptureRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
-import { captureFilePath } from "../capture/evidence-diff.mjs";
+import { captureFilePath } from "../capture/evidence-diff.ts";
 
 /**
  * How many cases may be provisional AT ONCE.

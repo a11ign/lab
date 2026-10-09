@@ -23,7 +23,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { abstentionSweepPath } from "../src/dataset-paths.mjs";
+import { abstentionSweepPath } from "../src/dataset-paths.ts";
 import { REAL_PAGES, realPageFor } from "../src/training/real-page-corpus.mjs";
 
 const TABLE_OR_FILTER = /table|filter/i;

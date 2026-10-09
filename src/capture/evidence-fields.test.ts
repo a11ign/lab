@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { COMPARED_OUTSIDE_THE_TABLE, EVIDENCE_FIELDS, FIELD_GROUPS, NOT_COMPARED } from "./evidence-diff.mjs";
-import { runsRoot } from "../dataset-paths.mjs";
+import { COMPARED_OUTSIDE_THE_TABLE, EVIDENCE_FIELDS, FIELD_GROUPS, NOT_COMPARED } from "./evidence-diff.ts";
+import { runsRoot } from "../dataset-paths.ts";
 import { corpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 /**
@@ -239,7 +239,7 @@ test("a field waiting for its first capture is removed from PENDING once it arri
   }
 });
 
-import { compareCapture } from "./evidence-diff.mjs";
+import { compareCapture } from "./evidence-diff.ts";
 
 test("a routeChange whose title stopped moving is CHANGED, not SAME", () => {
   // `routeChange` is an OBJECT, and `fieldValues` originally handled arrays only — so listing it without

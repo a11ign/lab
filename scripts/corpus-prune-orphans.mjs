@@ -56,7 +56,7 @@ import {
   REAL_PAGES, realPageFor, pageServerFixtureAtPath,
 } from "../src/training/real-page-corpus.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
-import { realCorpusRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { realCorpusRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 
 /**
  * What to do with a capture no declared page claims.

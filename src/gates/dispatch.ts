@@ -17,7 +17,7 @@
  * for, and it says so in the verdict rather than being indistinguishable.
  */
 import { spawn } from "node:child_process";
-import { REPO_ROOT } from "../dataset-paths.mjs";
+import { REPO_ROOT } from "../dataset-paths.ts";
 import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
 /**
@@ -38,7 +38,7 @@ export const LOCAL_FLAG = "--local";
  *   Returns only when the caller should proceed locally; otherwise it dispatches and EXITS with the job's
  *   status, so a caller cannot accidentally run both.
  */
-export async function dispatchUnlessLocal({ job, argv }) {
+export async function dispatchUnlessLocal({ job, argv }: { job: string; argv: string[]; }): Promise<{ runHere: true; controlPlane: string; } | never> {
   if (argv.includes(LOCAL_FLAG)) {
     // NAMED, not merely permitted. `hostname` is what distinguishes one operator's laptop from another's
     // in a pasted result, which is the case this exists for.
@@ -59,7 +59,7 @@ export function localHost() {
 }
 
 /** @param {string} cmd @param {string[]} args */
-function run(cmd, args) {
+function run(cmd: string, args: string[]) {
   return new Promise((resolvePromise) => {
     const child = spawn(cmd, args, { cwd: REPO_ROOT, stdio: "inherit" });
     child.on("error", () => resolvePromise(2));

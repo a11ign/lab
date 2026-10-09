@@ -59,7 +59,7 @@ import { readdirSync, readFileSync, statSync, existsSync, openSync, readSync, cl
 import { resolve, join, basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, runsRoot, realCorpusRoot, datasetRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, runsRoot, realCorpusRoot, datasetRoot } from "../src/dataset-paths.ts";
 import { corpusState } from "../src/training/corpus-settled.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 

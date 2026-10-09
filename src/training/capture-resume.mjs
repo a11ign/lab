@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cacheKey, hashPageDir } from "./capture-cache.mjs";
-import { isUsableCapture, captureFilePath } from "../capture/evidence-diff.mjs";
+import { isUsableCapture, captureFilePath } from "../capture/evidence-diff.ts";
 
 /**
  * A completed pair is eligible for --resume only while it still describes the current page bytes.

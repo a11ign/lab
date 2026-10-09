@@ -17,9 +17,9 @@ import { CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/screenreader-fleet/worker-htt
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { captureIn, costCause, MIN_TRIPS_FOR_A_RATE, rateAcrossPages, sweepCostsByPage, walkRate }
-  from "../src/capture/sweep-costs.mjs";
+  from "../src/capture/sweep-costs.ts";
 import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
-import { datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
+import { datasetRoot, captureRoot } from "../src/dataset-paths.ts";
 import { wakeNamedWorkers } from "../src/training/wake-by-hand.mjs";
 
 /**

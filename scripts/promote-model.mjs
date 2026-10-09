@@ -31,9 +31,9 @@ import { resolve, join } from "node:path";
 import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { releasability } from "../src/packaging/releasability.mjs";
-import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.mjs";
-import { dirtyTargets, promotionBlockedBy } from "../src/packaging/promotion-targets.mjs";
+import { releasability } from "../src/packaging/releasability.ts";
+import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.ts";
+import { dirtyTargets, promotionBlockedBy } from "../src/packaging/promotion-targets.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 
 /**

@@ -18,7 +18,7 @@ import { readFileSync } from "node:fs";
 import { workerSource } from "../packaging/laid-worker.ts";
 
 import { compareCapture, COMPARED_OUTSIDE_THE_TABLE, ENVELOPE_FIELDS, EVIDENCE_FIELDS, fieldKey, FIELD_GROUPS, NOT_COMPARED }
-  from "./evidence-diff.mjs";
+  from "./evidence-diff.ts";
 
 /** A capture the pipeline accepts, carrying `over`. */
 const capture = (over: Record<string, unknown> = {}) => ({
