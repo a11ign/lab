@@ -624,15 +624,6 @@ test("[35] (1) every non-archived repository in the organisation is a declared s
 /** What `readDeclaredCopies` returns for each copy the tool's `lib/` declares. */
 interface CopyPair { original: string; copy: string; originalText: string | null; copyText: string; allowedLines: number | null }
 const declaredCopies = () => (readDeclaredCopies({ root: ROOT }) ?? []) as CopyPair[];
-/**
- * The one copy whose header still names an original that has left the core: `src/lib/cli-flags.mjs` says `packages/worker-fleet/src/cli-flags.mjs`, which moved out with
- * the fleet layer (a11ign/a11ign#3504), so the tool reads nothing there and the pair is unreadable. The header is the TOOL's to correct (a11ign/agent-org#505), so this file
- * pins the state as it is: exactly this one, and the list only shrinks -- a second unreadable original fails, and a header that is corrected fails here until its entry is
- * deleted. (`product-home.mjs` and `fixture-symbols.ts`, the other two this list once held, were corrected by a11ign/agent-org#501, a11ign/a11ign#4515, and left it.)
- * When #505 is tagged, delete this constant and `withoutKnownUnreadable`, and assert that NO pair has a `null` original and the reading is `clear`.
- */
-const KNOWN_UNREADABLE_ORIGINALS = ["src/lib/cli-flags.mjs"];
-const withoutKnownUnreadable = (pairs: CopyPair[]) => pairs.filter((pair) => !KNOWN_UNREADABLE_ORIGINALS.includes(pair.copy));
 
 test("[36] control: the real tree's declared copies are discovered, every original is readable, and the pair set is CLEAN", () => {
   const pairs = declaredCopies();
@@ -642,11 +633,11 @@ test("[36] control: the real tree's declared copies are discovered, every origin
   const headed = readdirSync(lib).filter((name) => /^\/\/ COPIED FROM `/m.test(readFileSync(join(lib, name), "utf8")));
   assert.ok(headed.length > 0, "the scan is not empty: the tree's copies are what the control compares");
   assert.equal(pairs.length, headed.length, `discovery found ${pairs.length} pairs and a scan of lib/ finds ${headed.length} headed files`);
-  assert.deepEqual(pairs.filter((pair) => pair.originalText === null).map((pair) => pair.copy).sort(), KNOWN_UNREADABLE_ORIGINALS,
-    "an unreadable original would make 'clean' mean 'not asked': only the known one, until agent-org corrects its header (a11ign/agent-org#505)");
-  // The pairs that CAN be read are clean; with the unreadable one in, the reading is 'unknown' (not 'clear'), which is the answer the tool gives for a pair it could not ask.
-  assert.equal(copyDriftReading({ pairs: withoutKnownUnreadable(pairs) }).status, "clear", copyDriftReading({ pairs: withoutKnownUnreadable(pairs) }).detail);
-  assert.equal(copyDriftReading({ pairs }).status, "unknown");
+  assert.deepEqual(pairs.filter((pair) => pair.originalText === null).map((pair) => pair.copy).sort(), [],
+    "an unreadable original would make 'clean' mean 'not asked': every original must be readable (a11ign/agent-org#501 corrected product-home and fixture-symbols; cli-flags is read from the fleet layer the core lays)");
+  assert.equal(copyDriftReading({ pairs }).status, "clear", copyDriftReading({ pairs }).detail);
+  // POSITIVE CONTROL: the same pairs with one original made unreadable read 'unknown' (not 'clear'), which is the answer the tool gives for a pair it could not ask.
+  assert.equal(copyDriftReading({ pairs: pairs.map((pair, index) => (index === 0 ? { ...pair, originalText: null } : pair)) }).status, "unknown");
 });
 
 /**
@@ -682,7 +673,7 @@ test("[37] control: the REAL isolation-gate pair with ONE BYTE changed on more l
   assert.match(reading.detail, /src\/lib\/isolation-gate\.mjs against packages\/guards\/src\/isolation-gate\.mjs/);
   const changedCopy = pairs.map((pair) => (pair === real ? { ...pair, copyText: withConstLinesBroken(pair.copyText, broken) } : pair));
   assert.equal(copyDriftReading({ pairs: changedCopy }).status, "tripped");
-  assert.equal(copyDriftReading({ pairs: withoutKnownUnreadable(changedCopy).filter((pair) => pair.copy !== ISOLATION) }).status, "clear",
+  assert.equal(copyDriftReading({ pairs: changedCopy.filter((pair) => pair.copy !== ISOLATION) }).status, "clear",
     "the other pairs are untouched, so the trip is the one pair's");
 });
 

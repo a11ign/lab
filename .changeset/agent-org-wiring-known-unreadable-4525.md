@@ -2,4 +2,4 @@
 "@a11ign/lab": patch
 ---
 
-`agent-org-wiring.test.ts` [36] pins the one unreadable original agent-org still has (`src/lib/cli-flags.mjs`, a11ign/agent-org#505) instead of the two a11ign/agent-org#501 corrected, so the lab's CI stops failing on the newest agent-org tag (a11ign/a11ign#4525).
+`agent-org-wiring.test.ts` [36] no longer pins unreadable originals: agent-org#501 corrected the two it named (`product-home`, `fixture-symbols`) and the third, `cli-flags`, is read from the fleet layer the core lays, so under the newest agent-org tag every original is readable and the copies reading is `clear`. The list and `withoutKnownUnreadable` are deleted, and [36] asserts that none is unreadable and keeps its `unknown` positive control (a11ign/a11ign#4525).
