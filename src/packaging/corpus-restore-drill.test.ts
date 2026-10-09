@@ -35,7 +35,7 @@ import {
 
 const SNAPSHOT = resolve(REPO_ROOT, "packages/lab/scripts/corpus-snapshot.mjs");
 const GENERATE = resolve(REPO_ROOT, "packages/lab/src/training/generate-screenreader-dataset.mjs");
-const DRILL = resolve(REPO_ROOT, "packages/lab/src/packaging/corpus-restore-drill.mjs");
+const DRILL = resolve(REPO_ROOT, "packages/lab/src/packaging/corpus-restore-drill.ts");
 
 /** More than `MIN_EXAMINED` (25) in `check-signals.mjs`, so a healthy restore is a PASS and not INCONCLUSIVE. */
 const FIXTURE_CASES = 30;

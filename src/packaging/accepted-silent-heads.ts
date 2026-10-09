@@ -9,6 +9,7 @@
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import type { Loose } from "../capture/loose.ts";
 
 export const ACCEPTED_SILENT_HEADS_FILE = fileURLToPath(
   new URL("../training/accepted-silent-heads.json", import.meta.url));
@@ -19,16 +20,19 @@ const FILE_KEYS = ["heads", "ruling"];
 const ENTRY_KEYS = ["id", "measured", "row", "ruled"];
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/**
- * @typedef {object} AcceptedSilentHead
- * @property {string} id           `criterion:subtype`, matched exactly
- * @property {{truePositive: number, positive: number, atThreshold?: number}} measured  provenance only
- * @property {string} ruled        ISO date of the ruling
- * @property {string} row          the row the ruling was made on
- */
+export type AcceptedSilentHead = {
+  /** `criterion:subtype`, matched exactly */
+  id: string;
+  /** provenance only */
+  measured: { truePositive: number; positive: number; atThreshold?: number };
+  /** ISO date of the ruling */
+  ruled: string;
+  /** the row the ruling was made on */
+  row: string;
+};
 
 /** @param {string} path @param {Record<string, any>} entry */
-function assertEntry(path: string, entry: Record<string, any>) {
+function assertEntry(path: string, entry: Record<string, Loose>) {
   const keys = Object.keys(entry).sort();
   if (JSON.stringify(keys) !== JSON.stringify(ENTRY_KEYS)) {
     throw new Error(`${path} entry ${JSON.stringify(entry)} must carry exactly ${ENTRY_KEYS.join(", ")}`);
@@ -52,7 +56,7 @@ export function readAcceptedSilentHeads(path: string = ACCEPTED_SILENT_HEADS_FIL
     throw new Error(`${path} keys are ${Object.keys(document).sort().join(", ")}, expected ${FILE_KEYS.join(", ")}`);
   }
   for (const entry of document.heads) assertEntry(path, entry);
-  const ids = document.heads.map((/** @type {{id: string}} */ entry: { id: string; }) => entry.id);
+  const ids = document.heads.map((entry: { id: string; }) => entry.id);
   if (new Set(ids).size !== ids.length) throw new Error(`${path} lists a head twice`);
   return document.heads;
 }

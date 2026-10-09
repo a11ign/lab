@@ -1,8 +1,8 @@
 // @ts-check
 // REBUILD A LAB FROM A CORPUS RELEASE, and run a real gate off the result. #2051.
 //
-//   node packages/lab/src/packaging/corpus-restore-drill.mjs --archive=<corpus-….tar.gz> --live-runs=/opt/a11y/runs
-//   node packages/lab/src/packaging/corpus-restore-drill.mjs --release=corpus-2026-09-23_03-00-00 --live-runs=<path>
+//   node packages/lab/src/packaging/corpus-restore-drill.ts --archive=<corpus-….tar.gz> --live-runs=/opt/a11y/runs
+//   node packages/lab/src/packaging/corpus-restore-drill.ts --release=corpus-2026-09-23_03-00-00 --live-runs=<path>
 //
 // ## What `corpus:release --verify` proves, and what it cannot
 //
@@ -62,11 +62,12 @@ import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../dataset-paths.ts";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../gates/verdict.ts";
 import { DEFAULT_REPO } from "../../scripts/corpus-release.mjs";
+import type { Loose } from "../capture/loose.ts";
 
 const run = promisify(execFile);
 
 refuseUnknownFlags(["--archive=", "--release=", "--repo=", "--live-runs=", "--scratch=", "--require-complete"],
-  { entry: import.meta.url, command: "node packages/lab/src/packaging/corpus-restore-drill.mjs" });
+  { entry: import.meta.url, command: "node packages/lab/src/packaging/corpus-restore-drill.ts" });
 
 const DATASET_DIR = "screenreader-dataset";
 
@@ -158,11 +159,11 @@ export async function countJson(path: string) {
  */
 export async function countMembers(runs: string): Promise<Record<string, number>> {
   const entries = await Promise.all(Object.entries(MEMBER_LAYOUT)
-    .map(async ([member, where]) => /** @type {const} */ ([member, await countJson(join(runs, where))])));
+    .map(async ([member, where]) => ([member, await countJson(join(runs, where))] as const)));
   return Object.fromEntries(entries);
 }
 
-const sum = (/** @type {Record<string, number>} */ counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
+const sum = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
 
 /**
  * What the archive holds, from its own listing: the JSON count, and the top-level member names.
@@ -185,7 +186,7 @@ export async function inspectArchive(archive: string) {
 async function extract({ archive, scratch, members }: { archive: string; scratch: string; members: string[]; }) {
   const byBase = new Map();
   for (const member of members) {
-    const base = join(scratch, "runs", dirname(MEMBER_LAYOUT[/** @type {keyof typeof MEMBER_LAYOUT} */ (member)]));
+    const base = join(scratch, "runs", dirname(MEMBER_LAYOUT[(member as keyof typeof MEMBER_LAYOUT)]));
     byBase.set(base, [...(byBase.get(base) ?? []), member]);
   }
   for (const [base, names] of byBase) {
@@ -232,7 +233,7 @@ async function runGate({ env, requireComplete }: { env: NodeJS.ProcessEnv; requi
   /** @type {{ status: number, output: string }} */
   const done: { status: number; output: string; } = await run(process.execPath, args, { cwd: REPO_ROOT, env, maxBuffer: MAX_GATE_OUTPUT_BYTES })
     .then(({ stdout, stderr }) => ({ status: 0, output: stdout + stderr }))
-    .catch((/** @type {any} */ e: any) => ({ status: typeof e.code === "number" ? e.code : 1,
+    .catch((e: Loose) => ({ status: typeof e.code === "number" ? e.code : 1,
       output: String(e.stdout ?? "") + String(e.stderr ?? "") }));
   // The verdict line, not the last line: on a non-zero exit the gate prints a hint AFTER it.
   const verdict = done.output.split("\n").find((l) => /^(PASS|FAIL|INCONCLUSIVE)\b/.test(l));
@@ -355,12 +356,12 @@ async function downloadRelease(repo: string, tag: string, into: string) {
 
 async function main() {
   const made = flag("scratch") ? null : mkdtempSync(join(tmpdir(), "corpus-restore-drill-"));
-  const scratch = flag("scratch") ?? join(/** @type {string} */ (made), "restore");
+  const scratch = flag("scratch") ?? join((made as string), "restore");
   refuseIfRunsReadonly(scratch);
   try {
     const archive = flag("archive") ?? await downloadFrom(flag("release"), flag("repo") ?? DEFAULT_REPO, made);
     const result = await restoreDrill({ archive: resolve(archive), scratch,
-      liveRuns: flag("live-runs") ? resolve(/** @type {string} */ (flag("live-runs"))) : undefined,
+      liveRuns: flag("live-runs") ? resolve((flag("live-runs") as string)) : undefined,
       requireComplete: process.argv.includes("--require-complete") });
     process.stdout.write(result.lines.join("\n") + "\n");
     if (!result.ok) {
@@ -370,7 +371,7 @@ async function main() {
     }
     process.stdout.write("DRILL PASSED: the release restores into a tree a real gate runs off.\n");
     if (made) rmSync(made, { recursive: true, force: true });
-  } catch (/** @type {any} */ error: any) {
+  } catch (error: Loose) {
     process.stderr.write(`REFUSING: ${error.message}\n`);
     process.exit(error.usage ? 2 : 1);
   }

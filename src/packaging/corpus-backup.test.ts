@@ -46,7 +46,7 @@ const REPO = resolve(import.meta.dirname, "../../../..");
 const BACKUP_SCRIPT = resolve(REPO, "packages/lab/scripts/corpus-backup.mjs");
 const LAB_JOB_YML = resolve(REPO, "packages/control/ansible/lab-job.yml");
 const SNAPSHOT_SCRIPT = resolve(REPO, "packages/lab/scripts/corpus-snapshot.mjs");
-const DATASET_PATHS = resolve(REPO, "packages/lab/src/dataset-paths.mjs");
+const DATASET_PATHS = resolve(REPO, "packages/lab/src/dataset-paths.ts");
 
 /** Both files must name the working route by name, not just gesture at "another way". */
 const NAMES_THE_ROUTE = (text: string) =>
@@ -261,7 +261,7 @@ test("#2050 REGRESSION: moving the route names out of the advisory and into a co
     // The copy sits at a different depth from the real script, so its ONE relative import is rewritten to
     // an absolute path. Everything else it needs -- `@a11ign/screenreader-fleet` -- resolves by walking up to
     // this repo's `node_modules`, which is why the copy stays inside the repo at all.
-    .replace('"../src/dataset-paths.mjs"', JSON.stringify(pathToFileURL(DATASET_PATHS).href));
+    .replace('"../src/dataset-paths.ts"', JSON.stringify(pathToFileURL(DATASET_PATHS).href));
 
   // Beside the real script but NOT under `packages/lab/scripts/`: `runs-write-guard.test.ts` and
   // `dataset-paths.test.ts` walk `packages/*/{src,scripts}` concurrently and read every file they list,

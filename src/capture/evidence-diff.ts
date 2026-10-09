@@ -21,16 +21,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { compareIdentity, documentIdentity } from "@a11ign/evidence/document-identity";
+import type { Loose } from "./loose.ts";
 
 /** Fields a dataset signal can read. A difference in any of these is a change in evidence. */
 /**
- * @typedef {Record<string, any>} EvidenceCapture
- *
  * `any` deliberately, and only here. This module's whole job is walking a parsed capture by field paths
  * held in data (`EVIDENCE_FIELDS` below), so a precise shape would have to be re-stated for every field
  * the table names -- a second spelling of the table, which is the duplication this repo pays most for.
  * The paths are the contract; the object is JSON.
  */
+export type EvidenceCapture = Record<string, Loose>;
 
 /**
  * A field is a PATH: `[group, name]` inside `structure`/`interaction`, or `[name]` for a channel at the capture's top
@@ -382,7 +382,7 @@ function flatten(entry: unknown, fieldPath: string): string {
     .filter(([key]) => !NOT_EVIDENCE_KEYS.has(key))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${normaliseValue(key, value, fieldPath,
-      /** @type {Record<string, unknown>} */ (entry))}`)
+      (entry as Record<string, unknown>))}`)
     .join(" ");
 }
 
@@ -397,7 +397,7 @@ function flatten(entry: unknown, fieldPath: string): string {
  * @returns {string[]}
  */
 export function fieldValues(capture: EvidenceCapture | null | undefined, field: string[]): string[] {
-  const value = field.reduce((/** @type {any} */ at: any, key) => at?.[key], capture);
+  const value = field.reduce((at: Loose, key) => at?.[key], capture);
   const fieldPath = field.join(".");
   if (Array.isArray(value)) return value.map((entry) => flatten(entry, fieldPath));
   // AN OBJECT, FLATTENED. `routeChange` is `{control, titleBefore, titleAfter, headingBefore,
@@ -687,7 +687,7 @@ export function readCapture(dir: string, id: string, variant: string) {
   try {
     return JSON.parse(readFileSync(path, "utf8"));
   } catch (error) {
-    throw new Error(`could not read ${path}: ${/** @type {Error} */ (error).message}`, { cause: error });
+    throw new Error(`could not read ${path}: ${(error as Error).message}`, { cause: error });
   }
 }
 
@@ -707,7 +707,7 @@ export function readCapture(dir: string, id: string, variant: string) {
  *
  * @param {Record<string, any> | null} capture
  */
-export function isUsableCapture(capture: Record<string, any> | null) {
+export function isUsableCapture(capture: Record<string, Loose> | null) {
   return unusableReason(capture) === null;
 }
 
@@ -730,10 +730,10 @@ export function isUsableCapture(capture: Record<string, any> | null) {
  * @param {Record<string, any> | null} capture
  * @returns {string | null}
  */
-export function unusableReason(capture: Record<string, any> | null): string | null {
+export function unusableReason(capture: Record<string, Loose> | null): string | null {
   if (capture?.screenReader !== "NVDA") return "not a capture NVDA made";
   if (!Array.isArray(capture.transcript) || capture.transcript.length === 0) return "empty transcript";
-  if (capture.transcript.every((/** @type {unknown} */ line: unknown) => typeof line === "string" && line.trim() === "blank")) {
+  if (capture.transcript.every((line: unknown) => typeof line === "string" && line.trim() === "blank")) {
     return `NVDA read only "blank" (${capture.transcript.length} line(s)), so it never read the page`;
   }
   const title = lastDocumentReadyTitle(capture.diagnostics);
@@ -764,7 +764,7 @@ function lastDocumentReadyTitle(diagnostics: unknown): unknown {
  * @param {readonly E[]} entries
  * @returns {{ kept: E[], refused: { url: string, reason: string }[] }}
  */
-export function refuseUnusableEntries<E>(entries: readonly E[]): { kept: E[]; refused: { url: string; reason: string; }[]; } {
+export function refuseUnusableEntries<E extends { capture?: Record<string, Loose> | null }>(entries: readonly E[]): { kept: E[]; refused: { url: string; reason: string; }[]; } {
   /** @type {E[]} */ const kept: E[] = [];
   /** @type {{ url: string, reason: string }[]} */ const refused: { url: string; reason: string; }[] = [];
   for (const entry of entries) {

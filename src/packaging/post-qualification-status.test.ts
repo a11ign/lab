@@ -18,7 +18,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   QUALIFICATION_CONTEXT, QUALIFICATION_GATE, qualificationStatus,
-} from "../gates/qualification-status.ts";
+} from "../gates/qualification-status.mjs";
 import { gateVerdict } from "../gates/verdict.ts";
 import { QUALIFICATION_CONTEXT as READ_CONTEXT } from "../../../../scripts/release-reads-qualification.mjs";
 import {

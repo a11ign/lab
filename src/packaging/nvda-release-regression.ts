@@ -17,15 +17,15 @@
  * here does not cross that line.
  */
 import { compareCapture, isUsableCapture, unusableReason } from "../capture/evidence-diff.ts";
+import type { EvidenceCapture } from "../capture/evidence-diff.ts";
 
 /**
- * @typedef {Record<string, any>} EvidenceCapture
- * @typedef {{ id: string, variant: string, shipped: EvidenceCapture | null, candidate: EvidenceCapture | null }} HeldOutPair
- *   One held-out case's one variant, and both readings of it -- `shipped` is what the currently-released
- *   NVDA layer said, `candidate` is what this release candidate says. Either may be `null`: a case added
- *   since the last ship has no `shipped` reading, and a case this candidate has not been evaluated
- *   against yet has no `candidate` reading. The caller reads both off disk; nothing here does.
+ * One held-out case's one variant, and both readings of it -- `shipped` is what the currently-released
+ * NVDA layer said, `candidate` is what this release candidate says. Either may be `null`: a case added
+ * since the last ship has no `shipped` reading, and a case this candidate has not been evaluated
+ * against yet has no `candidate` reading. The caller reads both off disk; nothing here does.
  */
+type HeldOutPair = { id: string; variant: string; shipped: EvidenceCapture | null; candidate: EvidenceCapture | null };
 
 /**
  * One pair's verdict -- worst first, the same ABSENT/FAILED/STALE discipline `releasability.mjs` states

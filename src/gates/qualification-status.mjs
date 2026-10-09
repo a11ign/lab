@@ -53,7 +53,7 @@ const EXIT_INCONCLUSIVE = 2;
 /**
  * @param {unknown} sha @returns {string}
  */
-function requireSha(sha: unknown): string {
+function requireSha(sha) {
   if (typeof sha !== "string" || !SHA_PATTERN.test(sha)) {
     // THROWN, not a failure payload: a status posted to a malformed sha lands on nothing, so there is no
     // honest payload to return. The poster turns the throw into a refusal that names the value.
@@ -67,7 +67,7 @@ function requireSha(sha: unknown): string {
  * (`detail`) is what gets trimmed, never the gate name or the scope.
  * @param {{ lead: string, detail: string, run?: string }} parts @returns {string}
  */
-function describe({ lead, detail, run }: { lead: string; detail: string; run?: string; }): string {
+function describe({ lead, detail, run }) {
   const fixed = `${lead} ${QUALIFICATION_GATE} (fleet part only)`;
   const suffix = run ? ` [${run}]` : "";
   const room = DESCRIPTION_LIMIT - fixed.length - suffix.length - " -- ".length;
@@ -80,7 +80,7 @@ function describe({ lead, detail, run }: { lead: string; detail: string; run?: s
  * Goes through `exitCodeFor` so the 0/1/2 meaning is stated once, in `verdict.mjs`.
  * @param {{ verdict?: unknown }} candidate @returns {number | undefined}
  */
-function codeOfVerdict(candidate: { verdict?: unknown; }): number | undefined {
+function codeOfVerdict(candidate) {
   const name = candidate.verdict;
   if (name !== "PASS" && name !== "FAIL" && name !== "INCONCLUSIVE") return undefined;
   return exitCodeFor(/** @type {any} */ (candidate));
@@ -89,7 +89,7 @@ function codeOfVerdict(candidate: { verdict?: unknown; }): number | undefined {
 /**
  * @param {Outcome | undefined} outcome @returns {{ code: number | undefined, detail: string }}
  */
-function readOutcome(outcome: Outcome | undefined): { code: number | undefined; detail: string; } {
+function readOutcome(outcome) {
   if (outcome && "verdict" in outcome && outcome.verdict && typeof outcome.verdict === "object") {
     const why = typeof outcome.verdict.why === "string" ? outcome.verdict.why : "";
     return { code: codeOfVerdict(outcome.verdict), detail: why };
@@ -108,7 +108,7 @@ function readOutcome(outcome: Outcome | undefined): { code: number | undefined; 
  *   `pending` post is made before the run has a name worth quoting.
  * @returns {StatusPayload}
  */
-export function qualificationStatus({ sha, outcome, run }: { sha: unknown; outcome?: Outcome; run?: string; }): StatusPayload {
+export function qualificationStatus({ sha, outcome, run }) {
   requireSha(sha);
   const base = { context: QUALIFICATION_CONTEXT };
   if (outcome && "started" in outcome && outcome.started === true) {

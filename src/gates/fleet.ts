@@ -23,6 +23,7 @@ import { inventoryWorkerUrls } from "@a11ign/screenreader-fleet/fleet-env";
 
 import { gateVerdict } from "./verdict.ts";
 import { drainAcrossPool } from "../training/worker-pool.mjs";
+import type { Loose } from "../capture/loose.ts";
 
 /**
  * The boxes to spread the work over: the one named, or every worker in `inventory.yml`.
@@ -103,7 +104,7 @@ export async function acrossFleet<T, R>(items: T[], workers: string[], runOne: (
     items,
     // Nothing to set up per worker: a gate's boxes are bare metal that is always on. The pool calls this
     // to decide a worker is usable at all, so returning a value rather than throwing says "usable".
-    prepare: async (/** @type {string} */ worker: string) => ({ worker }),
+    prepare: async (worker: string) => ({ worker }),
     // A THROW IS THAT ITEM'S RESULT, NEVER THE SHARD'S. The pool requeues a failed item onto another
     // worker, so a gate inherits eviction and requeue that the static split never had — but an item that
     // fails everywhere must still appear in the report, or the denominator silently shrinks.
@@ -120,7 +121,7 @@ export async function acrossFleet<T, R>(items: T[], workers: string[], runOne: (
     // comment described both while the code could only deliver one.
     //
     // Both, now: throw so the pool requeues, then fold `failures` back in below.
-    handle: async (/** @type {any} */ item: any, /** @type {any} */ { worker }: any) => {
+    handle: async (item: Loose, /** @type {any} */ { worker }: Loose) => {
       outcomes.push({ item, worker, result: await runOne(item, worker), error: null });
     },
     // Gates do not evict on slowness: a gate is minutes, and a box retired mid-gate would shrink coverage
@@ -128,7 +129,7 @@ export async function acrossFleet<T, R>(items: T[], workers: string[], runOne: (
     isDegraded: async () => false,
     // Items here are pages and canaries, which have no `id`. Keyed on the whole item, which is what the
     // pool uses only to drop failure records.
-    keyOf: (/** @type {any} */ item: any) => JSON.stringify(item),
+    keyOf: (item: Loose) => JSON.stringify(item),
   });
   // WHAT THE POOL GAVE UP ON, so the denominator is the item list whatever happened to the machines. An
   // item requeued and then passed is spliced out of `failures` by the pool, so nothing is double-counted;
@@ -176,7 +177,7 @@ export function fleetVerdict(outcomes: { result: unknown; error: string | null; 
  * distribution, which is more useful anyway: an uneven split is now EVIDENCE that one box is slower rather
  * than an artefact of how the work was dealt.
  */
-export function renderShards(/** @type {{worker: string}[]} */ outcomes: { worker: string; }[]) {
+export function renderShards(outcomes: { worker: string; }[]) {
   /** @type {Map<string, number>} */
   const byWorker: Map<string, number> = new Map();
   for (const o of outcomes) byWorker.set(o.worker, (byWorker.get(o.worker) ?? 0) + 1);

@@ -28,6 +28,7 @@ import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
 import { CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/screenreader-fleet/worker-http";
 import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
+import type { Loose } from "../capture/loose.ts";
 
 /**
  * takes its worker POSITIONALLY and no flags at all, so any flag passed to it is discarded.
@@ -75,14 +76,14 @@ function nvdaVocabulary() {
 const ACTIONABLE_WORDS = 3;
 
 /** @param {Record<string, any>} capture */
-function verdict(capture: Record<string, any>) {
-  const deltas = (capture.interaction?.formChanges ?? []).map((/** @type {{ after?: string }} */ change: { after?: string; }) => String(change.after ?? ""));
+function verdict(capture: Record<string, Loose>) {
+  const deltas = (capture.interaction?.formChanges ?? []).map((change: { after?: string; }) => String(change.after ?? ""));
   const words = deltas
     .join(" ")
     .toLowerCase()
     .split(/[\s,.]+/)
     .filter(Boolean)
-    .filter((/** @type {string} */ word: string) => !nvdaVocabulary().has(word));
+    .filter((word: string) => !nvdaVocabulary().has(word));
   return { informed: words.length >= ACTIONABLE_WORDS, spoken: deltas.join(" | ").slice(0, 88) };
 }
 
@@ -99,7 +100,7 @@ async function capture(base: string, variant: string) {
     timeoutMs: CAPTURE_TIMEOUT_MS,
   });
   const body = response.json ?? {};
-  return /** @type {Record<string, any>} */ (body).error ? { error: String(/** @type {Record<string, any>} */ (body).error).slice(0, 62) } : verdict(body);
+  return (body as Record<string, Loose>).error ? { error: String((body as Record<string, Loose>).error).slice(0, 62) } : verdict(body);
 }
 
 async function main() {
@@ -114,7 +115,7 @@ async function main() {
   const lease = await leasePageServer({ root: PAGES, port: 5050, probePath: "form-error-silent/good.html" });
   const base = hostPagesBase(WORKER);
   /** @type {Record<string, any[]>} */
-  const results: Record<string, any[]> = {};
+  const results: Record<string, Loose[]> = {};
   try {
     for (const variant of ["good", "bad"]) {
       results[variant] = [];
@@ -141,9 +142,9 @@ async function main() {
       process.stdout.write(`    run ${index + 1}: informed=${String(result.informed).padEnd(5)}`
         + ` ${correct ? "correct" : "WRONG  "}  spoken="${result.spoken}"\n`);
     }
-    const seen = runs.filter((/** @type {Record<string, any>} */ r: Record<string, any>) => !r.error)
-    .map((/** @type {Record<string, any>} */ r: Record<string, any>) => r.informed);
-    const stable = seen.length > 0 && seen.every((/** @type {unknown} */ v: unknown) => v === seen[0]);
+    const seen = runs.filter((r: Record<string, Loose>) => !r.error)
+    .map((r: Record<string, Loose>) => r.informed);
+    const stable = seen.length > 0 && seen.every((v: unknown) => v === seen[0]);
     if (!stable) allCorrect = false;
     process.stdout.write(`    -> ${stable ? "STABLE" : "UNSTABLE"} across ${seen.length} run(s)\n`);
   }

@@ -60,7 +60,7 @@ export function localHost() {
 
 /** @param {string} cmd @param {string[]} args */
 function run(cmd: string, args: string[]) {
-  return new Promise((resolvePromise) => {
+  return new Promise<number>((resolvePromise) => {
     const child = spawn(cmd, args, { cwd: REPO_ROOT, stdio: "inherit" });
     child.on("error", () => resolvePromise(2));
     // `?? 2` because a signal gives a null code, and INCONCLUSIVE is the honest verdict for a dispatch

@@ -23,13 +23,11 @@
  * module never sets `process.exitCode`.
  */
 import { exitCodeFor } from "./verdict.ts";
+import type { GateVerdict } from "./verdict.ts";
 
-/**
- * @typedef {import("./verdict.ts").GateVerdict} GateVerdict
- * @typedef {"ASSERTED" | "REFERRED" | "UNRECORDED"} Outcome
- * @typedef {{ criterion: string, url: string, outcome: Outcome, evidence: string }} NewFinding
- *   `evidence` is the gate's evidence for the page: its census line, then its `opens:` line.
- */
+type Outcome = "ASSERTED" | "REFERRED" | "UNRECORDED";
+/** `evidence` is the gate's evidence for the page: its census line, then its `opens:` line. */
+type NewFinding = { criterion: string; url: string; outcome: Outcome; evidence: string };
 
 /**
  * The new findings split by how each reaches a user. One split, read by the report's count line and by the

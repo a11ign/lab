@@ -50,6 +50,7 @@
  */
 import { censusElementCounts } from "@a11ign/evidence/conformance";
 import { sweepCompleteness } from "./sweep-costs.ts";
+import type { Loose } from "./loose.ts";
 
 /** Which census key each swept type is comparable against. Named once; `null` means no ground truth. */
 export const CENSUS_KEY_FOR_SWEEP = Object.freeze({
@@ -88,15 +89,15 @@ export function sweepAgainstCensus(capture: { diagnostics?: unknown[]; }): {
   // NESTED because the census's element counts are read off a DENYLIST (`censusElementCounts` takes every
   // numeric field except `event` and `atMs`), so a flat `readAtMs` on that mark would arrive downstream as
   // an element type. Read the nested field, never invent a flat one.
-  const censusMark = diagnostics.find((/** @type {any} */ m: any) =>
+  const censusMark = diagnostics.find((m: Loose) =>
     m && typeof m === "object" && m.event === "structureCensus");
-  const readAt = /** @type {any} */ (censusMark)?.readAt;
+  const readAt = (censusMark as Loose)?.readAt;
   const censusReadAt = typeof readAt?.startedAtMs === "number" ? readAt.startedAtMs : null;
   return diagnostics
-    .filter((/** @type {any} */ m: any) => m && typeof m === "object" && m.event === "sweep"
+    .filter((m: Loose) => m && typeof m === "object" && m.event === "sweep"
       && typeof m.type === "string" && typeof m.error !== "string")
-    .map((/** @type {any} */ mark: any) => {
-      const key = /** @type {Record<string, string|null>} */ (CENSUS_KEY_FOR_SWEEP)[mark.type] ?? null;
+    .map((mark: Loose) => {
+      const key = (CENSUS_KEY_FOR_SWEEP as Record<string, string|null>)[mark.type] ?? null;
       const present = key && raw && typeof raw[key] === "number" ? raw[key] : null;
       const found = typeof mark.found === "number" ? mark.found : 0;
       // A SWEEP THAT NEVER RAN HAS NO RATIO, and this is the same defect `sweep-costs.mjs` found in its
@@ -116,7 +117,7 @@ export function sweepAgainstCensus(capture: { diagnostics?: unknown[]; }): {
       const sweptAt = typeof mark.atMs === "number" ? mark.atMs : null;
       return {
         type: mark.type, found, present, completeness,
-        basis: /** @type {"raw" | "none"} */ (present === null ? "none" : "raw"),
+        basis: (present === null ? "none" : "raw") as "raw" | "none",
         censusReadAt, sweptAt,
         // `null` when either moment is missing -- an unknown gap is not a gap of zero, which is the whole
         // distinction #854 was about one field over.
@@ -226,7 +227,7 @@ export function populationVerdict(ratios: readonly (number | null)[], moments: {
   // length. `undefined` means the caller did not pass a control -- a comparison nobody controlled is not
   // one this may rule on, which is the same refusal the moments themselves get above.
   if (moments.heldStill !== true) return "not-simultaneous";
-  const usable = /** @type {number[]} */ (ratios.filter((r) => typeof r === "number" && Number.isFinite(r)));
+  const usable = (ratios.filter((r) => typeof r === "number" && Number.isFinite(r)) as number[]);
   if (usable.length < 2) return "cannot say";
   const above = usable.filter((r) => r > RATIO_IS_AGREEMENT_WITHIN).length;
   const below = usable.filter((r) => r < 1 / RATIO_IS_AGREEMENT_WITHIN).length;

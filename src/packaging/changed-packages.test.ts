@@ -11,7 +11,7 @@ import { changedPackages, changedPackagesAgainstOrigin } from "../../../guards/s
 test("finds every packages/<name> touched, deduped and sorted", () => {
   const diff = [
     "packages/lab/src/gates/verdict-adoption.test.ts",
-    "packages/lab/src/gates/verdict.mjs",
+    "packages/lab/src/gates/verdict.ts",
     "packages/judge/src/rules.ts",
     "docs/backlog.md",
   ].join("\n");

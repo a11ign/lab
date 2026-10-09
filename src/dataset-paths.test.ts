@@ -113,8 +113,8 @@ function readSource(file: string): string {
  * name — the same discipline `busy-worker-guard.test.ts`'s `EXEMPT` uses.
  */
 const EXEMPT: Record<string, string> = {
-  "packages/lab/src/dataset-paths.mjs": "It is the implementation. It cannot import itself.",
-  "packages/lab/src/capture/evidence-diff.mjs":
+  "packages/lab/src/dataset-paths.ts": "It is the implementation. It cannot import itself.",
+  "packages/lab/src/capture/evidence-diff.ts":
     "It is the implementation of the capture-filename half (captureFilePath/rejectedCaptureFilePath).",
   "packages/judge/src/channel-tables-4.1.2.test.ts":
     "@a11ign/lab depends on @a11ign/judge, so judge cannot import dataset-paths.mjs "
@@ -272,7 +272,7 @@ test("REPO_ROOT resolves whether runs/ is a real directory or the symlink `.giti
   const st = statSync(runsPath, { throwIfNoEntry: false });
   const kind = st ? (st.isDirectory() ? "dir" : "other") : "missing";
   assert.ok(["missing", "dir", "other"].includes(kind), "sanity check that statSync ran at all");
-  assert.doesNotMatch(readSource("packages/lab/src/dataset-paths.mjs"), /realpathSync|lstatSync/,
+  assert.doesNotMatch(readSource("packages/lab/src/dataset-paths.ts"), /realpathSync|lstatSync/,
     "dataset-paths.mjs must resolve purely by string joining, never by asking the filesystem what runs/ "
     + "actually is -- that is what makes it work identically for a real directory and for the lab's symlink");
 });

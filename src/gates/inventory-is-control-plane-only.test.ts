@@ -21,7 +21,7 @@ const REPO = join(import.meta.dirname, "../../../..");
  * THIS TEST EXISTS BECAUSE I ANSWERED THAT QUESTION WRONG, CONFIDENTLY, AN HOUR BEFORE IT BROKE. Asked
  * whether anything on the lab reads `inventory.yml`, I grepped `packages/control/ansible/`,
  * `packages/lab/scripts/` and `packages/nvda-worker/src/`, found only comments, and reported the pull safe.
- * `packages/lab/src/gates/fleet.mjs` reads it and runs ON THE LAB. `gate:stability` died there minutes
+ * `packages/lab/src/gates/fleet.ts` reads it and runs ON THE LAB. `gate:stability` died there minutes
  * later: *"no workers in inventory.yml, and none named — a gate cannot examine nothing."*
  *
  * My method was sound and my POPULATION was three directories I thought of. So this walks every tracked
@@ -44,7 +44,7 @@ const READER = "inventoryWorkerUrls";
  * receives it, derived from the inventory on the control plane where the file actually lives.
  */
 const NON_CONTROL_READERS: Record<string, string> = {
-  "packages/lab/src/gates/fleet.mjs":
+  "packages/lab/src/gates/fleet.ts":
     "Reads A11Y_WORKERS FIRST and falls back to the inventory, so it works on the lab where the file is "
     + "gone. This is the module that broke; the fallback is the fix.",
   "packages/lab/src/training/capture-real-pages.mjs":

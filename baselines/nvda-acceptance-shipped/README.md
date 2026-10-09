@@ -9,7 +9,7 @@ case captured here.
 
 `captures/<id>.good.json` and `captures/<id>.bad.json`, one pair per held-out acceptance case
 (`packages/lab/src/training/acceptance-matrix.mjs`), in the same shape `readCapture`
-(`packages/lab/src/capture/evidence-diff.mjs`) already reads everywhere else in this repo -- copied
+(`packages/lab/src/capture/evidence-diff.ts`) already reads everywhere else in this repo -- copied
 straight from a real capture the currently-shipped code produced, never fabricated.
 
 ## Empty is a real, supported state

@@ -96,7 +96,7 @@ function callsRefusalGuard(source: string): boolean {
  * Why a file that resolves a runs/ path and writes does not call the guard. A REASON, never a bare name.
  */
 const EXEMPT: Record<string, string> = {
-  "packages/lab/src/dataset-paths.mjs":
+  "packages/lab/src/dataset-paths.ts":
     "It is the implementation of refuseIfRunsReadonly itself -- the guard cannot call itself, and its own "
     + "writeJsonAtomic-shaped text is inside a doc comment describing OTHER files, not a write this file "
     + "performs.",

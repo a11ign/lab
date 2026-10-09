@@ -22,10 +22,14 @@
  * DERIVED from coverage rather than accompanied by it: a PASS with `examined < of` is unconstructible.
  */
 
-/**
- * @typedef {{ verdict: "PASS" | "FAIL" | "INCONCLUSIVE", examined: number, of: number, source: string,
- *             failures: number, why: string }} GateVerdict
- */
+export type GateVerdict = {
+  verdict: "PASS" | "FAIL" | "INCONCLUSIVE";
+  examined: number;
+  of: number;
+  source: string;
+  failures: number;
+  why: string;
+};
 
 /**
  * @param {{ examined: number, of: number, source: string, failures?: number }} coverage
@@ -70,11 +74,11 @@ export function crashVerdict(gate: string, error: unknown): GateVerdict {
 }
 
 /** One line, so every gate reads the same way in a log. */
-export function renderVerdict(/** @type {GateVerdict} */ v: GateVerdict) {
+export function renderVerdict(v: GateVerdict) {
   return `${v.verdict} — ${v.why}`;
 }
 
 /** The process exit code this repo's gates use: 0 clean, 1 a real failure, 2 could not tell. */
-export function exitCodeFor(/** @type {GateVerdict} */ v: GateVerdict) {
+export function exitCodeFor(v: GateVerdict) {
   return v.verdict === "PASS" ? 0 : v.verdict === "FAIL" ? 1 : 2;
 }

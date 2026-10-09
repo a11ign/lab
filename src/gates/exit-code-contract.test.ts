@@ -114,11 +114,11 @@ function adoptsVerdict(path: string): boolean {
  * themselves, they are the thing gates are built from.
  */
 const INFRASTRUCTURE: Record<string, string> = {
-  "packages/lab/src/dataset-paths.mjs":
+  "packages/lab/src/dataset-paths.ts":
     "`refuseIfRunsReadonly` exits 3 when A11Y_RUNS_READONLY=1 is set and the given path resolves under "
     + "runsRoot() — not a gate and has no main of its own, inherited directly by every one of its 16 "
     + "callers, the identical shape code-drift.mjs uses for a different meaning of 3",
-  "packages/lab/src/gates/dispatch.mjs":
+  "packages/lab/src/gates/dispatch.ts":
     "dispatches a gate to the lab and exits with whatever it returns, except a killed/errored spawn also "
     + "produces 2 — self-documented as the honest INCONCLUSIVE for a dispatch that died, and the reason a "
     + "bare 2 from anything using this helper is ambiguous between three distinct causes. See the doc's "
@@ -296,19 +296,19 @@ const DOCUMENTED: Record<string, string> = {
   "packages/lab/src/eval/run.ts":
     "0 by default, always, unless EVAL_GATE is set AND fitness fails (then 1, also 1 on a thrown error) — by "
     + "default this CANNOT fail on judge quality at all, only on a crash",
-  "packages/lab/src/harnesses/assert-action-report.mjs":
+  "packages/lab/src/harnesses/assert-action-report.ts":
     "0 every requested assertion passed; 1 no path argument OR any assertion failed — several assertion "
     + "kinds conflated into one code",
-  "packages/lab/src/harnesses/capture-check.mjs":
+  "packages/lab/src/harnesses/capture-check.ts":
     "0 all checks passed; 1 a real check failure; 2 malformed --worker OR a worker already serving — two "
     + "meanings share 2",
-  "packages/lab/src/harnesses/capture-fixtures.mjs":
+  "packages/lab/src/harnesses/capture-fixtures.ts":
     "0 all fixtures recaptured; 1 some fixture failed; 2 no pages matched --set/--only",
   "packages/lab/src/harnesses/judge-file.ts":
     "0 ran; 1 no path argument OR judge() threw — one top-level catch for both",
   "packages/lab/src/harnesses/judge-sample.ts":
     "0 ran; 1 judge() threw. A one-off demo tool with no verdict concept",
-  "packages/lab/src/harnesses/page-identity-rate.mjs":
+  "packages/lab/src/harnesses/page-identity-rate.ts":
     "0 no wrong-page reads; 1 a real wrong-page read; 2 malformed --worker; 3 'MEASURED NOTHING' — the fault "
     + "under test structurally could not occur, this script's own bespoke INCONCLUSIVE spelled 3 not 2",
   "packages/lab/src/harnesses/run-spike.ts":

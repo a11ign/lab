@@ -50,6 +50,7 @@ import { leasePageServer } from "../training/page-server.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
 import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
+import type { Loose } from "../capture/loose.ts";
 
 /**
  * recaptures the eval fixtures. `--ff-only` appears in this file because it is passed to GIT, not
@@ -78,7 +79,7 @@ const DEFAULT_PAGES_PORT = 5050;
 const arg = (name: string, fallback: string | number | null = null) => flagValue(process.argv, name) ?? fallback;
 
 /** Every `.html` in a page set, so a page added to the directory is captured without editing a list here. */
-function pagesIn(/** @type {any} */ set: any) {
+function pagesIn(set: Loose) {
   const dir = resolve(EVAL_ROOT, "pages", set);
   return readdirSync(dir)
     .filter((f) => f.endsWith(".html"))
@@ -87,7 +88,7 @@ function pagesIn(/** @type {any} */ set: any) {
 }
 
 /** One capture, over the worker's own HTTP interface — the path production uses. */
-async function captureOverWorker(/** @type {any} */ url: any, /** @type {any} */ worker: any, /** @type {any} */ steps: any) {
+async function captureOverWorker(url: Loose, worker: Loose, steps: Loose) {
   const response = await captureTolerantly({
     worker,
     // `probeForms` ON: these are OUR pages, written to be activated, and the interaction criteria
@@ -102,12 +103,12 @@ async function captureOverWorker(/** @type {any} */ url: any, /** @type {any} */
 }
 
 /** In-process, for the Windows guest. Imported lazily so this file loads on a Mac or on Linux. */
-async function captureInProcess(/** @type {any} */ url: any, /** @type {any} */ steps: any) {
+async function captureInProcess(url: Loose, steps: Loose) {
   const { captureWithNvda } = await import("@a11ign/screenreader-worker");
   return captureWithNvda(url, { steps, probeForms: true });
 }
 
-function report(/** @type {any} */ name: any, /** @type {any} */ result: any, /** @type {any} */ outPath: any) {
+function report(name: Loose, result: Loose, outPath: Loose) {
   const i = result.interaction ?? {};
   const events = (i.stateChanges ?? []).length + (i.formChanges ?? []).length;
   process.stdout.write(`  wrote ${name.padEnd(22)} ${String(result.transcript?.length ?? 0).padStart(4)}`
@@ -144,7 +145,7 @@ async function main() {
   const worker = workerArg ? assertWorkerUrl(String(workerArg), { source: "--worker" }) : null;
   await wakeIfNamed(worker);
 
-  const names = pagesIn(set).filter((/** @type {string} */ n: string) => !only || n.includes(String(only)));
+  const names = pagesIn(set).filter((n: string) => !only || n.includes(String(only)));
   if (!names.length) {
     process.stderr.write(`no pages in ${set}${only ? ` matching --only=${only}` : ""}\n`);
     process.exit(2);
@@ -172,8 +173,8 @@ async function main() {
         writeFileSync(outPath, `${JSON.stringify(result, null, 2)}\n`);
         report(name, result, outPath);
       } catch (error) {
-        failed.push(`${name}: ${/** @type {any} */ (error).message.split("\n")[0]}`);
-        process.stdout.write(`  FAILED  ${name}: ${/** @type {any} */ (error).message.split("\n")[0]}\n`);
+        failed.push(`${name}: ${(error as Error).message.split("\n")[0]}`);
+        process.stdout.write(`  FAILED  ${name}: ${(error as Error).message.split("\n")[0]}\n`);
       }
     }
   } finally {

@@ -97,7 +97,7 @@ test("#3273 directory: the directory is named in the output next to any UNSTABLE
 /** The script must USE what is tested above: a tested helper nobody calls fixes nothing. */
 function wiringFaults(source: string): string[] {
   const faults: string[] = [];
-  if (!/from "\.\.\/src\/gates\/stability-canary\.mjs"/.test(source)) faults.push("does not import stability-canary.mjs");
+  if (!/from "\.\.\/src\/gates\/stability-canary\.ts"/.test(source)) faults.push("does not import stability-canary.mjs");
   if (/includes\("VARIES"\)/.test(source)) faults.push("still keeps only the VARIES lines");
   if (!/canaryOutDir\(\{[^}]*runId/.test(source)) faults.push("does not give each canary of each run its own directory");
   if (!/repeatCaptureArgs\(\{[^}]*outDir/.test(source)) faults.push("does not pass the directory to repeat-capture");

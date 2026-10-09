@@ -74,7 +74,7 @@ import { resolve, relative } from "node:path";
 
 /**
  * Computed from THIS file's own location, once, rather than by every caller re-deriving it from ITS
- * location. `packages/lab/src/dataset-paths.mjs` sits three directories below the repo root
+ * location. `packages/lab/src/dataset-paths.ts` sits three directories below the repo root
  * (`packages`, `lab`, `src`), so three ".." get there regardless of whether a caller imports the
  * `src` copy directly (scripts do) or the built `dist` copy (a cross-package `@a11ign/lab`
  * import would) — `dist/` mirrors `src/`'s depth under the package root.

@@ -26,7 +26,7 @@
  * was added.
  */
 
-/** @typedef {{ name: string, text: string }} Changeset */
+type Changeset = { name: string; text: string };
 
 /**
  * `changeset version` renders a consumed entry as a NESTED list item, so every line of the provenance block

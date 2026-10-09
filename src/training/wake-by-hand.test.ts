@@ -148,7 +148,7 @@ test("a single named worker, itself the one down: still refuses (one worker IS t
  * 10). A census that also flagged them would ask this row to fix a defect closed by a different one.
  */
 const CLOSED_ELSEWHERE = new Set([
-  "packages/lab/src/harnesses/capture-check.mjs",
+  "packages/lab/src/harnesses/capture-check.ts",
   "packages/lab/scripts/stability-gate.mjs",
   "packages/lab/scripts/gate-probe-order.mjs",
   "packages/lab/scripts/evidence-check.mjs",
@@ -197,9 +197,9 @@ function discoverByHandEntries(): string[] {
 
 const REGION_ENTRIES = [
   "packages/lab/scripts/bench-capture.mjs",
-  "packages/lab/src/harnesses/capture-fixtures.mjs",
-  "packages/lab/src/harnesses/occurrence-verdict-stability.mjs",
-  "packages/lab/src/harnesses/page-identity-rate.mjs",
+  "packages/lab/src/harnesses/capture-fixtures.ts",
+  "packages/lab/src/harnesses/occurrence-verdict-stability.ts",
+  "packages/lab/src/harnesses/page-identity-rate.ts",
   "packages/lab/src/training/capture-real-pages.mjs",
   "packages/lab/src/training/capture-screenreader-dataset.mjs",
   "packages/lab/src/training/repeat-capture.mjs",
@@ -208,7 +208,7 @@ const REGION_ENTRIES = [
 test("the census names its positive control: the discovery is not vacuous", () => {
   const discovered = discoverByHandEntries();
   assert.ok(discovered.length > 0, "discovered nothing -- the two signals themselves are untested");
-  assert.ok(discovered.includes("packages/lab/src/harnesses/capture-fixtures.mjs"),
+  assert.ok(discovered.includes("packages/lab/src/harnesses/capture-fixtures.ts"),
     "a known by-hand entry (`capture-fixtures.mjs`, declares `--worker=`) must be discoverable, or the " +
     "signals below are being asked to prove an emptiness they cannot see into");
 });
@@ -220,9 +220,9 @@ test("the census finds exactly this row's Region, no more and no fewer", () => {
 /** The text right after the entry's own wake call: proof it runs BEFORE a single capture is dispatched. */
 const DISPATCH_MARKER: Record<string, string> = {
   "packages/lab/scripts/bench-capture.mjs": "await collectSamples(page)",
-  "packages/lab/src/harnesses/capture-fixtures.mjs": "await captureOverWorker(url, worker, steps)",
-  "packages/lab/src/harnesses/occurrence-verdict-stability.mjs": "await capture(base, variant)",
-  "packages/lab/src/harnesses/page-identity-rate.mjs": "await runRounds(base, ROUNDS)",
+  "packages/lab/src/harnesses/capture-fixtures.ts": "await captureOverWorker(url, worker, steps)",
+  "packages/lab/src/harnesses/occurrence-verdict-stability.ts": "await capture(base, variant)",
+  "packages/lab/src/harnesses/page-identity-rate.ts": "await runRounds(base, ROUNDS)",
   "packages/lab/src/training/capture-real-pages.mjs": "await captureAcrossPool(toCapture, workers)",
   "packages/lab/src/training/capture-screenreader-dataset.mjs": "await captureDataset(cases, done, checked, lease)",
   "packages/lab/src/training/repeat-capture.mjs": "await captureWithRetry()",
