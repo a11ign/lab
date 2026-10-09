@@ -27,7 +27,7 @@ import { releasability } from "../src/packaging/releasability.ts";
 import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
-import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
+import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.ts";
 
 /**
  * a mistyped `--dry-run` runs the REAL retrain; `--silent` in this file is pnpm's, passed to each step.
