@@ -41,7 +41,7 @@ const [worker, page, countArg] = process.argv.slice(2);
  *
  * @param {string} page
  */
-async function collectSamples(page) {
+async function collectSamples(page: string) {
   const runs = [];
   let recovered = 0;
   for (let i = 1; i <= COUNT; i++) {
@@ -51,7 +51,7 @@ async function collectSamples(page) {
       console.log(`capture ${i}/${COUNT}: EXCLUDED — response recovered after a lost socket, so its `
         + "wall clock is not a capture cost");
     } else {
-      const start = (body.diagnostics ?? []).find((/** @type {any} */ e) => e.event === "nvdaStart");
+      const start = (body.diagnostics ?? []).find((/** @type {any} */ e: any) => e.event === "nvdaStart");
       runs.push({
         wallMs,
         costs: phaseCosts(body.diagnostics),
@@ -86,7 +86,7 @@ const COUNT = Number(countArg || 3);
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
 const BETWEEN_MS = 1_000;
 
-async function capture(/** @type {any} */ url) {
+async function capture(/** @type {any} */ url: any) {
   const startedAt = Date.now();
   const response = await captureTolerantly({
     worker,
@@ -106,9 +106,9 @@ async function capture(/** @type {any} */ url) {
 }
 
 // Diagnostics carry cumulative atMs, so each phase's own cost is the gap from the last one.
-function phaseCosts(/** @type {any} */ diagnostics) {
+function phaseCosts(/** @type {any} */ diagnostics: any) {
   /** @type {Record<string, any>} */
-  const costs = {};
+  const costs: Record<string, any> = {};
   let previous = 0;
   for (const entry of diagnostics ?? []) {
     if (typeof entry.atMs !== "number") continue;
@@ -118,13 +118,13 @@ function phaseCosts(/** @type {any} */ diagnostics) {
   return costs;
 }
 
-function mean(/** @type {any} */ values) {
-  return values.reduce((/** @type {any} */ a, /** @type {any} */ b) => a + b, 0) / values.length;
+function mean(/** @type {any} */ values: any) {
+  return values.reduce((/** @type {any} */ a: any, /** @type {any} */ b: any) => a + b, 0) / values.length;
 }
 
-function report(/** @type {any} */ runs) {
+function report(/** @type {any} */ runs: any) {
   /** @type {Record<string, any>} */
-  const phases = {};
+  const phases: Record<string, any> = {};
   for (const run of runs) {
     for (const [phase, ms] of Object.entries(run.costs)) (phases[phase] ??= []).push(ms);
   }
@@ -136,15 +136,15 @@ function report(/** @type {any} */ runs) {
   for (const { phase, seconds } of rows) {
     console.log(`  ${phase.padEnd(18)}${String(seconds).padStart(6)}s  ${"#".repeat(Math.round(seconds))}`);
   }
-  const wall = mean(runs.map((/** @type {any} */ r) => r.wallMs)) / 1000;
+  const wall = mean(runs.map((/** @type {any} */ r: any) => r.wallMs)) / 1000;
   console.log(`  ${"WALL".padEnd(18)}${wall.toFixed(1).padStart(6)}s`);
 
   // Faster is only better if the capture still heard the page.
-  const phrases = runs.map((/** @type {any} */ r) => r.phrases);
+  const phrases = runs.map((/** @type {any} */ r: any) => r.phrases);
   console.log(`\nphrases per capture: ${phrases.join(", ")} (mean ${mean(phrases).toFixed(1)})`);
-  const empty = phrases.filter((/** @type {any} */ p) => p === 0).length;
+  const empty = phrases.filter((/** @type {any} */ p: any) => p === 0).length;
   if (empty) console.log(`  WARNING: ${empty} capture(s) returned NOTHING — faster but broken`);
-  const reused = runs.filter((/** @type {any} */ r) => r.reused).length;
+  const reused = runs.filter((/** @type {any} */ r: any) => r.reused).length;
   console.log(`NVDA reused on ${reused}/${runs.length} captures`);
 }
 
@@ -157,7 +157,7 @@ function report(/** @type {any} */ runs) {
 // Nothing new is instrumented: every capture already carries per-phase diagnostics. This only
 // aggregates them, and reports p50/p95 rather than a mean because the tail is where a wedged
 // guest shows up -- a mean hides one 60-second capture among fifty good ones.
-export async function fromDisk(/** @type {any} */ root) {
+export async function fromDisk(/** @type {any} */ root: any) {
   const { readdirSync, readFileSync } = await import("node:fs");
   const { resolve } = await import("node:path");
   const files = readdirSync(root).filter((f) => f.endsWith(".json") && f !== "manifest.json");
@@ -169,8 +169,8 @@ export async function fromDisk(/** @type {any} */ root) {
     } catch { continue; } // a partial write is not a data point
     const capture = captureIn(record);
     if (!capture) continue;
-    const done = capture.diagnostics.filter((/** @type {any} */ e) => typeof e.atMs === "number").at(-1);
-    const start = capture.diagnostics.find((/** @type {any} */ e) => e.event === "nvdaStart");
+    const done = capture.diagnostics.filter((/** @type {any} */ e: any) => typeof e.atMs === "number").at(-1);
+    const start = capture.diagnostics.find((/** @type {any} */ e: any) => e.event === "nvdaStart");
     runs.push({
       // No client-side timing on disk, so the last diagnostic's atMs is the in-capture duration.
       // Labelled WALL(in-capture) rather than WALL so nobody compares it with the live number.
@@ -185,7 +185,7 @@ export async function fromDisk(/** @type {any} */ root) {
       // FOR THE PER-SWEEP REPLAY (#659). The page ASKED for, and only the `sweep` marks -- keeping whole
       // diagnostics for thousands of captures holds a corpus in memory to read eight numbers from each.
       url: typeof capture.url === "string" ? capture.url : undefined,
-      diagnostics: capture.diagnostics.filter((/** @type {any} */ e) => e?.event === "sweep"),
+      diagnostics: capture.diagnostics.filter((/** @type {any} */ e: any) => e?.event === "sweep"),
     });
   }
   return runs;
@@ -218,9 +218,9 @@ export async function fromDisk(/** @type {any} */ root) {
  *
  * @param {any[]} runs @param {(r: any) => any} key
  */
-function tally(runs, key) {
+function tally(runs: any[], key: (r: any) => any) {
   /** @type {Record<string, number>} */
-  const counts = {};
+  const counts: Record<string, number> = {};
   for (const run of runs) {
     const raw = key(run);
     const value = raw === undefined || raw === null || raw === "" ? "absent" : String(raw);
@@ -231,7 +231,7 @@ function tally(runs, key) {
 
 /** Counts by value, biggest first, as `16=3304 6=580`. An ABSENT field counts as the value
  * `absent`, because the cache reads it as `unknown` and those captures match no live guest. */
-export function populationOf(/** @type {any[]} */ runs) {
+export function populationOf(/** @type {any[]} */ runs: any[]) {
   return {
     protocols: tally(runs, (r) => r.protocol),
     workers: tally(runs, (r) => r.worker),
@@ -239,7 +239,7 @@ export function populationOf(/** @type {any[]} */ runs) {
 }
 
 /** @param {Record<string, number>} counts */
-function describe(counts) {
+function describe(counts: Record<string, number>) {
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
     .map(([value, n]) => `${value}=${n}`)
@@ -257,7 +257,7 @@ function describe(counts) {
  * @param {any[]} runs
  * @param {string | undefined} wanted `--protocol=` as given: a value, `all`, or absent
  */
-export function selectPopulation(runs, wanted) {
+export function selectPopulation(runs: any[], wanted: string | undefined) {
   const protocols = tally(runs, (r) => r.protocol);
   const mix = describe(protocols);
   if (wanted === "all") {
@@ -286,18 +286,18 @@ export function selectPopulation(runs, wanted) {
   return { runs, scope: `${runs.length} capture(s) at captureProtocol ${present[0]}` };
 }
 
-function percentile(/** @type {any} */ values, /** @type {any} */ p) {
+function percentile(/** @type {any} */ values: any, /** @type {any} */ p: any) {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 }
 
-function reportFromDisk(/** @type {any} */ runs, /** @type {string} */ scope) {
+function reportFromDisk(/** @type {any} */ runs: any, /** @type {string} */ scope: string) {
   // The population FIRST. A statistic whose population is not stated is the defect this repo has
   // recorded thirteen times, and printing it above the numbers is what makes it unmissable.
   console.log(`\npopulation: ${scope}`);
   console.log(`  workers:  ${describe(populationOf(runs).workers)}`);
   /** @type {Record<string, any>} */
-  const phases = {};
+  const phases: Record<string, any> = {};
   for (const run of runs) {
     for (const [phase, ms] of Object.entries(run.costs)) (phases[phase] ??= []).push(ms);
   }
@@ -308,16 +308,16 @@ function reportFromDisk(/** @type {any} */ runs, /** @type {string} */ scope) {
     const p95 = (percentile(values, 95) / 1000).toFixed(1);
     console.log(`  ${phase.padEnd(18)}${p50.padStart(6)}s  ${p95.padStart(6)}s  ${"#".repeat(Math.round(+p50))}`);
   }
-  const walls = runs.map((/** @type {any} */ r) => r.wallMs);
+  const walls = runs.map((/** @type {any} */ r: any) => r.wallMs);
   console.log(`  ${"WALL(in-capture)".padEnd(18)}${(percentile(walls, 50) / 1000).toFixed(1).padStart(6)}s  ` +
     `${(percentile(walls, 95) / 1000).toFixed(1).padStart(6)}s`);
 
-  const empty = runs.filter((/** @type {any} */ r) => r.phrases === 0).length;
+  const empty = runs.filter((/** @type {any} */ r: any) => r.phrases === 0).length;
   if (empty) console.log(`\nWARNING: ${empty}/${runs.length} captures on disk have NO phrases`);
 
   // Per worker, because "the run was slow" is only actionable once it names a guest.
   /** @type {Record<string, any>} */
-  const byWorker = {};
+  const byWorker: Record<string, any> = {};
   for (const run of runs) (byWorker[run.worker] ??= []).push(run.wallMs);
   if (Object.keys(byWorker).length > 1 || !byWorker.unrecorded) {
     console.log("\nper worker (p50 / p95 in-capture seconds, count):");
@@ -338,10 +338,10 @@ function reportFromDisk(/** @type {any} */ runs, /** @type {string} */ scope) {
  *
  * @param {any[]} runs
  */
-function reportSweeps(runs) {
+function reportSweeps(runs: any[]) {
   const pages = sweepCostsByPage(runs);
   /** @type {Map<string, any[]>} */
-  const byType = new Map();
+  const byType: Map<string, any[]> = new Map();
   for (const [, types] of pages) {
     for (const [type, acc] of types) byType.set(type, [...(byType.get(type) ?? []), acc]);
   }
@@ -350,7 +350,7 @@ function reportSweeps(runs) {
     + `${"rates".padEnd(30)}${"spread".padStart(7)}  cause`);
   for (const [type, perPage] of [...byType].sort()) {
     const rate = rateAcrossPages(perPage);
-    const rates = rate.rates.map((/** @type {number} */ r) => r.toFixed(0)).join(", ");
+    const rates = rate.rates.map((/** @type {number} */ r: number) => r.toFixed(0)).join(", ");
     console.log(`  ${type.padEnd(12)}${String(rate.pages).padStart(5)}${String(rate.thin).padStart(6)}  `
       + `${rates.padEnd(30)}${(rate.spread === null ? "--" : rate.spread.toFixed(1)).padStart(7)}  `
       + `${costCause(rate)}`);
@@ -369,9 +369,9 @@ function reportSweeps(runs) {
  *
  * @param {Map<string, any[]>} byType
  */
-function reportWalkRate(byType) {
+function reportWalkRate(byType: Map<string, any[]>) {
   const walk = walkRate([...byType].flatMap(([type, perPage]) =>
-    perPage.map((/** @type {any} */ p) => ({ ...p, type }))));
+    perPage.map((/** @type {any} */ p: any) => ({ ...p, type }))));
   if (walk === null) return;
   console.log(`\n  walk rate (every type with no onItem): ${walk.toFixed(0)} ms/trip`);
   const carrier = rateAcrossPages(byType.get("formField") ?? []);

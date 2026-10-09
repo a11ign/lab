@@ -22,7 +22,7 @@
  * number that could never grow. One command against the real artefact answers it, and a tool built on a
  * guessed shape reports a confident zero for as long as you let it.
  *
- * It IS in each capture's own diagnostics. Every mark carries a cumulative `atMs` (`bench-capture.mjs`
+ * It IS in each capture's own diagnostics. Every mark carries a cumulative `atMs` (`bench-capture.ts`
  * has read them for phase costs since long before this), so the LAST mark is what that capture occupied
  * its worker for, end to end. Verified on a real capture: 23 of 23 marks carry `atMs`, last 193694 ms.
  *

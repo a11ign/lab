@@ -40,7 +40,7 @@ export const GROUPING_THRESHOLD = 0.2;
  * `"1.3.1 Info and Relationships"` and `"1.3.1"` are one criterion; whitespace in the quote is layout, not content.
  * @param {Referral} referral @returns {string}
  */
-export function referralKey(referral) {
+export function referralKey(referral: Referral): string {
   const criterion = String(referral.criterion).trim().split(/\s+/)[0];
   const text = String(referral.text ?? "").replace(/\s+/g, " ").trim();
   return JSON.stringify([criterion, text]);
@@ -50,7 +50,7 @@ export function referralKey(referral) {
  * @param {readonly Referral[]} referrals
  * @returns {{ referrals: number, repeats: number, share: number }}
  */
-export function pageShare(referrals) {
+export function pageShare(referrals: readonly Referral[]): { referrals: number; repeats: number; share: number; } {
   const seen = new Set();
   let repeats = 0;
   for (const referral of referrals) {
@@ -66,7 +66,7 @@ export function pageShare(referrals) {
  * @param {readonly PageReferrals[]} pages
  * @returns {{ pages: ({ page: string } & ReturnType<typeof pageShare>)[], total: { pages: number, referrals: number, repeats: number, share: number } }}
  */
-export function repeatShare(pages) {
+export function repeatShare(pages: readonly PageReferrals[]): { pages: ({ page: string; } & ReturnType<typeof pageShare>)[]; total: { pages: number; referrals: number; repeats: number; share: number; }; } {
   const perPage = pages.map(({ page, referrals }) => ({ page, ...pageShare(referrals) }));
   const referrals = perPage.reduce((sum, page) => sum + page.referrals, 0);
   const repeats = perPage.reduce((sum, page) => sum + page.repeats, 0);
@@ -77,19 +77,19 @@ export function repeatShare(pages) {
  * Referrals out of one recorded file. A `Judgment`'s finding is a referral unless it ASSERTS (`mapping: "conformance"`).
  * @param {any} record @returns {Referral[]}
  */
-export function referralsOf(record) {
+export function referralsOf(record: any): Referral[] {
   if (Array.isArray(record?.referrals)) return record.referrals;
   if (!Array.isArray(record?.findings)) throw new Error("neither `referrals` nor `findings` is an array");
   return record.findings
-    .filter((/** @type {any} */ finding) => finding.mapping !== "conformance")
-    .map((/** @type {any} */ finding) => ({ criterion: finding.wcag, text: finding.evidence }));
+    .filter((/** @type {any} */ finding: any) => finding.mapping !== "conformance")
+    .map((/** @type {any} */ finding: any) => ({ criterion: finding.wcag, text: finding.evidence }));
 }
 
 /** @param {number} share @returns {string} */
-const percent = (share) => `${(share * 100).toFixed(1)}%`;
+const percent = (share: number): string => `${(share * 100).toFixed(1)}%`;
 
 /** @param {ReturnType<typeof repeatShare>} result @returns {string} */
-export function render(result) {
+export function render(result: ReturnType<typeof repeatShare>): string {
   const lines = result.pages.map((p) => `${p.page}\t${p.referrals}\t${p.repeats}\t${percent(p.share)}`);
   const { total } = result;
   const side = total.share >= GROUPING_THRESHOLD ? "AT OR ABOVE" : "BELOW";
@@ -105,16 +105,16 @@ export function render(result) {
  * records that each carry their own `url`.
  * @param {any} record @param {string} file @returns {PageReferrals[]}
  */
-export function pagesOf(record, file) {
+export function pagesOf(record: any, file: string): PageReferrals[] {
   if (!Array.isArray(record?.pages)) return [{ page: basename(file, ".json"), referrals: referralsOf(record) }];
-  return record.pages.map((/** @type {any} */ page, /** @type {number} */ index) => ({
+  return record.pages.map((/** @type {any} */ page: any, /** @type {number} */ index: number) => ({
     page: String(page?.url ?? `${basename(file, ".json")}[${index}]`),
     referrals: referralsOf(page),
   }));
 }
 
 /** @param {readonly string[]} files @returns {PageReferrals[]} */
-function readPages(files) {
+function readPages(files: readonly string[]): PageReferrals[] {
   return files.flatMap((file) => {
     try {
       return pagesOf(JSON.parse(readFileSync(file, "utf8")), file);
@@ -127,7 +127,7 @@ function readPages(files) {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const files = process.argv.slice(2);
   if (files.length === 0) {
-    console.error("usage: referral-repeat-share.mjs <judgment-or-referrals.json> [...]");
+    console.error("usage: referral-repeat-share.ts <judgment-or-referrals.json> [...]");
     process.exit(2);
   }
   console.log(render(repeatShare(readPages(files))));
