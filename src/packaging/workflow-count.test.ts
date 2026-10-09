@@ -10,7 +10,8 @@
  * registry gate, named below with its reason. The fifteenth is `dependency-pr-body.yml` (#3137, ADR 0041 decision 4): the one narrow way
  * a dependency pull request passes the body checks. The sixteenth is `weekly-review.yml` (#3183): the schedule that files the weekly outsider review row. The seventeenth is `ci-health.yml` (#3212): the schedule that reads the chairman's CI targets and comments them on #928. The eighteenth is `mutation-comment.yml` (#3282, decided on #3213): the survivors of a pull request's own changed lines as a NON-BLOCKING comment, in two jobs so the one that runs the pull request's code holds no write token. `token-reach.yml` (#3717, once the nineteenth) was deleted by #4200 with the stored-token pin it probed; the nineteenth is now `consumer-gate-pin.yml` (#4331): the repair of a stale `consumer-gate.yml` pin. (`agent-org-bump.yml`, once named the nineteenth, #3450, was deleted by #3534: there is no pin to bump. A workflow once named `agent-org-extraction.yml`, ADR 0040 decision 6's one-time push of
  * `agent-org` into its own repository, left with the directory in #2976: it had done its one push.) A row that removes or
- * adds one moves this list in the same commit and says why.
+ * adds one moves this list in the same commit and says why. The twentieth is `acceptance-sweep.yml` (ADR 0044 decision 4, a11ign/a11ign#4570, core `989c2bcc3`):
+ * the daily pull request that deletes `.acceptance/` files older than 14 days. Was nineteen at `f9299dbe5`.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -19,7 +20,8 @@ import { fileURLToPath } from "node:url";
 
 const WORKFLOWS_DIR = fileURLToPath(new URL("../../../../.github/workflows/", import.meta.url));
 
-const THE_NINETEEN = [
+const THE_TWENTY = [
+  "acceptance-sweep.yml",   // ADR 0044 decision 4 (#4570): ONE pull request a day deleting the `.acceptance/` files older than 14 days; a schedule, never a gate
   "action-smoke.yml",
   "auto-arm.yml",           // arms drafts on ready_for_review; the arming sweep and the stalled report
   "board-report.yml",       // London-clock editions, kept by #901's ruling
@@ -41,11 +43,11 @@ const THE_NINETEEN = [
   "weekly-review.yml",      // #3183: files ONE row a week for the outsider review; a schedule, never a gate, `issues: write` only
 ];
 
-test("#909: the workflow directory holds exactly the nineteen named here, no more and no fewer", () => {
+test("#909: the workflow directory holds exactly the twenty named here, no more and no fewer", () => {
   const onDisk = readdirSync(WORKFLOWS_DIR).filter((f) => /\.ya?ml$/.test(f)).sort();
-  assert.deepEqual(onDisk, [...THE_NINETEEN].sort(),
+  assert.deepEqual(onDisk, [...THE_TWENTY].sort(),
     "a workflow arrived or left without this list moving in the same commit -- name it here with its reason");
-  assert.equal(onDisk.length, 19);
+  assert.equal(onDisk.length, 20);
 });
 
 test("#909: the three collapsed workflows are gone, and the one that replaced them exists", () => {

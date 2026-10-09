@@ -48,7 +48,7 @@ function npmCallers(scripts: Scripts): string[] {
 /** The scripts a script runs by `pnpm run <name>` (flags such as `--silent` allowed before the name). */
 function delegatesOf(value: string): string[] {
   return segmentsOf(value).flatMap((segment) => {
-    const match = /^(?:pnpm|node\s+scripts\/pnpm\.mjs)\s+run\s+(?:-{1,2}[\w-]+\s+)*([\w:-]+)/.exec(segment);
+    const match = /^(?:pnpm|node\s+scripts\/pnpm\.ts)\s+run\s+(?:-{1,2}[\w-]+\s+)*([\w:-]+)/.exec(segment);
     return match ? [match[1]] : [];
   });
 }
@@ -108,17 +108,17 @@ test("`pnpm install` and `pnpm test` reach `build` through pnpm, read from the r
 });
 
 // #3151: the lab runs a job as `corepack pnpm run <script>` and has no `pnpm` on PATH, so a chain whose second word is a bare `pnpm`
-// dies at `sh: pnpm: not found` (#2945's class, #3141). `test` is the chain `pnpm test` runs, so it reaches pnpm by `scripts/pnpm.mjs`.
+// dies at `sh: pnpm: not found` (#2945's class, #3141). `test` is the chain `pnpm test` runs, so it reaches pnpm by `scripts/pnpm.ts`.
 const bareChainedPnpm = (value: string): string[] => segmentsOf(value).map(commandOf).filter((command) => command === "pnpm") as string[];
 
 test("a fixture chain whose segment starts with a bare `pnpm` is FOUND, and the passthrough spelling is not", () => {
   assert.deepEqual(bareChainedPnpm("pnpm run test:ts && pnpm run test:python"), ["pnpm", "pnpm"]);
-  assert.deepEqual(bareChainedPnpm("node scripts/pnpm.mjs run test:ts && node scripts/pnpm.mjs run test:python"), []);
+  assert.deepEqual(bareChainedPnpm("node scripts/pnpm.ts run test:ts && node scripts/pnpm.ts run test:python"), []);
 });
 
 test("THE REAL `test` script starts no segment with a bare `pnpm`, and still reaches both of its delegates", () => {
   const scripts = rootScripts();
-  assert.deepEqual(bareChainedPnpm(scripts.test), [], "`test` names a bare `pnpm`; spell it `node scripts/pnpm.mjs run <script>`");
+  assert.deepEqual(bareChainedPnpm(scripts.test), [], "`test` names a bare `pnpm`; spell it `node scripts/pnpm.ts run <script>`");
   // The positive control for the emptiness above: the chain still reaches its two delegates through the passthrough.
   assert.deepEqual(delegatesOf(scripts.test.split("&&")[0]).concat(delegatesOf(scripts.test.split("&&")[1])), ["test:ts", "test:python"]);
 });

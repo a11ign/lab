@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import {
   CI_ONLY, agentOrgSource, STEPS, bodyHash, jobsGateNeeds, linkNodeModules, makeScratch, removeScratch, runTs, shAsync, stampVerdict, stepsToRun, unaccountedJobs,
 } from "../../../../scripts/verify.ts";
-import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
+import { classify, knownPackages } from "../../../../scripts/ci-changed.ts";
 
 const ROOT = new URL("../../../../", import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, ROOT), "utf8");
@@ -138,8 +138,8 @@ test("`ts` runs every command through the non-blocking runner, in order, and sto
 
 // 2. `verify` CALLS THE SELECTOR `ci.yml` CALLS, AND DOES NOT COPY IT.
 // The tests the `ts` step runs are rstest's own `--changed` selection since #3572, pinned in `verify-affected-set.test.ts`.
-test("verify imports ci-changed.mjs's classify, as ci.yml does, and no longer reaches the hand-built selector", () => {
-  assert.match(VERIFY, /^import \{[^}]*\bclassify\b[^}]*\} from "\.\/ci-changed\.mjs";$/m);
+test("verify imports ci-changed.ts's classify, as ci.yml does, and no longer reaches the hand-built selector", () => {
+  assert.match(VERIFY, /^import \{[^}]*\bclassify\b[^}]*\} from "\.\/ci-changed\.ts";$/m);
   assert.doesNotMatch(VERIFY, /"scripts\/test-changed\.mjs"/);
 });
 

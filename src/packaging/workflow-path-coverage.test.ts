@@ -11,7 +11,7 @@
  *
  * **1. An UNFILTERED backstop must exist.** `lint.yml` (no `paths:` at all) held that role until
  * 2026-09-06, when it was retired into `ci.yml`. `ci.yml` still carries no top-level `paths:` — it filters
- * INSIDE each job, via `if:` conditions reading `scripts/ci-changed.mjs`'s own diff classification, which
+ * INSIDE each job, via `if:` conditions reading `scripts/ci-changed.ts`'s own diff classification, which
  * this test's YAML-`paths:` scan cannot see and does not need to: GitHub still DISPATCHES the workflow on
  * every push and PR, so every source directory remains reachable through it exactly as it was through
  * `lint.yml`, and no filter below can currently hide anything. That is the load-bearing fact, and it is

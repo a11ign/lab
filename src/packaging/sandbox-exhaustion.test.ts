@@ -38,15 +38,15 @@ import {
   EXHAUSTION_CODES, EXHAUSTION_MARKER, describeSandboxExhaustion, exhaustionCause, sandboxExhaustionError,
   withSandbox,
 } from "../../../guards/src/sandbox-exhaustion.ts";
-import { localImports, stripComments } from "../../../guards/src/local-import-closure.mjs";
-import { readsDuring } from "../../../guards/src/walk-scope.mjs";
+import { localImports, stripComments } from "../../../guards/src/local-import-closure.ts";
+import { readsDuring } from "../../../guards/src/walk-scope.ts";
 
 const READ_AND_EXECUTE_ONLY = 0o500;
 const OWNER_ALL = 0o700;
 const BYTES_PER_GIB = 1024 ** 3;
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const FLOOR = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.mjs", import.meta.url));
+const FLOOR = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.ts", import.meta.url));
 const MODULE = fileURLToPath(new URL("../../../guards/src/sandbox-exhaustion.ts", import.meta.url));
 
 /** A directory the process owns and cannot write to -- the one way to get a REAL EACCES without root. */

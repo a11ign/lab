@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { derivedLocalRule } from "../../../guards/src/uncontrolled-emptiness.mjs";
+import { derivedLocalRule } from "../../../guards/src/uncontrolled-emptiness.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
@@ -308,7 +308,7 @@ test("#1185: a git spawn with no helper is reported AT THE SPAWN", async () => {
 
 test("#1185: imported AND called is scrubbed; imported alone is not", async () => {
   const imported = 'import { execFileSync } from "node:child_process";\n'
-    + 'import { sandboxGitEnv } from "./git-env.mjs";\n';
+    + 'import { sandboxGitEnv } from "./git-env.ts";\n';
   const called = `${imported}export const head = () => ${spawn("git")}["rev-parse"], { env: sandboxGitEnv() });\n`;
   const notCalled = `${imported}export const head = () => ${spawn("git")}["rev-parse"]);\n`;
 

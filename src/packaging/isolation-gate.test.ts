@@ -25,7 +25,7 @@ import { tempDir } from "../../../guards/src/test-tmp.ts";
 // Four levels up, to the REPO ROOT. The gate is monorepo tooling, not a package: it has to pack and install
 // every package including this one, so it cannot live inside any of them. Its tests live here because `lab` is
 // where this repo's internal tooling tests live.
-import { checkIsolation, internalDependencies, declaredBins } from "../../../guards/src/isolation-gate.mjs";
+import { checkIsolation, internalDependencies, declaredBins } from "../../../guards/src/isolation-gate.ts";
 
 const fixture = (name: string) => fileURLToPath(new URL(`../../../../scripts/isolation-fixtures/${name}`, import.meta.url));
 

@@ -35,11 +35,11 @@ import { stripComments } from "@a11ign/evidence/source-text";
 import {
   runnerOwnedPaths, readsSoFar,
   DECLARER_BUILTINS, ESM_UNSYNCED, NOT_WRAPPED, WHOLE_REPOSITORY, inScope, isObserved, parseWalkScope, readsDuring,
-} from "../../../guards/src/walk-scope.mjs";
-import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
-import { packageIndex, sourceClosure } from "../../../guards/src/walk-scope-discovery.mjs";
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+} from "../../../guards/src/walk-scope.ts";
+import { classify, knownPackages } from "../../../../scripts/ci-changed.ts";
+import { packageIndex, sourceClosure } from "../../../guards/src/walk-scope-discovery.ts";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const W = "WALK" + "_SCOPE";
@@ -173,7 +173,7 @@ function runFixtureGuard(scope: string, body: string) {
   // there compiles as CommonJS, where the top-level `await` a declaring guard needs is a transform error.
   // The first version of this fixture was `.ts` and "failed" for that reason rather than the one asserted.
   const file = join(dir, "fixture.test.mts");
-  const walkScope = pathToFileURL(join(REPO, "packages/guards/src/walk-scope.mjs")).href;
+  const walkScope = pathToFileURL(join(REPO, "packages/guards/src/walk-scope.ts")).href;
   writeFileSync(file, [
     `import { declareWalkScope } from ${JSON.stringify(walkScope)};`,
     `import { test } from "node:test";`,
@@ -623,7 +623,7 @@ test("every declaring guard imports walk-scope FIRST and runs its own check", ()
   for (const file of declarers) {
     const source = readFileSync(join(REPO, file), "utf8");
     const firstImport = source.split("\n").find((line) => line.startsWith("import "));
-    assert.match(firstImport ?? "", /walk-scope\.mjs"/, `${file}: the walk-scope import must be the FIRST import`);
+    assert.match(firstImport ?? "", /walk-scope\.ts"/, `${file}: the walk-scope import must be the FIRST import`);
     assert.match(source, /await declareWalkScope\(import\.meta\.url\)/, `${file}: declares a scope and never checks it`);
   }
 });
@@ -645,7 +645,8 @@ function unsyncedBindingsIn(code: string): string[] {
   for (const [module, names] of Object.entries(ESM_UNSYNCED as Record<string, Record<string, string>>)) {
     const from = String.raw`\s*from\s*["'](?:node:)?${escapeRegExp(module)}["']`;
     const opener = String.raw`\b(?:import\s+(?:[\w$]+\s*,\s*)?|export\s*)`;
-    const whole = new RegExp(String.raw`${opener}\*(?:\s*as\s+[\w$]+)?${from}|\bimport\s*\(\s*["'](?:node:)?${escapeRegExp(module)}["']\s*\)`);
+    // `typeof import("node:test")` is a TYPE query, which `.ts` allows and binds nothing: the core's walk-scope.ts has one (a11ign/a11ign#4569).
+    const whole = new RegExp(String.raw`${opener}\*(?:\s*as\s+[\w$]+)?${from}|(?<!\btypeof\s+)\bimport\s*\(\s*["'](?:node:)?${escapeRegExp(module)}["']\s*\)`);
     for (const name of Object.keys(names)) {
       const named = new RegExp(String.raw`${opener}\{[^}]*\b${escapeRegExp(name)}\b[^}]*\}${from}`);
       if (named.test(code) || whole.test(code)) found.push(`node:${module}'s ${name}`);
@@ -702,7 +703,7 @@ test("...and that refusal can fire: each unseen route is found, and a plain fs i
     `export { run } from "node:test";`, `export * from "node:test";`, `export * as t from "node:test";`]) {
     assert.deepEqual(unseenRoutesIn(spelling), viaTestBinding, spelling);
   }
-  for (const harmless of [`import { test, before } from "node:test";`, `import nodeTest from "node:test";`,
+  for (const harmless of [`const nodeTest: typeof import("node:test") = require("node:test");`, `import { test, before } from "node:test";`, `import nodeTest from "node:test";`,
     `export { test } from "node:test";`, `import { runner } from "./x.mjs";`]) {
     assert.deepEqual(unseenRoutesIn(harmless), [], `${harmless} binds nothing unsynced`);
   }
@@ -719,7 +720,7 @@ test("#1349: a SECOND copy of walk-scope shares one observer state -- it reports
   // A query string makes Node load a distinct module instance: the rstest situation (preloaded copy + bundled
   // copy) without the bundler. With per-copy state, the second copy's record starts empty and this fails.
   readFileSync(join(REPO, MANIFEST));
-  const second = await import(`${pathToFileURL(join(REPO, "packages/guards/src/walk-scope.mjs")).href}?second-copy-1349`);
+  const second = await import(`${pathToFileURL(join(REPO, "packages/guards/src/walk-scope.ts")).href}?second-copy-1349`);
   assert.notEqual(second.readsSoFar, readsSoFar, "the fixture must really be a second instance, or this proves nothing");
   assert.ok(readsSoFar().includes(MANIFEST), "the first copy saw the read");
   assert.deepEqual(second.readsSoFar(), readsSoFar(), "one state per process: both copies report the same reads");

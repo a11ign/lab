@@ -65,9 +65,9 @@ test("`npm` and `npx` are refused the same way, in any lifecycle script and afte
     ["postinstall: npx", "preinstall: npm"]);
 });
 
-test("a fixture whose `prepare` runs `node scripts/pnpm.mjs -r run build` passes", () => {
+test("a fixture whose `prepare` runs `node scripts/pnpm.ts -r run build` passes", () => {
   assert.deepEqual(
-    bareCallers({ prepare: "node scripts/install-git-hooks.mjs && node scripts/pnpm.mjs -r run build" }), []);
+    bareCallers({ prepare: "node scripts/install-git-hooks.mjs && node scripts/pnpm.ts -r run build" }), []);
 });
 
 test("a script ABOUT pnpm passes, and so does a bare `pnpm` in a script that is not a lifecycle script", () => {

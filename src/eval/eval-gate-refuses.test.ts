@@ -32,7 +32,7 @@ import { mkdtempSync, writeFileSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const RUN = join(REPO, "packages/lab/src/eval/run.ts");

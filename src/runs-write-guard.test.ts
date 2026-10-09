@@ -113,7 +113,7 @@ const EXEMPT: Record<string, string> = {
     "Its only write (writeFileSync(BASELINE, ...)) targets packages/lab/baselines/real-page-findings.json "
     + "-- tracked source, a deliberate checked-in baseline update, not a runs/ write. It does resolve "
     + "runs/ paths (realCorpusRoot(), datasetRoot()) to READ the corpus it is scoring.",
-  "packages/control/src/fleet-watch.mjs":
+  "packages/control/src/fleet-watch.ts":
     "Writes the fleet's own bookkeeping (the capture ledger and the non-ready-since state, both under the checkout's ignored state directory) on the "
     + "control plane's timer, never the corpus the guard protects, and it always did: those writes took "
     + "`writeFileSync` as a default PARAMETER, which this discovery's call-shaped regex did not see, until the "

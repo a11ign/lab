@@ -57,7 +57,7 @@
  *
  * So this test discovers the OPERATION. A name may take any shape; entering a directory takes exactly
  * two forms in this tree — a `cd` in a command string, and `systemd-run --working-directory=`. Every one
- * of them is found and must either interpolate `control-plane-checkout.mjs`'s export or be classified
+ * of them is found and must either interpolate `control-plane-checkout.ts`'s export or be classified
  * with a reason. A new consumer that writes its own literal fails here by name.
  *
  * ## And the two green checks that could not see it
@@ -84,7 +84,7 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
 
 /** The one module that may know the directory's name. */
-const SOURCE_OF_TRUTH = "packages/control/src/control-plane-checkout.mjs";
+const SOURCE_OF_TRUTH = "packages/control/src/control-plane-checkout.ts";
 
 /**
  * Entering a directory, in the two forms this tree uses: a `cd` inside a command string, and
@@ -214,6 +214,9 @@ const CHECKOUT_NAME = /export const CONTROL_PLANE_CHECKOUT = "([^"]+)"/
  * states — which is the distinction that would have caught the outage.
  */
 const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
+  "/home/agent/repos/role-product-manager": "the `git -C` target of a11ign/a11ign#4569's Acceptance in `.acceptance/agent~the-lab-s-ci-4569.md`: "
+    + "the product-manager session's clone of the CORE, where `merge-base --is-ancestor` asks whether the pinned core sha descends from "
+    + "`f3b5c5f59`. It is a clone of a11ign/a11ign, not of the control repository, and the row wrote the path literally so the check runs as filed",
   "/root": "the ssh wrapper's landing directory in `fleet-playbook.mjs`, not the checkout — it is what "
     + "makes the checkout's own `cd` relative, and it is the ssh user's home rather than a path anybody "
     + "renamed",
@@ -262,7 +265,7 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
     + "visibly decided.",
   "replaced": "the word after `git clone` in a TEST TITLE of `packages/guards/src/lay-layer.test.ts` (\"a git clone is replaced when it is disposable\"): the `git clone <url> <dir>` shape matches the sentence, which is prose and not a directory. "
     + "Relocated into the core's guards by #3505, where this population now finds it.",
-  "${unsafe};": "the interpolation after `git clone` inside the Error message of `scripts/lay-layer.mjs`'s refusal (`... is a git clone and ${unsafe}; push or discard that work ...`): the same "
+  "${unsafe};": "the interpolation after `git clone` inside the Error message of `scripts/lay-layer.ts`'s refusal (`... is a git clone and ${unsafe}; push or discard that work ...`): the same "
     + "`git clone <url> <dir>` shape matching a sentence, where the word is the reason a clone is not disposable. Not a directory, and that script clones into a layer's path, never the control plane's checkout.",
   "${primary}": "the AGENT HOST's primary checkout, in the command `wake.mjs`'s `launchAdvice` (#2405) hands a standing "
     + "engineer with no `role-<you>` worktree: `git -C ${primary} worktree add --detach ...`. It is a parameter there "
@@ -806,9 +809,9 @@ test("an unclassified home-root name fails with a one-line remedy naming the map
 
 test("both consumers reach the checkout through the source of truth, and neither holds its own literal "
   + "-- the two files that held two shapes of one fact, with only one of them restored", () => {
-  for (const consumer of ["packages/control/src/fleet-playbook.mjs", "packages/control/src/lab-pipeline.mjs"]) {
+  for (const consumer of ["packages/control/src/fleet-playbook.ts", "packages/control/src/lab-pipeline.ts"]) {
     const source = read(consumer);
-    assert.match(source, /from "\.\/control-plane-checkout\.mjs"/,
+    assert.match(source, /from "\.\/control-plane-checkout\.ts"/,
       `${consumer} no longer imports the source of truth. If it stopped entering the checkout, remove `
       + "its entry here; if it grew its own literal, that is the outage again.");
     assert.ok(!/=\s*["']\/?root?\/?a11[a-z-]*["']/.test(stripComments(source)),

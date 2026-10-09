@@ -25,10 +25,10 @@ import {
   runUnderCap,
   supervise,
   verdictLine,
-} from "../../../guards/src/test-memory-cap.mjs";
+} from "../../../guards/src/test-memory-cap.ts";
 
-const CAP_MODULE = fileURLToPath(new URL("../../../guards/src/test-memory-cap.mjs", import.meta.url));
-const ASSERT_GLOB = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.mjs", import.meta.url));
+const CAP_MODULE = fileURLToPath(new URL("../../../guards/src/test-memory-cap.ts", import.meta.url));
+const ASSERT_GLOB = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.ts", import.meta.url));
 const PRE_PUSH = fileURLToPath(new URL("../../../../scripts/git-hooks/pre-push", import.meta.url));
 const REPO = path.resolve(path.dirname(CAP_MODULE), "../../..");
 
@@ -202,7 +202,7 @@ test("DONE-WHEN 3, arm two: a normal run under a cap is not reported as killed a
   assert.match(result.stderr, /stayed under MemoryMax=512M \(peak \S+, oom_kill=0\)/);
 });
 
-test("the choke point: `assert-glob-not-empty.mjs --run` prints which cap path it took, and still forwards the runner's exit", () => {
+test("the choke point: `assert-glob-not-empty.ts --run` prints which cap path it took, and still forwards the runner's exit", () => {
   const ran = spawnSync(process.execPath, [ASSERT_GLOB, "packages/lab/src/packaging/commands-documented.test.ts", "--min=1", "--run"],
     { encoding: "utf8", cwd: REPO, env: { ...process.env, [MEMORY_MAX_ENV]: ROOMY_CAP } });
   assert.equal(ran.status, 0, ran.stderr);
@@ -215,6 +215,6 @@ test("the choke point: `assert-glob-not-empty.mjs --run` prints which cap path i
 test("the pre-push hook starts its test runner through the cap module, and the scan that says so finds the line it looks for", () => {
   const runners = readFileSync(PRE_PUSH, "utf8").split("\n").filter((line) => !line.trimStart().startsWith("#") && /\btsx --test\b/.test(line));
   assert.ok(runners.length >= 1, "POSITIVE CONTROL: the hook does start a runner, so an empty list here would be the scan finding nothing");
-  const bare = runners.filter((line) => !line.includes("test-memory-cap.mjs"));
+  const bare = runners.filter((line) => !line.includes("test-memory-cap.ts"));
   assert.deepEqual(bare, [], "a runner started without the cap");
 });

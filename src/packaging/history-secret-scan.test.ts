@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { scanBlob, KEY_FILENAME_RE, TEMPLATE_SUFFIX_RE, scanHistory } from "../../../../scripts/history-secret-scan.ts";
 import { nonStandardRefs } from "../../../../scripts/history-purge-rehearsal.ts";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 /**
  * A private-LAN address, BUILT FROM OCTETS, because #63's history purge rewrote every written-out one

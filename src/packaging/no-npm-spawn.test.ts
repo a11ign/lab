@@ -9,11 +9,13 @@
  *
  * THE ALLOWLIST IS THE ONES WHERE npm IS THE POINT, not a convenience. Each is the consumer's experience or the registry's:
  *
- *   - `scripts/registry-consumer-gate.mjs`: `npm install a11ign` IS what a user runs, so a gate that installed with pnpm would
+ *   - `scripts/registry-consumer-gate.ts`: `npm install a11ign` IS what a user runs, so a gate that installed with pnpm would
  *     test a different install than the one they get. `npm view` and `npx --no-install` are registry reads.
+ *   - `scripts/release-tags-complete.ts`: `npm view a11ign versions` reads the registry the consumer's `npm install` reads, so a
+ *     pnpm here would read a different thing than a user's install.
  *   - `scripts/release-publish-rehearsal.ts`: trusted publishing is bound to npm's OIDC, and `pnpm publish` shells out to
  *     `npm publish`, so the rehearsal reads the npm the publish would use.
- *   - `packages/guards/src/isolation-gate.mjs`: the CONSUMER half of the isolation gate installs the packed tarballs with npm
+ *   - `packages/guards/src/isolation-gate.ts`: the CONSUMER half of the isolation gate installs the packed tarballs with npm
  *     into a directory that is not a workspace, for the registry gate's reason (its header, "Two package managers, on
  *     purpose", and the core's `pnpm-publish-path.test.ts` pin it). The row named two files; this is a third, found by reading the
  *     Region and reported on #2889 rather than silently widened or silently ported.
@@ -45,11 +47,13 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** The named files that keep npm, and why. The reason is for a reader; the test pins the FILE NAMES. */
 const ALLOWED: Record<string, string> = {
-  "scripts/registry-consumer-gate.mjs": "`npm install a11ign` is the consumer's experience; `npm view` reads the registry",
+  "scripts/registry-consumer-gate.ts": "`npm install a11ign` is the consumer's experience; `npm view` reads the registry",
   // `.ts` since a11ign/a11ign#4274 (d9ea0c438): the same two `npm` spawns, the same reason, a new extension.
+  // a11ign/a11ign#4594 (core 989c2bcc3) added its `STAYS npm` comment; `npm view` reads the registry the consumer's install reads.
+  "scripts/release-tags-complete.ts": "`npm view` reads the registry the consumer's `npm install` reads",
   "scripts/release-publish-rehearsal.ts": "trusted publishing is bound to npm's OIDC, and `pnpm publish` shells out to `npm publish`",
-  "packages/guards/src/isolation-gate.mjs": "the consumer half installs the packed tarballs with npm, outside any workspace",
-  "scripts/agent-org-newest-tag.mjs": "installs the tool's own dependencies in a clone of its repository, which declares them for npm (#3534)",
+  "packages/guards/src/isolation-gate.ts": "the consumer half installs the packed tarballs with npm, outside any workspace",
+  "scripts/agent-org-newest-tag.ts": "installs the tool's own dependencies in a clone of its repository, which declares them for npm (#3534)",
 };
 
 /** Every comment in an allowlisted file that says why, matched by this exact opening. */
@@ -101,7 +105,7 @@ test("a fixture spawnSync(\"npm\", ...) is REFUSED, naming the file and the line
 
 test("the same spelling in an allowlisted file passes, and in the same file under another name it does not", () => {
   const source = 'spawnSync("npm", ["view", "a11ign"]);\n';
-  assert.deepEqual(refusals({ "scripts/registry-consumer-gate.mjs": source }), []);
+  assert.deepEqual(refusals({ "scripts/registry-consumer-gate.ts": source }), []);
   assert.equal(refusals({ "scripts/registry-consumer-gate-copy.mjs": source }).length, 1);
 });
 
@@ -165,12 +169,13 @@ test("positive control: the walk is not empty, and finds the spawns that ARE all
   }
 });
 
-test("the allowlist is EXACTLY these named files (the two registry gates, the isolation gate and the tool resolver), so a fifth is a decision made here", () => {
+test("the allowlist is EXACTLY these named files (the registry gates, the isolation gate and the tool resolver), so a fifth is a decision made here", () => {
   assert.deepEqual(Object.keys(ALLOWED).sort(), [
-    "packages/guards/src/isolation-gate.mjs",
-    "scripts/agent-org-newest-tag.mjs",
-    "scripts/registry-consumer-gate.mjs",
+    "packages/guards/src/isolation-gate.ts",
+    "scripts/agent-org-newest-tag.ts",
+    "scripts/registry-consumer-gate.ts",
     "scripts/release-publish-rehearsal.ts",
+    "scripts/release-tags-complete.ts",
   ]);
 });
 

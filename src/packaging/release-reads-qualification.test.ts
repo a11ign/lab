@@ -19,7 +19,7 @@ import { parse as parseYaml } from "yaml";
 import {
   qualificationDecision, rowToFile, fleetPartReads, isFleetGated, releasedDirectories,
   FLEET_GATED_PACKAGES, RUNNER_ONLY_PACKAGES, PRIVATE_PACKAGES, WAIT_BOUND_MINUTES,
-} from "../../../../scripts/release-reads-qualification.mjs";
+} from "../../../../scripts/release-reads-qualification.ts";
 
 const RELEASE = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
 const QUALIFIED = "9988776655443322119988776655443322119988";
@@ -244,15 +244,15 @@ test("the plan's readings name the release's directories: the ones ahead on a pu
 });
 
 // #3946 / #3947 / #3969 (core): THE VERDICT LEFT THE PUBLISH PATH. A push that carries a changeset publishes to `next` on the guards alone, and the
-// `decide` job reads this file's decider AFTER the publish, through `scripts/release-promote.mjs`, to say which versions may move to `latest`.
+// `decide` job reads this file's decider AFTER the publish, through `scripts/release-promote.ts`, to say which versions may move to `latest`.
 // What this test used to pin in the `guards` job (the step "Read the fleet part's verdict for this sha", its `continue-on-error`, `row-*` outputs) is
 // gone from there by design, and core's `release-publishes-to-next.test.ts` refuses it coming back; the reading is pinned where it lives now.
 test("release.yml READS the verdict in the `decide` job, after the publish, which the publish does not wait for", () => {
   const { decide, release, guards } = jobs();
   const plan = decide.steps?.find((step) => step.id === "plan");
   assert.ok(plan, "the step that reads the verdict is in release.yml's decide job");
-  assert.match(plan.run ?? "", /^node scripts\/release-promote\.mjs$/m);
-  assert.match(readFileSync("scripts/release-promote.mjs", "utf8"), /import \{[^}]*\bqualificationDecision\b[^}]*\} from "\.\/release-reads-qualification\.mjs";/,
+  assert.match(plan.run ?? "", /^node scripts\/release-promote\.ts$/m);
+  assert.match(readFileSync("scripts/release-promote.ts", "utf8"), /import \{[^}]*\bqualificationDecision\b[^}]*\} from "\.\/release-reads-qualification\.ts";/,
     "the script the job runs hands the history to THIS decider, not to a copy of its rules");
   assert.deepEqual([decide.needs].flat(), ["release"], "#3947: a push run promotes only after its own release");
   assert.ok(![release.needs].flat().includes("decide"), "#3946: the publish does not wait for the fleet's verdict");

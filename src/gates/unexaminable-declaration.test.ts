@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import { basename, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { laidControlFiles } from "../packaging/laid-control.ts";
 
 const DECLARATION = JSON.parse(readFileSync(

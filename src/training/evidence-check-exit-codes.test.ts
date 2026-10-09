@@ -22,7 +22,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 import { CASES } from "./case-matrix.mjs";
 import { EXIT, exitCodeFor } from "./evidence-check-exit.mjs";
 

@@ -21,11 +21,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { RSTEST_CONFIG, runnerInvocation } from "../../../guards/src/assert-glob-not-empty.mjs";
+import { RSTEST_CONFIG, runnerInvocation } from "../../../guards/src/assert-glob-not-empty.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const FLOOR = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.mjs", import.meta.url));
-const CONFIG_URL = new URL("../../../../scripts/rstest/rstest.config.mjs", import.meta.url).href;
+const FLOOR = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.ts", import.meta.url));
+const CONFIG_URL = new URL("../../../../scripts/rstest/rstest.config.ts", import.meta.url).href;
 const SCRIPTS = (JSON.parse(readFileSync(`${REPO}package.json`, "utf8")) as { scripts: Record<string, string> }).scripts;
 
 type Step = { name?: string; id?: string; if?: string; uses?: string; run?: string; with?: Record<string, string> };
@@ -104,18 +104,18 @@ test("#1319, #3573: the test step runs `pnpm run test:all`, and it asks the floo
   // The whole-package glob and its floor live on `test:all` now; `test:ts` carries the product brace list. The floor is any number, not the core's current one (500, then 159 when #3505 took the lab out):
   // a core that moves it must not turn this repository red, and the floor's PRESENCE is what the assertion is about.
   assert.match(SCRIPTS["test:all"],
-    /assert-glob-not-empty\.mjs "packages\/\*\/src\/\*\*\/\*\.test\.ts" --min=\d+ --run --runner=rstest /);
-  assert.match(SCRIPTS["test:ts"], /assert-glob-not-empty\.mjs "packages\/\{[a-z,-]+\}\/src\/\*\*\/\*\.test\.ts" --min=95 --run --runner=rstest /);
+    /assert-glob-not-empty\.ts "packages\/\*\/src\/\*\*\/\*\.test\.ts" --min=\d+ --run --runner=rstest /);
+  assert.match(SCRIPTS["test:ts"], /assert-glob-not-empty\.ts "packages\/\{[a-z,-]+\}\/src\/\*\*\/\*\.test\.ts" --min=95 --run --runner=rstest /);
 });
 
 test("#1319: `test:nightly` stays on tsx -- it is nightly-only and out of #1320's scope", () => {
-  assert.match(SCRIPTS["test:nightly"], /assert-glob-not-empty\.mjs .*--run\b/, "test:nightly still runs through the floor");
+  assert.match(SCRIPTS["test:nightly"], /assert-glob-not-empty\.ts .*--run\b/, "test:nightly still runs through the floor");
   assert.doesNotMatch(SCRIPTS["test:nightly"], /--runner=/, "test:nightly must not choose a runner in this row");
 });
 
 // #1320, step 4: `coverage` moved off this floor's `--run` -- see `coverage-is-rstest.test.ts` for what it runs now.
 test("#1320: `coverage` no longer runs `tsx --test` (or any runner) through this floor's --run", () => {
-  assert.doesNotMatch(SCRIPTS.coverage, /assert-glob-not-empty\.mjs .*--run\b/,
+  assert.doesNotMatch(SCRIPTS.coverage, /assert-glob-not-empty\.ts .*--run\b/,
     "coverage moved to scripts/coverage.mjs in step 4 (#1320); it uses this floor only as a population check");
 });
 
@@ -127,7 +127,7 @@ test("#1319: the command `--run` executes, per runner -- tsx unchanged, rstest w
     ["rstest", "run", "--config", RSTEST_CONFIG, "--include", "a.test.ts", "--include", "b/**/*.test.ts"]);
   assert.deepEqual(runnerInvocation({ runner: "rstest", patterns: ["a.test.ts"], concurrency: "4" }),
     ["rstest", "run", "--config", RSTEST_CONFIG, "--pool.maxWorkers=4", "--include", "a.test.ts"]);
-  assert.ok(RSTEST_CONFIG.endsWith("scripts/rstest/rstest.config.mjs"), RSTEST_CONFIG);
+  assert.ok(RSTEST_CONFIG.endsWith("scripts/rstest/rstest.config.ts"), RSTEST_CONFIG);
   assert.throws(() => runnerInvocation({ runner: "jest", patterns: ["a.test.ts"] }), /--runner=jest is not a runner/);
 });
 
@@ -259,7 +259,7 @@ test("#1319: the cache is restored and its HIT or MISS printed before both test 
   assert.equal(cache.length, 1, "exactly one actions/cache step persists rstest's build cache");
   const step = STEPS[cache[0]];
   assert.match(step.if ?? "", /inputs\.run-ts-tests/);
-  assert.match(step.with?.key ?? "", /hashFiles\('pnpm-lock\.yaml', 'scripts\/rstest\/rstest\.config\.mjs'\)/);
+  assert.match(step.with?.key ?? "", /hashFiles\('pnpm-lock\.yaml', 'scripts\/rstest\/rstest\.config\.ts'\)/);
   assert.ok(step.id, "the cache step has an id, so its cache-hit output can be read");
   const printed = STEPS.flatMap((s, index) => ((s.run ?? "").includes(`steps.${step.id}.outputs.cache-hit`) ? [index] : []));
   assert.equal(printed.length, 1, "one step prints HIT or MISS");

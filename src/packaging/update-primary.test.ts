@@ -215,7 +215,7 @@ test("#1384 ACCEPTANCE: a move that changed the lockfile runs pnpm install, BEFO
   assert.deepEqual(asked, [{ range: ["old111", "new222"], pathspec: ["pnpm-lock.yaml"] }],
     "the question is asked of the commit the checkout LEFT and the one it ARRIVED at, for the root lockfile");
   assert.equal(git.some((argv) => argv[0] === "diff"), false,
-    "#939: the paths come from packages/guards/src/changed-files.mjs, never from a second spelling of the diff");
+    "#939: the paths come from packages/guards/src/changed-files.ts, never from a second spelling of the diff");
   assert.deepEqual(npmCalls, [["pnpm", "install", "--frozen-lockfile"], ["pnpm", "run", "build"]],
     "install first: a build before it compiles the new source against the old node_modules");
 });

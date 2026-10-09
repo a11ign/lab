@@ -18,7 +18,7 @@
  * answers `already-up` on the first probe and is sent nothing: nothing here can wake a box twice.
  */
 // By PATH, not by name: `@a11ign/control` is on no registry and a host holds control LAID (`src/`, no manifest), so the name resolves nowhere there (a11ign/a11ign#3984).
-import { wakeFleet, wakeFailed, wakeReportLine } from "../../../control/src/fleet-wake.mjs";
+import { wakeFleet, wakeFailed, wakeReportLine } from "../../../control/src/fleet-wake.ts";
 import { requestJson } from "@a11ign/screenreader-fleet/worker-http";
 
 /**
@@ -35,7 +35,7 @@ function targetFor(url) {
 
 /**
  * @param {string[]} urls the workers THIS entry names, in the caller's own words
- * @param {import("../../../control/src/fleet-wake.mjs").WakeOptions} [wakeOptions] passed straight through to
+ * @param {import("../../../control/src/fleet-wake.ts").WakeOptions} [wakeOptions] passed straight through to
  *   `wakeFleet` — a test supplies `request`/`send`/`sleep`/`now` here and reads no network and waits no time
  * @returns {Promise<WakeVerdict>}
  */

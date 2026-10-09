@@ -13,7 +13,7 @@
  *
  * ## THE ENTRY LIST IS DERIVED, AND THE FIRST VERSION OF THIS FILE IS THE ARGUMENT FOR WHY
  *
- * This test previously walked ONE hand-named entry, `scripts/ci-changed.mjs`. It was written in the same
+ * This test previously walked ONE hand-named entry, `scripts/ci-changed.ts`. It was written in the same
  * pull request that added the very import it could not see — `scripts/build-packages.mjs`, one file over,
  * which is `package.json`'s `build` and therefore breaks every job that builds anything. It claimed to
  * pin a CLASS and pinned an instance.
@@ -128,7 +128,7 @@ export function preInstallScripts(workflowText: string): string[] {
     if (/^\s*echo\b/.test(line)) continue;                                 // prose, not an invocation
     if (/^\s*#/.test(line)) continue;                                      // a YAML comment, equally (#4372: consumer-gate-pin.yml's header names the command it runs)
     // A trailing YAML comment is prose too: `- uses: a11ign/a11ign@<sha>   # ... (node scripts/generate-consumer-gate.mjs)` on `consumer-gate.yml`'s pin line.
-    const call = /\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/.exec(line.replace(/\s+#\s.*$/, ""));
+    const call = /\bnode\s+(scripts\/[A-Za-z0-9._-]+\.(?:mjs|ts))/.exec(line.replace(/\s+#\s.*$/, ""));
     if (call) found.push(call[1]);
   }
   return found;
@@ -136,10 +136,10 @@ export function preInstallScripts(workflowText: string): string[] {
 
 /**
  * Every script behind an npm lifecycle entry, for each `node scripts/…` invocation in it. ALL of a `&&` chain, not the first: `build` is
- * `node scripts/lay-layer.mjs … && node scripts/pnpm.mjs -r run build` since #3580 (`build-packages.mjs` before it), and a reading that stopped at the first dropped the build itself.
+ * `node scripts/lay-layer.ts … && node scripts/pnpm.ts -r run build` since #3580 (`build-packages.mjs` before it), and a reading that stopped at the first dropped the build itself.
  */
 function scriptsBehind(command: string | undefined): string[] {
-  return [...(command ?? "").matchAll(/\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/g)].map((call) => call[1]);
+  return [...(command ?? "").matchAll(/\bnode\s+(scripts\/[A-Za-z0-9._-]+\.(?:mjs|ts))/g)].map((call) => call[1]);
 }
 
 /**
@@ -238,7 +238,7 @@ test("the entry discovery finds a real population — the vacuity guard that mat
     + "which is exactly how the previous version of this file missed the import its own PR added.");
   // Named because each is a DIFFERENT reason for being in the population, and losing any one silently
   // narrows the walk: a workflow step, a workflow that never installs at all, and a lifecycle script.
-  for (const expected of ["scripts/ci-changed.mjs", "scripts/pnpm.mjs"]) {
+  for (const expected of ["scripts/ci-changed.ts", "scripts/pnpm.ts"]) {
     assert.ok(entries.includes(expected),
       `${expected} must be discovered; found: ${entries.join(", ")}`);
   }
@@ -254,12 +254,12 @@ test("nothing any pre-install entry imports needs node_modules or dist", () => {
   assert.deepEqual(offenders, [],
     "these run before `npm ci` completes or before `npm run build` produces `dist`, so a package "
     + "specifier dies with ERR_MODULE_NOT_FOUND. Import relatively from `packages/*/src/`, as "
-    + "`ci-changed.mjs` does and explains above its own import.");
+    + "`ci-changed.ts` does and explains above its own import.");
 });
 
 test("the walk follows relative imports — or the guard above passes having examined one file", () => {
-  const names = [...importGraph("scripts/ci-changed.mjs").files].map((f) => relative(REPO, f));
-  assert.ok(names.includes("packages/guards/src/changed-packages.mjs"),
+  const names = [...importGraph("scripts/ci-changed.ts").files].map((f) => relative(REPO, f));
+  assert.ok(names.includes("packages/guards/src/changed-packages.ts"),
     `the walk did not reach a known dependency; it found: ${names.join(", ")}`);
 });
 

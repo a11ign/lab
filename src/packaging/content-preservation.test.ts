@@ -71,7 +71,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { RULES_DIR, RULES_FILES } from "./rules-files.ts";
 import { IMPERATIVE, pinById, readPinSubject, textForPin } from "./prefix-pins.ts";
 

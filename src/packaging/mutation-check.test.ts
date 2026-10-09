@@ -24,7 +24,7 @@ import { tempDir } from "../../../guards/src/test-tmp.ts";
  * no such split between platforms.
  */
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-const SCRIPT = path.join(REPO, "packages/guards/src/mutation-check.mjs");
+const SCRIPT = path.join(REPO, "packages/guards/src/mutation-check.ts");
 
 /**
  * #2457: every run made here is handed a `TMPDIR` the helper removes with the file, instead of the shared `/tmp`.

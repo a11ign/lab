@@ -35,7 +35,7 @@ import { globSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { walkTree, declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
-import { underFloor } from "../../../guards/src/assert-glob-not-empty.mjs";
+import { underFloor } from "../../../guards/src/assert-glob-not-empty.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file.
 declareTreeWideGuard();
@@ -43,7 +43,7 @@ declareTreeWideGuard();
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** The floor script every runner entry point in `package.json` goes through; its argv carries the globs. */
-const FLOOR_SCRIPT = "assert-glob-not-empty.mjs";
+const FLOOR_SCRIPT = "assert-glob-not-empty.ts";
 
 /** Shell operators that end a command, so a chained script's later words are never read as patterns. */
 const OPERATORS = ["&&", "||", "|", ";", "&"];
@@ -93,10 +93,10 @@ async function rstestConfigGlobs(): Promise<RunnerGlob[]> {
   // The specifier is COMPUTED and the bundler told to leave it alone: rstest bundles a statically written
   // import of its own config into the test and evaluates it inside its own module cycle, which throws
   // "Cannot access '__rspack_default_export' before initialization". This loads the real file from disk.
-  const href = new URL("../../../../scripts/rstest/rstest.config.mjs", import.meta.url).href;
+  const href = new URL("../../../../scripts/rstest/rstest.config.ts", import.meta.url).href;
   const config = (await import(/* webpackIgnore: true */ href)).default;
   const include: string[] = config.include ?? [];
-  return include.map((pattern) => ({ source: "scripts/rstest/rstest.config.mjs:include", pattern, min: 1 }));
+  return include.map((pattern) => ({ source: "scripts/rstest/rstest.config.ts:include", pattern, min: 1 }));
 }
 
 async function runnerGlobs(): Promise<RunnerGlob[]> {
@@ -172,7 +172,7 @@ test("every runner glob still satisfies the floor declared beside it, so a glob 
   assert.ok(globs.length > 0, "no runner glob was read from package.json or the rstest config at all");
   const sources = new Set(globs.map((glob) => glob.source));
   for (const expected of ["package.json:test:ts", "package.json:test:org", "package.json:test:all",
-    "package.json:test:nightly", "scripts/rstest/rstest.config.mjs:include"]) {
+    "package.json:test:nightly", "scripts/rstest/rstest.config.ts:include"]) {
     assert.ok(sources.has(expected), `no glob was read from ${expected} — the extraction above found `
       + `${[...sources].join(", ")}, so a runner's own pattern is no longer being checked at all`);
   }

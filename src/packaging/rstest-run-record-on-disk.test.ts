@@ -7,7 +7,7 @@
  * it, and `assert-glob-not-empty.mjs` spawns it with `stdio: "inherit"`. The runner was never silent. Nothing it said
  * was DURABLE.
  *
- * `scripts/rstest/rstest.config.mjs` now adds rstest's `json` reporter to every run. Four things are pinned here, each
+ * `scripts/rstest/rstest.config.ts` now adds rstest's `json` reporter to every run. Four things are pinned here, each
  * with the control that shows the assertion can fail:
  *
  *   1. A RED run's record names the failing file AND the failing test. The control is the MUTATION: the same run
@@ -35,10 +35,10 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { basename, join, relative as relativePath, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
+import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.ts";
 // #492: every npx call site resolves npm's own CLI script through this helper (`npm-cli-windows-spawn.test.ts`).
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 /** The number of one worktree's records the config keeps. Written out, so changing it in the config is a red here. */

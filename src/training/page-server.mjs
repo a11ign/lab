@@ -20,7 +20,7 @@
 import { spawn } from "node:child_process";
 import { openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 
 // Generous because the first `pnpm exec serve` on a busy host has to resolve the package before it binds,
 // and this host has had three VMs on it. A too-short window fails the run for a server that was about

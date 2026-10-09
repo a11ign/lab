@@ -27,15 +27,15 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
 import { trackedAndLaidPaths } from "./laid-control.ts";
-import { stripComments } from "../../../guards/src/local-import-closure.mjs";
-import { main as resolverMain, newestStableTag } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { stripComments } from "../../../guards/src/local-import-closure.ts";
+import { main as resolverMain, newestStableTag } from "../../../../scripts/agent-org-newest-tag.ts";
 
 declareTreeWideGuard();
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 /** This file names every pattern it refuses, so it is left out of its own walk, here and by name (`.claude`'s rule: a guard excludes itself in code). */
 const SELF = "packages/lab/src/packaging/no-agent-org-dependency.test.ts";
-const RESOLVER = "scripts/agent-org-newest-tag.mjs";
+const RESOLVER = "scripts/agent-org-newest-tag.ts";
 
 /** The 40 `package.json` aliases #3534 deleted, each `agent-org <command>`: a brief that still says `pnpm run <one of these>` names a command that is gone. */
 const REMOVED_ALIASES = [
@@ -142,7 +142,7 @@ type Workflow = { jobs?: Record<string, { steps?: Step[] }> };
 
 /** A step that runs the tool: `agent-org <command>` in command position, whether or not it follows `;`, `&&`, `||`, `|`, `(`, `then` or `do`. */
 const RUNS_THE_TOOL = /(^|&&|\|\||;|\||\(|\bthen\b|\bdo\b)\s*agent-org\s+[a-z]/m;
-const RUNS_THE_RESOLVER = /node scripts\/agent-org-newest-tag\.mjs\b/;
+const RUNS_THE_RESOLVER = /node scripts\/agent-org-newest-tag\.ts\b/;
 
 /** `job.step` of every step that runs the tool with no earlier step in its job that runs the resolver. */
 export function toolStepsWithoutResolver(doc: Workflow): string[] {
@@ -172,7 +172,7 @@ test("(4) every workflow step that runs `agent-org` has an earlier step in its j
 test("(4) control: a job with no resolver, one that resolves AFTER the tool, and a prose mention are told apart from one that resolves first", () => {
   const job = (...runs: string[]): Workflow => ({ jobs: { j: { steps: runs.map((run) => ({ run })) } } });
   const tool = "agent-org merge-guard --ci-gate 1";
-  const resolve = 'node scripts/agent-org-newest-tag.mjs --dest="$RUNNER_TEMP/agent-org"';
+  const resolve = 'node scripts/agent-org-newest-tag.ts --dest="$RUNNER_TEMP/agent-org"';
   assert.deepEqual(toolStepsWithoutResolver(job(tool)), ["j.steps[0]"]);
   assert.deepEqual(toolStepsWithoutResolver(job(tool, resolve)), ["j.steps[0]"], "the resolver comes too late to help the step above it");
   assert.deepEqual(toolStepsWithoutResolver(job("pnpm install --frozen-lockfile", tool)), ["j.steps[1]"], "an install is not the resolver");
