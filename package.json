@@ -31,7 +31,7 @@
     "@types/node": "^26.6.4",
     "a11ign": "0.2.7",
     "serve": "14.2.6",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "yaml": "^2.9.1"
   }
 }
