@@ -59,7 +59,9 @@ test("the lab is linted with the ignore removed, and typechecked by its own prog
   assert.match(ci, /pnpm exec eslint --no-ignore packages\/lab\n/);
   assert.doesNotMatch(ci, /pnpm exec tsc --noEmit\n {8}working-directory: core/);
   // The lab's own program, run in the core, after the lab is laid (a11ign/a11ign#3927): the core's excludes `packages/lab`, so only this one reads the lab's `src`.
-  const typecheck = ci.indexOf("pnpm exec tsc -p packages/lab/tsconfig.json --noEmit\n        working-directory: core");
+  // Both run in the `own` leg only: the cross-repo leg is the tests, and a lint or type failure there would say nothing about the tests it reads.
+  assert.match(ci, /pnpm exec eslint --no-ignore packages\/lab\n {8}if: matrix\.scope == 'own'\n/);
+  const typecheck = ci.indexOf("pnpm exec tsc -p packages/lab/tsconfig.json --noEmit\n        if: matrix.scope == 'own'\n        working-directory: core");
   assert.ok(typecheck > ci.indexOf("cp -R ../lab/. packages/lab"), "the lab's typecheck runs after it is laid");
   assert.ok(typecheck < ci.indexOf("pnpm exec rstest run"), "and before the tests, so a type failure reads red without waiting for the suite");
 });
