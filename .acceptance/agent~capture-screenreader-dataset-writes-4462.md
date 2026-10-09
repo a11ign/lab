@@ -10,4 +10,4 @@ Mutation: five breaks, each restored by copy and diffed byte-identical, each fai
 ## Not run, and why
 The test drives the helper with stubbed probes and reads the script's wiring as text: the script cannot be imported in a lab checkout (`page-server.mjs` and `fleet-wake.ts` resolve into the core and control). `tsc` is vacuous in a bare lab checkout (the lab's tsconfig extends the core's; the untouched `capture-run-record.test.ts` reports the same TS7016/TS7006). No fleet or lab command was run. The early exits before any worker is acquired (power refusal, bad `--only=`) write no record: nothing was probed.
 
-Outside-Region: src/training/capture-run-record.mjs -- gains `recordUnguardedRun`, the shared helper the dataset script calls (the Region named the script and its test only; a helper in the script cannot be imported by a test here)
+Outside-Region: src/training/capture-run-record.mjs — gains `recordUnguardedRun`, the shared helper the dataset script calls (the Region named the script and its test only; a helper in the script cannot be imported by a test here)
