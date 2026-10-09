@@ -51,6 +51,7 @@ test("the file the deploy guard scrapes is the file that declares CAPTURE_PROTOC
 // `formChanges[].after`) -- the author-moves-its-own-pin rule this file's own history is an instance of.
 // #1918 moved it 20 -> 21 (`formChanges[].submitted`, whether the activation dispatched a form submit).
 // #2587 moved it 21 -> 22 (the focus-event log records what already held focus, `initial: true`).
-test("CAPTURE_PROTOCOL_VERSION is 22, the value this PR bumps to", () => {
-  assert.equal(CAPTURE_PROTOCOL_VERSION, 22);
+// The worker moved it 22 -> 24 after that, in the releases the core's lockfile pinned since (laid at `.layer-ref`, v0.9.0 at a11ign/a11ign a7d6a4158): the author-moves-its-own-pin rule again.
+test("CAPTURE_PROTOCOL_VERSION is 24, the value the laid worker bumps to", () => {
+  assert.equal(CAPTURE_PROTOCOL_VERSION, 24);
 });

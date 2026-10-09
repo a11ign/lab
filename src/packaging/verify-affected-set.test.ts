@@ -139,13 +139,20 @@ function uncovered(patterns: readonly string[], reads: Map<string, string[]>): s
  * `forceRerunTriggers`. At CORE_REF e45068f59 the core grew three more (`scripts/outsider/`'s pin-write policy and repository file, and the stored-token workflow
  * fixture), outside the lab's Region and not filed yet: the row carries the finding. The effect is bounded to the local `--changed` run (CI runs the whole suite),
  * which does not re-run a test when one of these files changes.
+ *
+ * At CORE_REF a7d6a4158 there is one more: `packages/guards/layer-edges.baseline.json`, which the core's `boundary-report-job.test.ts` (de0d90423, #4434) reads
+ * by name to pin the boundary job's baseline, and which `forceRerunTriggers` does not list (`git log` of the config ends at #4419). Same gap, same bound: it is
+ * the core's to add, and this entry turns red the day it does.
  */
 const OWED_TO_THE_CORE = "the core's forceRerunTriggers owe a pattern (a11ign/a11ign#4419 covered the first twenty-seven; found moving CORE_REF to e45068f59)";
 const KNOWN_UNCOVERED_BY_THE_CORE: Record<string, string> = Object.fromEntries([
   "scripts/fixtures/workflow-reads-stored-github-token.yml",
   "scripts/outsider/outsider-pin-write.sts.yaml",
   "scripts/outsider/repository.json",
-].map((file) => [file, OWED_TO_THE_CORE]));
+].map((file) => [file, OWED_TO_THE_CORE]).concat([
+  ["packages/guards/layer-edges.baseline.json",
+    "the core's forceRerunTriggers owe a pattern for the boundary job's baseline, read by boundary-report-job.test.ts (a11ign/a11ign#4434; found moving CORE_REF to a7d6a4158)"],
+]));
 const unexempted = (files: readonly string[]) => files.filter((file) => !(file in KNOWN_UNCOVERED_BY_THE_CORE));
 
 const READS = readsByPath();

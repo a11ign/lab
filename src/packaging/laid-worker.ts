@@ -12,10 +12,16 @@ import { fileURLToPath } from "node:url";
  */
 const LAYER = join(fileURLToPath(new URL("../../../../", import.meta.url)), "packages/nvda-worker");
 
+/** The worker's sources went from `.mjs` to `.ts` (a11ign/a11ign#4274 for its `src/`); a caller that names the old spelling is read at the new one rather than refused. */
+function laidPath(rel: string): string {
+  const named = join(LAYER, rel);
+  return !existsSync(named) && rel.endsWith(".mjs") && existsSync(named.replace(/\.mjs$/, ".ts")) ? named.replace(/\.mjs$/, ".ts") : named;
+}
+
 /** @param rel a path inside the worker repository, from its root: `src/capture-core.mjs`, `README.md` */
 export function workerSource(rel: string): string {
   if (!existsSync(join(LAYER, ".layer-ref"))) throw new Error(`workerSource: the screenreader-worker is not laid at ${LAYER} (no .layer-ref); \`pnpm install\` in the core lays it`);
-  const found = join(LAYER, rel);
+  const found = laidPath(rel);
   if (!existsSync(found)) throw new Error(`workerSource: the laid worker at ${LAYER} holds no ${rel}`);
   return found;
 }

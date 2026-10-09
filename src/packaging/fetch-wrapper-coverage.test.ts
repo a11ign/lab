@@ -25,7 +25,7 @@
  *
  * ## Why a count, not just a filename
  *
- * `browser-session.mjs` carries two raw `fetch(` calls to the SAME reason (CDP's own endpoints); most
+ * `browser-session.ts` carries two raw `fetch(` calls to the SAME reason (CDP's own endpoints); most
  * other files carry one. A file gaining or losing a raw `fetch(` without this list changing is exactly
  * the drift a filename-only check cannot see — the "list of fields to check, and the one field with a
  * different shape" defect, applied to a count instead of a shape.
@@ -68,6 +68,8 @@ function sourceFiles(dir: string): string[] {
  * different TARGET (not a capture worker's JSON API at all) or a structural reason (the package dependency
  * graph forbids the import).
  */
+// The four `.ts` entries below (the CDP spike, the fake identity provider, and the laid worker's two CDP files) were `.mjs` until the core renamed its `scripts/`
+// and package sources (a11ign/a11ign#4273, #4274); the raw `fetch(` calls and their reasons did not change, only the path this list keys on.
 const EXEMPT: { file: string; count: number; reason: string }[] = [
   {
     file: "packages/worker-fleet/src/doctor.mjs", count: 1,
@@ -102,22 +104,22 @@ const EXEMPT: { file: string; count: number; reason: string }[] = [
       + "never a capture worker.",
   },
   {
-    file: "packages/cli/src/auth/attach-spike.mjs", count: 2,
+    file: "packages/cli/src/auth/attach-spike.ts", count: 2,
     reason: "a SPIKE's reads of Chrome's own CDP endpoints (`/json/version`, `/json/list`) on a debugging port it just opened -- "
       + "the browser's contract, not a capture worker's JSON API, and a throwaway script (docs/auth-attach-spike.md).",
   },
   {
-    file: "packages/cli/src/auth/fixtures/cross-origin-idp.mjs", count: 2,
+    file: "packages/cli/src/auth/fixtures/cross-origin-idp.ts", count: 2,
     reason: "a TEST FIXTURE's client of its own fake identity provider (`/userinfo`, `/token`) on localhost -- an OAuth server the "
       + "fixture itself starts, never a capture worker.",
   },
   {
-    file: "packages/nvda-worker/src/auth-flow.mjs", count: 1,
+    file: "packages/nvda-worker/src/auth-flow.ts", count: 1,
     reason: "Chrome's CDP `/json/list` on the worker's own debugging port, in the laid worker layer -- the browser's contract, "
-      + "not a capture worker's JSON API. Same target as browser-session.mjs below.",
+      + "not a capture worker's JSON API. Same target as browser-session.ts below.",
   },
   {
-    file: "packages/nvda-worker/src/browser-session.mjs", count: 2,
+    file: "packages/nvda-worker/src/browser-session.ts", count: 2,
     reason: "Chrome's CDP endpoints (`/json/version`, `/json/list`), in the laid worker layer, the same reason `browser-session.mjs` "
       + "carried when it lived in this tree: a browser's own HTTP interface, not a capture worker's JSON contract.",
   },

@@ -7,7 +7,7 @@
  * step, and the same text in a YAML comment or a shell comment runs nothing, so a history note that names
  * `npm run build` does not fail.
  *
- * TWO GROUPS STAY npm, each named below and each with a comment in its workflow saying why:
+ * THREE GROUPS STAY npm, each named below and each with a comment in its workflow saying why:
  *
  *   - `release.yml`'s publish. No step spells `npm publish`: the step is `pnpm exec changeset publish`, and pnpm shells
  *     out to npm at the far end, because trusted publishing is bound to npm's OIDC and the provenance is npm's to sign.
@@ -22,6 +22,10 @@
  *     the consumer types AFTER the install, three steps that call `npx` in the clean directory. That job installs
  *     nothing from the repository, so there is no pnpm project for `pnpm exec` to resolve in, `pnpm dlx` is the run-time
  *     fetch the move forbids, and a gate that ran the consumer's commands through pnpm would test a different consumer.
+ *   - `ci.yml`'s `boundary` job (#4434, epic #4425 phase 2). One `npx --yes --package "@a11ign/toolchain@${version}" boundary-check` step, a NON-BLOCKING
+ *     report job that installs nothing from the repository: the release is read from `package.json`'s `config.boundaryCheckToolchain` (0.4.0, the first
+ *     carrying the bin), and it is deliberately NOT the `@a11ign/toolchain` devDependency, which `toolchain-package.test.ts` pins to 0.1.4 across four
+ *     packages. So there is no pnpm project whose lockfile could resolve the bin, and `pnpm dlx` is the run-time fetch the move forbids.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -44,11 +48,12 @@ const STAYS_NPM: { file: string; job?: string; step: string; why: string }[] = [
   { file: "registry-consumer-gate.yml", step: "npx a11ign <url>, from the clean install", why: "this IS the consumer's command, quoted verbatim in the row's Acceptance" },
   { file: "release.yml", job: "guards", step: "Upgrade npm to the trusted-publishing floor, and refuse below it", why: "trusted publishing needs npm 11.5.1+ and setup-node's Node 22 ships 10.x; only `npm install -g` upgrades npm itself (#3180)" },
   { file: "release.yml", job: "promote", step: "Upgrade npm to the trusted-publishing floor, and refuse below it", why: "the same floor and reason for the OIDC `dist-tag add`; the job has no checkout, so it cannot use the other job's npm (#3969)" },
+  { file: "ci.yml", job: "boundary", step: "boundary-check against the committed baseline", why: "a non-blocking report job with no pnpm install: it fetches the pinned @a11ign/toolchain release that carries the bin, which is not the lockfile's 0.1.4 devDependency (#4434)" },
 ];
 
 const CONSUMER_GATE = "registry-consumer-gate.yml";
-/** The consumer gate's three and release.yml's two npm upgrades (`guards`, and `promote` since #3969). */
-const EXCEPTION_COUNT = 5;
+/** The consumer gate's three, release.yml's two npm upgrades (`guards`, and `promote` since #3969) and ci.yml's `boundary` report (#4434). */
+const EXCEPTION_COUNT = 6;
 
 /** A step's shell lines with blank and comment lines dropped: a command named only in prose runs nothing. */
 const codeLines = (step: Step): string[] =>
@@ -139,9 +144,9 @@ test("#2891: no `run:` step in any workflow spells npm, outside the named except
     "a job that installs with pnpm and runs through npm resolves the same scripts by a different tool");
 });
 
-test("#2891/#3180: the exceptions are exactly the consumer gate's three and release.yml's two npm upgrades, each one live, each with a reason", () => {
-  assert.equal(STAYS_NPM.length, EXCEPTION_COUNT, "a sixth npm step is a decision for the row, not a drift");
-  assert.deepEqual([...new Set(STAYS_NPM.map((e) => e.file))], [CONSUMER_GATE, "release.yml"]);
+test("#2891/#3180/#4434: the exceptions are exactly the consumer gate's three, release.yml's two npm upgrades and ci.yml's boundary report, each one live, each with a reason", () => {
+  assert.equal(STAYS_NPM.length, EXCEPTION_COUNT, "a seventh npm step is a decision for the row, not a drift");
+  assert.deepEqual([...new Set(STAYS_NPM.map((e) => e.file))], [CONSUMER_GATE, "release.yml", "ci.yml"]);
   const steps = realSteps();
   for (const e of STAYS_NPM) {
     assert.ok(e.why.length > 0);
@@ -156,6 +161,9 @@ test("#2891/#3180: each exception carries its comment in the workflow", () => {
   assert.equal((consumer.match(/# STAYS `npx` \(#2891/g) ?? []).length, STAYS_NPM.filter((e) => e.file === CONSUMER_GATE).length, "one `STAYS npx` comment per exception");
   const release = readFileSync(join(WORKFLOWS, "release.yml"), "utf8");
   assert.match(release, /# STAYS npm \(#3180/, "the upgrade step carries its own `STAYS npm` comment");
+  // ci.yml's `boundary` job carries no `STAYS` marker; the reason lives in the job's header comment, which names the toolchain release it fetches and why it is not the devDependency.
+  const ci = readFileSync(join(WORKFLOWS, "ci.yml"), "utf8");
+  assert.match(ci, /It is NOT the\s+# `@a11ign\/toolchain` devDependency/, "the boundary job's comment must still say why it fetches the toolchain by npx rather than using the lockfile's");
 });
 
 test("#2891/#3717: no step of release.yml publishes or spells `npm publish`: the called workflow's `changeset publish` does, and its npm hand-off is there", () => {

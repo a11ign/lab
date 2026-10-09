@@ -53,9 +53,16 @@ test("a function of exactly 90 physical lines is not reported", async () => {
   assert.deepEqual(await reportedLines(PHYSICAL, commentDense(90), "packages/guards/src/fixture.ts"), []);
 });
 
-test("the physical budget covers the worker's plain .mjs as well as .ts", async () => {
-  assert.deepEqual(await reportedLines(PHYSICAL, commentDense(91), "packages/nvda-worker/src/fixture.mjs"), [2]);
-  assert.deepEqual(await reportedLines(PHYSICAL, commentDense(90), "packages/nvda-worker/src/fixture.mjs"), []);
+// The worker's plain .mjs left the core's lint with the worker itself: f8a5c4f78 (#4442) ignores the laid `packages/nvda-worker/**`, which is linted in its own repository, so the
+// budget's coverage of plain .mjs is read at a package the core still lints with .mjs (guards), and the worker's absence from the config is pinned as its own fact.
+test("the physical budget covers plain .mjs as well as .ts", async () => {
+  assert.deepEqual(await reportedLines(PHYSICAL, commentDense(91), "packages/guards/src/fixture.mjs"), [2]);
+  assert.deepEqual(await reportedLines(PHYSICAL, commentDense(90), "packages/guards/src/fixture.mjs"), []);
+});
+
+test("the laid worker is outside the core's lint: it is linted in its own repository (#4442)", async () => {
+  const [result] = await eslint.lintText(commentDense(91), { filePath: join(root, "packages/nvda-worker/src/fixture.mjs") });
+  assert.ok(result.messages.some((m) => /ignored/i.test(m.message)), "positive control: the config ignores the laid worker, so the budget test above cannot be pointed at it");
 });
 
 test("an IIFE is measured too, as function-size.test.ts measured every function node", async () => {
