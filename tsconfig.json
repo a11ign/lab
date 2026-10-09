@@ -1,16 +1,18 @@
 {
-  // This repository's OWN program: its scripts and nothing else, `noEmit`. `packages/lab` is type-checked by ITS OWN program, `packages/lab/tsconfig.json` (`ci.yml` lays the package into a checkout of the core and
-  // runs `tsc -p` there), because the package reaches siblings that are not in this repository and the core's own program excludes it.
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "noEmit": true,
-    "types": ["node"],
-    "allowImportingTsExtensions": true
-  },
-  "include": ["scripts/**/*.ts"]
+  // The lab's OWN program, and this repository's ONLY tsconfig (#4215), run by `ci.yml` from the core checkout the lab is laid into, as `packages/lab` (`pnpm exec tsc -p packages/lab/tsconfig.json`): the core's `tsc --noEmit` excludes `packages/lab` and
+  // so checks the core alone. It EXTENDS the core's tsconfig, so the compiler options are the core's and not a copy of them, and replaces `include`, which is the core's population.
+  // The core's `.d.ts` declarations are named by path, because a program without them fails TS2304 on `UntypedTool` (174 errors in 7 files, measured 2026-10-07) and TS7016 on `agent-org`'s modules.
+  // Not a file at the core's root: one naming the lab's paths is read as a new layer edge there (the first attempt, a11ign/a11ign#3904).
+  "extends": "../../tsconfig.json",
+  "include": [
+    "../../scripts/test-support/*.d.ts",
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "nightly/**/*.ts",
+    "tests/**/*.ts",
+    "src/**/*.mjs",
+    "scripts/**/*.mjs",
+    "*.mjs"
+  ],
+  "exclude": ["node_modules"]
 }

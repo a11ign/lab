@@ -219,6 +219,10 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
     + "renamed",
   "cd": "prose ABOUT the command, in a README's `cd` into ...` sentence -- the pattern catches the word "
     + "following `cd`, and here that word is the next literal in the sentence rather than a directory",
+  "core": "the by-hand recipe in this repository's `README.md` (#4215): `git clone <url> core` and `git -C core "
+    + "checkout <CORE_REF>`, a scratch checkout of a11ign/a11ign that a person makes beside this one to lay it "
+    + "over, as `.github/workflows/ci.yml` does. It is a directory the reader creates, not the control plane's "
+    + "checkout, and it is named literally because a human pastes it",
   "repo": "a PLACEHOLDER in `.agent-org/roles/README.md`'s instructions, the shape `<repo>` would have if the "
     + "author had written the angle brackets",
   "checkout": "the same, one line down",

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const FILTER = fileURLToPath(new URL("../.github/auto-arm.jq", import.meta.url));
+const FILTER = fileURLToPath(new URL("../../.github/auto-arm.jq", import.meta.url));
 
 type Pull = { number: number; isDraft: boolean; autoMergeRequest: object | null; labels: { name: string }[] };
 

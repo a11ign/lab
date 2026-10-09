@@ -8,4 +8,4 @@ export function codeOf(workflow: string): string {
     .join("\n");
 }
 
-export const workflowCode = (name: string): string => codeOf(readFileSync(new URL(`../.github/workflows/${name}`, import.meta.url), "utf8"));
+export const workflowCode = (name: string): string => codeOf(readFileSync(new URL(`../../.github/workflows/${name}`, import.meta.url), "utf8"));

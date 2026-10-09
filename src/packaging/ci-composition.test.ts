@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { checkLayout, checkLayoutTree } from "@a11ign/toolchain/layout-check";
 import { workflowCode } from "./workflow-code.ts";
 
 const ci = workflowCode("ci.yml");
@@ -38,7 +40,7 @@ test("the laid package is staged, then given its `@a11ign/control` package, in t
   assert.ok(manifest > stage, "the manifest comes after the staging");
   assert.ok(src > manifest, "the src link comes after the manifest");
   assert.match(ci, /control=packages\/lab\/node_modules\/@a11ign\/control\n/, "both land in the lab's own node_modules");
-  assert.ok(stage > ci.indexOf("cp -R ../lab/packages/lab packages/lab"), "staged after it is laid");
+  assert.ok(stage > ci.indexOf("cp -R ../lab/. packages/lab"), "staged after it is laid");
   assert.ok(src < ci.indexOf("pnpm exec rstest run"), "installed before the tests");
 });
 
@@ -48,12 +50,12 @@ test("the lab is linted with the ignore removed, and typechecked by its own prog
   assert.doesNotMatch(ci, /pnpm exec tsc --noEmit\n {8}working-directory: core/);
   // The lab's own program, run in the core, after the lab is laid (a11ign/a11ign#3927): the core's excludes `packages/lab`, so only this one reads the lab's `src`.
   const typecheck = ci.indexOf("pnpm exec tsc -p packages/lab/tsconfig.json --noEmit\n        working-directory: core");
-  assert.ok(typecheck > ci.indexOf("cp -R ../lab/packages/lab packages/lab"), "the lab's typecheck runs after it is laid");
+  assert.ok(typecheck > ci.indexOf("cp -R ../lab/. packages/lab"), "the lab's typecheck runs after it is laid");
   assert.ok(typecheck < ci.indexOf("pnpm exec rstest run"), "and before the tests, so a type failure reads red without waiting for the suite");
 });
 
 test("the lab's tsconfig includes the lab's populations and the core's declarations, and extends the core's", () => {
-  const raw = readFileSync(new URL("../packages/lab/tsconfig.json", import.meta.url), "utf8");
+  const raw = readFileSync(new URL("../../tsconfig.json", import.meta.url), "utf8");
   const { extends: base, include } = JSON.parse(raw.replace(/^\s*\/\/.*$/gm, "")) as { extends: string; include: string[] };
   assert.equal(base, "../../tsconfig.json");
   for (const population of ["src/**/*.ts", "scripts/**/*.ts", "nightly/**/*.ts", "src/**/*.mjs", "../../scripts/test-support/*.d.ts"]) {
@@ -62,19 +64,38 @@ test("the lab's tsconfig includes the lab's populations and the core's declarati
 });
 
 test("the first release has a CHANGELOG entry for the version the package declares", () => {
-  const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-  const { version } = JSON.parse(read("packages/lab/package.json")) as { version: string };
+  const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+  const { version } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string };
   assert.match(version, /^\d+\.\d+\.\d+$/);
-  assert.match(read("packages/lab/CHANGELOG.md"), new RegExp(`^## ${version.replaceAll(".", "\\.")}$`, "m"));
+  assert.match(read("CHANGELOG.md"), new RegExp(`^## ${version.replaceAll(".", "\\.")}$`, "m"));
 });
 
-test("the gate runs this repository's typecheck and its tests on the toolchain's rstest, and no `tsx --test` is left", () => {
-  // ADR 0043: tests on rstest through `@a11ign/toolchain`, and `tsc --noEmit` inside the one job the ruleset requires (a11ign/a11ign#3959).
-  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string>; devDependencies: Record<string, string> };
-  assert.match(pkg.scripts.test, /^rstest run --config scripts\/rstest\/rstest\.config\.mjs$/);
-  assert.equal(pkg.scripts.typecheck, "tsc --noEmit");
-  assert.ok(pkg.devDependencies["@a11ign/toolchain"], "positive control: the toolchain is a dev dependency");
-  assert.ok(pkg.devDependencies["@rstest/core"]);
+test("the layout check runs first, from the toolchain this repository names, by path, and no `tsx --test` is left", () => {
+  // The bin has no shebang, so `npx … layout-check` is run by `sh` and dies (exit 2); the module is run by `node`. It comes before the core is installed, so a layout failure reads red at once.
+  const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string>; devDependencies: Record<string, string> };
+  assert.ok(pkg.devDependencies["@a11ign/toolchain"], "positive control: the toolchain is a dev dependency, and the step reads its version from there");
+  const check = ci.indexOf("/node_modules/@a11ign/toolchain/dist/layout-check.mjs\" lab");
+  assert.ok(check > 0, "positive control: the layout step is found");
+  assert.ok(check < ci.indexOf("pnpm install --no-frozen-lockfile"), "before the core's install");
+  assert.doesNotMatch(ci, /npx .*layout-check/);
   assert.doesNotMatch(JSON.stringify(pkg.scripts) + ci, /tsx --test/);
-  assert.match(ci, /pnpm run typecheck && pnpm test\n {8}working-directory: lab/, "the gate job runs the typecheck and the tests in the repository's own directory");
+});
+
+test("this repository's own tests run in the core's job: the toolchain is linked beside the laid package, and no root install is left", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { devDependencies: Record<string, string> };
+  // No lockfile, because the manifest names packages no registry holds: a frozen install here could not run.
+  assert.equal(existsSync(new URL("../../pnpm-lock.yaml", import.meta.url)), false, "a lockfile that could not be written is a lockfile that is stale");
+  assert.doesNotMatch(ci, /pnpm install --frozen-lockfile/);
+  const link = ci.indexOf('ln -s "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain" packages/lab/node_modules/@a11ign/toolchain');
+  assert.ok(link > ci.indexOf("cp -R ../lab/. packages/lab"), "linked into the package after it is laid");
+  assert.ok(link < ci.indexOf("pnpm exec rstest run"), "linked before the tests");
+  // The toolchain's `merge-child-coverage` imports `@rstest/coverage-v8`, an OPTIONAL peer npm does not install; the link resolves from the install's own directory, so it is installed beside it.
+  assert.ok(pkg.devDependencies["@rstest/coverage-v8"], "positive control: the coverage provider is a dev dependency, and the install reads its version from there");
+  assert.match(ci, /"@a11ign\/toolchain@\$version" "@rstest\/coverage-v8@\$coverage"/);
+});
+
+test("the layout check passes on this repository's own tree, and fails the shape it was written for", () => {
+  assert.equal(checkLayout({ root: fileURLToPath(new URL("../..", import.meta.url)) }).ok, true);
+  const monorepo = { "package.json": '{"name":"lab-workspace","private":true}', "lerna.json": "{}", "packages/lab/package.json": '{"name":"@a11ign/lab"}' };
+  assert.equal(checkLayoutTree(monorepo).ok, false, "positive control: the shape this change removed is red");
 });
