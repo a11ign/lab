@@ -12,6 +12,7 @@
   },
   "scripts": {
     "layout-check": "node node_modules/@a11ign/toolchain/dist/layout-check.mjs",
+    "test": "rstest run --config scripts/rstest/rstest.config.ts",
     "changeset": "changeset"
   },
   "dependencies": {
