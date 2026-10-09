@@ -58,6 +58,44 @@ test("calibration and training do not overlap", () => {
   }
 });
 
+/** A URL with its trailing slash dropped, so `/x/` and `/x` are one page. */
+const withoutTrailingSlash = (url: string): string => url.replace(/\/+$/, "");
+
+test("#4352: the calibration role holds at least four filter pages and at least five table pages", () => {
+  // #4084 outcome 3 asked whether the scorer says `cantTell` on data tables and filter screens, and the answer
+  // rested on three table pages and no filter page (docs/unfamiliar-ui-findings.md). Counted on `demonstrates`
+  // because that is what `cantell-by-page-shape` groups on: a page that does not SAY "filter" is not in the group.
+  const calibration = pagesFor("calibration");
+  const filter = calibration.filter((page) => /filter/i.test(page.demonstrates));
+  const table = calibration.filter((page) => /table/i.test(page.demonstrates));
+  assert.ok(filter.length >= 4, `calibration declares ${filter.length} filter pages, the row needs 4`);
+  assert.ok(table.length >= 5, `calibration declares ${table.length} table pages, the row needs 5`);
+});
+
+test("#4352: no calibration page is in the training role, a trailing slash not hiding the collision", () => {
+  const training = new Set(pagesFor("training").map((page) => withoutTrailingSlash(page.url)));
+  const collisions = pagesFor("calibration")
+    .filter((page) => training.has(withoutTrailingSlash(page.url)))
+    .map((page) => page.url);
+  assert.deepEqual(collisions, []);
+  // The control the emptiness above rests on: the same normalisation DOES catch a slash variant.
+  const first = pagesFor("training")[0];
+  assert.ok(training.has(withoutTrailingSlash(`${withoutTrailingSlash(first.url)}/`)),
+    "the normalised comparison must see a trailing-slash variant of a training page");
+});
+
+test("#4352: every calibration filter and table page carries its own published claim, source and description", () => {
+  // The row's rule: a page whose owner makes no claim is not a calibration page. `source` must name where the
+  // owner states it, and `demonstrates` must say what shape the page is, in more than a word.
+  const shaped = pagesFor("calibration").filter((page) => /filter|table/i.test(page.demonstrates));
+  assert.ok(shaped.length >= 8, `expected the filter and table pages, got ${shaped.length}`);
+  for (const page of shaped) {
+    assert.ok(["conformant", "inaccessible"].includes(String(page.publishedClaim)), `${page.url} has no published claim`);
+    assert.match(page.source, /https:\/\//, `${page.url} must cite where its owner publishes the claim`);
+    assert.ok(page.demonstrates.length > 5, `${page.url} must say what it is an example of`);
+  }
+});
+
 test("a collision IS detected — including a trailing-slash variant of a test page", () => {
   // Proving the guard fires, and proving it normalises: `…/tutorials/` and `…/tutorials` are one page, and
   // a bare set membership test would call them different and wave the collision through.
