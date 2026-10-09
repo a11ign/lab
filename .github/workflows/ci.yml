@@ -88,7 +88,7 @@ jobs:
       # workspace member, so pnpm gave it no `node_modules`, and without the package rstest cannot resolve `@a11ign/control/fleet-wake`, treats it as an external, and `require()`s a module
       # graph with a top-level `await` (7 test files, measured 2026-10-07). It was a link to the core's `packages/control` until a11ign/a11ign#3506, which made that a LAID layer: `src` and the
       # playbooks, and NO `package.json`, so a link has no `exports` to resolve a subpath through (the same 7 files, measured at core `d8d9a02fc`, a11ign/a11ign#3972). The package is what a workspace
-      # used to be: the manifest control publishes at the tag the core laid (`.layer-ref`, written by the lay), and `src` linked from where it was laid.
+      # used to be: the manifest control publishes at the tag the core laid (`.layer-ref`, written by the lay), and `src` linked from where it was laid. Since a11ign/a11ign#4345 control is FLAT, so its manifest is at the repository ROOT at the laid tag (measured: `raw.githubusercontent.com/a11ign/control/v0.1.14/package.json` is 200, `.../v0.1.14/packages/control/package.json` is 404), while the core still writes `.layer-ref` under `packages/control`.
       # The whole repository is laid, `.github/` and the changesets included: this repository's own tests (`src/packaging/*.test.ts`) read its workflows by relative path, and they are collected by the
       # same `packages/lab/**/*.test.ts` below. Only `.git` stays behind, which would make the laid directory a repository of its own.
       - name: Lay this repository over the core's own `packages/lab`, stage it, and install `@a11ign/control` beside it
@@ -100,7 +100,7 @@ jobs:
           git add -f packages/lab
           control=packages/lab/node_modules/@a11ign/control
           mkdir -p "$control"
-          curl -fsSL "https://raw.githubusercontent.com/a11ign/control/$(cat packages/control/.layer-ref)/packages/control/package.json" -o "$control/package.json"
+          curl -fsSL "https://raw.githubusercontent.com/a11ign/control/$(cat packages/control/.layer-ref)/package.json" -o "$control/package.json"
           ln -s ../../../../control/src "$control/src"
         working-directory: core
       # This repository's own tests import `@a11ign/toolchain/mjs-ratchet` and `/layout-check`, which the toolchain the core pins (0.1.3) does not have. The version the manifest names, installed by the

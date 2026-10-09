@@ -34,7 +34,7 @@ test("the laid package is staged, then given its `@a11ign/control` package, in t
   // Staged because the core's `packages/lab` is gitignored and the lab's tests walk `git ls-files`; the package comes AFTER, so it is not a tracked entry.
   // It is control's own manifest plus a link to the laid `src`, because since a11ign/a11ign#3506 the core's `packages/control` is a laid layer with NO `package.json`: a plain link has no `exports` to resolve `@a11ign/control/fleet-wake` through.
   const stage = ci.indexOf("git add -f packages/lab");
-  const manifest = ci.indexOf("/packages/control/package.json");
+  const manifest = ci.indexOf('/package.json" -o "$control/package.json"');
   const src = ci.indexOf('ln -s ../../../../control/src "$control/src"');
   assert.ok(stage > 0, "positive control: the staging is found");
   assert.ok(manifest > stage, "the manifest comes after the staging");
