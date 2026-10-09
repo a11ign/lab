@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 
 import {
   shapeReadingFor, distinctShapes, worstFieldSpreadPercent, driftDistributionsByUrl, driftSummaryLine,
-} from "./real-page-drift-summary.mjs";
+} from "./real-page-drift-summary.ts";
 
 /** An array of `n` placeholder entries -- only its LENGTH matters to `fieldValues`. */
 const items = (n: number) => Array.from({ length: n }, (_, i) => `item-${i}`);
