@@ -63,7 +63,7 @@ type ShapeReading = { url: string, capturedAt: string | null, workerCode: string
  *
  * @param {any} record @returns {ShapeReading | null} null when the record carries no capture at all
  */
-export function shapeReadingFor(record: any): ShapeReading | null {
+export function shapeReadingFor(record: unknown): ShapeReading | null {
   const capture = captureIn(record);
   if (!capture) return null;
   /** @type {Record<string, number>} */
@@ -159,7 +159,7 @@ type PageDrift = { url: string, n: number, excludedCount: number, refused: strin
  * @param {any[]} records raw captures or `runs/witness/` records, any mix of pages and rounds
  * @returns {PageDrift[]}
  */
-export function driftDistributionsByUrl(records: any[]): PageDrift[] {
+export function driftDistributionsByUrl(records: unknown[]): PageDrift[] {
   const readings = records.map(shapeReadingFor).filter(/** @returns {r is ShapeReading} */ (r): r is ShapeReading => r !== null);
   /** @type {Map<string, ShapeReading[]>} */
   const byUrl: Map<string, ShapeReading[]> = new Map();
