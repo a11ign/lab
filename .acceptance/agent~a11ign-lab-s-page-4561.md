@@ -1,6 +1,6 @@
 Acceptance:
 ```bash
-cd /home/agent/repos/lab && bash -c '! grep -n "npm-cli-executable\.mjs" src/training/page-server.mjs && grep -c "npm-cli-executable\.ts" src/training/page-server.mjs'
+bash -c '! grep -n "npm-cli-executable\.mjs" src/training/page-server.mjs && grep -c "npm-cli-executable\.ts" src/training/page-server.mjs'
 ```
 
 Closes a11ign/a11ign#4561
