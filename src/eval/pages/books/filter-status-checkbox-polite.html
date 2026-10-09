@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Products (checkbox filter results announced)</title>
+<style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:2rem auto} ul{padding-left:1.2rem}</style>
+</head>
+<body>
+<h1>Products</h1>
+
+<!-- The §31 condition: a checkbox, a synchronous update, and a polite live region. No button and no timer. -->
+<label><input type="checkbox" id="in-stock"> Show in-stock products only</label>
+
+<!-- role="status" is a polite live region: when its text changes, the screen reader announces the new result
+     count without moving focus. The change handler below writes it synchronously, on the same event. -->
+<p id="count" role="status">Showing 4 of 4 products</p>
+<ul id="results">
+  <li data-stock="in">Running shoes</li>
+  <li data-stock="out">Hiking boots</li>
+  <li data-stock="in">Tote bag</li>
+  <li data-stock="out">Backpack</li>
+</ul>
+
+<script>
+const box = document.getElementById('in-stock');
+box.addEventListener('change', () => {
+  const items = document.querySelectorAll('#results li');
+  let shown = 0;
+  items.forEach(li => {
+    const vis = !box.checked || li.dataset.stock === 'in';
+    li.style.display = vis ? '' : 'none';
+    if (vis) shown++;
+  });
+  document.getElementById('count').textContent = `Showing ${shown} of ${items.length} products`;
+});
+</script>
+</body>
+</html>
