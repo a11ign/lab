@@ -41,7 +41,8 @@ test("kind \"ts\": every returned file really is tracked and really ends in .ts,
 
 test("kind \"mjs\": every file ends in .mjs and carries ScriptKind.JS", () => {
   const found = walkTree({ kind: "mjs", roots: ["scripts"] });
-  assert.ok(found.length > 20, `only ${found.length} .mjs file(s) found under scripts/ -- the walk looks broken`);
+  // was > 20: the laid core's #4393 renamed .mjs under scripts/ to .ts (a11ign/a11ign#4569); 10 .mjs remain there, measured at core eb33d3c98
+  assert.ok(found.length > 5, `only ${found.length} .mjs file(s) found under scripts/ -- the walk looks broken`);
   assert.ok(found.every((f) => f.path.endsWith(".mjs") && f.scriptKind === ts.ScriptKind.JS));
 });
 

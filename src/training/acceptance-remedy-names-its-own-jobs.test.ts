@@ -69,7 +69,7 @@ function npmScripts(): Record<string, string> {
  * and `node scripts/pnpm.ts run` is the spelling a chained script uses where the lab has no `pnpm` on PATH (#3141).
  */
 function npmRunTargets(body: string): string[] {
-  return [...body.matchAll(/(?:npm|scripts\/pnpm\.mjs) run (?:--silent )?([\w:-]+)/g)].map((match) => match[1]);
+  return [...body.matchAll(/(?:npm|scripts\/pnpm\.ts) run (?:--silent )?([\w:-]+)/g)].map((match) => match[1]);
 }
 
 /** A script's body plus the body of every script it runs, so `training:capture:fresh` is not just its own line. */

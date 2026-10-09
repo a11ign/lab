@@ -87,7 +87,7 @@ const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
  * `../../../packages/guards/src/git-env.ts`, etc.), so matching the full canonical path would miss every real import.
  * Adding a fourth canonical helper means adding its basename here.
  */
-const CANONICAL_HELPER_BASENAMES = ["git-env.mjs", "git-safe-env.mjs", "git-sandbox.ts"];
+const CANONICAL_HELPER_BASENAMES = ["git-env.ts", "git-safe-env.mjs", "git-sandbox.ts"];
 const CANONICAL_HELPERS = [
   "packages/guards/src/git-env.ts",
   "scripts/test-support/git-sandbox.ts",

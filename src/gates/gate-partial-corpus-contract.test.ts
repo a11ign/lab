@@ -79,7 +79,7 @@ function resolvedScriptFile(argv: unknown): string | undefined {
   const command = PACKAGE_SCRIPTS[scriptName ?? ""];
   // A chained script reaches pnpm as `node scripts/pnpm.ts run X` (#3141); read it as the `pnpm run X` it passes through
   // to, or `scripts/pnpm.ts` would be taken for the gate's own file.
-  return command ? resolvedScriptFile(command.replaceAll(/node scripts\/pnpm\.mjs\b/g, "pnpm").split(/\s+/)) : undefined;
+  return command ? resolvedScriptFile(command.replaceAll(/node scripts\/pnpm\.ts\b/g, "pnpm").split(/\s+/)) : undefined;
 }
 
 function adoptsVerdict(scriptFile: string | undefined): boolean {
@@ -156,7 +156,7 @@ const NO_PARTIAL_POPULATION: Record<string, string> = {
     + "ALL of it (`for (const check of CHECKS)`), so there is nothing it could examine fewer of. A check "
     + "that throws is counted as a FAILURE by `runCheck` rather than skipped, and a run that cannot start "
     + "at all exits 2 — so the two states a partial-corpus gate exists to separate are already separate "
-    + "here. Same reasoning as `isolation-gate.mjs` above: a gate that enumerates its own targets has no "
+    + "here. Same reasoning as `isolation-gate.ts` above: a gate that enumerates its own targets has no "
     + "denominator to fall short of.",
   "packages/lab/scripts/axe-calibration.mjs":
     "ITERATES ITS WHOLE DECLARED POPULATION: `conformantCalibrationPages()` names all 46 conformant "

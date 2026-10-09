@@ -140,13 +140,13 @@ function outsideTheAllowance(specifier: string, relativeAllowed: readonly string
   return !relativeAllowed.includes(specifier);
 }
 
-const CLI_FLAGS = "./cli-flags.mjs";
+const CLI_FLAGS = "./cli-flags.ts";
 
-test("the script fetches nothing: its imports are built-ins and cli-flags.mjs by relative path, and nothing calls fetch", () => {
+test("the script fetches nothing: its imports are built-ins and cli-flags.ts by relative path, and nothing calls fetch", () => {
   const code = stripComments(readFileSync(SCRIPT, "utf8"));
   assert.deepEqual(importsOf(code).filter((specifier) => outsideTheAllowance(specifier, [CLI_FLAGS])), []);
   assert.doesNotMatch(code, /\bfetch\b|\bprocess\.binding\b/);
-  assert.ok(importsOf(code).includes(CLI_FLAGS), "the script no longer imports cli-flags.mjs: update this test and the header, which say it does");
+  assert.ok(importsOf(code).includes(CLI_FLAGS), "the script no longer imports cli-flags.ts: update this test and the header, which say it does");
   // The file it reaches runs before node_modules exists too, so it is held to the same allowance (built-ins only, none reaching out).
   const reached = stripComments(readFileSync(join(REPO, "scripts/cli-flags.ts"), "utf8"));
   assert.deepEqual(importsOf(reached).filter((specifier) => outsideTheAllowance(specifier, [])), []);
@@ -161,7 +161,7 @@ test("the control for the line above: the same reading REFUSES a package, a netw
     'const m = await import("zod");',
     'const r = require("node:net");',
     'import { realpathSync } from "node:fs";',
-    'import { refuseUnknownFlags } from "./cli-flags.mjs";',
+    'import { refuseUnknownFlags } from "./cli-flags.ts";',
   ].join("\n");
   assert.deepEqual(importsOf(fixture).filter((specifier) => outsideTheAllowance(specifier, [CLI_FLAGS])),
     ["left-pad", "node:https", "node:child_process", "../other.mjs", "zod", "node:net"]);
@@ -196,7 +196,8 @@ type Lock = "whole" | "preinstall-only";
  */
 function installFixture(lock: Lock = "whole"): string {
   const dir = tempDir("one-package-manager-");
-  const manifest = { name: "fixture", version: "0.0.0", private: true, scripts: { preinstall: MANIFEST.scripts?.preinstall },
+  // `type: "module"` as the real root manifest has it: the script is a `.ts` now, and node warns on stderr about a typeless package that holds one.
+  const manifest = { name: "fixture", version: "0.0.0", private: true, type: "module", scripts: { preinstall: MANIFEST.scripts?.preinstall },
     ...(lock === "whole" ? { engines: MANIFEST.engines } : {}), dependencies: { left: "file:./left" } };
   writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
   if (lock === "whole") copyFileSync(join(REPO, NPMRC_PATH), join(dir, NPMRC_PATH));

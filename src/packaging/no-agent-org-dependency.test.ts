@@ -142,7 +142,7 @@ type Workflow = { jobs?: Record<string, { steps?: Step[] }> };
 
 /** A step that runs the tool: `agent-org <command>` in command position, whether or not it follows `;`, `&&`, `||`, `|`, `(`, `then` or `do`. */
 const RUNS_THE_TOOL = /(^|&&|\|\||;|\||\(|\bthen\b|\bdo\b)\s*agent-org\s+[a-z]/m;
-const RUNS_THE_RESOLVER = /node scripts\/agent-org-newest-tag\.mjs\b/;
+const RUNS_THE_RESOLVER = /node scripts\/agent-org-newest-tag\.ts\b/;
 
 /** `job.step` of every step that runs the tool with no earlier step in its job that runs the resolver. */
 export function toolStepsWithoutResolver(doc: Workflow): string[] {

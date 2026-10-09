@@ -107,12 +107,12 @@ const THREE_LINE_REGION = "## Region\n\n```\nscripts/ci-changed.mjs\npackages/la
 
 test("#941 REPRODUCED: the file grammar alone reads only the file out of this block -- the defect's own output", () => {
   // What `declaredRegionFiles` returned for this block before #941: the two directory lines vanished.
-  assert.deepEqual(regionPathsFromBody(extractRegionSection(THREE_LINE_REGION) ?? ""), ["scripts/ci-changed.ts"]);
+  assert.deepEqual(regionPathsFromBody(extractRegionSection(THREE_LINE_REGION) ?? ""), ["scripts/ci-changed.mjs"]);
 });
 
 test("#941: a standalone directory line declares a prefix, beside the files the block names", () => {
   assert.deepEqual(declaredRegionFiles(THREE_LINE_REGION),
-    ["scripts/ci-changed.ts", "packages/lab/src/packaging/", "docs/"]);
+    ["scripts/ci-changed.mjs", "packages/lab/src/packaging/", "docs/"]);
 });
 
 test("#941: a Region of ONLY directories no longer declares the empty set -- the five zero-declaration rows' shapes", () => {

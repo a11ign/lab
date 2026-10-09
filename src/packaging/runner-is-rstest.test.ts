@@ -104,18 +104,18 @@ test("#1319, #3573: the test step runs `pnpm run test:all`, and it asks the floo
   // The whole-package glob and its floor live on `test:all` now; `test:ts` carries the product brace list. The floor is any number, not the core's current one (500, then 159 when #3505 took the lab out):
   // a core that moves it must not turn this repository red, and the floor's PRESENCE is what the assertion is about.
   assert.match(SCRIPTS["test:all"],
-    /assert-glob-not-empty\.mjs "packages\/\*\/src\/\*\*\/\*\.test\.ts" --min=\d+ --run --runner=rstest /);
-  assert.match(SCRIPTS["test:ts"], /assert-glob-not-empty\.mjs "packages\/\{[a-z,-]+\}\/src\/\*\*\/\*\.test\.ts" --min=95 --run --runner=rstest /);
+    /assert-glob-not-empty\.ts "packages\/\*\/src\/\*\*\/\*\.test\.ts" --min=\d+ --run --runner=rstest /);
+  assert.match(SCRIPTS["test:ts"], /assert-glob-not-empty\.ts "packages\/\{[a-z,-]+\}\/src\/\*\*\/\*\.test\.ts" --min=95 --run --runner=rstest /);
 });
 
 test("#1319: `test:nightly` stays on tsx -- it is nightly-only and out of #1320's scope", () => {
-  assert.match(SCRIPTS["test:nightly"], /assert-glob-not-empty\.mjs .*--run\b/, "test:nightly still runs through the floor");
+  assert.match(SCRIPTS["test:nightly"], /assert-glob-not-empty\.ts .*--run\b/, "test:nightly still runs through the floor");
   assert.doesNotMatch(SCRIPTS["test:nightly"], /--runner=/, "test:nightly must not choose a runner in this row");
 });
 
 // #1320, step 4: `coverage` moved off this floor's `--run` -- see `coverage-is-rstest.test.ts` for what it runs now.
 test("#1320: `coverage` no longer runs `tsx --test` (or any runner) through this floor's --run", () => {
-  assert.doesNotMatch(SCRIPTS.coverage, /assert-glob-not-empty\.mjs .*--run\b/,
+  assert.doesNotMatch(SCRIPTS.coverage, /assert-glob-not-empty\.ts .*--run\b/,
     "coverage moved to scripts/coverage.mjs in step 4 (#1320); it uses this floor only as a population check");
 });
 

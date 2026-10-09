@@ -225,7 +225,7 @@ test("the root `prepare` and `build` each run exactly ONE build, and it is pnpm'
   for (const name of ["prepare", "build"]) {
     const steps = buildSteps(scripts?.[name]);
     assert.equal(steps.length, 1, `the root \`${name}\` runs ${steps.length} builds (${steps.join(" ; ")}), not one`);
-    assert.match(steps[0], /scripts\/pnpm\.mjs -r run build$/, `the root \`${name}\` build is not \`pnpm -r run build\`, which orders packages by their declared dependencies`);
+    assert.match(steps[0], /scripts\/pnpm\.ts -r run build$/, `the root \`${name}\` build is not \`pnpm -r run build\`, which orders packages by their declared dependencies`);
   }
 });
 

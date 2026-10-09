@@ -138,8 +138,8 @@ test("`ts` runs every command through the non-blocking runner, in order, and sto
 
 // 2. `verify` CALLS THE SELECTOR `ci.yml` CALLS, AND DOES NOT COPY IT.
 // The tests the `ts` step runs are rstest's own `--changed` selection since #3572, pinned in `verify-affected-set.test.ts`.
-test("verify imports ci-changed.mjs's classify, as ci.yml does, and no longer reaches the hand-built selector", () => {
-  assert.match(VERIFY, /^import \{[^}]*\bclassify\b[^}]*\} from "\.\/ci-changed\.mjs";$/m);
+test("verify imports ci-changed.ts's classify, as ci.yml does, and no longer reaches the hand-built selector", () => {
+  assert.match(VERIFY, /^import \{[^}]*\bclassify\b[^}]*\} from "\.\/ci-changed\.ts";$/m);
   assert.doesNotMatch(VERIFY, /"scripts\/test-changed\.mjs"/);
 });
 

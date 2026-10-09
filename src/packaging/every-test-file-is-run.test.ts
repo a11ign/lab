@@ -43,7 +43,7 @@ declareTreeWideGuard();
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** The floor script every runner entry point in `package.json` goes through; its argv carries the globs. */
-const FLOOR_SCRIPT = "assert-glob-not-empty.mjs";
+const FLOOR_SCRIPT = "assert-glob-not-empty.ts";
 
 /** Shell operators that end a command, so a chained script's later words are never read as patterns. */
 const OPERATORS = ["&&", "||", "|", ";", "&"];

@@ -623,7 +623,7 @@ test("every declaring guard imports walk-scope FIRST and runs its own check", ()
   for (const file of declarers) {
     const source = readFileSync(join(REPO, file), "utf8");
     const firstImport = source.split("\n").find((line) => line.startsWith("import "));
-    assert.match(firstImport ?? "", /walk-scope\.mjs"/, `${file}: the walk-scope import must be the FIRST import`);
+    assert.match(firstImport ?? "", /walk-scope\.ts"/, `${file}: the walk-scope import must be the FIRST import`);
     assert.match(source, /await declareWalkScope\(import\.meta\.url\)/, `${file}: declares a scope and never checks it`);
   }
 });

@@ -45,7 +45,7 @@ function commandOf(segment: string): string | undefined {
 /** The scripts a script value runs, by `pnpm run <name>` or `node scripts/pnpm.ts run <name>` (flags allowed). */
 function delegatesOf(value: string): string[] {
   return segmentsOf(value).flatMap((segment) => {
-    const match = /^(?:pnpm|node\s+scripts\/pnpm\.mjs)\s+run\s+(?:-{1,2}[\w-]+\s+)*([\w:-]+)/.exec(segment);
+    const match = /^(?:pnpm|node\s+scripts\/pnpm\.ts)\s+run\s+(?:-{1,2}[\w-]+\s+)*([\w:-]+)/.exec(segment);
     return match ? [match[1]] : [];
   });
 }

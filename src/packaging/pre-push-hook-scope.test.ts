@@ -85,7 +85,7 @@ function runSites(source: string): { label: string; command: string; runner: str
  * general would let a gutted site through.
  */
 function withoutCap(command: string): string {
-  return command.replace(/^node packages\/guards\/src\/test-memory-cap\.mjs run \S+ -- /, "");
+  return command.replace(/^node packages\/guards\/src\/test-memory-cap\.ts run \S+ -- /, "");
 }
 
 /** What a check may be executed BY. Anything else is a check turned off while still reading like one. */
@@ -163,7 +163,7 @@ test("and nothing ELSE the hook executes is a check -- each non-check names its 
 
 test("LINT IS SCOPED BY PATH, and by the TREE as well as the committed diff", () => {
   const code = codeLines(hook()).join("\n");
-  assert.match(code, /node packages\/guards\/src\/changed-files\.mjs origin\/main\.\.\.HEAD/,
+  assert.match(code, /node packages\/guards\/src\/changed-files\.ts origin\/main\.\.\.HEAD/,
     "lint's path list must come from the shared changed-files helper, not a second hand-rolled diff");
   // THE TREE TOO, and this is the half that is easy to lose. Every note in this hook says the gate reads
   // the TREE rather than the commits being pushed; a list built from `origin/main...HEAD` alone skips the
@@ -174,7 +174,7 @@ test("LINT IS SCOPED BY PATH, and by the TREE as well as the committed diff", ()
     "lint must not go back to reading the whole tree unconditionally -- that is what this row scoped");
   // NOT BY CHANGED PACKAGE, which is the trap: `changed-packages.mjs` lists `packages/<name>` only, so a
   // `scripts/`-only change scopes to the empty list and a check handed an empty population reports clean.
-  assert.doesNotMatch(code, /lint_paths.*changed-packages\.mjs/,
+  assert.doesNotMatch(code, /lint_paths.*changed-packages\.ts/,
     "scoping lint by changed PACKAGE would skip every scripts/-only change, which is most of them");
 });
 

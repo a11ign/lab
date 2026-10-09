@@ -214,6 +214,9 @@ const CHECKOUT_NAME = /export const CONTROL_PLANE_CHECKOUT = "([^"]+)"/
  * states — which is the distinction that would have caught the outage.
  */
 const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
+  "/home/agent/repos/role-product-manager": "the `git -C` target of a11ign/a11ign#4569's Acceptance in `.acceptance/agent~the-lab-s-ci-4569.md`: "
+    + "the product-manager session's clone of the CORE, where `merge-base --is-ancestor` asks whether the pinned core sha descends from "
+    + "`f3b5c5f59`. It is a clone of a11ign/a11ign, not of the control repository, and the row wrote the path literally so the check runs as filed",
   "/root": "the ssh wrapper's landing directory in `fleet-playbook.mjs`, not the checkout — it is what "
     + "makes the checkout's own `cd` relative, and it is the ssh user's home rather than a path anybody "
     + "renamed",

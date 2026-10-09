@@ -368,7 +368,7 @@ test("#3788: check-pin asks whether the CONTENT is stale, not whether a path tha
 
 // --- #3828: `--check` imports repo-identity.mjs, which needs $AGENT_ORG_TOOL, and only the resolver sets it on a runner ---
 
-const CHECK_PIN_RESOLVER = /node scripts\/agent-org-newest-tag\.mjs --dest="\$RUNNER_TEMP\/agent-org"/;
+const CHECK_PIN_RESOLVER = /node scripts\/agent-org-newest-tag\.ts --dest="\$RUNNER_TEMP\/agent-org"/;
 // #4274: the generator is `scripts/generate-consumer-gate.ts`, run under tsx; the resolver stays an `.mjs` (it runs before any install).
 const CHECK_PIN_CHECK = /node --import tsx scripts\/generate-consumer-gate\.ts --check/;
 
@@ -390,7 +390,7 @@ function resolverRunsBeforeCheck(block: string): boolean {
 
 const GENERATED_JOBS = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
 
-test("#3828: the generated check-pin job runs the tool resolver BEFORE the step that imports repo-identity.mjs", () => {
+test("#3828: the generated check-pin job runs the tool resolver BEFORE the step that imports repo-identity.ts", () => {
   const block = checkPinBlockOf(buildConsumerGateWorkflow(GENERATED_JOBS));
   assert.ok(resolverRunsBeforeCheck(block), "AGENT_ORG_TOOL must be exported by an earlier step than `--check`");
 });

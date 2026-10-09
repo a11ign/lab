@@ -251,8 +251,8 @@ test("release.yml READS the verdict in the `decide` job, after the publish, whic
   const { decide, release, guards } = jobs();
   const plan = decide.steps?.find((step) => step.id === "plan");
   assert.ok(plan, "the step that reads the verdict is in release.yml's decide job");
-  assert.match(plan.run ?? "", /^node scripts\/release-promote\.mjs$/m);
-  assert.match(readFileSync("scripts/release-promote.ts", "utf8"), /import \{[^}]*\bqualificationDecision\b[^}]*\} from "\.\/release-reads-qualification\.mjs";/,
+  assert.match(plan.run ?? "", /^node scripts\/release-promote\.ts$/m);
+  assert.match(readFileSync("scripts/release-promote.ts", "utf8"), /import \{[^}]*\bqualificationDecision\b[^}]*\} from "\.\/release-reads-qualification\.ts";/,
     "the script the job runs hands the history to THIS decider, not to a copy of its rules");
   assert.deepEqual([decide.needs].flat(), ["release"], "#3947: a push run promotes only after its own release");
   assert.ok(![release.needs].flat().includes("decide"), "#3946: the publish does not wait for the fleet's verdict");

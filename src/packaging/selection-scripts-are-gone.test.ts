@@ -165,10 +165,10 @@ function importsOf(entry: string): { files: string[]; bare: string[] } {
 test("the changed job runs scripts/ci-changed.ts before any install, and nothing it imports needs node_modules", () => {
   const job = jobBlock(CI(), "changed");
   assert.ok(job.length > 3, "ci.yml has no `changed` job");
-  const script = job.map((line) => /\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/.exec(line)?.[1]).find(Boolean);
+  const script = job.map((line) => /\bnode\s+(scripts\/[A-Za-z0-9._-]+\.(?:mjs|ts))/.exec(line)?.[1]).find(Boolean);
   assert.equal(script, "scripts/ci-changed.ts");
   assert.ok(!job.some((line) => /\b(?:npm|pnpm)\s+(?:ci|install)\b/.test(line)), "the changed job installs, so it is no longer the cheap first job");
   const { files, bare } = importsOf(script as string);
-  assert.ok(files.length >= 2, "the walk reached no import of ci-changed.mjs, so `bare` is empty by not looking");
+  assert.ok(files.length >= 2, "the walk reached no import of ci-changed.ts, so `bare` is empty by not looking");
   assert.deepEqual(bare, []);
 });

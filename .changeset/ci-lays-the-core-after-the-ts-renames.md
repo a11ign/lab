@@ -2,4 +2,4 @@
 "@a11ign/lab": patch
 ---
 
-`CORE_REF` in `.github/workflows/ci.yml` moves to `eb33d3c9850daccb0c36f356b0bfe9341bc267d2`, the commit after the last of a11ign/a11ign#4393's renames, which also drops the `estree` import the lab's `tsc` could not resolve. The lab's CI laid a core older than those renames, so agent-org's two synced copies (`git-sandbox.ts`, `tree-wide-guard.mjs`) read as drifted there and `agent-org-wiring.test.ts` [36] and [37] failed at agent-org v0.102.3 (a11ign/a11ign#4569).
+`CORE_REF` in `.github/workflows/ci.yml` moves to `1879b19dfbbc3c000efe2345d370d59fbac50c3c` (core #4520, the merge that closes #4393's renames and their follow-ups: the walk-scope trigger, the type=module isolation consumer and the renamed-helper imports), a core after the last of a11ign/a11ign#4393's renames. The lab's CI laid a core older than those renames, so agent-org's two synced copies (`git-sandbox.ts`, `tree-wide-guard.mjs`) read as drifted there and `agent-org-wiring.test.ts` [36] and [37] failed at agent-org v0.102.3 (a11ign/a11ign#4569).

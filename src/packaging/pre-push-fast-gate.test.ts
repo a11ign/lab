@@ -208,7 +208,7 @@ function stageLayers({ from, into }: { from: string; into: string }): void {
   const layers = { ...declaration.layers, ...declaration.pinned };
   // The layers `pnpm run build` lays are the ones a missing copy is a failure for; a host-laid one (`nvda-worker`) is staged when it is there.
   const { scripts } = JSON.parse(readFileSync(join(from, "package.json"), "utf8")) as { scripts: Record<string, string> };
-  const laidByBuild = [...scripts.build.matchAll(/lay-layer\.mjs\s+([\w-]+)/g)].map((match) => match[1]);
+  const laidByBuild = [...scripts.build.matchAll(/lay-layer\.ts\s+([\w-]+)/g)].map((match) => match[1]);
   assert.ok(laidByBuild.length > 0, "`build` lays no layer: the scan of its script found nothing to require");
   const unlaid = laidByBuild.filter((name) => !existsSync(join(from, layers[name].path)));
   assert.deepEqual(unlaid, [], `the export has no laid layer for ${unlaid.join(", ")} -- run \`pnpm run build\` first (it lays them)`);
