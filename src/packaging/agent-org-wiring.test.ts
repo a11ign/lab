@@ -625,15 +625,14 @@ test("[35] (1) every non-archived repository in the organisation is a declared s
 interface CopyPair { original: string; copy: string; originalText: string | null; copyText: string; allowedLines: number | null }
 const declaredCopies = () => (readDeclaredCopies({ root: ROOT }) ?? []) as CopyPair[];
 /**
- * The one copy whose original the tool cannot read: `src/lib/cli-flags.ts` names `packages/worker-fleet/src/cli-flags.ts`, and the layer laid there (screenreader-fleet's
- * `src/`, not the core's tree) still holds `cli-flags.mjs`, so the tool finds nothing and the pair is unreadable. It is the screenreader-fleet layer's rename to make (or the header's to
- * follow), not the lab's, so this file pins the state as it is: exactly this one, and the list only shrinks -- a second unreadable original fails, and a layer or header that is
- * corrected fails here until its entry is deleted.
+ * The copies whose original the tool cannot read, pinned as they are: the list only shrinks -- an unreadable original beyond these fails, and a header or layer that is corrected fails
+ * here until its entry is deleted. It is EMPTY at agent-org v0.104.1, whose #525 repointed `src/lib/cli-flags.ts` to `scripts/cli-flags.ts` (a11ign/a11ign#4582, agent-org#505), measured in lab#53's
+ * `checks` (run 37967568278, attempt 2): 0 unreadable. The machinery stays, because the assertion that nothing ELSE is unreadable is what keeps 'clean' from meaning 'not asked'.
  *
- * Was TWO at agent-org v0.102.3 (`src/lib/fixture-symbols.ts` and `src/lib/product-home.mjs`, whose headers named `scripts/*.mjs` the core had renamed to `.ts`, a11ign/a11ign#4273/#4274).
- * v0.104.0's headers name `scripts/fixture-symbols.ts` and `scripts/product-home.ts`, so both read, and `cli-flags` is the one left (measured in lab#53's `checks`, 2026-10-09).
+ * Was ONE at v0.104.0 (`src/lib/cli-flags.ts` named `packages/worker-fleet/src/cli-flags.ts`, which the layer laid there still held as `cli-flags.mjs`), and TWO at v0.102.3
+ * (`src/lib/fixture-symbols.ts` and `src/lib/product-home.mjs`, whose headers named `scripts/*.mjs` the core had renamed to `.ts`, a11ign/a11ign#4273/#4274).
  */
-const KNOWN_UNREADABLE_ORIGINALS = ["src/lib/cli-flags.ts"];
+const KNOWN_UNREADABLE_ORIGINALS: string[] = [];
 
 /**
  * WHAT READS ANOTHER REPOSITORY'S LIVE TREE IS REPORTED, NOT FAILED, ON A PULL REQUEST (chairman, a11ign/a11ign#4425, class `cross-repo-copies`; ceo's rulings on
@@ -663,7 +662,7 @@ const unreadableCopies = (pairs: CopyPair[]) => pairs.filter((pair) => pair.orig
 function expectOnlyKnownUnreadable(pairs: CopyPair[], event: string | undefined = process.env.GITHUB_EVENT_NAME): "clear" | "reported" {
   const unreadable = unreadableCopies(pairs);
   return reportOrFail(sameList(unreadable, KNOWN_UNREADABLE_ORIGINALS),
-    `an unreadable original would make 'clean' mean 'not asked': only ${KNOWN_UNREADABLE_ORIGINALS.join(", ")} are known, and ${unreadable.length} are unreadable: ${unreadable.join(", ")} (until agent-org corrects the headers: agent-org#505, a11ign/a11ign#4582)`, event);
+    `an unreadable original would make 'clean' mean 'not asked': only [${KNOWN_UNREADABLE_ORIGINALS.join(", ")}] are known, and ${unreadable.length} are unreadable: ${unreadable.join(", ")} (until agent-org corrects the headers: agent-org#505, a11ign/a11ign#4582)`, event);
 }
 function expectOriginalPath(pair: CopyPair, expected: string, event: string | undefined = process.env.GITHUB_EVENT_NAME): "clear" | "reported" {
   return reportOrFail(pair.original === expected, `${pair.copy}'s header names its original as ${pair.original}, and the core's file is ${expected} (the header is agent-org's to correct: agent-org#505, a11ign/a11ign#4582)`, event);
