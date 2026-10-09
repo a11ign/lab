@@ -631,70 +631,94 @@ const declaredCopies = () => (readDeclaredCopies({ root: ROOT }) ?? []) as CopyP
  * header that is corrected fails here until its entry is deleted.
  */
 const KNOWN_UNREADABLE_ORIGINALS = ["src/lib/fixture-symbols.ts", "src/lib/product-home.mjs"];
-const withoutKnownUnreadable = (pairs: CopyPair[]) => pairs.filter((pair) => !KNOWN_UNREADABLE_ORIGINALS.includes(pair.copy));
 
 /**
- * A COPY THAT HAS DRIFTED FROM ITS ORIGINAL IS REPORTED, NOT FAILED, ON A PULL REQUEST (chairman, a11ign/a11ign#4425, class `cross-repo-copies`; ceo's
- * ruling on #4569, 2026-10-09). The originals are read from ANOTHER repository's current tree, so the verdict changes when that tree moves and no change in
- * a pull request here caused it: four lab pull requests were red at once for a drift none of them made, and lab#48's own head passed at 13:47Z and failed at
- * 15:08Z. No test in one repository decides another's pull request from a third's live tree. The drift is still READ and still PRINTED, as an annotation;
- * on a push to main and on the schedule (and in a local run, which sets no event) it fails as before, so main and the nightly still catch it.
- * Only a `tripped` reading is softened: a pair that could not be read at all (`unknown`) is "not asked" and still fails on every event, as does every
- * other assertion in [36] and [37]. The event is named the way the workflow does, `GITHUB_EVENT_NAME`.
+ * WHAT READS ANOTHER REPOSITORY'S LIVE TREE IS REPORTED, NOT FAILED, ON A PULL REQUEST (chairman, a11ign/a11ign#4425, class `cross-repo-copies`; ceo's rulings on
+ * #4569, 2026-10-09). The originals of agent-org's declared copies are read from the CORE's current tree, so these verdicts change when that tree moves and no change
+ * in a pull request here caused it: four lab pull requests were red at once for a drift none of them made, and lab#48's own head passed at 13:47Z and failed at
+ * 15:08Z. No test in one repository decides another's pull request from a third's live tree. Each is still READ and still PRINTED, as an annotation; on a push to main
+ * and on the schedule (and in a local run, which sets no event) it fails as before, so main and the nightly still catch it, and agent-org#505 / a11ign#4582 stay the fix.
+ * Three assertions are softened, and ONLY these: a drifted pair, an unreadable original beyond the known ones, and the original path a header names. Everything else
+ * in [36] and [37] fails on every event: the pair count (agent-org's own tree against its own files), the mutation control (it tests the function, not the tree),
+ * and a reading that is `unknown` for any reason other than an unreadable original. The event is named the way the workflow does, `GITHUB_EVENT_NAME`.
  */
 type DriftReading = { status: string; detail: string };
 const annotationEscape = (text: string) => text.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+function reportOrFail(ok: boolean, why: string, event: string | undefined = process.env.GITHUB_EVENT_NAME): "clear" | "reported" {
+  if (ok) return "clear";
+  if (event !== "pull_request") assert.fail(why);
+  console.log(`::warning title=a declared copy cannot be checked against the core on this run::${annotationEscape(why)}`);
+  return "reported";
+}
 function expectNoCopyDrift(reading: DriftReading, event: string | undefined = process.env.GITHUB_EVENT_NAME): "clear" | "reported" {
-  if (reading.status === "clear") return "clear";
-  if (reading.status === "tripped" && event === "pull_request") {
-    console.log(`::warning title=declared copy drifted from its original::${annotationEscape(reading.detail)}`);
-    return "reported";
-  }
+  if (reading.status === "tripped") return reportOrFail(false, reading.detail, event);
   assert.equal(reading.status, "clear", reading.detail);
   return "clear";
+}
+const sameList = (left: string[], right: string[]) => JSON.stringify(left) === JSON.stringify(right);
+const unreadableCopies = (pairs: CopyPair[]) => pairs.filter((pair) => pair.originalText === null).map((pair) => pair.copy).sort();
+function expectOnlyKnownUnreadable(pairs: CopyPair[], event: string | undefined = process.env.GITHUB_EVENT_NAME): "clear" | "reported" {
+  const unreadable = unreadableCopies(pairs);
+  return reportOrFail(sameList(unreadable, KNOWN_UNREADABLE_ORIGINALS),
+    `an unreadable original would make 'clean' mean 'not asked': only ${KNOWN_UNREADABLE_ORIGINALS.join(", ")} are known, and ${unreadable.length} are unreadable: ${unreadable.join(", ")} (until agent-org corrects the headers: agent-org#505, a11ign/a11ign#4582)`, event);
+}
+function expectOriginalPath(pair: CopyPair, expected: string, event: string | undefined = process.env.GITHUB_EVENT_NAME): "clear" | "reported" {
+  return reportOrFail(pair.original === expected, `${pair.copy}'s header names its original as ${pair.original}, and the core's file is ${expected} (the header is agent-org's to correct: agent-org#505, a11ign/a11ign#4582)`, event);
 }
 
 test("[36] control: the real tree's declared copies are discovered, every original is readable, and the pair set is CLEAN", () => {
   const pairs = declaredCopies();
   // The count is derived a second way, by a plain scan for a line opening with the header's first words, and asserted EQUAL: a floor is
-  // satisfied by 19, by 58 and by 157.
+  // satisfied by 19, by 58 and by 157. It is agent-org's own tree against its own files, so it fails on a pull request too.
   const lib = join(TOOL, "src/lib");
   const headed = readdirSync(lib).filter((name) => /^\/\/ COPIED FROM `/m.test(readFileSync(join(lib, name), "utf8")));
   assert.ok(headed.length > 0, "the scan is not empty: the tree's copies are what the control compares");
   assert.equal(pairs.length, headed.length, `discovery found ${pairs.length} pairs and a scan of lib/ finds ${headed.length} headed files`);
-  assert.deepEqual(pairs.filter((pair) => pair.originalText === null).map((pair) => pair.copy).sort(), KNOWN_UNREADABLE_ORIGINALS,
-    "an unreadable original would make 'clean' mean 'not asked': only the two known ones, until agent-org corrects their headers");
-  // The pairs that CAN be read are clean; with the two unreadable ones in, the reading is 'unknown' (not 'clear'), which is the answer the tool gives for a pair it could not ask.
-  expectNoCopyDrift(copyDriftReading({ pairs: withoutKnownUnreadable(pairs) }));
-  assert.equal(copyDriftReading({ pairs }).status, "unknown");
+  expectOnlyKnownUnreadable(pairs);
+  // The pairs that CAN be read are clean; with an unreadable one in, the reading is not 'clear' (it is 'unknown', or 'tripped' when a readable pair has drifted too),
+  // which is the answer the tool gives for a pair it could not ask.
+  expectNoCopyDrift(copyDriftReading({ pairs: pairs.filter((pair) => pair.originalText !== null) }));
+  if (unreadableCopies(pairs).length > 0) assert.notEqual(copyDriftReading({ pairs }).status, "clear", "an unreadable original is never read as clear");
 });
 
-test("[36] control: the same drifted fixture is TRIPPED under push and schedule and reported, not failed, under pull_request; an unreadable pair fails under both", () => {
+test("[36] control: the same fixtures FAIL under push, schedule and no event and are REPORTED, not failed, under pull_request: a drifted pair, an unreadable original, a stale header path", () => {
   // A copy with no complete header is `drifted` to the tool whatever the original holds, so the fixture does not depend on any real pair.
   const drifted = copyDriftReading({ pairs: [{ original: "an/original.ts", copy: "src/lib/a-copy.mjs", allowedLines: 0, originalText: "const a = 1;\n", copyText: "const a = 2;\n" }] });
   assert.equal(drifted.status, "tripped", "the fixture is a drift, or this control compares nothing");
   assert.match(drifted.detail, /src\/lib\/a-copy\.mjs against an\/original\.ts/);
-  // "" is a local run, which sets no event; `undefined` would fall to the default parameter and read THIS run's event instead.
-  for (const event of ["push", "schedule", ""]) {
-    assert.throws(() => expectNoCopyDrift(drifted, event), assert.AssertionError, `${event || "no event"}: a drift fails`);
+  const unreadable: CopyPair = { original: "an/original.ts", copy: "src/lib/a-copy.mjs", allowedLines: 0, originalText: null, copyText: "x" };
+  const stalePath: CopyPair = { ...unreadable, original: "an/original.mjs", originalText: "x" };
+  const cases: [string, (event: string) => "clear" | "reported"][] = [
+    ["a drifted pair", (event) => expectNoCopyDrift(drifted, event)],
+    ["an unreadable original beyond the known ones", (event) => expectOnlyKnownUnreadable([unreadable], event)],
+    ["a header naming a stale original path", (event) => expectOriginalPath(stalePath, "an/original.ts", event)],
+  ];
+  for (const [name, check] of cases) {
+    // "" is a local run, which sets no event; `undefined` would fall to the default parameter and read THIS run's event instead.
+    for (const event of ["push", "schedule", ""]) assert.throws(() => check(event), assert.AssertionError, `${name} under ${event || "no event"}`);
+    assert.equal(check("pull_request"), "reported", name);
   }
-  assert.equal(expectNoCopyDrift(drifted, "pull_request"), "reported");
-  // A clear reading stays clear under every event: the softening is for a drift and not a way to skip the question.
-  for (const event of ["push", "pull_request"]) assert.equal(expectNoCopyDrift({ status: "clear", detail: "" }, event), "clear", `${event}: a clear reading is clear`);
-  // A pair the tool could not read is "not asked", which is not a drift: it fails on a pull request too.
-  const unread = copyDriftReading({ pairs: [{ original: "an/original.ts", copy: "src/lib/a-copy.mjs", allowedLines: 0, originalText: null, copyText: "x" }] });
-  assert.equal(unread.status, "unknown");
-  assert.throws(() => expectNoCopyDrift(unread, "pull_request"), assert.AssertionError);
+  // The softening is for these three and not a way to skip the question: the clear cases stay clear, and a reading that is `unknown` (here the one unreadable pair, read whole) still fails on a PR.
+  const known: CopyPair[] = KNOWN_UNREADABLE_ORIGINALS.map((copy) => ({ ...unreadable, copy }));
+  for (const event of ["push", "pull_request"]) {
+    assert.equal(expectNoCopyDrift({ status: "clear", detail: "" }, event), "clear");
+    assert.equal(expectOnlyKnownUnreadable(known, event), "clear");
+    assert.equal(expectOriginalPath({ ...stalePath, original: "an/original.ts" }, "an/original.ts", event), "clear");
+  }
+  const unknown = copyDriftReading({ pairs: [unreadable] });
+  assert.equal(unknown.status, "unknown");
+  assert.throws(() => expectNoCopyDrift(unknown, "pull_request"), assert.AssertionError);
 });
 
 /**
  * `count` lines of `text` that open a `const` declaration, each with ONE byte changed (`const ` to `cnst `). Refuses when `text` has fewer such
  * lines, because a control that mutated nothing would read "clear" for the wrong reason.
  */
+const CONST_LINE = /^(export )?const /;
 function withConstLinesBroken(text: string, count: number): string {
   let broken = 0;
   const lines = text.split("\n").map((line) => {
-    if (broken >= count || !/^(export )?const /.test(line)) return line;
+    if (broken >= count || !CONST_LINE.test(line)) return line;
     broken += 1;
     return line.replace("const ", "cnst ");
   });
@@ -702,26 +726,39 @@ function withConstLinesBroken(text: string, count: number): string {
   return lines.join("\n");
 }
 
+/**
+ * The pair the mutation control breaks: the isolation-gate pair #2921 edited by hand when its original is readable. When it is not (the header names a path the core
+ * has since moved, which a pull request only REPORTS), the control still has to run, and fails if it cannot: the first readable pair with a const line to break past
+ * its allowance. The function under test is the same whichever pair carries the bytes.
+ */
+function mutationTarget(pairs: CopyPair[], preferred: CopyPair): CopyPair & { originalText: string; allowedLines: number } {
+  const usable = (pair: CopyPair): pair is CopyPair & { originalText: string; allowedLines: number } =>
+    pair.originalText !== null && pair.allowedLines !== null && pair.originalText.split("\n").filter((line) => CONST_LINE.test(line)).length > pair.allowedLines;
+  const found = usable(preferred) ? preferred : pairs.find(usable);
+  assert.ok(found, "some readable pair can carry the mutation: the control is not skipped because the originals moved");
+  return found;
+}
+
 test("[37] control: the REAL isolation-gate pair with ONE BYTE changed on more lines than its header names, in the original, trips, naming both paths -- and the same bytes in the copy trip too", () => {
   const ISOLATION = "src/lib/isolation-gate.mjs";
   const pairs = declaredCopies();
-  const real = pairs.find((pair) => pair.copy === ISOLATION);
-  assert.ok(real, "the pair #2921 edited by hand is among the declared copies");
-  assert.equal(real.original, "packages/guards/src/isolation-gate.ts", "and its original is a11ign's own file");
-  assert.ok(real.originalText !== null, "the text this mutates is readable");
+  const isolation = pairs.find((pair) => pair.copy === ISOLATION);
+  assert.ok(isolation, "the pair #2921 edited by hand is among the declared copies");
+  expectOriginalPath(isolation, "packages/guards/src/isolation-gate.ts"); // "and its original is a11ign's own file"
+  const real = mutationTarget(pairs, isolation);
   // THE HEADER'S COUNT IS THE ALLOWANCE (`judgePair`, agent-org `org-health.mjs`): a single changed line is inside it once the header names any, which is
   // what the tool's own copy has said since #3830 (3 named lines), so the control breaks ONE MORE line than the header allows, read off the pair
   // and not typed here -- a number typed here is the second list of one fact, and is what went stale when the header's count moved.
-  assert.ok(real.allowedLines !== null && real.allowedLines >= 0, "the copy's header says how many lines it changed");
   const broken = real.allowedLines + 1;
-  const changedOriginal = pairs.map((pair) => (pair === real ? { ...pair, originalText: withConstLinesBroken(real.originalText as string, broken) } : pair));
+  const changedOriginal = pairs.map((pair) => (pair === real ? { ...pair, originalText: withConstLinesBroken(real.originalText, broken) } : pair));
   const reading = copyDriftReading({ pairs: changedOriginal });
   assert.equal(reading.status, "tripped");
-  assert.match(reading.detail, /src\/lib\/isolation-gate\.mjs against packages\/guards\/src\/isolation-gate\.mjs/);
+  const escaped = (path: string) => path.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
+  assert.match(reading.detail, new RegExp(`${escaped(real.copy)} against ${escaped(real.original)}`));
   const changedCopy = pairs.map((pair) => (pair === real ? { ...pair, copyText: withConstLinesBroken(pair.copyText, broken) } : pair));
   assert.equal(copyDriftReading({ pairs: changedCopy }).status, "tripped");
   // The other pairs are untouched, so any drift here is theirs and not this trip's: a tree reading, softened on a pull request like [36]'s.
-  expectNoCopyDrift(copyDriftReading({ pairs: withoutKnownUnreadable(changedCopy).filter((pair) => pair.copy !== ISOLATION) }));
+  expectNoCopyDrift(copyDriftReading({ pairs: changedCopy.filter((pair) => pair.copy !== real.copy && pair.originalText !== null) }));
 });
 
 // --- host.json and the project's units ----------------------------------------------------------------------------------------------
