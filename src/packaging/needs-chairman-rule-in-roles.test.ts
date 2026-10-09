@@ -114,10 +114,27 @@ test("every role file that applies needs:chairman says answering a row removes i
   }
 });
 
-test("the rule was not put under .claude/rules/, which every wake pays for (#2217)", () => {
+/**
+ * #3409 put ONE bullet naming the label in `org-routing-and-timers.md`: what a `needs:chairman` row's body must open with, and a link to the
+ * incident. It is the brief's FORMAT, not the rule for when the label goes on or comes off, which stays in the role files. So the file may name
+ * the label, but it may not carry the rule: none of the full rule's wording, and the link to where the incident lives.
+ */
+const NAMES_THE_BRIEF_FORMAT_ONLY = ["org-routing-and-timers.md"];
+
+test("the rule was not put under .claude/rules/, which every wake pays for (#2217); the one bullet naming the brief's format is allowed and is not a copy (#3409)", () => {
   const dir = resolve(ROOT, ".claude/rules");
   const files = readdirSync(dir).filter((name) => name.endsWith(".md"));
   assert.ok(files.length > 0, "positive control: the directory has rule files to read");
-  const offenders = files.filter((name) => /needs:chairman/.test(read(`.claude/rules/${name}`)));
-  assert.deepEqual(offenders, []);
+  const namers = files.filter((name) => /needs:chairman/.test(read(`.claude/rules/${name}`)));
+  assert.deepEqual(namers, NAMES_THE_BRIEF_FORMAT_ONLY, "positive control: the allowed file still names the label, and no other does");
+  for (const name of namers) {
+    const text = read(`.claude/rules/${name}`);
+    assert.deepEqual(missing(text, FULL_RULE).length, FULL_RULE.length, `${name} carries none of the rule's wording`);
+    assert.match(text, /operational-lessons\.md#a-needschairman-brief-is-a-brief-not-a-ticket/, `${name} links the incident rather than restating it`);
+  }
+});
+
+test("positive control: a rules file that copies the rule's wording is refused by the same check", () => {
+  const copy = "needs:chairman is for what only the chairman can physically do, never a parking label";
+  assert.ok(missing(copy, FULL_RULE).length < FULL_RULE.length);
 });

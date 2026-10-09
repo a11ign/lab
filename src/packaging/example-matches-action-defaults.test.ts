@@ -32,6 +32,9 @@ const DELIBERATE: Record<string, string> = {
   // `fail-on: never` is the example's whole teaching point — report without failing the build until you
   // know what the tool says about your site. The action defaults to `never` anyway, so this is belt and
   // braces rather than a divergence, and it is listed so a future default change is a deliberate call.
+  // #4089: the action's `probe-forms` defaults OFF, and the example turns it ON deliberately -- its own comment says "OFF by default,
+  // and set below on purpose", because the example's `task` is only load-bearing when forms are probed.
+  "probe-forms": "the example shows the task pressing a button; the default (off) is the safe one, so the example says why it differs",
   "fail-on": "the example teaches starting non-blocking; it happens to match the default today",
 };
 

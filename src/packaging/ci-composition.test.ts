@@ -20,6 +20,32 @@ test("the core is laid at a full commit sha, never a branch", () => {
   assert.match(ci, /ref: "\$\{\{ env\.CORE_REF \}\}"/, "the checkout uses the pin");
 });
 
+/** A release tag the way the resolver reads one: `v` and three numbers. A prerelease, a branch and a partial version are not tags to pin. */
+const isStableTag = (value: string): boolean => /^v\d+\.\d+\.\d+$/.test(value);
+
+test("the tool is cloned at ONE pinned stable tag, which a stable-tag check tells from a branch and a prerelease (ceo, a11ign/a11ign#4372)", () => {
+  const pin = /^ {2}AGENT_ORG_PIN: ([^\s]+)$/m.exec(ci);
+  assert.ok(pin, "positive control: the pin is found");
+  assert.equal(isStableTag(pin[1]), true, `${pin[1]} is a vX.Y.Z tag`);
+  for (const refused of ["main", "v0.87.9-rc.1", "v0.87", "0.87.9", "v0.87.9 extra"]) assert.equal(isStableTag(refused), false, `control: ${refused} is not a release tag`);
+  const step = ci.indexOf('git clone --quiet --depth=1 --branch="$AGENT_ORG_PIN" https://github.com/a11ign/agent-org "$RUNNER_TEMP/agent-org"');
+  assert.ok(step > 0, "positive control: the pinned clone is found");
+  assert.equal(ci.match(/v\d+\.\d+\.\d+/g)?.join(",") ?? "", pin[1], "the tag is written ONCE, in the pin, and nowhere else in the code");
+  // The same hand-off the resolver's `exportTool` makes, so every step below sees what it would have seen.
+  const handOff = ["AGENT_ORG_TOOL=$RUNNER_TEMP/agent-org\" >> \"$GITHUB_ENV\"", "AGENT_ORG_TAG=$AGENT_ORG_PIN\" >> \"$GITHUB_ENV\"", "agent-org-bin\" >> \"$GITHUB_PATH\"", "exec node \"%s/agent-org/src/bin.mjs\""];
+  for (const line of handOff) assert.ok(ci.indexOf(line, step) > step, `the step exports ${line}`);
+  assert.match(ci, /npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund/, "the tool's own dependencies are installed as the resolver does");
+  assert.ok(step < ci.indexOf("pnpm exec eslint"), "cloned before the lint");
+  assert.ok(step < ci.indexOf("pnpm exec rstest run"), "cloned before the tests");
+  assert.doesNotMatch(ci, /agent-org-newest-tag\.mjs --dest/, "while pinned, the newest-tag resolver is NOT what resolves the tool here");
+});
+
+test("the pin names its EXIT as a row, and the row is a field the comment merely points at", () => {
+  const raw = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.ok(raw.split("\n").some((line) => line.trim().startsWith("#") && /a11ign\/a11ign#4427/.test(line)), "a comment in ci.yml names the row that removes the pin: a11ign/a11ign#4427");
+  assert.match(raw, /v0\.87\.10 turned agent-org's `src\/\*\.mjs` into `\.ts`/, "and says WHY it is pinned");
+});
+
 test("this repository's package replaces the core's own AFTER the install and the build, and before anything reads it", () => {
   // The core's `prepare` (run by `pnpm install` and by `build`) lays the core's PINNED lab, which has no tests and no manifest, over whatever is there: laying first is "No test files found".
   const lay = ci.indexOf("rm -rf packages/lab");
@@ -34,7 +60,7 @@ test("the laid package is staged, then given its `@a11ign/control` package, in t
   // Staged because the core's `packages/lab` is gitignored and the lab's tests walk `git ls-files`; the package comes AFTER, so it is not a tracked entry.
   // It is control's own manifest plus a link to the laid `src`, because since a11ign/a11ign#3506 the core's `packages/control` is a laid layer with NO `package.json`: a plain link has no `exports` to resolve `@a11ign/control/fleet-wake` through.
   const stage = ci.indexOf("git add -f packages/lab");
-  const manifest = ci.indexOf("/packages/control/package.json");
+  const manifest = ci.indexOf('/package.json" -o "$control/package.json"');
   const src = ci.indexOf('ln -s ../../../../control/src "$control/src"');
   assert.ok(stage > 0, "positive control: the staging is found");
   assert.ok(manifest > stage, "the manifest comes after the staging");

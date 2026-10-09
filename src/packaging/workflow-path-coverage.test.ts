@@ -61,6 +61,9 @@ const NOT_A_GATE: Record<string, string> = {
     + "not trigger on a diff at all, so covering a source directory is not a thing it could mean.",
   "capture-regression.yml": "same change, same reason as action-smoke.yml -- release-time only, called "
     + "from release.yml, no push or pull_request trigger left to filter.",
+  "consumer-gate-pin.yml": "a REPAIR, not a check (#4331): on a push to main touching `action.yml` or `consumer-gate.yml` it regenerates the stale "
+    + "consumer-gate pin on one branch and opens the pull request. Its `paths:` names exactly the two files the pin is derived from, so the filter "
+    + "is its subject rather than a way to skip a test; the verdict on the repair is `ci.yml`'s, which has no filter.",
   "nightly.yml": "the whole-repo coverage threshold (moved off ci.yml's per-PR job 2026-09-06, 154s of a "
     + "measured 269s) and the tracker's label audit (#246, hourly-plus-event until #901 livelocked it at "
     + "1,040 runs a day), both on one 06:00 UTC schedule. Each judges the repository or the tracker as a "

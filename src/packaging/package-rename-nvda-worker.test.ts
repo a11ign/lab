@@ -38,6 +38,14 @@ const OLD_NAME_AS_A_WHOLE_WORD = new RegExp(`${OLD_NAME.replace("/", "\\\\?/")}(
 /** The sections of a manifest that declare an edge to another package. */
 const DEPENDENCY_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
 
+/**
+ * A file that names the old package ON PURPOSE: `lay-layer.test.ts` asserts the refusal `no importer entry for @a11ign/nvda-worker`, the message
+ * the layer-laying plan prints when a layer declares no `package:` and its KEY is looked up as the package name (the defect #2885's rename
+ * closed). The old name there is the expected output of a fixture, not a dependency on the package. Found red at CORE_REF 8d59c95e5 (#4372);
+ * the test below refuses this entry once the file stops naming it, so the exemption cannot outlive its reason.
+ */
+const NAMES_THE_OLD_PACKAGE_AS_A_FIXTURE = ["packages/guards/src/lay-layer.test.ts"];
+
 const isDocument = (file: string) => file.endsWith(".md") || file.startsWith("docs/");
 
 /** Every tracked file of the tree, as paths relative to `root`. */
@@ -49,7 +57,7 @@ function trackedFiles(root: string): string[] {
 /** The non-document files under `files` that name the old package, `SELF` excluded. */
 function filesNamingTheOldName(root: string, files: string[]): string[] {
   return files
-    .filter((file) => !isDocument(file) && file !== SELF)
+    .filter((file) => !isDocument(file) && file !== SELF && !NAMES_THE_OLD_PACKAGE_AS_A_FIXTURE.includes(file))
     .filter((file) => OLD_NAME_AS_A_WHOLE_WORD.test(readFileSync(join(root, file), "utf8")));
 }
 
@@ -72,6 +80,13 @@ test("no non-document file names the old package", () => {
   const files = trackedFiles(REPO);
   assert.ok(files.length > 1000, "the walk read almost nothing: it is not looking at the tree");
   assert.deepEqual(filesNamingTheOldName(REPO, files), []);
+});
+
+test("#4372: every exempted fixture still names the old package, and nothing else is exempted by this list", () => {
+  assert.ok(NAMES_THE_OLD_PACKAGE_AS_A_FIXTURE.length > 0, "positive control: the list this test reads is not empty");
+  for (const file of NAMES_THE_OLD_PACKAGE_AS_A_FIXTURE) {
+    assert.match(readFileSync(join(REPO, file), "utf8"), OLD_NAME_AS_A_WHOLE_WORD, `${file} no longer names the old package: delete the exemption`);
+  }
 });
 
 test("positive control: the walk finds the old name in a fixture and refuses it, and passes what is clean", () => {

@@ -64,7 +64,7 @@ const JOB = "mainRulesetBinds";
 /** The hourly cron the nightly jobs skip; this job skips it too, so it runs once a day, not 24 times. */
 const HOURLY_CRON = "37 * * * *";
 
-type Step = { name?: string; uses?: string; run?: string; if?: string; env?: Record<string, string> };
+type Step = { id?: string; name?: string; uses?: string; with?: Record<string, string>; run?: string; if?: string; env?: Record<string, string> };
 type Job = { if?: string; env?: Record<string, string>; steps?: Step[]; permissions?: Record<string, string> };
 
 function nightlyJobs(): Record<string, Job> {
@@ -206,18 +206,18 @@ test("#2120: the step ASSERTS the `LIVE PASS` line was printed -- a green exit i
 /**
  * The step's refusal arms, named so the count is a statement rather than a number: the missing secret, an
  * unreadable runner config, an unreadable (or empty) repository list, a runner that FAILED for a repository,
- * a run that never printed its `LIVE PASS` line for one, the settings table failing (#3708), the settings table
+ * a run that never printed its `LIVE PASS` line for one, the Octo STS exchange returning no token (#4195), the settings table failing (#3708), the settings table
  * exiting green without its output (#3708), and the closing summary naming everything that did not certify. An EXACT count, not a floor, because a seventh arm added without a reason to expect it is
  * the kind of thing to notice, and each is exercised end to end against the committed shell below.
  */
-const REFUSAL_ARMS = 8;
+const REFUSAL_ARMS = 9;
 
 test("#2120: a failure is CANNOT_TELL and LOUD, and names where to look for which read was unavailable", () => {
   // `ceo`'s 2026-09-22 rule: a verdict that cannot read the exemption surface is CANNOT_TELL, loudly --
   // never a pass. `::error::` is what makes it loud in the Actions UI rather than one line of log.
   const run = readStep().run ?? "";
   const errors = codeLines(run).filter((line) => line.includes("::error::"));
-  assert.equal(errors.length, REFUSAL_ARMS, "every refusal arm -- the missing secret, an unreadable runner config or "
+  assert.equal(errors.length, REFUSAL_ARMS, "every refusal arm -- the missing secret or Octo STS token, an unreadable runner config or "
     + "repository list, a failed runner, the missing LIVE PASS line, the settings table's two and the closing summary -- must be loud");
   for (const line of errors) {
     assert.match(line, /CANNOT_TELL/, "a refusal must say which verdict it is, not merely that something went wrong");
@@ -229,15 +229,22 @@ test("#2120: a failure is CANNOT_TELL and LOUD, and names where to look for whic
 
 // --- the identity, which is the thing #2120 said to settle before building --------------------------------
 
-test("#2120: the read is made as `A11IGN_BOT_TOKEN`, the identity that completes every merge here", () => {
-  // `BINDS_ME` is identity-scoped by construction: `current_user_can_bypass` answers FOR THE ASKING
-  // IDENTITY ONLY. Measured 2026-09-23 on the three most recently merged PRs (#2109, #2112, #2115),
-  // `merged_by` is `DanBeckDev` on all three -- the PAT behind this secret, per `trunk.yml`'s own header --
-  // while the PRs themselves are authored by `a11ign-ai-workers`.
+test("#4195: the per-repository read is made with the Octo STS token, minted by a step of this job, and answers for the app", () => {
+  // `BINDS_ME` is identity-scoped by construction: `current_user_can_bypass` answers FOR THE ASKING IDENTITY ONLY. Until #4195 the identity was
+  // the PAT behind `A11IGN_BOT_TOKEN`; the nightly now mints an installation token from an ORGANISATION policy, because the PAT's owner is not the
+  // only identity that completes merges (measured over 40 merged PRs: four do). The settings table below keeps the stored token, a named gap.
+  const job = readJob();
+  const mint = (job.steps ?? []).findIndex((step) => step.uses?.startsWith("octo-sts/action@"));
+  assert.notEqual(mint, -1, "positive control: the job mints through octo-sts/action");
+  const minting = job.steps![mint]!;
+  assert.equal(minting.with?.identity, "nightly-ruleset-read-org", "the identity names the organisation policy in a11ign/.github");
+  assert.equal(minting.with?.scope, "a11ign", "an organisation policy is asked for by the organisation, not by one repository");
+  assert.ok(mint < (job.steps ?? []).findIndex((step) => (step.run ?? "").includes(GUARD)), "the mint comes before the step that reads with its token");
   const step = readStep();
-  assert.equal(step.env?.A11IGN_BOT_TOKEN, "${{ secrets.A11IGN_BOT_TOKEN }}",
-    "the secret must arrive through an `env:` mapping, never interpolated into the shell text");
-  assert.ok(commands(step.run ?? "").some((line) => /^export GH_TOKEN="\$A11IGN_BOT_TOKEN"$/.test(line)),
+  assert.equal(step.env?.OCTO_TOKEN, `\${{ steps.${minting.id}.outputs.token }}`,
+    "the token arrives through an `env:` mapping from the mint's output, never interpolated into the shell text");
+  assert.equal(job.permissions?.["id-token"], "write", "the exchange needs the job's OIDC token");
+  assert.ok(commands(step.run ?? "").some((line) => /^export GH_TOKEN="\$OCTO_TOKEN"$/.test(line)),
     "and it must be EXPORTED as the token `gh` actually uses, as a command rather than inside an `echo`");
 });
 
@@ -281,10 +288,13 @@ test("#2120: there is NO fallback to `github.token` -- a swapped subject is wors
   assert.doesNotMatch(JSON.stringify(step.env ?? {}) + (step.run ?? ""), ACTIONS_TOKEN_EXPR,
     "no fallback: the step must refuse rather than certify the `github-actions` app's own exemption state");
   // Not "no OTHER assignment" but "every assignment", so a second one added below the first cannot hide.
-  assert.deepEqual(ghTokenSources(step.run ?? ""), ['"$A11IGN_BOT_TOKEN"'],
-    "every `GH_TOKEN` the step sets must come from the merging identity's secret and from nothing else");
+  // The Octo STS token first (the per-repository read), then the stored token (the settings table, a named gap, #4195).
+  assert.deepEqual(ghTokenSources(step.run ?? ""), ['"$OCTO_TOKEN"', '"$A11IGN_BOT_TOKEN"'],
+    "every `GH_TOKEN` the step sets must come from the minted token or the stored secret and from nothing else");
+  assert.ok(commands(step.run ?? "").some((line) => line.startsWith('if [ -z "$OCTO_TOKEN" ]')),
+    "and it must check for the minted token explicitly, so an empty exchange is a named refusal rather than a `gh` error");
   assert.ok(commands(step.run ?? "").some((line) => line.startsWith('if [ -z "$A11IGN_BOT_TOKEN" ]')),
-    "and it must check for the secret explicitly, so an absent one is a named refusal rather than a `gh` error");
+    "and for the stored secret the table reads with");
 });
 
 // --- the runner's config path: read out of its owner, never spelled in a workflow -------------------------
@@ -415,6 +425,8 @@ const STUB_MODE = 0o755;
 const STEP_TIMEOUT_MS = 20_000;
 /** An obvious non-secret, so the step takes its normal branch; the value never leaves this process. */
 const STUB_TOKEN = "not-a-secret-stub-token";
+/** A DIFFERENT non-secret for the minted token, so a test can tell which of the two a runner was handed: the loop reads with this one (#4195), the table with `STUB_TOKEN`. */
+const STUB_OCTO_TOKEN = "not-a-secret-octo-stub-token";
 /**
  * DELIBERATELY NOT A PATH IN THIS REPO. What is asserted below is that rstest is handed WHAT `node`
  * PRINTED, which a hardcoded real path could not tell apart from a runner that ignores the variable.
@@ -445,7 +457,7 @@ function writeStub(dir: string, name: string, body: string): void {
 
 type StepOutcome = { status: number | null, output: string, ranRstest: string | null, repos: string[] };
 type StepOptions = {
-  token?: string | null; config?: string | null; says?: string; rstestExit?: number;
+  token?: string | null; octoToken?: string | null; config?: string | null; says?: string; rstestExit?: number;
   /** What the repository lister prints, or null for a lister that fails. */
   repoList?: string | null;
   /** A repository for which the stub runner prints the skip line instead of the pass line. */
@@ -479,12 +491,15 @@ function writeStubs(dir: string, record: string, { config = STUB_CONFIG, repoLis
     + `printf '%s\\n' "$STUB_RSTEST_SAYS" | sed "s#%REPO%#$A11Y_PROTECTION_REPO#"\nexit ${rstestExit}\n`);
 }
 
+const tableSaysFor = (options: StepOptions): string => options.tableSays ?? tableOutput((options.repoList ?? TWO_REPOS.join(" ")).split(" "));
+
 function stepEnv(dir: string, options: StepOptions): NodeJS.ProcessEnv {
-  const { token = STUB_TOKEN, says = LIVE_PASS_OUTPUT, skipFor = "", failFor = "", tableExit = 0 } = options;
-  const tableSays = options.tableSays ?? tableOutput((options.repoList ?? TWO_REPOS.join(" ")).split(" "));
+  const { token = STUB_TOKEN, octoToken = STUB_OCTO_TOKEN, says = LIVE_PASS_OUTPUT, skipFor = "", failFor = "", tableExit = 0 } = options;
+  const tableSays = tableSaysFor(options);
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}`,
-    STUB_TABLE_SAYS: tableSays, STUB_TABLE_EXIT: String(tableExit), STUB_RSTEST_SAYS: says, STUB_SKIP_REPO: skipFor || "-", STUB_FAIL_REPO: failFor || "-", A11IGN_BOT_TOKEN: token ?? "" };
+    STUB_TABLE_SAYS: tableSays, STUB_TABLE_EXIT: String(tableExit), STUB_RSTEST_SAYS: says, STUB_SKIP_REPO: skipFor || "-", STUB_FAIL_REPO: failFor || "-", A11IGN_BOT_TOKEN: token ?? "", OCTO_TOKEN: octoToken ?? "" };
   if (token === null) delete env.A11IGN_BOT_TOKEN;
+  if (octoToken === null) delete env.OCTO_TOKEN;
   return env;
 }
 
@@ -520,8 +535,10 @@ test("#2120 EXECUTED: the step really INVOKES the guard, with the flag, the deri
   assert.match(invocation, /--disableConsoleIntercept/, "and keep the flag that lets the verdict be printed");
   assert.match(invocation, /^A11Y_CHECK_MAIN_RULESET=1$/m,
     "and the opt-in flag must reach the runner's ENVIRONMENT, which is where the guard reads it");
-  assert.match(invocation, new RegExp(`^GH_TOKEN=${STUB_TOKEN}$`, "m"),
-    "and the read must be made as the merging identity's secret, which is the subject the verdict is about");
+  assert.match(invocation, new RegExp(`^GH_TOKEN=${STUB_OCTO_TOKEN}$`, "m"),
+    "and the read must be made with the minted token, which is the subject the verdict is about (#4195)");
+  assert.doesNotMatch(invocation.split("ARGV: ")[1] ?? "", new RegExp(`GH_TOKEN=${STUB_TOKEN}$`, "m"),
+    "and the first runner must not be handed the stored token");
 });
 
 test("#3123 EXECUTED: the guard is run ONCE PER LISTED REPOSITORY, each handed its own repository", () => {
@@ -588,13 +605,24 @@ test("#2120 EXECUTED: a green run that never printed LIVE PASS is RED -- done-wh
     + "stopped invoking it would fail this case too, for the wrong reason, and read as this fix working");
 });
 
-test("#2120 EXECUTED: a missing secret refuses BEFORE any read -- a swapped subject is worse than none", () => {
+test("#4195 EXECUTED: an empty Octo STS exchange refuses BEFORE any read -- a swapped subject is worse than none", () => {
+  for (const octoToken of [null, ""]) {
+    const run = runReadStep({ octoToken });
+    assert.equal(run.status, 1, "CANNOT_TELL fails the job; it does not warn and continue");
+    assert.match(run.output, /::error::CANNOT_TELL: the Octo STS exchange returned no token/);
+    assert.equal(run.ranRstest, null,
+      "and nothing may run, the table included: a read made as whatever identity happened to be available is a true statement "
+      + "about the wrong subject, and reads in the log exactly like the useful one");
+  }
+});
+
+test("#3708 EXECUTED: a missing stored secret loses the settings table ALONE -- the per-repository reads were made and certified", () => {
   const run = runReadStep({ token: null });
   assert.equal(run.status, 1, "CANNOT_TELL fails the job; it does not warn and continue");
   assert.match(run.output, /::error::CANNOT_TELL: A11IGN_BOT_TOKEN is not set/);
-  assert.equal(run.ranRstest, null,
-    "and nothing may run: a read made as whatever identity happened to be available is a true statement "
-    + "about the wrong subject, and reads in the log exactly like the useful one");
+  assert.match(run.output, /did not certify: <the-settings-table>\./, "and the summary names the table, and only the table");
+  assert.deepEqual(run.repos, TWO_REPOS, "POSITIVE CONTROL: the loop ran for each repository, so the red is the table's alone");
+  assert.equal((run.ranRstest ?? "").includes(TABLE_GUARD), false, "and the table's runner was never started without its secret");
 });
 
 test("#2120 EXECUTED: a renamed RSTEST_CONFIG export refuses BY NAME, not by dying on `undefined`", () => {
@@ -654,11 +682,12 @@ test("#3708: the table is run after the ruleset read, with the flag, interceptio
   assert.doesNotMatch(runner, /A11Y_PROTECTION_REPO/, "the table reads every declared repository; the narrowing variable does not apply to it");
 });
 
-test("#3708: the table adds NO second reference to the secret -- agent-org's own pin (#2358) counts it at two", () => {
-  // A step of its own would name `secrets.A11IGN_BOT_TOKEN` a third time and turn that test red in the tool's repository,
-  // which a PR here cannot fix. The count is of the whole file, comments included, as that test reads it.
+test("#3708: the table adds NO second reference to the secret -- once, in this job (ready-audit left it for Octo STS, #4195)", () => {
+  // A step of its own would name `secrets.A11IGN_BOT_TOKEN` a second time. Agent-org's own test (#2358) pinned the count at two while
+  // ready-audit also named it; the count is of the whole file, comments included, as that test read it. KNOWN LIMIT: the tool's copy of the
+  // count is not read from here, and it is the tool's to follow the core to one.
   const text = readFileSync(join(REPO, NIGHTLY), "utf8");
-  assert.equal(text.match(/secrets\.A11IGN_BOT_TOKEN/g)?.length, 2, "ready-audit's and this job's, and no third");
+  assert.equal(text.match(/secrets\.A11IGN_BOT_TOKEN/g)?.length, 1, "this job's, and no second");
   assert.equal(nightlyJobs()[JOB]?.env, undefined, "and not as a job-level `env`, which would hand the token to install, build and clone");
 });
 
@@ -670,9 +699,12 @@ test("#3708: the literals the step greps the table's output for are ones the tab
   assert.ok(source.includes(pass), `${TABLE_GUARD} never prints ${JSON.stringify(pass)}`);
   assert.ok(pass.length > "LIVE PASS".length, "narrower than the bare words, which a reworded skip message could also carry");
   assert.ok(source.includes('const RELEASE_COLUMN = "release-shape"'), "the column the row line names is the one the test prints");
-  assert.ok(source.includes("`  ${RELEASE_COLUMN} ${r.repo}: ${"), "and it prints one such line per repository");
+  // The row line is printed by a loop over the release-shape column AND the four standard columns since the table grew them; the test pins
+  // that release-shape is still among the looped columns and that each prints one line per repository.
+  assert.match(source, /for \(const column of \[RELEASE_COLUMN,[^\]]*\]\) \{/, "release-shape is still among the columns whose rows are printed");
+  assert.ok(source.includes("`  ${column} ${r.repo}: ${r.cells[column]?.state"), "and each prints one such line per repository");
   assert.equal(rowOf("a11ign/x"), "release-shape a11ign/x: OK", "the row literal names the repository, so one repository's row cannot stand for another's");
-  assert.ok(source.indexOf("NOT RUN: the live settings table") < source.indexOf("${RELEASE_COLUMN} ${r.repo}"),
+  assert.ok(source.indexOf("NOT RUN: the live settings table") < source.indexOf("${column} ${r.repo}"),
     "the row line is printed only on the far side of the opt-in return, which is why its presence says the table was read");
 });
 
@@ -693,7 +725,7 @@ test("#3708 EXECUTED: the step runs the table with the flag, the derived config 
   assert.ok(invocation, "the table runner was never invoked: an `echo` carrying these tokens would have passed every scan above");
   assert.ok(invocation.includes(`--config ${STUB_CONFIG}`));
   assert.match(invocation, /^A11Y_CHECK_MAIN_RULESET=1$/m);
-  assert.match(invocation, new RegExp(`^GH_TOKEN=${STUB_TOKEN}$`, "m"));
+  assert.match(invocation, new RegExp(`^GH_TOKEN=${STUB_TOKEN}$`, "m"), "the table keeps the stored token: a `metadata: read` token cannot read its endpoints (#4195)");
   assert.deepEqual(run.repos, TWO_REPOS, "and the per-repository loop still ran once per repository beside it");
 });
 

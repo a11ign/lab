@@ -119,7 +119,7 @@ test("the exit codes are the contract, and CANNOT_ASK is distinct from a clean d
 
 test("auto-arm.yml actually RUNS the sweep — a correct predicate wired to nothing is no predicate", () => {
   const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
-    jobs: Record<string, { steps: { uses?: string; run?: string; env?: Record<string, string> }[] }>;
+    jobs: Record<string, { steps: { id?: string; uses?: string; run?: string; env?: Record<string, string> }[] }>;
   };
   const sweep = doc.jobs.sweep;
   assert.ok(sweep, "auto-arm.yml must have a `sweep` job; without it every already-open PR is invisible "
@@ -128,18 +128,20 @@ test("auto-arm.yml actually RUNS the sweep — a correct predicate wired to noth
   assert.ok(steps.some((s) => typeof s.uses === "string" && s.uses.startsWith("actions/checkout")),
     "the sweep runs a script from the repo, so it needs a checkout. Without one the step fails with "
     + "MODULE_NOT_FOUND — the #331 shape, where a workflow's own missing prerequisite reads as a code bug.");
-  const runner = steps.find((s) => s.run?.includes("auto-arm-sweep.mjs"));
-  assert.ok(runner, "no step runs auto-arm-sweep.mjs.");
-  // #416: GH_TOKEN is no longer a static env: mapping -- it is resolved at runtime (A11IGN_BOT_TOKEN if
-  // set, else github.token, see auto-arm-token.test.ts) and exported inside the step's own `run:` script.
-  // The gh-token-jobs.test.ts finding this pins is unaffected: the sweep still spawns `gh` with SOME
-  // token reaching GH_TOKEN before the node process runs, just no longer via a literal YAML value.
-  assert.match(runner?.run ?? "", /export GH_TOKEN=/,
-    "the sweep spawns `gh`, so the job must resolve and export GH_TOKEN before running the script — the "
-    + "gh-token-jobs.test.ts finding, here in the one workflow whose only action is a `gh` call.");
-  assert.ok(runner?.env?.FALLBACK_TOKEN, "the fallback token (github.token) must be mapped in for the "
-    + "no-secret case -- see auto-arm-token.test.ts for the fallback logic itself.");
-  assert.ok(runner?.env?.GITHUB_REPOSITORY,
+  // The command lines only: the step's own comments name `auto-arm-sweep.mjs`, and a comment runs nothing.
+  const commandLines = (run: string) => run.split("\n").filter((line) => !line.trim().startsWith("#"));
+  const runner = steps.find((s) => commandLines(s.run ?? "").some((line) => /\bagent-org auto-arm-sweep\b/.test(line)));
+  assert.ok(runner, "no step runs `agent-org auto-arm-sweep`.");
+  // #4198: GH_TOKEN IS A MINTED TOKEN, from the step before the sweep -- Octo STS (`auto-arm.sts.yaml`), with NO fallback to `github.token` (#416's A11IGN_BOT_TOKEN-else-github.token resolution
+  // and its `export GH_TOKEN=` are gone). The sweep spawns `gh`, so SOME token must reach GH_TOKEN before the node process runs (the gh-token-jobs.test.ts finding, here in the one workflow
+  // whose only action is a `gh` call); this pins WHICH one, and that the step minting it comes first.
+  const minter = steps.find((s) => s.id === "octo-sts");
+  assert.ok(minter?.uses?.startsWith("octo-sts/action@"), "the sweep's token comes from an Octo STS mint step with the id `octo-sts`.");
+  assert.ok(steps.indexOf(minter as typeof runner) < steps.indexOf(runner), "the token is minted AFTER the step that needs it.");
+  assert.equal(runner.env?.GH_TOKEN, "${{ steps.octo-sts.outputs.token }}",
+    "the sweep spawns `gh`, so the step must be handed the MINTED token as GH_TOKEN, and nothing falls back to `github.token`.");
+  assert.equal(runner.env?.FALLBACK_TOKEN, undefined, "no fallback token is mapped in: a missing mint must fail, not run on the job's own token (#4198).");
+  assert.ok(runner.env?.GITHUB_REPOSITORY,
     "the script exits CANNOT_ASK without GITHUB_REPOSITORY rather than guessing a repo.");
 });
 

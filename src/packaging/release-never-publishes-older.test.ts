@@ -9,6 +9,12 @@
  * `readings` step of the `guards` job and the refusal is the step after it, in the same job; `release` NEEDS `guards`, so "before
  * Publish" is now a fact about the job graph (`release-triggers-itself.test.ts`'s `guards-needed`), not an order of steps.
  *
+ * #4023 (core) MOVED THE READING AGAIN: the readings step no longer takes `main`'s manifest as the version a package is at. The called workflow resets each
+ * package to its newest tag `<name>@x.y.z` before versioning and `main` never receives that commit, so `main`'s manifests lag the registry for good once a
+ * release has shipped, and reading them refused every release after the first. A package WITH a tag is read at the tag's version, and one without keeps
+ * `main`'s. The step therefore runs `git tag --list`, so the fixture tree below is a git repository (the step is run in a temporary directory, which is
+ * no checkout of anything) holding the tags a case describes.
+ *
  * WHAT THIS READS. The guards job's PARSED steps, never the text: a comment or an `echo` naming the check must satisfy nothing. The
  * guard step is found by what it DOES (it reads the readings and exits non-zero on a behind one), then RUN with `bash` against
  * fixtures, so "refuses the behind package, naming it" is observed rather than read off a regex. The readings themselves come
@@ -22,6 +28,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const EXECUTABLE = 0o755;
@@ -126,13 +133,27 @@ if (answer === undefined) { console.error("npm error code E404"); process.exit(1
 console.log(answer);
 `;
 
-function planReadings(packages: Record<string, { name: string; version: string; private?: boolean }>, registry: Record<string, string>): Reading[] {
+type Manifests = Record<string, { name: string; version: string; private?: boolean }>;
+
+/** A repository with one empty commit and a lightweight tag per name: all `git tag --list` needs, with no user config the machine might lack. */
+function initTags(dir: string, tags: string[]): void {
+  const git = (...args: string[]) => {
+    const result = spawnSync("git", args, { cwd: dir, encoding: "utf8", env: sandboxGitEnv({ GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" }) });
+    assert.equal(result.status, 0, `git ${args.join(" ")}: ${result.stderr}`);
+  };
+  git("init", "--quiet");
+  git("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "--allow-empty", "--message=fixture");
+  for (const tag of tags) git("tag", tag);
+}
+
+function planReadings(packages: Manifests, registry: Record<string, string>, tags: string[] = []): Reading[] {
   const dir = mkdtempSync(join(tmpdir(), "a11y-release-older-"));
   try {
     for (const [pkg, manifest] of Object.entries(packages)) {
       mkdirSync(join(dir, "packages", pkg), { recursive: true });
       writeFileSync(join(dir, "packages", pkg, "package.json"), JSON.stringify(manifest));
     }
+    initTags(dir, tags);
     mkdirSync(join(dir, "bin"));
     writeFileSync(join(dir, "bin/npm"), STUB_NPM);
     chmodSync(join(dir, "bin/npm"), EXECUTABLE);
@@ -175,4 +196,19 @@ test("END TO END: the readings for one package ahead and one behind are refused 
   const result = runGuard(readings);
   assert.notEqual(result.status, 0, result.log);
   assert.match(result.log, /@a11ign\/core@0\.0\.0 < 0\.1\.0/);
+});
+
+test("#4023: a package WITH a tag is read at its newest tag, not at main's lagging manifest, so a release after the first is not refused", () => {
+  // `main` reads 0.2.7 while the registry and the tags are at 0.10.0: read as the manifest says, the package is BEHIND and every release is refused.
+  const packages = { cli: { name: "a11ign", version: "0.2.7" } };
+  const registry = { a11ign: "0.10.0" };
+  const [untagged] = planReadings(packages, registry);
+  assert.deepEqual([untagged.manifest, untagged.state], ["0.2.7", "behind"], "positive control: without the tag the same manifest IS behind");
+  const [tagged] = planReadings(packages, registry, ["a11ign@0.9.0", "a11ign@0.10.0", "a11ign@0.11.0-rc.1", "@a11ign/other@9.9.9"]);
+  assert.deepEqual([tagged.manifest, tagged.state], ["0.10.0", "level"], "the newest plain x.y.z tag of THIS package, compared by number (0.10 after 0.9), is the base");
+});
+
+test("#4023: a tag older than the registry's latest still reads BEHIND: the base is the tag, and the refusal to publish older stays", () => {
+  const [reading] = planReadings({ cli: { name: "a11ign", version: "9.9.9" } }, { a11ign: "0.3.0" }, ["a11ign@0.2.0"]);
+  assert.deepEqual([reading.manifest, reading.state], ["0.2.0", "behind"], "a manifest ahead of everything does not hide a tag that is behind");
 });

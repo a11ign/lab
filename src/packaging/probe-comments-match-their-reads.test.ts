@@ -52,9 +52,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { layerFile } from "../../../guards/src/layer-file.mjs";
+import { workerSource } from "./laid-worker.ts";
 
-const PROBES = layerFile("@a11ign/screenreader-worker", "src/capture-probes.mjs", { from: import.meta.dirname });
+const PROBES = workerSource("src/capture-probes.mjs");
 const LINES = readFileSync(PROBES, "utf8").split("\n");
 
 /**

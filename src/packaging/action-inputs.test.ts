@@ -60,26 +60,51 @@ const NOT_A_CLI_ARGUMENT: Readonly<Record<string, string>> = {
     + "ONLY when it is exactly `true`; an argument in the CLI and never an environment variable it reads (clause 5's override)",
 };
 
+/** The environment variables an input is handed to the Action's scripts as (`URL: ${{ inputs.url }}`): since a11ign/a11ign#4221 and #4238 an input reaches `run:` text through `env:`, never interpolated into it. */
+const envNamesOf = (action: string, input: string): string[] =>
+  [...action.matchAll(new RegExp(`^\\s+([A-Z][A-Z0-9_]*): \\$\\{\\{ inputs\\.${input} \\}\\}\\s*$`, "gm"))].map(([, name]) => name);
+
+const referencesVariable = (line: string, variable: string): boolean => new RegExp(`\\$\\{?${variable}\\b`).test(line);
+
+const buildsArgvLine = (line: string | undefined): boolean => /\bargs(\+)?=\(/.test(line ?? "");
+
+/**
+ * Whether an input reaches the argv: a line that names it (`inputs.<name> }}` or the variable it is exported as) builds the argv ITSELF, or is the `if`/`[ ... ] &&` head of the line that does.
+ * Matched on what the line DOES rather than on the shell shape around it, for the reason the first version of this guard was rewritten (it enumerated shapes and misreported three inputs).
+ */
+function reachesArgv(action: string, input: string): boolean {
+  const lines = action.split("\n");
+  const names = envNamesOf(action, input);
+  return lines.some((line, at) => {
+    const mentionsInput = line.includes(`inputs.${input} }}`) || names.some((variable) => referencesVariable(line, variable));
+    return mentionsInput && (buildsArgvLine(line) || buildsArgvLine(lines[at + 1]));
+  });
+}
+
+/** The inputs that are neither classified nor reach the argv. */
+const unreadInputs = (action: string): string[] => declaredInputs().filter((name) => !(name in NOT_A_CLI_ARGUMENT) && !reachesArgv(action, name));
+
 test("every declared input either reaches the CLI or is classified", () => {
   const inputs = declaredInputs();
   assert.ok(inputs.length > 5,
     `parsed only ${inputs.length} input(s) from action.yml — the block format changed and this went blind`);
-
-  // Matched on what the line DOES — builds the argv — rather than on the shell shape around it. The first
-  // version enumerated the shapes (`= "true" ] &&`, `] ||`, ...) and reported three inputs as unread that
-  // are passed on the very next lines: a guard deriving its expectation from a guessed spelling, which is
-  // the same defect as a test scraping source text for the list it is checking.
-  const buildsArgv = ACTION.split("\n").filter((line) => /\bargs(\+)?=\(/.test(line));
-  assert.ok(buildsArgv.length > 1,
+  assert.ok(ACTION.split("\n").filter(buildsArgvLine).length > 1,
     "found no lines building the CLI argv — the Run step changed shape and this went blind");
+  // POSITIVE CONTROL for the environment route: the guard below would pass in silence if it could no longer see an input exported as a variable.
+  assert.ok(inputs.filter((name) => reachesArgv(ACTION, name)).length > 5, "no input was seen reaching the argv: the guard went blind");
 
-  const unread = inputs.filter((name) =>
-    !(name in NOT_A_CLI_ARGUMENT) && !buildsArgv.some((line) => line.includes(`inputs.${name} }}`)));
-
+  const unread = unreadInputs(ACTION);
   assert.deepEqual(unread, [],
     "These inputs are declared and never reach the CLI's argv:\n  " + unread.join("\n  ")
     + "\n\nA consumer sets one, YAML accepts it, the run succeeds and the DEFAULT applies. Either pass it"
     + "\nin the `args=(...)` block or classify it in NOT_A_CLI_ARGUMENT with the reason.");
+});
+
+test("an input whose argv line is gone is found unread, and one whose line is back is not", () => {
+  const line = '        [ -n "$TASK" ] && args+=(--task "$TASK")\n';
+  assert.ok(ACTION.includes(line), "the task line moved: update this mutation");
+  assert.deepEqual(unreadInputs(ACTION.replace(line, "")), ["task"]);
+  assert.deepEqual(unreadInputs(ACTION), []);
 });
 
 /**
@@ -127,10 +152,13 @@ test("an input mirroring a --no-<name> flag defaults true and passes the flag on
     assert.match(entry, /^ {4}default: "true"$/m,
       `${name} must default "true": the CLI defaults it ON, and a workflow that never sets it gets that default`);
 
-    const passes = ACTION.split("\n").filter((line) => /\bargs\+=\(/.test(line) && line.includes(`inputs.${name} }}`));
+    // Since a11ign/a11ign#4221/#4238 an input reaches the shell through `env:` (`PROBE_FOCUS: ${{ inputs.probe-focus }}`), never interpolated into the run text.
+    const variable = envNamesOf(ACTION, name)[0] ?? "";
+    assert.ok(variable, `${name} is not exported to the Capture step as an environment variable`);
+    const passes = ACTION.split("\n").filter((line) => /\bargs\+=\(/.test(line) && referencesVariable(line, variable));
     const onPreserving = [
-      `[ "\${{ inputs.${name} }}" = "false" ] && args+=(--no-${name})`,
-      `[ "\${{ inputs.${name} }}" = "true" ] || args+=(--no-${name})`,
+      `[ "$${variable}" = "false" ] && args+=(--no-${name})`,
+      `[ "$${variable}" = "true" ] || args+=(--no-${name})`,
     ];
     assert.equal(passes.length, 1, `${name} must reach the argv on exactly one line, found ${passes.length}`);
     assert.ok(onPreserving.includes(passes[0].trim()),
@@ -174,10 +202,13 @@ test("the page list reaches the CLI as --urls, the override as --max-pages, and 
     assert.ok(ACTION.split("\n").some((line) => /\bargs\+=\(/.test(line) && line.includes(flag)),
       `the Action never passes ${flag}: the input would be declared and ignored`);
   }
-  assert.ok(ACTION.split("\n").some((line) => /\bargs\+=\(/.test(line) && line.includes("inputs.max-pages }}")),
-    "max-pages must reach the argv");
-  // `multi-page.test.ts` proves the CLI reads no environment variable for the cap; this is the workflow's half.
-  assert.doesNotMatch(ACTION, /\bMAX_PAGES\b/, "action.yml exports no environment default for the cap");
+  assert.ok(reachesArgv(ACTION, "max-pages"), "max-pages must reach the argv");
+  // `multi-page.test.ts` proves the CLI reads no environment variable for the cap; this is the workflow's half. Since #4221/#4238
+  // the input is handed to the shell as MAX_PAGES, so the pin is that the variable is set from the input and from nothing else.
+  assert.deepEqual(envNamesOf(ACTION, "max-pages"), ["MAX_PAGES"], "the cap is exported from the max-pages input");
+  const settings = ACTION.split("\n").filter((line) => /^\s*(?:export\s+)?MAX_PAGES[:=]/.test(line));
+  assert.deepEqual(settings.map((line) => line.trim()), ["MAX_PAGES: ${{ inputs.max-pages }}"],
+    "action.yml sets no environment default for the cap: MAX_PAGES comes from the input alone");
 });
 
 /**
@@ -296,8 +327,9 @@ test("task is not required, and its description names what it does and denies wh
 
 /** The Capture step's argv, built by the workflow's own shell text with the input substituted the way the runner does. */
 function argvFromWorkflow(task: string): string[] {
-  const text = stepText("        args=(", "        # ONE OF THESE TWO").replaceAll("${{ inputs.task }}", task);
-  const ran = spawnSync("bash", ["-c", `set -eo pipefail\n${text}\nprintf '%s\\0' "\${args[@]}"`], { encoding: "utf8" });
+  const text = stepText("        args=(", "        # ONE OF THESE TWO");
+  // The runner hands the input over as `TASK: ${{ inputs.task }}`; the shell text reads `$TASK`.
+  const ran = spawnSync("bash", ["-c", `set -eo pipefail\n${text}\nprintf '%s\\0' "\${args[@]}"`], { encoding: "utf8", env: { ...process.env, TASK: task } });
   assert.equal(ran.status, 0, `the workflow's argv block failed: ${ran.stderr}`);
   return ran.stdout.split("\0").slice(0, -1);
 }

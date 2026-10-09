@@ -51,13 +51,14 @@ test("#1320: scripts/coverage.mjs itself imports @rstest/coverage-v8, and spawns
 
 // --- the threshold: re-derived on rstest's own units, read once from .c8rc.json ------------------------------
 
-test("#1320: .c8rc.json enforces 73%/72% -- rstest's units, floor of achieved, same method as c8's old 78 and "
+test("#1320: .c8rc.json enforces 70%/69% -- rstest's units, floor of achieved, same method as c8's old 78 and "
   + "#1350/F2's own re-derivation (70.94%/70.70% -> 70/70), which #1320 is the deferred switch for", () => {
   // A RATCHET, NOT AN ARBITRARY NUMBER: c8's 78 does not transfer (measured 4.4x fewer total statement units
   // under rstest for the same population, #1350/F2 measured 5.34x for lines alone) -- see .c8rc.json's own
   // comment for the full derivation. This still PINS the number so a future accidental change is caught.
-  assert.equal(C8RC.lines, 73);
-  assert.equal(C8RC.statements, 72);
+  // 73/72 -> 51/51 (#3993, the population changed) -> 70/69 (#3998, tests landed for the 0% files): a ratchet, so it only goes up.
+  assert.equal(C8RC.lines, 70);
+  assert.equal(C8RC.statements, 69);
 });
 
 test("#1320: thresholdMissLines reports nothing at or above .c8rc.json's threshold", () => {
@@ -67,10 +68,13 @@ test("#1320: thresholdMissLines reports nothing at or above .c8rc.json's thresho
   assert.deepEqual(thresholdMissLines(above as never, C8RC), []);
 });
 
+/** A lines reading 1.2 points under the floor, derived so the next ratchet moves it with the threshold. */
+const LINES_UNDER = Number((C8RC.lines - 1.2).toFixed(1));
+
 test("#1320: thresholdMissLines names a metric under threshold, in c8's own error wording", () => {
-  const totals = { lines: { pct: 71.2 }, statements: { pct: C8RC.statements } };
+  const totals = { lines: { pct: LINES_UNDER }, statements: { pct: C8RC.statements } };
   assert.deepEqual(thresholdMissLines(totals as never, C8RC),
-    [`ERROR: Coverage for lines (71.2%) does not meet threshold (${C8RC.lines}%)`]);
+    [`ERROR: Coverage for lines (${LINES_UNDER}%) does not meet threshold (${C8RC.lines}%)`]);
 });
 
 test("#1320: MUTATION -- a threshold quietly loosened past .c8rc.json's number would still be caught here", () => {
@@ -87,11 +91,11 @@ test("#1320: MUTATION -- a threshold quietly loosened past .c8rc.json's number w
 test("#1320: a real threshold miss from scripts/coverage.mjs is classified REGRESSION by #169's own classifier, "
   + "naming the same metric, actual and threshold -- the coupling `.c8rc.json`'s comment on scripts/coverage.mjs "
   + "warns about", () => {
-  const totals = { lines: { pct: 71.2 }, statements: { pct: C8RC.statements } };
+  const totals = { lines: { pct: LINES_UNDER }, statements: { pct: C8RC.statements } };
   const [line] = thresholdMissLines(totals as never, C8RC);
   const verdict = classifyCoverageFailure({ ciOutcome: "success", buildOutcome: "success", coverageLog: line });
   assert.equal(verdict.kind, KIND.REGRESSION, JSON.stringify(verdict));
-  assert.deepEqual(verdict.thresholdMisses, [{ metric: "lines", actual: 71.2, threshold: C8RC.lines }]);
+  assert.deepEqual(verdict.thresholdMisses, [{ metric: "lines", actual: LINES_UNDER, threshold: C8RC.lines }]);
 });
 
 // --- #3865: scripts/coverage.mjs never exits non-zero without saying why -----------------------------------

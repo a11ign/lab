@@ -243,19 +243,22 @@ test("the plan's readings name the release's directories: the ones ahead on a pu
   assert.throws(() => releasedDirectories("[]", directoryOf), /CANNOT_TELL/);
 });
 
-test("release.yml READS the verdict in the `guards` job the call needs, and only a rehearsal may continue past a stop", () => {
-  const { guards, release } = jobs();
-  const steps = guards.steps!;
-  const readAt = steps.findIndex((step) => step.name === "Read the fleet part's verdict for this sha");
-  assert.notEqual(readAt, -1, "the step that reads the verdict is in release.yml's guards job");
-  const step = steps[readAt] as Step & { id?: string; "continue-on-error"?: string };
-  assert.equal(step.id, "qualification", "the filing job reads its outputs by this id");
-  assert.match(step.run ?? "", /node scripts\/release-reads-qualification\.mjs --sha=\$\{\{ github\.sha \}\}/);
-  assert.equal(step["continue-on-error"], "${{ github.event_name == 'workflow_dispatch' }}",
-    "a stop is survivable only in a rehearsal (a dispatch), which publishes nothing");
-  assert.ok([release.needs].flat().includes("guards"),
-    "#3717: the verdict is read BEFORE the publish because the call `needs` the job that reads it");
-  assert.equal(guards.permissions?.statuses, "read", "the verdict is read from commit statuses");
+// #3946 / #3947 / #3969 (core): THE VERDICT LEFT THE PUBLISH PATH. A push that carries a changeset publishes to `next` on the guards alone, and the
+// `decide` job reads this file's decider AFTER the publish, through `scripts/release-promote.mjs`, to say which versions may move to `latest`.
+// What this test used to pin in the `guards` job (the step "Read the fleet part's verdict for this sha", its `continue-on-error`, `row-*` outputs) is
+// gone from there by design, and core's `release-publishes-to-next.test.ts` refuses it coming back; the reading is pinned where it lives now.
+test("release.yml READS the verdict in the `decide` job, after the publish, which the publish does not wait for", () => {
+  const { decide, release, guards } = jobs();
+  const plan = decide.steps?.find((step) => step.id === "plan");
+  assert.ok(plan, "the step that reads the verdict is in release.yml's decide job");
+  assert.match(plan.run ?? "", /^node scripts\/release-promote\.mjs$/m);
+  assert.match(readFileSync("scripts/release-promote.mjs", "utf8"), /import \{[^}]*\bqualificationDecision\b[^}]*\} from "\.\/release-reads-qualification\.mjs";/,
+    "the script the job runs hands the history to THIS decider, not to a copy of its rules");
+  assert.deepEqual([decide.needs].flat(), ["release"], "#3947: a push run promotes only after its own release");
+  assert.ok(![release.needs].flat().includes("decide"), "#3946: the publish does not wait for the fleet's verdict");
+  assert.ok(!JSON.stringify(guards).includes("release-reads-qualification"), "#3946: no guard step reads the verdict any more");
+  assert.equal(decide.permissions?.statuses, "read", "the verdict is read from commit statuses");
+  assert.ok(!JSON.stringify(decide).includes("continue-on-error"), "no step of the deciding job survives a stop: a group it cannot read is red");
 });
 
 // ---- #3291: the release files a row when the wait is overdue or a regression is confirmed ----------------------------
@@ -304,31 +307,38 @@ test("the overdue case REFUSES a fixture that never files -- the positive contro
 });
 
 const EXECUTABLE = 0o755;
-interface Step { name?: string; run?: string; env?: Record<string, string> }
+interface Step { name?: string; id?: string; run?: string; uses?: string; env?: Record<string, string> }
 interface Job { needs?: string | string[]; if?: string; permissions?: Record<string, string>; outputs?: Record<string, string>; steps?: Step[] }
 const jobs = () => (parseYaml(readFileSync(".github/workflows/release.yml", "utf8")) as { jobs: Record<string, Job> }).jobs;
 
+// #3946 / #3969 (core): the old `qualification-row` job, waited for by nothing but `guards`, is `promotion-row`, which `needs` `decide` and reads the
+// rows it output. The invariants carried over: it holds `issues: write` and `contents: read` only, and no `uses:` action meets the issue token.
 test("the filing job holds `issues: write` and `contents: read` and nothing else, and the publishing job holds only what the called workflow needs", () => {
-  const { "qualification-row": filing, release, guards } = jobs();
+  const { "promotion-row": filing, release, guards, decide } = jobs();
   assert.deepEqual(filing.permissions, { contents: "read", issues: "write" });
   assert.deepEqual(release.permissions, { contents: "write", checks: "read", "id-token": "write" },
     "#3717: the call's permissions are exactly what the reusable workflow's jobs may use, and no more");
-  assert.deepEqual(guards.permissions, { contents: "read", statuses: "read" }, "the guards job reads, and writes nothing");
+  assert.deepEqual(decide.permissions, { contents: "read", statuses: "read" }, "the deciding job reads, and writes nothing");
+  assert.deepEqual(guards.permissions, { contents: "read" }, "#3946: the guards job no longer reads statuses, because it no longer reads the verdict");
   assert.ok(!filing.steps!.some((step) => step.run === undefined), "every step of the filing job runs a command: no `uses:` action meets the issue token");
-  assert.deepEqual([filing.needs].flat().sort(), ["guards"]);
-  assert.match(filing.if!, /failure\(\)/);
-  assert.match(filing.if!, /github\.event_name == 'push'/, "a rehearsal files nothing");
+  assert.deepEqual([filing.needs].flat().sort(), ["decide"]);
+  assert.match(filing.if!, /needs\.decide\.outputs\.rows != ''/, "it files only what the decision handed on");
+  assert.match(decide.if!, /github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main'/, "a rehearsal on another branch decides nothing, so it files nothing");
 });
 
-test("the guards job hands the row on: each `row-*` output reads the verdict step", () => {
-  const { guards } = jobs();
-  for (const name of ["row-title", "row-labels", "row-body"]) {
-    assert.equal(guards.outputs?.[name], `\${{ steps.qualification.outputs.${name} }}`);
+test("the deciding job hands the decision on: each output reads the plan step, and the filing job reads the rows", () => {
+  const { decide, "promotion-row": filing } = jobs();
+  for (const name of ["promote", "promoted", "rows", "blocked"]) {
+    assert.equal(decide.outputs?.[name], `\${{ steps.plan.outputs.${name} }}`);
   }
+  const step = filing.steps!.find((candidate) => /gh issue create/.test(candidate.run ?? ""));
+  assert.equal(step?.env?.ROWS, "${{ needs.decide.outputs.rows }}", "positive control: the filing step is found, and reads the rows by this name");
 });
+
+type Row = { title: string; labels: string[]; body: string };
 
 /** Runs the filing job's OWN shell with a fake `gh` that records every call and answers the two lookups. */
-function runFilingStep(existing: { rows: number; labelsPresent: string[] }, row: { title: string; labels: string[]; body: string }) {
+function runFilingStep(existing: { rows: number; labelsPresent: string[] }, ...rows: Row[]) {
   const dir = mkdtempSync(join(tmpdir(), "filing-"));
   try {
     mkdirSync(join(dir, "bin"));
@@ -341,10 +351,10 @@ case "$1 $2" in
 esac
 `);
     chmodSync(join(dir, "bin/gh"), EXECUTABLE);
-    const step = jobs()["qualification-row"].steps!.find((candidate) => /gh issue create/.test(candidate.run ?? ""))!;
+    const step = jobs()["promotion-row"].steps!.find((candidate) => /gh issue create/.test(candidate.run ?? ""))!;
     const result = spawnSync("bash", ["-c", step.run!], { encoding: "utf8", env: {
       PATH: `${join(dir, "bin")}:${process.env.PATH}`, RECORD: record, FAKE_ROWS: String(existing.rows),
-      FAKE_LABELS: existing.labelsPresent.join("\n"), ROW_TITLE: row.title, ROW_LABELS: row.labels.join(","), ROW_BODY: row.body } });
+      FAKE_LABELS: existing.labelsPresent.join("\n"), ROWS: JSON.stringify(rows) } });
     assert.equal(result.status, 0, result.stderr);
     let calls: string[] = [];
     try { calls = readFileSync(record, "utf8").trim().split("\n"); } catch { /* the fake was never called */ }
@@ -354,7 +364,7 @@ esac
   }
 }
 
-const ROW = { title: `release ${RELEASE}: qualification wait overdue`, labels: ["qualification-overdue", "answer:orchestrator"], body: "the body" };
+const ROW: Row = { title: `release ${RELEASE}: qualification wait overdue`, labels: ["qualification-overdue", "answer:orchestrator"], body: "the body" };
 
 test("the filing step files ONE row, creating only the label that is missing", () => {
   const calls = runFilingStep({ rows: 0, labelsPresent: ["answer:orchestrator"] }, ROW);
@@ -369,4 +379,11 @@ test("a re-run for the same sha finds the existing row and files none", () => {
   const calls = runFilingStep({ rows: 1, labelsPresent: [] }, ROW);
   assert.ok(calls.some((call) => call.startsWith("issue list")), "the step asked (positive control: the lookup ran)");
   assert.deepEqual(calls.filter((call) => /^(issue|label) create/.test(call)), []);
+});
+
+test("two rows are filed one each, and a row already filed does not stop the other", () => {
+  const other: Row = { ...ROW, title: `release ${QUALIFIED}: regression`, labels: ["regression"] };
+  const calls = runFilingStep({ rows: 0, labelsPresent: ["answer:orchestrator", "qualification-overdue", "regression"] }, ROW, other);
+  assert.equal(calls.filter((call) => call.startsWith("issue create")).length, 2, "positive control: the step loops over every row it was handed");
+  assert.equal(runFilingStep({ rows: 1, labelsPresent: [] }, ROW, other).filter((call) => call.startsWith("issue create")).length, 0);
 });

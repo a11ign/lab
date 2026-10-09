@@ -32,11 +32,21 @@ const WORKFLOW = ".github/workflows/dependency-pr-body.yml";
 const BOT = "dependabot[bot]";
 const EXECUTABLE = 0o755;
 
-interface Step { uses?: string; run?: string; env?: Record<string, string> }
+interface Step { uses?: string; run?: string; env?: Record<string, string>; id?: string; with?: Record<string, string> }
 interface Job { if?: string; steps?: Step[] }
 interface Workflow { on?: Record<string, unknown>; jobs?: Record<string, Job> }
 
 const read = (): Workflow => parseYaml(readFileSync(resolve(REPO, WORKFLOW), "utf8")) as Workflow;
+
+/**
+ * The step that carries the script. Since #4198 the job's first step is the Octo STS mint that precedes it, so "the first step" is no longer the
+ * script: it is the one with a `run:`.
+ */
+const scriptIndex = (steps: Step[]): number => steps.findIndex((step) => step.run !== undefined);
+const scriptStep = (workflow: Workflow): Step => {
+  const steps = Object.values(workflow.jobs!)[0].steps!;
+  return steps[scriptIndex(steps)];
+};
 
 /** An expression in a shell line is the author's text becoming code: the title, the body, or the head's branch name. */
 const AUTHOR_TEXT = /\$\{\{[^}]*github\.(event\.pull_request\.(title|body|head)|head_ref)[^}]*\}\}/;
@@ -59,7 +69,8 @@ function violations(workflow: Workflow): string[] {
 const withStep = (patch: (step: Step) => Step, job: Partial<Job> = {}): Workflow => {
   const wf = read();
   const [[name, original]] = Object.entries(wf.jobs!);
-  wf.jobs = { [name]: { ...original, ...job, steps: [patch(original.steps![0]), ...original.steps!.slice(1)] } };
+  const at = scriptIndex(original.steps!);
+  wf.jobs = { [name]: { ...original, ...job, steps: original.steps!.map((step, i) => (i === at ? patch(step) : step)) } };
   return wf;
 };
 
@@ -89,9 +100,20 @@ test("violations() refuses each fixture that breaks one property (the positive c
 });
 
 test("the title and number reach the script as environment variables, not as expression text", () => {
-  const step = Object.values(read().jobs!)[0].steps![0];
+  const step = scriptStep(read());
   assert.equal(step.env?.PR_TITLE, "${{ github.event.pull_request.title }}");
   assert.doesNotMatch(step.run!, /\$\{\{/);
+});
+
+test("#4198: the edit is written with a token Octo STS mints for this workflow as it is on main, and no stored token is read", () => {
+  const steps = Object.values(read().jobs!)[0].steps!;
+  const mint = steps.findIndex((step) => step.uses?.startsWith("octo-sts/action@"));
+  assert.notEqual(mint, -1, "positive control: the job mints through octo-sts/action");
+  assert.ok(mint < scriptIndex(steps), "the mint comes before the script that uses its token");
+  assert.equal(steps[mint].with?.identity, "dependency-pr-body", "the identity names the policy under .github/chainguard/");
+  assert.equal(scriptStep(read()).env?.EDIT_TOKEN, `\${{ steps.${steps[mint].id}.outputs.token }}`, "the script's edit token is the mint's output");
+  assert.doesNotMatch(readFileSync(resolve(REPO, WORKFLOW), "utf8").replace(/^\s*#.*$/gm, ""), /secrets\.(?!GITHUB_TOKEN)/,
+    "no stored secret: the mint is the authority");
 });
 
 // ---- running the script the workflow carries, against a stub `gh` ----
@@ -99,7 +121,11 @@ test("the title and number reach the script as environment variables, not as exp
 /** The owner's own list, read from the repository: the workflow reads it at the base commit and must not carry a copy. */
 const OWNED = (JSON.parse(readFileSync(resolve(REPO, "docs/owned-path-facts.json"), "utf8")) as { owned: string[] }).owned;
 
-interface Outcome { status: number | null; log: string; body: string | null; patched: boolean }
+interface Outcome { status: number | null; log: string; body: string | null; patched: boolean; patchToken: string | null }
+
+/** Two different values, so a test can tell which one a call was made with: reads use the job's token, the edit uses the minted one. */
+const READ_TOKEN = "read-token-stub";
+const EDIT_TOKEN = "edit-token-stub";
 
 /** Runs the workflow's own script. `gh` is a stub that answers the files call and copies the `body=@file` it is given. */
 function runScript({ title, files, owned = OWNED }: { title: string; files: string[]; owned?: string[] }): Outcome {
@@ -111,19 +137,20 @@ function runScript({ title, files, owned = OWNED }: { title: string; files: stri
       'case "$*" in',
       '  *"/files"*) printf "%s\\n" "$FAKE_FILES" ;;',
       '  *owned-path-facts*) printf "%s\\n" "$FAKE_OWNED" ;;',
-      '  *PATCH*) touch "$DIR/patched"; for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$DIR/body";; esac; done ;;',
+      '  *PATCH*) touch "$DIR/patched"; printf "%s" "$GH_TOKEN" > "$DIR/patch-token"; for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$DIR/body";; esac; done ;;',
       "esac",
     ].join("\n"));
     chmodSync(gh, EXECUTABLE);
-    const script = Object.values(read().jobs!)[0].steps![0].run!;
+    const script = scriptStep(read()).run!;
     const result = spawnSync("bash", ["-c", script], {
       encoding: "utf8",
       env: { PATH: `${dir}:/usr/bin:/bin`, DIR: dir, FAKE_FILES: files.join("\n"), FAKE_OWNED: owned.join("\n"), BASE_SHA: "abc123", PR_TITLE: title, PR_NUMBER: "7", REPO: "o/r",
-        A11IGN_BOT_TOKEN: "stub", FALLBACK_TOKEN: "stub" },
+        GH_TOKEN: READ_TOKEN, EDIT_TOKEN },
     });
     const exists = (name: string) => spawnSync("test", ["-e", join(dir, name)]).status === 0;
     return { status: result.status, log: `${result.stdout}${result.stderr}`, patched: exists("patched"),
-      body: exists("body") ? readFileSync(join(dir, "body"), "utf8") : null };
+      body: exists("body") ? readFileSync(join(dir, "body"), "utf8") : null,
+      patchToken: exists("patch-token") ? readFileSync(join(dir, "patch-token"), "utf8") : null };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

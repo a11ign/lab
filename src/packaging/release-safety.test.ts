@@ -30,6 +30,12 @@
  * stronger in what backs it: no job here holds a write but the call's, and none holds `A11IGN_BOT_TOKEN`. Guard 4's read-back moved
  * into the `guards` job and the called `publish` job reads it again. WHICH GUARD MOVED WHERE is in `release-triggers-itself.test.ts`.
  *
+ * #4000 AND #4154 CHANGED WHAT A DISPATCH MAY DO, AND THE SEVEN STAY SEVEN. A `workflow_dispatch` ON `main` now runs the release (#4000: the retry of a
+ * failed one whose cause is fixed, since "re-run failed jobs" re-runs the same sha and the same defect), so the call's `if` names the dispatch AND
+ * `refs/heads/main`; a dispatch from any other ref still runs the guards and stops there. The dispatch takes one input again, `action-tag-version` (#4154),
+ * which runs `promote-action-tag` alone and nothing else. The guard jobs carry an `if:` (#3947, #4154) that skips them on a `status` event and on that
+ * one-job dispatch, neither of which publishes, and the test below pins that exact text so a looser `if` is refused.
+ *
  * Guards 5 and 6 changed shape 2026-09-06 (chairman's direction): `action-smoke`/`capture-regression`
  * used to run on a push to `main` and this workflow QUERIED whether that separately-triggered run had
  * passed for the exact sha. Both left `main`/PR entirely and declare `workflow_call`, so this workflow now
@@ -56,25 +62,38 @@ const parsed = parseYaml(workflow) as {
   jobs: Record<string, { needs?: string[]; if?: string; uses?: string; steps?: { name?: string; id?: string; if?: string; run?: string; env?: Record<string, string> }[] }>;
 };
 
-test("guard 1: a publish is reached only through the ONE call, and only on a push to main", () => {
+/** The call's `if` (#4000): a push, or a dispatch ON `main`. Spelled whole, so a dispatch from any ref, or a `status` event, reaching it is a diff to this line. */
+const CALL_IF = "github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')";
+/** What the guard jobs carry (#3947, #4154): off on a `status` event and on the one-job dispatch, which are the two runs that publish nothing. */
+const GUARD_IF = "github.event_name != 'status' && inputs.action-tag-version == ''";
+
+test("guard 1: a publish is reached only through the ONE call, and only on a push to main or a dispatch ON main", () => {
   // The old guard read the plan's mode. There is no plan now: the called workflow refuses a ref that is not `main` in its first job and
-  // reads what the tags consumed, so what stays true HERE is that the call is the only way to a publish and a push is the only way to the call.
+  // reads what the tags consumed, so what stays true HERE is that the call is the only way to a publish and a push (or, since #4000, a dispatch
+  // on `main`) is the only way to the call.
   assert.deepEqual(parsed.on.push?.branches, ["main"], "the push trigger names main and nothing else");
   for (const trigger of ["schedule", "release", "pull_request", "repository_dispatch"]) {
     assert.ok(!(trigger in parsed.on), `release.yml declares a '${trigger}' trigger, so it can start on something that is not a merge`);
   }
   const callers = Object.entries(parsed.jobs).filter(([, job]) => /^a11ign\/toolchain\/\.github\/workflows\/release-per-merge\.yml@[0-9a-f]{40}$/.test(job.uses ?? ""));
   assert.deepEqual(callers.map(([name]) => name), ["release"], "exactly one job calls the reusable workflow, pinned by full sha");
-  assert.match(callers[0][1].if ?? "", /github\.event_name == 'push'/, "the call runs on a push and on nothing else");
+  assert.equal(callers[0][1].if, CALL_IF, "the call runs on a push and on a dispatch ON main, and on nothing else (not a status, not a dispatch from a branch)");
   assert.ok(!Object.values(parsed.jobs).some((job) => (job.steps ?? []).some((step) => /changeset publish|npm publish|pnpm publish(?! --dry-run)/.test(step.run ?? ""))),
     "no step in this file publishes: the publish is the called workflow's, where an `id-token` job under the `npm-publish` environment holds it");
 });
 
-test("guard 2: a dispatch never publishes -- it runs the guards, and the call's job does not run on it", () => {
-  assert.notEqual(parsed.on.workflow_dispatch, undefined, "the rehearsal is kept (#3717): the one non-merge trigger a person may start");
-  assert.ok(!("inputs" in ((parsed.on.workflow_dispatch as Record<string, unknown> | null) ?? {})),
-    "a dispatch takes no input: the `dry-run` input chose a mode, there is no mode, and an input that does nothing reads as a control");
-  assert.match(parsed.jobs.release.if ?? "", /^github\.event_name == 'push'$/, "the call's job is `if: push`, so a dispatch stops after the guards");
+test("guard 2: a dispatch from any other ref never publishes -- it runs the guards, and the call's job does not run on it", () => {
+  const dispatch = parsed.on.workflow_dispatch as { inputs?: Record<string, { type?: string; default?: string }> } | null | undefined;
+  assert.notEqual(dispatch, undefined, "the rehearsal is kept (#3717): the one non-merge trigger a person may start");
+  // #3717 removed `dry-run` because an input that chose no mode read as a control; #4154 adds ONE input that does something: it is read by
+  // `promote-action-tag` (below), and with it set every other job's `if` skips (the guard jobs by GUARD_IF, `decide` by its own).
+  assert.deepEqual(Object.keys(dispatch?.inputs ?? {}), ["action-tag-version"], "a dispatch takes one input (#4154), and it moves the Action's major tag and publishes nothing");
+  assert.equal(dispatch?.inputs?.["action-tag-version"]?.default, "", "an empty input is the ordinary dispatch");
+  const move = parsed.jobs["promote-action-tag"];
+  assert.equal(move.steps?.some((step) => step.env?.ONLY_VERSION === "${{ inputs.action-tag-version }}"), true, "the input is read: it is not a control that does nothing");
+  assert.match(move.if ?? "", /github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main' && inputs\.action-tag-version != ''/,
+    "the input moves the tag only on a dispatch ON main");
+  assert.equal(parsed.jobs.release.if, CALL_IF, "the call's job names `main` for a dispatch, so a dispatch from a branch stops after the guards");
 });
 
 test("guard 3: nothing in the workflow writes main or opens a pull request, so a change can only arrive through the required review", () => {
@@ -118,13 +137,14 @@ test("guards 5, 6 and 7: action-smoke, capture-regression and consumer-gate run 
   }
 });
 
-test("guards 5, 6 and 7 are not skippable: the call needs all three and the guards job, and none has an `if`", () => {
+test("guards 5, 6 and 7 are not skippable: the call needs all three and the guards job, and the only `if` any carries skips a status and the one-job dispatch", () => {
   // The `release` job's OWN `needs:` is what enforces them -- a job with an unsatisfied `needs:` is skipped/failed by GitHub regardless of any `if:`
-  // on its steps. The guard jobs carry no `if:` (#3717: with no `plan` there is no mode to skip on), so a rehearsal runs the guards it exists to rehearse.
+  // on its steps. The guard jobs carry exactly GUARD_IF (#3947: a `status` event runs this file to promote and must not run the Windows jobs; #4154: the
+  // one-job dispatch runs nothing else). Neither publishes, and `inputs.action-tag-version` is empty on a push, so GUARD_IF is true on every run that does.
   const needs = parsed.jobs.release.needs ?? [];
   for (const job of ["action-smoke", "capture-regression", "consumer-gate", "guards"]) {
     assert.ok(needs.includes(job), `the call must need ${job}, so a red ${job} stops a publish`);
-    assert.equal(parsed.jobs[job].if, undefined, `${job} must run on a push and on a dispatch alike`);
+    assert.equal(parsed.jobs[job].if, GUARD_IF, `${job} may skip on a status event and the one-job dispatch, and on no run that publishes`);
   }
 });
 

@@ -12,8 +12,11 @@
  *   - `release.yml`'s publish. No step spells `npm publish`: the step is `pnpm exec changeset publish`, and pnpm shells
  *     out to npm at the far end, because trusted publishing is bound to npm's OIDC and the provenance is npm's to sign.
  *     It is pinned here as a step that must stay pnpm's and name its npm hand-off in a comment.
- *     The one npm step in that file is the upgrade of npm itself (#3180): trusted publishing needs npm 11.5.1+, and only
+ *     The npm steps in that file are the upgrade of npm itself (#3180): trusted publishing needs npm 11.5.1+, and only
  *     `npm install -g` upgrades npm; `release-triggers-itself.test.ts` pins where it sits and the floor it refuses below.
+ *     There are TWO since #3969, one per job that talks to the registry by OIDC: `guards` (the provenance rehearsal) and
+ *     `promote` (the `dist-tag add`, which has no checkout and so cannot borrow the other's npm). The step name is the same
+ *     in both, so an exception names its JOB too.
  *   - `registry-consumer-gate.yml`'s consumer half. The row named `npm install a11ign`; that command runs inside
  *     `scripts/registry-consumer-gate.mjs` (which `no-npm-spawn.test.ts` pins), not in a step. What IS a step is what
  *     the consumer types AFTER the install, three steps that call `npx` in the clean directory. That job installs
@@ -35,16 +38,17 @@ interface Workflow { jobs?: Record<string, { steps?: Step[] }> }
 const NPM_RUNNING = /\b(npm (run|test|exec|ci|install|i|x|start)|npx)\b/;
 
 /** The steps that may spell npm, by file and step name. The count is pinned below: a fourth is a decision, not a drift. */
-const STAYS_NPM: { file: string; step: string; why: string }[] = [
+const STAYS_NPM: { file: string; job?: string; step: string; why: string }[] = [
   { file: "registry-consumer-gate.yml", step: "Set up NVDA", why: "the consumer's clean directory has no pnpm project; the pinned installer reads that directory's guidepup manifest" },
   { file: "registry-consumer-gate.yml", step: "Set up the local scorer from the installed package", why: "the bin is the one the consumer's npm install linked" },
   { file: "registry-consumer-gate.yml", step: "npx a11ign <url>, from the clean install", why: "this IS the consumer's command, quoted verbatim in the row's Acceptance" },
-  { file: "release.yml", step: "Upgrade npm to the trusted-publishing floor, and refuse below it", why: "trusted publishing needs npm 11.5.1+ and setup-node's Node 22 ships 10.x; only `npm install -g` upgrades npm itself (#3180)" },
+  { file: "release.yml", job: "guards", step: "Upgrade npm to the trusted-publishing floor, and refuse below it", why: "trusted publishing needs npm 11.5.1+ and setup-node's Node 22 ships 10.x; only `npm install -g` upgrades npm itself (#3180)" },
+  { file: "release.yml", job: "promote", step: "Upgrade npm to the trusted-publishing floor, and refuse below it", why: "the same floor and reason for the OIDC `dist-tag add`; the job has no checkout, so it cannot use the other job's npm (#3969)" },
 ];
 
 const CONSUMER_GATE = "registry-consumer-gate.yml";
-/** The consumer gate's three and release.yml's npm upgrade. */
-const EXCEPTION_COUNT = 4;
+/** The consumer gate's three and release.yml's two npm upgrades (`guards`, and `promote` since #3969). */
+const EXCEPTION_COUNT = 5;
 
 /** A step's shell lines with blank and comment lines dropped: a command named only in prose runs nothing. */
 const codeLines = (step: Step): string[] =>
@@ -62,7 +66,7 @@ function runSteps(file: string, text: string): RunStep[] {
 }
 
 const npmLines = (s: RunStep): string[] => s.lines.filter((l) => NPM_RUNNING.test(l));
-const isException = (s: RunStep): boolean => STAYS_NPM.some((e) => e.file === s.file && e.step === s.name);
+const isException = (s: RunStep): boolean => STAYS_NPM.some((e) => e.file === s.file && e.step === s.name && (e.job === undefined || e.job === s.job));
 
 /** One refusal per offending line, naming the file, the job, the step and the line. */
 function refusals(file: string, text: string): string[] {
@@ -113,6 +117,13 @@ test("#2891: an unnamed step is refused by its position, and one line in a multi
   assert.deepEqual(refusals("fixture.yml", text), ['fixture.yml:a: step "step 2" runs `npm run lint`']);
 });
 
+test("#2891/#3969: an exception that names a job is for THAT job only, so the same step in a third job is refused", () => {
+  const [{ file, job, step }] = STAYS_NPM.filter((e) => e.job !== undefined);
+  const inJob = (name: string): string => `jobs:\n  ${name}:\n    steps:\n      - name: ${step}\n        run: npm install -g npm@latest\n`;
+  assert.deepEqual(refusals(file, inJob(job!)), [], "positive control: the named job's step is allowed");
+  assert.equal(refusals(file, inJob("some-other-job")).length, 1, "the same step name in a job the exception does not name is not");
+});
+
 test("#2891: an exception is for ITS file and ITS step only", () => {
   const [{ file, step }] = STAYS_NPM;
   const text = `jobs:\n  j:\n    steps:\n      - name: ${step}\n        run: npx --yes thing\n`;
@@ -128,14 +139,14 @@ test("#2891: no `run:` step in any workflow spells npm, outside the named except
     "a job that installs with pnpm and runs through npm resolves the same scripts by a different tool");
 });
 
-test("#2891/#3180: the exceptions are exactly the consumer gate's three and release.yml's npm upgrade, each one live, each with a reason", () => {
-  assert.equal(STAYS_NPM.length, EXCEPTION_COUNT, "a fifth npm step is a decision for the row, not a drift");
+test("#2891/#3180: the exceptions are exactly the consumer gate's three and release.yml's two npm upgrades, each one live, each with a reason", () => {
+  assert.equal(STAYS_NPM.length, EXCEPTION_COUNT, "a sixth npm step is a decision for the row, not a drift");
   assert.deepEqual([...new Set(STAYS_NPM.map((e) => e.file))], [CONSUMER_GATE, "release.yml"]);
   const steps = realSteps();
   for (const e of STAYS_NPM) {
     assert.ok(e.why.length > 0);
-    const hits = steps.filter((s) => s.file === e.file && s.name === e.step);
-    assert.equal(hits.length, 1, `${e.file} has no single step named "${e.step}"; the exception is dead or ambiguous`);
+    const hits = steps.filter((s) => s.file === e.file && s.name === e.step && (e.job === undefined || e.job === s.job));
+    assert.equal(hits.length, 1, `${e.file}${e.job ? ` job ${e.job}` : ""} has no single step named "${e.step}"; the exception is dead or ambiguous`);
     assert.ok(npmLines(hits[0]).length > 0, `"${e.step}" no longer spells npm: delete its exception rather than keep a dead one`);
   }
 });

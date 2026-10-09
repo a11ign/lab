@@ -22,6 +22,16 @@
  * `Publish` step and the `contents: write` that came with it (they are the called workflow's now, and `release` is the only job
  * that holds `contents: write` and `id-token: write`).
  *
+ * WHAT HAS MOVED SINCE, EACH A DELIBERATE CHANGE IN CORE AND EACH RE-AIMED HERE RATHER THAN DROPPED (the properties keep their teeth, at the new place):
+ *   - #3946 / #3947 / #3969: the fleet verdict and the coverage run left the `guards` job (so `GUARDS` no longer lists them; core's
+ *     `release-publishes-to-next.test.ts` refuses either coming back, and `release-promotes-by-evidence.test.ts` pins the `decide` job that reads the
+ *     verdict now). `promote` (npm's OIDC `dist-tag add`, in the `npm-publish` environment), `promote-action-tag` (an Octo STS token for three ref writes,
+ *     #4154, #4194) and `promotion-record` (`contents: write`, for the Release notes) hold what only the call held; they are NAMED below, each must run no
+ *     repository code, and a fourth holder is a decision.
+ *   - #3999: the whole-repo coverage floor is a pull-request check, not a release guard.
+ *   - #4000: a dispatch ON `main` publishes, so the call's `if` names it. #4154: the dispatch takes `action-tag-version`, which runs one job and nothing else.
+ *   - #3947: the guard jobs carry an `if` that skips a `status` event and that one-job dispatch, and no other.
+ *
  * `release-safety.test.ts` keeps the guards about what a dispatch may do and what the called workflows need;
  * this file is the other half: what STARTS a release and what the guards must still contain.
  */
@@ -32,6 +42,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const WORKFLOW_PATH = ".github/workflows/release.yml";
@@ -62,11 +73,12 @@ const CALLED = /^a11ign\/toolchain\/\.github\/workflows\/release-per-merge\.yml@
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
 /**
- * Does this `if:` let the step run on a push to main (a publishing event)? Absent means always. A step that names the dispatch, or is
- * constant false, is a rehearsal-only step and no guard; any other condition (the coverage step's reuse of nightly's verdict) is
- * about the step's own work, and the step is still the guard.
+ * Does this `if:` let the step run on a push to main (a publishing event)? Absent means always, and an `if` that names the push does. A step that
+ * names only the dispatch, or is constant false, is a rehearsal-only step and no guard (#4000: the hold's `if` names both, and is a guard); any
+ * other condition is about the step's own work, and the step is still the guard.
  */
-const runsOnPush = (step: Step): boolean => step.if === undefined || !/workflow_dispatch|^\s*(\$\{\{\s*)?false\b/.test(step.if);
+const runsOnPush = (step: Step): boolean =>
+  step.if === undefined || /github\.event_name == 'push'/.test(step.if) || !/workflow_dispatch|^\s*(\$\{\{\s*)?false\b/.test(step.if);
 
 /** Each guard that must be a step of the `guards` job, as a predicate over one step, found by what it DOES. */
 const GUARDS: Record<string, (step: Step) => boolean> = {
@@ -78,12 +90,12 @@ const GUARDS: Record<string, (step: Step) => boolean> = {
   "gate-scope-statement": (step) => /node scripts\/release-gate-scope\.mjs/.test(step.run ?? ""),
   "consumer-gate-current": (step) => /node scripts\/generate-consumer-gate\.mjs --check/.test(step.run ?? ""),
   "hold-3126": (step) => step.env?.A11Y_CHECK_RELEASE_HOLD === "1",
-  "qualification-verdict": (step) => /node scripts\/release-reads-qualification\.mjs/.test(step.run ?? ""),
-  "coverage": (step) => /^pnpm run coverage\b/m.test(step.run ?? ""),
   "never-older-than-the-registry": (step) =>
     /steps\.readings\.outputs\.readings/.test(JSON.stringify(step.env ?? {})) && /process\.exit\(1\)/.test(step.run ?? "") && /behind/.test(step.run ?? ""),
 };
-const GUARD_STEPS = 11;
+// `qualification-verdict` (#3946, #3969: the `decide` job reads it, after the publish) and `coverage` (#3999: the pull request enforces it) are not in this list
+// because they are no longer guards of the publish; core's `release-publishes-to-next.test.ts` refuses each coming back into `guards`.
+const GUARD_STEPS = 9;
 
 /** The guards that are called workflows, run as jobs against this sha (guards 5, 6 and 7 of the file header). */
 const CALLED_GUARDS: Record<string, string> = {
@@ -92,6 +104,23 @@ const CALLED_GUARDS: Record<string, string> = {
   "consumer-gate": "consumer-gate.yml",
 };
 const CALLED_GUARD_JOBS = 3;
+
+/** The call's `if` (#4000), spelled whole so that a dispatch from any ref, or a `status` event, reaching it is a diff to this line. */
+const CALL_IF = "github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')";
+/** What a guard job carries (#3947, #4154): off on a `status` event and on the one-job dispatch, the two runs that publish nothing. */
+const GUARD_IF = "github.event_name != 'status' && inputs.action-tag-version == ''";
+const ACTION_TAG_INPUT = "inputs.action-tag-version";
+
+/**
+ * The jobs other than the call that hold what the call holds, each with why, and each pinned to run NO repository code (a checkout is how a job meets it).
+ * Core's `release-promotes-by-evidence.test.ts` pins the rest of what these jobs may run. A job added to either list is a decision for a row.
+ */
+const ID_TOKEN_HOLDERS: Record<string, string> = {
+  "promote": "npm's OIDC `dist-tag add`, in the `npm-publish` environment (#3969)",
+  "promote-action-tag": "mints the Octo STS token for the major tag's ref writes, bound to this workflow as on main (#4194)",
+};
+const CONTENTS_WRITE_HOLDERS: Record<string, string> = { "promotion-record": "appends `Promoted to latest:` to a Release's notes, with `gh` and `jq` only (#3947)" };
+const ENVIRONMENT_HOLDERS: Record<string, string> = { "promote": "npm-publish" };
 
 /**
  * The one job that may hold `pull-requests: write`, and why: `consumer-gate.yml` is generated from README's Quickstart fence, which
@@ -158,15 +187,22 @@ function callRefusals(workflow: Workflow): string[] {
   }
   const ref = CALLED.exec(publishing.uses ?? "")?.[1] ?? "";
   if (!FULL_SHA.test(ref)) found.push(`pinned-by-full-sha: the call is pinned to '${ref}', not a 40-hex commit`);
+  return [...found, ...callInputRefusals(publishing)];
+}
+
+function callInputRefusals(publishing: Job): string[] {
+  const found: string[] = [];
   if (publishing.with?.kind !== "npm") found.push(`kind-npm: \`with.kind\` is ${JSON.stringify(publishing.with?.kind)}, and this repository publishes to npm`);
   if (publishing.with?.["gate-check"] !== "gate") found.push(`gate-check: \`with.gate-check\` is ${JSON.stringify(publishing.with?.["gate-check"])}, and the required check is \`gate\``);
+  // #3946: every merge publishes to `next`; `latest` moves only through the promotion, on the fleet's evidence.
+  if (publishing.with?.["dist-tag"] !== "next") found.push(`dist-tag-next: \`with.dist-tag\` is ${JSON.stringify(publishing.with?.["dist-tag"])}, and a merge publishes to \`next\` only`);
   return found;
 }
 
 function publishingJobRefusals(workflow: Workflow): string[] {
   const publishing = workflow.jobs[PUBLISHING_JOB];
   const found: string[] = [];
-  if (!/['"]push['"]/.test(publishing.if ?? "")) found.push(`publish-on-push-only: the call's if is ${JSON.stringify(publishing.if)}, so a dispatch could reach it`);
+  if (publishing.if !== CALL_IF) found.push(`publish-on-push-or-main-dispatch-only: the call's if is ${JSON.stringify(publishing.if)}, not the push-or-dispatch-on-main expression`);
   if (publishing.permissions?.["id-token"] !== "write") found.push("oidc: the calling job lacks `id-token: write`, and a called workflow can never gain a permission");
   if (publishing.permissions?.contents !== "write") found.push("tags: the calling job lacks `contents: write`, which the called workflow's tags need");
   if (publishing.secrets !== undefined || /secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN/.test(JSON.stringify(publishing))) {
@@ -175,15 +211,36 @@ function publishingJobRefusals(workflow: Workflow): string[] {
   return [...found, ...otherJobsRefusals(workflow)];
 }
 
-/** Only the call may hold `id-token` or `contents: write`, or name an environment: the called workflow's `publish` job owns the OIDC claim. */
+/** A job that holds a token-minting or writing permission runs no repository code: no `actions/checkout`, which is how a job meets it. */
+const checksOut = (job: Job): boolean => (job.steps ?? []).some((step) => /^actions\/checkout@/.test(step.uses ?? ""));
+
+/** Only the call, and the jobs NAMED above, may hold `id-token` or `contents: write`, or name an environment, and those run no repository code. */
 function otherJobsRefusals(workflow: Workflow): string[] {
   const found: string[] = [];
   for (const [name, job] of Object.entries(workflow.jobs)) {
     if (name === PUBLISHING_JOB) continue;
-    if (job.permissions?.["id-token"] !== undefined) found.push(`id-token-only-on-the-call: ${name} requests \`id-token\``);
-    if (job.permissions?.contents === "write") found.push(`contents-write-only-on-the-call: ${name} requests \`contents: write\``);
-    // The environment names the OIDC claim; a second one here would claim a deployment for nothing.
-    if (job.environment !== undefined) found.push(`no-environment-here: ${name} declares an environment, which is the called workflow's`);
+    const holds = [
+      { property: "id-token-holders", held: job.permissions?.["id-token"] !== undefined, allowed: name in ID_TOKEN_HOLDERS, what: "requests `id-token`" },
+      { property: "contents-write-holders", held: job.permissions?.contents === "write", allowed: name in CONTENTS_WRITE_HOLDERS, what: "requests `contents: write`" },
+    ];
+    for (const { property, held, allowed, what } of holds) {
+      if (held && !allowed) found.push(`${property}: ${name} ${what}, and only the call and the jobs named in the test may`);
+      if (held && allowed && checksOut(job)) found.push(`holder-runs-no-repository-code: ${name} ${what} and checks the repository out`);
+    }
+    // The environment names the OIDC claim; one that is not the promotion's `npm-publish` would claim a deployment for nothing.
+    if (job.environment !== undefined && ENVIRONMENT_HOLDERS[name] !== job.environment) found.push(`environment-holders: ${name} declares environment ${JSON.stringify(job.environment)}, which only the call (in the called workflow) and the promotion's move may`);
+  }
+  return found;
+}
+
+/** #4154: with `action-tag-version` set, a dispatch ON main runs `promote-action-tag` alone, so every job that could run beside it names the input in its `if`. */
+function actionTagDispatchRefusals(workflow: Workflow): string[] {
+  const found = [...Object.keys(CALLED_GUARDS), GUARDS_JOB, "decide"]
+    .filter((name) => !(workflow.jobs[name]?.if ?? "").includes(`${ACTION_TAG_INPUT} == ''`))
+    .map((name) => `action-tag-dispatch-runs-one-job: ${name} does not skip when ${ACTION_TAG_INPUT} is set`);
+  const move = workflow.jobs["promote-action-tag"]?.if ?? "";
+  if (!/github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main' && inputs\.action-tag-version != ''/.test(move)) {
+    found.push("action-tag-dispatch-on-main: promote-action-tag does not name `main` for a dispatch that sets the input");
   }
   return found;
 }
@@ -208,10 +265,9 @@ function guardStepRefusals(guards: Job): string[] {
     if (present.length === 0) return [`guard-${name}: no step in the \`${GUARDS_JOB}\` job is the ${name} guard`];
     return present.some(runsOnPush) ? [] : [`guard-${name}: it exists but its if: keeps it off the publishing event`];
   });
-  const verdict = steps.find(GUARDS["qualification-verdict"]);
-  // ONLY a rehearsal may continue past a stop: a publishing push that reads `wait` must stop the release.
-  if (verdict !== undefined && verdict["continue-on-error"] !== "${{ github.event_name == 'workflow_dispatch' }}") {
-    found.push(`qualification-stops-a-publish: the verdict step's continue-on-error is ${JSON.stringify(verdict["continue-on-error"])}, not the dispatch-only expression`);
+  // NO step of the guards job continues past a stop. The verdict step had the one exception (a dispatch rehearsal), and it left this job (#3946).
+  for (const step of steps.filter((candidate) => candidate["continue-on-error"] !== undefined)) {
+    found.push(`guard-never-continues-on-error: ${step.name ?? step.uses ?? "(unnamed)"} has continue-on-error ${JSON.stringify(step["continue-on-error"])}`);
   }
   return found;
 }
@@ -223,12 +279,13 @@ function calledGuardRefusals(workflow: Workflow): string[] {
     const called = workflow.jobs[job];
     const refusals: string[] = [];
     if (called?.uses !== `./.github/workflows/${file}`) refusals.push(`guard-${job}: no job \`${job}\` calls ${file}`);
-    else if (called.if !== undefined) refusals.push(`guard-${job}: it has an if: (${called.if}), so it can skip on a publish`);
+    else if (called.if !== GUARD_IF) refusals.push(`guard-${job}: its if: is ${JSON.stringify(called.if)}, not the one that skips only a status and the one-job dispatch`);
     if (!needsOf(publishing).includes(job)) refusals.push(`guard-${job}: the calling job does not need ${job}, so a red ${job} cannot stop it`);
     return refusals;
   });
   if (workflow.jobs[GUARDS_JOB] === undefined) found.push(`guards-job: no job named ${GUARDS_JOB}`);
   else if (!needsOf(publishing).includes(GUARDS_JOB)) found.push(`guards-needed: the calling job does not need ${GUARDS_JOB}, so none of its steps stops a publish`);
+  else if (workflow.jobs[GUARDS_JOB].if !== GUARD_IF) found.push(`guards-if: the guards job's if: is ${JSON.stringify(workflow.jobs[GUARDS_JOB].if)}, not the one that skips only a status and the one-job dispatch`);
   return found;
 }
 
@@ -239,7 +296,7 @@ function refusals(workflow: Workflow): string[] {
   const outside = [...triggerRefusals(workflow), ...concurrencyRefusals(workflow), ...noVersionPullRequestRefusals(workflow)];
   if (workflow.jobs[PUBLISHING_JOB] === undefined) return [...outside, `publishing-job: no job named ${PUBLISHING_JOB}`];
   const guards = workflow.jobs[GUARDS_JOB] ?? {};
-  return [...outside, ...callRefusals(workflow), ...publishingJobRefusals(workflow), ...calledGuardRefusals(workflow), ...guardStepRefusals(guards), ...npmUpgradeRefusals(guards)];
+  return [...outside, ...callRefusals(workflow), ...publishingJobRefusals(workflow), ...calledGuardRefusals(workflow), ...guardStepRefusals(guards), ...npmUpgradeRefusals(guards), ...actionTagDispatchRefusals(workflow)];
 }
 
 const names = (found: string[]): string[] => found.map((refusal) => refusal.split(":")[0]);
@@ -255,8 +312,9 @@ test("the live release.yml has every property: it starts itself on a changeset, 
 
 test("the call passes exactly the inputs the called workflow declares and this repository needs", () => {
   const publishing = liveWorkflow().jobs[PUBLISHING_JOB];
-  assert.deepEqual(Object.keys(publishing.with ?? {}).sort(), ["gate-check", "kind"],
-    "an input the called workflow does not declare fails at startup, and one it does is a decision this row should make");
+  assert.deepEqual(Object.keys(publishing.with ?? {}).sort(), ["dist-tag", "gate-check", "kind"],
+    "an input the called workflow does not declare fails at startup, and one it does is a decision this row should make (`dist-tag` joined with #3946)");
+  assert.equal(publishing.with?.["dist-tag"], "next", "a merge publishes to `next`; `latest` moves on evidence, in the promotion");
 });
 
 // ---- POSITIVE CONTROLS: today's workflow, refused for each property it breaks ------------------------------------------------
@@ -334,6 +392,9 @@ test("POSITIVE CONTROL: the call pinned to a moving ref, with another kind or an
   const check = clone();
   check.jobs[PUBLISHING_JOB].with = { ...check.jobs[PUBLISHING_JOB].with, "gate-check": "ts" };
   assert.deepEqual(names(refusals(check)), ["gate-check"]);
+  const latest = clone();
+  latest.jobs[PUBLISHING_JOB].with = { ...latest.jobs[PUBLISHING_JOB].with, "dist-tag": "latest" };
+  assert.deepEqual(names(refusals(latest)), ["dist-tag-next"]);
 });
 
 test("POSITIVE CONTROL: a second job that calls the reusable workflow, or none, is refused", () => {
@@ -345,10 +406,16 @@ test("POSITIVE CONTROL: a second job that calls the reusable workflow, or none, 
   assert.ok(names(refusals(none)).includes("calls-the-reusable-workflow"));
 });
 
-test("POSITIVE CONTROL: a call that a dispatch can reach, a stored token, and a missing id-token or contents grant are each refused", () => {
+test("POSITIVE CONTROL: a call that a dispatch from any ref (or a status) can reach, a stored token, and a missing id-token or contents grant are each refused", () => {
   const dispatchable = clone();
   delete dispatchable.jobs[PUBLISHING_JOB].if;
-  assert.deepEqual(names(refusals(dispatchable)), ["publish-on-push-only"]);
+  assert.deepEqual(names(refusals(dispatchable)), ["publish-on-push-or-main-dispatch-only"]);
+  const anyRef = clone();
+  anyRef.jobs[PUBLISHING_JOB].if = "github.event_name == 'push' || github.event_name == 'workflow_dispatch'";
+  assert.deepEqual(names(refusals(anyRef)), ["publish-on-push-or-main-dispatch-only"], "#4000: a dispatch from a branch must not reach the call");
+  const status = clone();
+  status.jobs[PUBLISHING_JOB].if = `${CALL_IF} || github.event_name == 'status'`;
+  assert.deepEqual(names(refusals(status)), ["publish-on-push-or-main-dispatch-only"]);
   const stored = clone();
   stored.jobs[PUBLISHING_JOB].secrets = { NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" };
   assert.deepEqual(names(refusals(stored)), ["no-stored-token"]);
@@ -360,16 +427,42 @@ test("POSITIVE CONTROL: a call that a dispatch can reach, a stored token, and a 
   assert.deepEqual(names(refusals(noTags)), ["tags"]);
 });
 
-test("POSITIVE CONTROL: id-token or contents: write on a guard job, and an environment on any job but the call, are refused, naming the job", () => {
+test("POSITIVE CONTROL: the holders are named, so each named holder is found live, and a guard job holding id-token or contents: write, or an environment, is refused", () => {
+  const live = liveWorkflow();
+  for (const name of Object.keys(ID_TOKEN_HOLDERS)) assert.ok(live.jobs[name]?.permissions?.["id-token"] !== undefined, `${name} holds id-token: the named holder is live`);
+  for (const name of Object.keys(CONTENTS_WRITE_HOLDERS)) assert.equal(live.jobs[name]?.permissions?.contents, "write", `${name} holds contents: write: the named holder is live`);
+  for (const [name, environment] of Object.entries(ENVIRONMENT_HOLDERS)) assert.equal(live.jobs[name]?.environment, environment, `${name} declares ${environment}: the named holder is live`);
   const oidc = clone();
   oidc.jobs[GUARDS_JOB].permissions = { ...oidc.jobs[GUARDS_JOB].permissions, "id-token": "write" };
-  assert.deepEqual(names(refusals(oidc)), ["id-token-only-on-the-call"]);
+  assert.deepEqual(names(refusals(oidc)), ["id-token-holders"]);
   const write = clone();
   write.jobs[GUARDS_JOB].permissions = { ...write.jobs[GUARDS_JOB].permissions, contents: "write" };
-  assert.deepEqual(names(refusals(write)), ["contents-write-only-on-the-call"]);
+  assert.deepEqual(names(refusals(write)), ["contents-write-holders"]);
   const environment = clone();
   environment.jobs[GUARDS_JOB].environment = "npm-publish";
-  assert.deepEqual(names(refusals(environment)), ["no-environment-here"]);
+  assert.deepEqual(names(refusals(environment)), ["environment-holders"]);
+  const wrongEnvironment = clone();
+  wrongEnvironment.jobs.promote.environment = "something-else";
+  assert.deepEqual(names(refusals(wrongEnvironment)), ["environment-holders"], "a named holder's environment is pinned to its name too");
+});
+
+test("POSITIVE CONTROL: a named holder that checks the repository out is refused, because the job holding a token runs no repository code (#3969)", () => {
+  for (const name of [...Object.keys(ID_TOKEN_HOLDERS), ...Object.keys(CONTENTS_WRITE_HOLDERS)]) {
+    const checking = clone();
+    checking.jobs[name].steps = [{ uses: "actions/checkout@v7" }, ...checking.jobs[name].steps!];
+    assert.deepEqual(names(refusals(checking)), ["holder-runs-no-repository-code"], name);
+  }
+});
+
+test("POSITIVE CONTROL: a dispatch that sets the input must run one job: a job that forgets to skip, or a tag move not tied to `main`, is refused (#4154)", () => {
+  for (const job of [...Object.keys(CALLED_GUARDS), GUARDS_JOB, "decide"]) {
+    const forgetting = clone();
+    forgetting.jobs[job].if = (forgetting.jobs[job].if ?? "").replace(`${ACTION_TAG_INPUT} == ''`, "true");
+    assert.ok(names(refusals(forgetting)).includes("action-tag-dispatch-runs-one-job"), `${job} must skip when the input is set`);
+  }
+  const anyRef = clone();
+  anyRef.jobs["promote-action-tag"].if = (anyRef.jobs["promote-action-tag"].if ?? "").replace(" && github.ref == 'refs/heads/main'", "");
+  assert.deepEqual(names(refusals(anyRef)), ["action-tag-dispatch-on-main"]);
 });
 
 test("POSITIVE CONTROL: concurrency missing, or set to cancel, is refused", () => {
@@ -396,8 +489,14 @@ test("POSITIVE CONTROL: each called-workflow guard removed from the call's needs
     assert.ok(names(refusals(deleted)).includes(`guard-${job}`), `${job} deleted`);
     const skippable = clone();
     skippable.jobs[job].if = "github.event_name == 'workflow_dispatch'";
-    assert.deepEqual(names(refusals(skippable)), [`guard-${job}`], `${job} given an if:`);
+    assert.deepEqual(names(refusals(skippable)), [`guard-${job}`, "action-tag-dispatch-runs-one-job"], `${job} given an if: that skips a push`);
+    const bare = clone();
+    delete bare.jobs[job].if;
+    assert.deepEqual(names(refusals(bare)), [`guard-${job}`, "action-tag-dispatch-runs-one-job"], `${job} with no if: would run on a status event`);
   }
+  const guardsSkippable = clone();
+  guardsSkippable.jobs[GUARDS_JOB].if = "github.event_name == 'workflow_dispatch'";
+  assert.deepEqual(names(refusals(guardsSkippable)), ["guards-if", "action-tag-dispatch-runs-one-job"], "the guards job given an if: that skips a push");
 });
 
 test("POSITIVE CONTROL: the guards job dropped from the call's needs, or deleted, is refused, and its steps then guard nothing", () => {
@@ -432,16 +531,14 @@ test("POSITIVE CONTROL: a guard step moved to a dispatch-only `if` is refused as
   }
 });
 
-test("POSITIVE CONTROL: a verdict that may continue past a stop on a publishing push is refused", () => {
-  const soft = clone();
-  const verdict = soft.jobs[GUARDS_JOB].steps!.find(GUARDS["qualification-verdict"])!;
-  verdict["continue-on-error"] = true;
-  assert.deepEqual(names(refusals(soft)), ["qualification-stops-a-publish"]);
-});
-
-test("the guards job's own steps never continue on error (the verdict's expression is the one allowed exception)", () => {
-  const soft = (liveWorkflow().jobs[GUARDS_JOB].steps ?? []).filter((step) => step["continue-on-error"] !== undefined && !GUARDS["qualification-verdict"](step));
-  assert.deepEqual(soft.map((step) => step.name), [], "no guard may continue on error: that is how a release ships past its own gate");
+test("POSITIVE CONTROL: a guard step that may continue on error is refused, in any spelling, and the live guards job has none", () => {
+  for (const value of [true, "${{ github.event_name == 'workflow_dispatch' }}"]) {
+    const soft = clone();
+    soft.jobs[GUARDS_JOB].steps!.find(GUARDS["access-check"])!["continue-on-error"] = value;
+    assert.deepEqual(names(refusals(soft)), ["guard-never-continues-on-error"], JSON.stringify(value));
+  }
+  const softLive = (liveWorkflow().jobs[GUARDS_JOB].steps ?? []).filter((step) => step["continue-on-error"] !== undefined);
+  assert.deepEqual(softLive.map((step) => step.name), [], "no guard may continue on error: that is how a release ships past its own gate");
 });
 
 // ---- the npm floor (#3180), moved with the provenance request it serves -------------------------------------------------------
@@ -519,7 +616,8 @@ test("POSITIVE CONTROL (#3180): the upgrade step run against an npm below 11.5.1
 // structural checks above prove what the YAML says; they cannot prove the shell it carries decides correctly. This takes the step's
 // `run:` out of the PARSED workflow and executes it with `bash`, in a temporary tree holding the manifests a case describes, with a
 // stub `npm` standing in for the registry. Nothing here reaches the network, and the stub is what makes "the registry did not answer"
-// something a test can cause.
+// something a test can cause. Since #4023 the step also runs `git tag --list` (a package is read at its newest tag, `release-never-publishes-older.test.ts`
+// pins that), so the temporary tree is a git repository with no tags: every package here reads at `main`'s manifest, which is the no-tag case.
 
 type Registry = Record<string, string>;
 const STUB_NPM = `#!/usr/bin/env node
@@ -538,6 +636,8 @@ function runReadings(packages: Record<string, { name: string; version: string; p
       mkdirSync(join(dir, "packages", pkg), { recursive: true });
       writeFileSync(join(dir, "packages", pkg, "package.json"), JSON.stringify(manifest));
     }
+    const init = spawnSync("git", ["init", "--quiet"], { cwd: dir, encoding: "utf8", env: sandboxGitEnv({ GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" }) });
+    assert.equal(init.status, 0, init.stderr);
     mkdirSync(join(dir, "bin"));
     writeFileSync(join(dir, "bin/npm"), STUB_NPM);
     chmodSync(join(dir, "bin/npm"), EXECUTABLE);
