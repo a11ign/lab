@@ -80,7 +80,7 @@ git clone https://github.com/a11ign/a11ign core && git -C core checkout <CORE_RE
 rm -rf core/packages/lab && mkdir core/packages/lab && cp -R . core/packages/lab && rm -rf core/packages/lab/.git
 pnpm -C core install --no-frozen-lockfile && pnpm -C core run build
 pnpm -C core exec eslint --no-ignore packages/lab && pnpm -C core exec tsc -p packages/lab/tsconfig.json --noEmit
-pnpm -C core exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
+pnpm -C core exec rstest run --config scripts/rstest/rstest.config.ts --include "packages/lab/**/*.test.ts"
 ```
 
 The core pins an older `@a11ign/toolchain` than this manifest names, so CI also installs the named one and links it into the laid package's `node_modules`. The one thing that runs

@@ -35,7 +35,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { laidControlFiles } from "./laid-control.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");

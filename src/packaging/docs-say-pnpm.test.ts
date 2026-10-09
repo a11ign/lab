@@ -32,7 +32,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { laidControlFiles } from "./laid-control.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));

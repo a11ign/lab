@@ -1,12 +1,12 @@
 /**
  * THE FILES OF THE CONTROL LAYER, which `git ls-files` cannot list (a11ign/a11ign#3506, #3972).
  *
- * `packages/control` is a LAID layer of a11ign/control: `scripts/lay-layer.mjs` writes `src`, `ansible`, `CLAUDE.md` and `README.md` at the tag `layers.json` pins, `.gitignore`
+ * `packages/control` is a LAID layer of a11ign/control: `scripts/lay-layer.ts` writes `src`, `ansible`, `CLAUDE.md` and `README.md` at the tag `layers.json` pins, `.gitignore`
  * keeps the directory out of the core's index, and so a test that asks git for "every committed Ansible file" finds none of them. The guards over those files
  * (`ansible-yaml-parses`, `powershell-parses`, `checkout-dash-safety`, ...) still apply, because the files are what a worker is played; their population is the laid tree.
  *
  * Staging it in CI the way `packages/lab` is staged was tried and does not work: a tracked directory under `packages/` with no manifest crashes the core's own
- * `packageIndex` (`packages/guards/src/walk-scope-discovery.mjs`, which reads `packages/<dir>/package.json` for every directory `knownPackages` finds), and that is seven
+ * `packageIndex` (`packages/guards/src/walk-scope-discovery.ts`, which reads `packages/<dir>/package.json` for every directory `knownPackages` finds), and that is seven
  * of `declared-walk-scope`'s tests. So the population is read from DISK, with the one distinction `ansible-yaml-parses` records as the reason it ever used git: what an operator keeps
  * beside the layer (`layers.json`'s `keeps`: `ansible/inventory.yml`, `ansible/*.local.yml`) is untracked state of one machine, absent from CI and present on a host, and is not
  * the subject of any guard here.

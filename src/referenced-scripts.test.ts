@@ -33,7 +33,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
-import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../guards/src/git-env.ts";
 import { declareTreeWideGuard, walkTree } from "../../guards/src/tree-wide-guard.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
@@ -105,7 +105,7 @@ const isTracked = (path: string): boolean => trackedFiles().has(path);
 /**
  * The directories of the layers that live in their OWN repository and are laid beside this tree (`layers.json` at the ROOT since a11ign/a11ign#3506, which moved it out of
  * `packages/control`, and `lay-layer` leaves a copy there; entries with a `remote`, under `layers` since #3504 added the fleet's and under `pinned` for the two laid at a tag, `lab` and `control`). A program under
- * one is not tracked here BY DESIGN: `package.json`'s `doctor`, `worker:*` and `fleet:*` run it where it is laid (a host's checkout, or `scripts/lay-layer.mjs` in a
+ * one is not tracked here BY DESIGN: `package.json`'s `doctor`, `worker:*` and `fleet:*` run it where it is laid (a host's checkout, or `scripts/lay-layer.ts` in a
  * worktree or CI), and `fleet:*` and `lab:*` run the control's `packages/control/src/*.mjs` that way.
  */
 // The laid copy of the root `layers.json`, not the root file: `lay-layer.mjs` writes it over whatever the tag holds ("so the two cannot differ"), and the core's `forceRerunTriggers` names

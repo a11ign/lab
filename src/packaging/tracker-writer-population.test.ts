@@ -26,12 +26,12 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { toolExportPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolExportPath } from "../../../../scripts/agent-org-newest-tag.ts";
 
 import { TRACKER_WRITERS, TRACKER_WRITER_DIRS, sendsABody, bodyFromArgv, assertNoLeakInArgv }
   from "../../../guards/src/leak-patterns.ts";
-import { localImports, stripComments } from "../../../guards/src/local-import-closure.mjs";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { localImports, stripComments } from "../../../guards/src/local-import-closure.ts";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 // #2975 PR 3: the tool left this tree, and with it ten of the eleven declared writers. The census now covers what the project authors

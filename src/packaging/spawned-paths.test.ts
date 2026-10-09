@@ -132,8 +132,8 @@ test("every package ships a smoke test, or is private", () => {
       const manifest = join(packagesDir, entry.name, "package.json");
       try { statSync(manifest); } catch { return false; }
       if (JSON.parse(readFileSync(manifest, "utf8")).private) return false;
-      try { statSync(join(packagesDir, entry.name, "isolation-smoke.mjs")); return false; } catch { return true; }
+      try { statSync(join(packagesDir, entry.name, "isolation-smoke.ts")); return false; } catch { return true; }
     })
     .map((entry) => entry.name);
-  assert.deepEqual(missing, [], `publishable package(s) with no isolation-smoke.mjs: ${missing.join(", ")}`);
+  assert.deepEqual(missing, [], `publishable package(s) with no isolation-smoke.ts: ${missing.join(", ")}`);
 });

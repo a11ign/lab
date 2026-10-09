@@ -4,7 +4,7 @@
  * `scripts/coverage.ts`, never retyped here or there.
  *
  * POSITIVE CONTROL FOR THIS WHOLE FILE: every assertion below fails against the manifest this row started
- * from, where `"coverage": "c8 node packages/guards/src/assert-glob-not-empty.mjs …"` was the script and
+ * from, where `"coverage": "c8 node packages/guards/src/assert-glob-not-empty.ts …"` was the script and
  * nothing under `scripts/` ran rstest's coverage provider at all.
  *
  * MUTATION: put c8 back (literally, or by reverting `scripts/coverage.ts` to spawn it) and `usesC8` below
@@ -33,7 +33,7 @@ test("#1320 ACCEPTANCE: the coverage npm script does not invoke c8", () => {
 });
 
 test("MUTATION: usesC8 really detects a c8 invocation -- the positive control for the assertion above", () => {
-  assert.equal(usesC8("c8 node packages/guards/src/assert-glob-not-empty.mjs \"x\" --min=300 --run"), true);
+  assert.equal(usesC8("c8 node packages/guards/src/assert-glob-not-empty.ts \"x\" --min=300 --run"), true);
   // A word that merely CONTAINS "c8" (a path segment, a variable) must not false-positive.
   assert.equal(usesC8("node scripts/coverage.ts"), false);
 });

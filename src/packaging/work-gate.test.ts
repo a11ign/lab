@@ -28,7 +28,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolRoot } from "../../../../scripts/agent-org-newest-tag.ts";
 import { toolModule, toolPath, toolUrl } from "../../scripts/tool-source.ts";
 const { shippedUnits } = await toolModule("src/host-units.mjs");
 const { localImports } = await toolModule("src/lib/local-import-closure.mjs");
@@ -3064,7 +3064,7 @@ test("#2027: a future `Not-before:` takes the row out -- and today's date puts i
 
 test("#2027: a live `Fleet-hold-until:` takes the row out -- and a lapsed one puts it back", () => {
   // THE FOURTH CONDITION, and the only one this population has. It was declared in
-  // `packages/control/src/fleet-playbook.mjs` and therefore unreadable by `waiting-condition.mjs`, which
+  // `packages/control/src/fleet-playbook.ts` and therefore unreadable by `waiting-condition.mjs`, which
   // is #2005's defect one field over -- the same reason the fleet batch could not honour its own order.
   const live = gatedRow(1768, { body: "Fleet-hold-until: 2026-09-23T18:00:00Z" });
   assert.deepEqual(fleetBatchRows([live], CLOCK), [],
@@ -4745,10 +4745,10 @@ test("#2174: work-gate.mjs loads in a tree with NO node_modules, host-units edge
   closure.add(join(REPO, ".agent-org/project.json"));
   // #2799: and the host's, because the drain marker, the reviewer state and the ledger default now read its `stateDir` at import.
   closure.add(join(REPO, ".agent-org/host.json"));
-  // #2621: the declaration now points at a PLUGIN (`.agent-org/plugins/causes.mjs`) that `cause-declaration.mjs`
+  // #2621: the declaration now points at a PLUGIN (`.agent-org/plugins/causes.ts`) that `cause-declaration.mjs`
   // imports DYNAMICALLY, by a string `localImports`'s static walk cannot see -- so it is added here for the
   // identical reason `project.json` is a line above.
-  closure.add(join(REPO, ".agent-org/plugins/causes.mjs"));
+  closure.add(join(REPO, ".agent-org/plugins/causes.ts"));
   // #3569 (agent-org v0.30.5): `work-gate/org-health.mjs` imports `familyNumber` from `arm-pr.mjs`, which reads `.agent-org/roles/sessions.json` AT
   // IMPORT through `roleBriefPath`, and that REFUSES (`project-roles.mjs`: `roles.dir` does not exist at the root) when the declared directory is
   // absent. The refusal is the tool being right -- it will not default to another project's roster -- so the copy carries the one file it reads.

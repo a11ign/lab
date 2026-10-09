@@ -4,7 +4,7 @@
  * while pointing at a name we no longer own, and the gap is found weeks later by someone wondering why a
  * link is dead or a deploy pulled nothing.
  *
- * `scripts/repo-identity.mjs` is the one declared value now. `board-data.mjs` and `row-claim.mjs` import it
+ * `scripts/repo-identity.ts` is the one declared value now. `board-data.mjs` and `row-claim.mjs` import it
  * at runtime and are no longer literals — this file is about the ones that CANNOT import anything:
  * `package.json` `repository` fields, workflow strings, Ansible defaults, and prose. Each is asserted
  * against a constant from `repo-identity.mjs`, so a rename is one edit there plus a single failing test
@@ -41,7 +41,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REPO, REPO_URL, REPO_GIT_URL, PRODUCT_REPO, PRODUCT_REPO_URL, PRODUCT_GIT_URL }
-  from "../../../../scripts/repo-identity.mjs";
+  from "../../../../scripts/repo-identity.ts";
 import { workerSource } from "./laid-worker.ts";
 import { toolPath } from "../../scripts/tool-source.ts";
 
@@ -207,7 +207,7 @@ test("board-data.mjs and row-claim.mjs DERIVE the name rather than restating it 
     // The specifier is relative to wherever the consumer lives -- these two moved into @a11ign/agent-org,
     // so it is no longer `./`. What matters is that the name is IMPORTED, not which depth the path has.
     //
-    // #2658 (child 3g of #69): the tool no longer imports `scripts/repo-identity.mjs`, a product file. Its two consumers import the
+    // #2658 (child 3g of #69): the tool no longer imports `scripts/repo-identity.ts`, a product file. Its two consumers import the
     // tool's own `project-identity.mjs`, which answers with the SAME declaration `repo-identity.mjs` reads, so either name is the
     // name being DERIVED; a literal, or any other module, is not.
     //

@@ -28,6 +28,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
   merge_group:
+  # A red lab baseline must be red on `main` the hour it happens, not found by the next pull request (a11ign/a11ign#4588, chairman, 2026-10-09: this file ran on `pull_request` only, lab's last merge
+  # was 13:21Z and nothing noticed that `main` had gone red). `push` is the merge itself; `schedule` is the nightly run, because the tool at its newest tag and the registry move when no commit does.
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * *"
 
 permissions:
   contents: read
@@ -40,7 +46,8 @@ env:
   # a11ign/a11ign at `d8d9a02fc`, the commit that carries #3506's repoint (`layers.json` at the root, `packages/control` a LAID layer with no tests and no manifest). Was `2af2b40e7`, 23 commits earlier, which still had `packages/control/layers.json`: agent-org's copy of `isolation-gate.mjs` (header: copied at `d8d9a02fc`) names the root file, so `agent-org-wiring` [36] was red at the newest tag until this pin moved (a11ign/a11ign#3972). Why THIS sha and not a later one (measured 2026-10-07, this suite at the newest tool tag, v0.64.0): `d8d9a02fc` leaves 40 of 4,744 red before the lab's tests were taught the layout, core `main` at `9caf1ab3c` leaves 81, and the red set at `d8d9a02fc` is a strict subset of the later one's, so no later sha is better. Older still is #3904's rule: a pre-#3505 core was kept on purpose (a11ign/a11ign#3839) until this suite could run green over a post-split one. Bumping it is a pull request here that runs this job at the new sha: a newer core's tests can fail the lab's, and that is the pin doing its job. A sha and never a branch: a branch moves under a pull request that did not touch it.
   # a11ign/a11ign#4305: MOVED to `8d59c95e5` (core #4227), the first core commit that pins control at `v0.1.14` (`layers.json`, measured with `git show 8d59c95e5:layers.json`). At `d8d9a02fc` the laid control (`v0.1.12`) has no `calibration-judgments` entry in `packages/control/ansible/lab-fetch.yml`, so `lab-fetch-paths.test.ts`, which now names it, failed 2 of 9 ('names entries lab-fetch.yml no longer has'); `v0.1.14` is the first control tag containing control#22. The comment above describes the previous pin and its reasoning, which this bump supersedes.
   # a11ign/a11ign#4427: MOVED to `a7d6a4158` (past core #4503, #4509 and #4511, the fixes for #4499, #4501 and #4502 that the move to `e45068f59` (core #4491, the merge that closes #4408) exposed), past all three migrations that took the core off agent-org's `src/` paths (#4408 scripts, #4409 packages and guards, #4411 workflows). The core at `8d59c95e5` read `src/*.mjs` names the newest agent-org tag no longer ships, which is why the tool was pinned to `v0.87.9` (#4372) until now. The comment above describes older pins and their reasoning, which this bump supersedes.
-  CORE_REF: a7d6a4158524840480e7d79b0cd92377ff642436
+  # a11ign/a11ign#4569: MOVED to `989c2bcc3c6a3d350cb5d0eb7e612771dfb8589a` (core #4599, the merge that adds the `// STAYS npm` marker to `scripts/release-tags-complete.ts` (a11ign/a11ign#4594), which `no-npm-spawn.test.ts` requires of every allowlisted npm spawn). The oldest core at or after `f3b5c5f59` (the last rename commit of core #4393's first push) that the lab's CI measures green apart from agent-org-wiring [36]/[37], which wait for agent-org#505 and a new tag. It carries the path-name edits agent-org's synced copies now carry (a11ign/a11ign#4557), so `a7d6a4158`, not an ancestor, read them as drifted. The comment above describes the previous pin, which this bump supersedes.
+  CORE_REF: 989c2bcc3c6a3d350cb5d0eb7e612771dfb8589a
 
 jobs:
   # A releasable change needs a changeset or a `no-release:` line (a11ign/a11ign#4127, the class fix of #4084: screenreader-worker#25 and #26 changed shipped code with no changeset and released
@@ -48,6 +55,8 @@ jobs:
   # The called workflow is pinned by full sha (toolchain#15's merge commit) and Dependabot's `github-actions` entry moves the pin. On a merge-group entry it succeeds without evaluating.
   # If it goes red on a pull request that should not, say so on a11ign/a11ign#4127: the answer is not a narrower `releasable-paths` here.
   changeset:
+    # Not on `push` or `schedule`: the check reads a pull request's body, and those events have none.
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     # A called workflow cannot hold more than its caller gives, and this file's `contents: read` alone makes GitHub refuse the whole run at startup (`startup_failure`: no job, no log).
     permissions:
       contents: read
@@ -56,8 +65,18 @@ jobs:
     with:
       releasable-paths: src/ scripts/ baselines/ rule-ownership.json CLAUDE.md
 
+  # TWO LEGS, ONE JOB (a11ign/a11ign#4588, chairman, 2026-10-09). `own` is the tests that read nothing outside this repository's tree and `cross-repo` is the ones that do (`scripts/cross-repo-tests.ts` says
+  # which, and why): the core's workflows and baselines, and the tool at its newest tag, which move when no lab commit does. A `cross-repo` leg that goes red is reported as its own check and never blocks:
+  # `continue-on-error` makes `needs.checks.result` read `success` when only that leg failed, and `gate`, the one required check, reads that. Its tests are retired one by one under
+  # a11ign/a11ign#4425 phase 3 (published packages, no live reads), and the leg goes with the last of them. Lint and the typecheck run in `own` only: they are about this repository's files.
   checks:
+    name: checks (${{ matrix.scope }})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.scope == 'cross-repo' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [own, cross-repo]
     steps:
       - uses: actions/checkout@v7
         with: { path: lab }
@@ -112,22 +131,28 @@ jobs:
           ln -s "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain" packages/lab/node_modules/@a11ign/toolchain
         working-directory: core
       # The core's packaging tests read the TOOL (a11ign/agent-org) by path, and `/home/agent/repos/agent-org` is a host's, not a runner's: the core's own jobs clone it at the newest release tag and export where
-      # (`scripts/agent-org-newest-tag.mjs`, #3534), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
+      # (`scripts/agent-org-newest-tag.ts`, #3534; `.mjs` until core #4393 renamed it), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
       # (measured on the sync pull request, a11ign/a11ign#3791). It was PINNED to `v0.87.9` from lab#39 until `CORE_REF` moved past a11ign/a11ign#4408, #4409 and #4411 (#4372, #4427).
       - name: The tool at the newest release tag, cloned for this run, with `agent-org` on PATH (a11ign/a11ign#3534)
-        run: node scripts/agent-org-newest-tag.mjs --dest="$RUNNER_TEMP/agent-org"
+        run: node scripts/agent-org-newest-tag.ts --dest="$RUNNER_TEMP/agent-org"
         working-directory: core
       # Lint runs before the tests so a style failure reads red without waiting for the suite. `--no-ignore`, because the core's eslint config IGNORES `packages/lab/**` (it is a laid copy of
       # another repository there), and a plain `eslint packages/lab` over an ignored path lints nothing and exits 0.
       - run: pnpm exec eslint --no-ignore packages/lab
+        if: matrix.scope == 'own'
         working-directory: core
       # The core's `tsc --noEmit` is NOT run: its tsconfig excludes `packages/lab` (the laid copy is not the core's to typecheck), so it would check the core and say nothing about the lab. The lab's own
       # program is `packages/lab/tsconfig.json`, which extends the core's and includes the lab's `src`, `scripts`, `nightly` and `tests` (a11ign/a11ign#3927). It lives INSIDE `packages/lab`: a second tsconfig
       # laid at the core's root is a file naming lab's paths, which the layer-edge test reads as a new edge.
       - run: pnpm exec tsc -p packages/lab/tsconfig.json --noEmit
+        if: matrix.scope == 'own'
         working-directory: core
       # The package's tests AND this repository's own (`src/packaging/*.test.ts`: the workflows, the arming filter, the composition above, the .mjs ratchet), which are typechecked by the program above and run here too.
-      - run: pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
+      # The selection is read into an array, not expanded from a string: `read -ra` splits on spaces and does not glob, so the `**` stays a pattern for rstest to read.
+      - name: The tests of this leg
+        run: |
+          read -ra selection < <(node packages/lab/scripts/cross-repo-tests.ts --scope=${{ matrix.scope }})
+          pnpm exec rstest run --config scripts/rstest/rstest.config.ts "${selection[@]}"
         working-directory: core
 
   # THE REQUIRED CHECK. `main`'s protection and the `merge-queue-main` ruleset name `gate`, so it stays the one check that answers for the run. It waits for both jobs above and accepts `success`
@@ -140,9 +165,14 @@ jobs:
     steps:
       - name: Every job ran, and ran clean
         run: |
-          for result in "${{ needs.changeset.result }}" "${{ needs.checks.result }}"; do
-            if [ "$result" != "success" ]; then
-              echo "::error::a job reported '$result', not success"
-              exit 1
-            fi
-          done
+          # `changeset` reads a pull request's body, so it is SKIPPED on `push` and `schedule` and is success on the rest: a skip anywhere else means it did not run.
+          expected=success
+          case "${{ github.event_name }}" in push | schedule) expected=skipped ;; esac
+          if [ "${{ needs.changeset.result }}" != "$expected" ]; then
+            echo "::error::changeset reported '${{ needs.changeset.result }}', not $expected"
+            exit 1
+          fi
+          if [ "${{ needs.checks.result }}" != "success" ]; then
+            echo "::error::checks reported '${{ needs.checks.result }}', not success"
+            exit 1
+          fi

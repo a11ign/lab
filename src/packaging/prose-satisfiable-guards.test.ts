@@ -39,7 +39,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../../");
 

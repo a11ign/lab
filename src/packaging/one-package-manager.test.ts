@@ -7,7 +7,7 @@
  * An untracked `package-lock.json` sat in the primary checkout after the move to pnpm: someone ran `npm install` and nothing
  * said no. Three halves make the old way a refusal instead of a habit, and this file holds each to what it claims:
  *
- *   1. the root `preinstall` runs `scripts/refuse-other-installers.mjs`, which refuses any installer whose user agent is not
+ *   1. the root `preinstall` runs `scripts/refuse-other-installers.ts`, which refuses any installer whose user agent is not
  *      pnpm's (an unknown one included: unknown is not pnpm), naming pnpm and the `packageManager` pin. The CHECK fetches nothing
  *      (it imports built-ins and `cli-flags.mjs` by relative path, and no network-capable built-in: read below). What npm had
  *      already fetched BEFORE it ran the check is a limit of every lifecycle script, pinned below as the positive control
@@ -52,11 +52,11 @@ import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
-import { npmCliInvocation, pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
-import { refusalFor } from "../../../../scripts/refuse-other-installers.mjs";
+import { npmCliInvocation, pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
+import { refusalFor } from "../../../../scripts/refuse-other-installers.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const SCRIPT_PATH = "scripts/refuse-other-installers.mjs";
+const SCRIPT_PATH = "scripts/refuse-other-installers.ts";
 const SCRIPT = join(REPO, SCRIPT_PATH);
 const MANIFEST = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")) as { scripts?: Record<string, string>; engines?: Record<string, string> };
 const NPMRC_PATH = ".npmrc";
@@ -140,15 +140,15 @@ function outsideTheAllowance(specifier: string, relativeAllowed: readonly string
   return !relativeAllowed.includes(specifier);
 }
 
-const CLI_FLAGS = "./cli-flags.mjs";
+const CLI_FLAGS = "./cli-flags.ts";
 
-test("the script fetches nothing: its imports are built-ins and cli-flags.mjs by relative path, and nothing calls fetch", () => {
+test("the script fetches nothing: its imports are built-ins and cli-flags.ts by relative path, and nothing calls fetch", () => {
   const code = stripComments(readFileSync(SCRIPT, "utf8"));
   assert.deepEqual(importsOf(code).filter((specifier) => outsideTheAllowance(specifier, [CLI_FLAGS])), []);
   assert.doesNotMatch(code, /\bfetch\b|\bprocess\.binding\b/);
-  assert.ok(importsOf(code).includes(CLI_FLAGS), "the script no longer imports cli-flags.mjs: update this test and the header, which say it does");
+  assert.ok(importsOf(code).includes(CLI_FLAGS), "the script no longer imports cli-flags.ts: update this test and the header, which say it does");
   // The file it reaches runs before node_modules exists too, so it is held to the same allowance (built-ins only, none reaching out).
-  const reached = stripComments(readFileSync(join(REPO, "scripts/cli-flags.mjs"), "utf8"));
+  const reached = stripComments(readFileSync(join(REPO, "scripts/cli-flags.ts"), "utf8"));
   assert.deepEqual(importsOf(reached).filter((specifier) => outsideTheAllowance(specifier, [])), []);
 });
 
@@ -161,7 +161,7 @@ test("the control for the line above: the same reading REFUSES a package, a netw
     'const m = await import("zod");',
     'const r = require("node:net");',
     'import { realpathSync } from "node:fs";',
-    'import { refuseUnknownFlags } from "./cli-flags.mjs";',
+    'import { refuseUnknownFlags } from "./cli-flags.ts";',
   ].join("\n");
   assert.deepEqual(importsOf(fixture).filter((specifier) => outsideTheAllowance(specifier, [CLI_FLAGS])),
     ["left-pad", "node:https", "node:child_process", "../other.mjs", "zod", "node:net"]);
@@ -196,7 +196,8 @@ type Lock = "whole" | "preinstall-only";
  */
 function installFixture(lock: Lock = "whole"): string {
   const dir = tempDir("one-package-manager-");
-  const manifest = { name: "fixture", version: "0.0.0", private: true, scripts: { preinstall: MANIFEST.scripts?.preinstall },
+  // `type: "module"` as the real root manifest has it: the script is a `.ts` now, and node warns on stderr about a typeless package that holds one.
+  const manifest = { name: "fixture", version: "0.0.0", private: true, type: "module", scripts: { preinstall: MANIFEST.scripts?.preinstall },
     ...(lock === "whole" ? { engines: MANIFEST.engines } : {}), dependencies: { left: "file:./left" } };
   writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
   if (lock === "whole") copyFileSync(join(REPO, NPMRC_PATH), join(dir, NPMRC_PATH));
@@ -205,7 +206,7 @@ function installFixture(lock: Lock = "whole"): string {
   // The script's one relative import comes along, at the path it names, and `node_modules` is NOT: a fresh checkout has none.
   mkdirSync(join(dir, "scripts"));
   copyFileSync(SCRIPT, join(dir, SCRIPT_PATH));
-  copyFileSync(join(REPO, "scripts/cli-flags.mjs"), join(dir, "scripts/cli-flags.mjs"));
+  copyFileSync(join(REPO, "scripts/cli-flags.ts"), join(dir, "scripts/cli-flags.ts"));
   return dir;
 }
 
@@ -358,7 +359,7 @@ function manifestsAtOrAbove(dir: string): string[] {
 }
 
 test("the registry gates and the isolation gate work in a temporary directory that no manifest sits at or above", () => {
-  for (const path of ["scripts/registry-consumer-gate.mjs", "packages/guards/src/isolation-gate.mjs"]) {
+  for (const path of ["scripts/registry-consumer-gate.ts", "packages/guards/src/isolation-gate.ts"]) {
     assert.match(readFileSync(join(REPO, path), "utf8"), /mkdtempSync\(\s*join\(\s*tmpdir\(\)/, `${path} no longer makes its directory under os.tmpdir()`);
   }
   assert.ok(relative(REPO, tmpdir()).startsWith(".."), `os.tmpdir() (${tmpdir()}) is inside the repository, so the gates' directories would be under the root manifest`);

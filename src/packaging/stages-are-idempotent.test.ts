@@ -29,7 +29,7 @@
  * stable under object-key order and across repeated calls, which is what makes a re-captured case a
  * cache hit rather than fresh work.
  */
-import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
+import { declareWalkScope } from "../../../guards/src/walk-scope.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

@@ -30,7 +30,7 @@ import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 // #2076's tree scan spawns `git ls-files`, and every git spawn in this repo strips the environment through
 // this one function -- see the file's own header for the 2026-09-06 incident that made it a rule.
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { RULES_FILES } from "./rules-files.ts";
 // #2247: the pins are a TABLE that carries its own tier, and the subject a pin is matched against is the
 // loaded rules plus the NAMED destination a narrative sentence may move to (`docs/operational-lessons.md`).
@@ -315,7 +315,9 @@ test("#3441: engineer.md stays within the size it was last measured at, plus thi
   // measured size rounded up, so growth beyond this section has to move the number on purpose.
   // MOVED ON PURPOSE (#4372): 18,575 at #3534, then 19,047 at #4069 and 19,912 at #4148 (the no-polling
   // paragraph and what `host/gh` answers from disk). Measured 19,912 at CORE_REF 8d59c95e5; rounded up.
-  const ENGINEER_BRIEF_BYTE_CEILING = 20_000;
+  // MOVED ON PURPOSE (a11ign/a11ign#4569): 20,000 -> 20,500. 20,418 at CORE_REF 989c2bcc3, from 19,912: core #4573 (ADR 0044 row 3, #4422)
+  // made both role briefs say the Acceptance lives in `.acceptance/`. Measured 20,418; rounded up.
+  const ENGINEER_BRIEF_BYTE_CEILING = 20_500;
   const bytes = Buffer.byteLength(engineerBrief);
   assert.ok(bytes <= ENGINEER_BRIEF_BYTE_CEILING, `engineer.md is ${bytes} bytes; the ceiling is ${ENGINEER_BRIEF_BYTE_CEILING}`);
 });

@@ -178,14 +178,14 @@ const AS_FILED_1939 =
  * left this tree when `packages/control` became a laid layer with no `*.test.*` (a11ign/a11ign#3506), so the correction names THIS file: any
  * test that is on disk here is the same shape, and the check is about the shape.
  */
-const CORRECTED_1939 = "npx rstest run --config scripts/rstest/rstest.config.mjs --include "
+const CORRECTED_1939 = "npx rstest run --config scripts/rstest/rstest.config.ts --include "
   + "packages/lab/src/packaging/acceptance-check-at-filing.test.ts";
 
 test("THE POSITIVE CONTROL: #1939's Acceptance as filed is REFUSED, and its correction is FILED", () => {
   // THE CONTROL EXISTS BECAUSE THE CALIBRATION BELOW ASSERTS AN EMPTINESS. `assert.deepEqual(offenders,
   // [])` passes when the population is empty, so there has to be an assertion somewhere that it is not,
   // and the writer has to be able to point at it. This is it, and it is the real string off the real row.
-  assert.ok(existsSync("package.json") && existsSync("scripts/rstest/rstest.config.mjs"),
+  assert.ok(existsSync("package.json") && existsSync("scripts/rstest/rstest.config.ts"),
     "this test reads the real tree with repo-relative paths, so it must run from the repository root — "
     + "if it does not, every path reads as absent and the refusal below is vacuous");
 
@@ -218,7 +218,7 @@ test("ONE IMPLEMENTATION: filing time and the shared predicate agree on every ro
     rowWithRegion("packages/lab/rstest.config.ts", AS_FILED_1939),
     rowWithRegion("packages/x/y.ts", "npx tsx --test packages/lab/src/packaging/does-not-exist.test.ts"),
     rowWithRegion("packages/x/y.ts", "npm run lint"),
-    rowWithRegion("packages/x/y.ts", "npx rstest run --config scripts/rstest/rstest.config.mjs"),
+    rowWithRegion("packages/x/y.ts", "npx rstest run --config scripts/rstest/rstest.config.ts"),
   ];
   // THE SET MUST CONTAIN BOTH ANSWERS, or the agreement is satisfied by a list nothing refuses.
   assert.ok(bodies.some((b) => unresolvedAcceptancePaths(b).length > 0)
@@ -286,8 +286,8 @@ test("a REF and an EXTENSIONLESS path are not files: `origin/main`, `a11ign/a11i
   assert.deepEqual(acceptancePathTokens("A11Y_PYTHON=.venv/bin/python npm run test:python"), []);
   // But an `=`-assigned value that IS a repo file is still seen, which is why the assignment is split
   // rather than the whole token discarded.
-  assert.deepEqual(acceptancePathTokens("npx rstest run --config=scripts/rstest/rstest.config.mjs"),
-    ["scripts/rstest/rstest.config.mjs"]);
+  assert.deepEqual(acceptancePathTokens("npx rstest run --config=scripts/rstest/rstest.config.ts"),
+    ["scripts/rstest/rstest.config.ts"]);
 });
 
 test("CALIBRATION: the rule refuses ONE of the Acceptance sections on `main`'s own open-row fixtures", () => {
@@ -295,10 +295,10 @@ test("CALIBRATION: the rule refuses ONE of the Acceptance sections on `main`'s o
   // which names `board-summary-origin.test.ts` against the real `board-summary-check.test.ts`. The
   // fixtures below are the real strings; the emptiness this asserts is controlled by the #1939 test above.
   const clean = [
-    "npx rstest run --config scripts/rstest/rstest.config.mjs --include packages/lab/src/packaging/acceptance-check-at-filing.test.ts",
+    "npx rstest run --config scripts/rstest/rstest.config.ts --include packages/lab/src/packaging/acceptance-check-at-filing.test.ts",
     "npm run lab:job -- -e job=acceptance",
     "npx tsx --test packages/lab/src/packaging/tree-wide-guards.test.ts",
-    "node packages/guards/src/tree-wide-guards.mjs",
+    "node packages/guards/src/tree-wide-guards.ts",
   ];
   assert.ok(clean.length > 0, "the population this filters must not be empty, or the emptiness below is "
     + "satisfied by having examined nothing");

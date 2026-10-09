@@ -24,7 +24,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const ACTION = readFileSync(resolve(REPO, "action.yml"), "utf8");

@@ -16,7 +16,7 @@ import { STEPS } from "../../scripts/everything-pipeline.mjs";
 // for is there and BOTH pipelines need it — see `pipeline-transcript.test.ts` for why a second copy in
 // everything-pipeline left retrain's own five stages tailed inside the "full" record.
 import { STEPS as RETRAIN_STEPS, keepingTranscript } from "../../scripts/retrain-pipeline.mjs";
-import { PIPELINES } from "../../../control/src/lab-pipeline.mjs";
+import { PIPELINES } from "../../../control/src/lab-pipeline.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPTS = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).scripts;

@@ -15,7 +15,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const README = readFileSync(join(REPO, "README.md"), "utf8");

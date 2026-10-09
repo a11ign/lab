@@ -1,5 +1,5 @@
 /**
- * `scripts/ci-changed.mjs`'s `classify()` is the ONE place `.github/workflows/ci.yml`'s jobs decide
+ * `scripts/ci-changed.ts`'s `classify()` is the ONE place `.github/workflows/ci.yml`'s jobs decide
  * whether to run — replacing three independent copies of "what changed" (`lint.yml`'s total absence of a
  * filter, `changeset-check.yml`'s inline `git diff`, `ansible-check.yml`'s own `paths:` block). This pins
  * the classification, and separately pins `ci.yml`'s OWN trigger table plus its two Windows siblings'
@@ -17,8 +17,8 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { classify, knownPackages, packedFiles, candidatePackedPaths,
   reachesPacked, testDependencyMap, jobsFor, docsReadingTests }
-  from "../../../../scripts/ci-changed.mjs";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+  from "../../../../scripts/ci-changed.ts";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOWS = `${REPO}.github/workflows/`;
@@ -58,7 +58,7 @@ const cliEnv = () => {
   return env;
 };
 const runCliIn = (dir: string, args: string[]) =>
-  execFileSync("node", [join(REPO, "scripts/ci-changed.mjs"), `--repo=${dir}`, ...args],
+  execFileSync("node", [join(REPO, "scripts/ci-changed.ts"), `--repo=${dir}`, ...args],
     { cwd: dir, env: cliEnv(), encoding: "utf8" });
 
 /** A `getPackedFiles` fake, so `classify`'s own tests never shell out to a real `npm pack`. */
@@ -254,9 +254,9 @@ test("classify: a root config file touches EVERY known package, never just the o
 });
 
 test("classify: a scripts/*.mjs change also touches EVERY known package, for the identical reason", () => {
-  // `scripts/repo-identity.mjs` alone is imported by dozens of packaging tests directly -- a scoped-to-nothing
+  // `scripts/repo-identity.ts` alone is imported by dozens of packaging tests directly -- a scoped-to-nothing
   // run here is exactly the "empty must read as run everything" defect the pre-push hook already names.
-  const result = classify(["scripts/repo-identity.mjs"], ["lab", "judge"]);
+  const result = classify(["scripts/repo-identity.ts"], ["lab", "judge"]);
   assert.equal(result.ts, true);
   assert.deepEqual(result.packages, ["judge", "lab"]);
 });

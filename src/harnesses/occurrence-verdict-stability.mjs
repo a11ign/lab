@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 // By PATH, not by name: `@a11ign/control` is on no registry and a host holds control LAID (`src/`, no manifest), so the name resolves nowhere there (a11ign/a11ign#3984).
-import { layerRoot } from "../../../control/src/layer-checkouts.mjs";
+import { layerRoot } from "../../../control/src/layer-checkouts.ts";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
