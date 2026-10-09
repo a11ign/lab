@@ -171,15 +171,18 @@ function readLive({ body, exitCode = 0 }: { body: string; exitCode?: number }): 
     const reader = stepsOf(parse(REAL)).find((step) => step.id === "live-body")!;
     const output = join(dir, "output");
     writeFileSync(output, "");
+    const host = join(dir, "host.json");
+    writeFileSync(host, JSON.stringify({ primary: "lab", projects: [{ id: "lab", checkout: REPO_ROOT.replace(/\/$/, "") }] }));
     const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", reader.run!], {
       encoding: "utf8",
       // The step asks the tool which file the pull request ADDS under `.acceptance/` (ADR 0044) by reading the checkout it runs in, and hands on only the
       // `Closes` line when there is one. Run from this repository the answer depends on whether the pull request RUNNING THE TEST adds such a file (every
       // product pull request does), so the step runs in the scratch directory: no checkout, no added file, the whole live body is what it hands on.
+      // The tool finds its project from the host file when it is not inside one, so that file names this repository as the project.
       cwd: dir,
       // `AGENT_ORG_TOOL` is exported by the step that clones the tool (`agent-org-newest-tag.ts`), and the reader imports `acceptance-commands` from it
       // to work out which rows the body closes; `node` is found beside the one running this test, which is not always in /usr/bin.
-      env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, AGENT_ORG_TOOL: toolRoot(), GITHUB_OUTPUT: output, REPO: "o/r", PR_NUMBER: "7", FAKE_BODY: body, FAKE_EXIT: String(exitCode) },
+      env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, AGENT_ORG_TOOL: toolRoot(), AGENT_ORG_HOST: host, GITHUB_OUTPUT: output, REPO: "o/r", PR_NUMBER: "7", FAKE_BODY: body, FAKE_EXIT: String(exitCode) },
     });
     return { status: result.status, log: `${result.stdout}${result.stderr}`, output: readFileSync(output, "utf8") };
   } finally {
