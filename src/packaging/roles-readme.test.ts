@@ -313,7 +313,9 @@ test("#3441: each clause appears ONCE in the file, and a second copy elsewhere f
 test("#3441: engineer.md stays within the size it was last measured at, plus this section", () => {
   // 17,226 bytes before this row; the section is ~1.3 KB and read once per instance. The ceiling is the
   // measured size rounded up, so growth beyond this section has to move the number on purpose.
-  const ENGINEER_BRIEF_BYTE_CEILING = 18_800;
+  // MOVED ON PURPOSE (#4372): 18,575 at #3534, then 19,047 at #4069 and 19,912 at #4148 (the no-polling
+  // paragraph and what `host/gh` answers from disk). Measured 19,912 at CORE_REF 8d59c95e5; rounded up.
+  const ENGINEER_BRIEF_BYTE_CEILING = 20_000;
   const bytes = Buffer.byteLength(engineerBrief);
   assert.ok(bytes <= ENGINEER_BRIEF_BYTE_CEILING, `engineer.md is ${bytes} bytes; the ceiling is ${ENGINEER_BRIEF_BYTE_CEILING}`);
 });

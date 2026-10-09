@@ -17,7 +17,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,15 +29,8 @@ import {
   activationDeadline,
   WORST_CASE_STARTUP_MS,
 } from "@a11ign/screenreader-worker/capture-pure";
+import { workerSource } from "../packaging/laid-worker.ts";
 import { sourceFiles } from "../../../worker-fleet/src/source-walk.mjs";
-
-/**
- * A file of the worker's source, found THROUGH THE PACKAGE NAME (#2612): `./package.json` is exported, so the package
- * directory resolves the same in this checkout and in an install, and no path names where the layer lives. This test
- * lives in `lab` because the ladder's outermost rung, the host timeout, is `lab`'s, and it reads three packages.
- */
-const workerSource = (file: string) =>
-  join(dirname(createRequire(import.meta.url).resolve("@a11ign/screenreader-worker/package.json")), "src", file);
 
 /**
  * The host's per-capture timeout, READ from the file that owns it rather than copied here.
@@ -63,7 +55,7 @@ const HOST_TIMEOUT_MS = (() => {
  * changed the real one, which is the exact silent-drift failure this whole file exists to prevent.
  */
 const DESKTOP_PREPARE_MS = (() => {
-  const src = readFileSync(workerSource("server.mjs"), "utf8");
+  const src = readFileSync(workerSource("src/server.mjs"), "utf8");
   const match = src.match(/DESKTOP_PREPARE_TIMEOUT_MS\s*=\s*([\d_]+)/);
   if (!match) throw new Error("could not read DESKTOP_PREPARE_TIMEOUT_MS — has that constant been renamed?");
   return Number(match[1].replace(/_/g, ""));
@@ -180,12 +172,17 @@ const UNDICI_HEADERS_CAP_MS = 300_000;
  * somebody already thought of, which is the same shape as the worker-file list that let a file deploy
  * invisibly.
  */
+const LAB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 function captureClients(): Array<[string, string]> {
   // The WALK comes from `source-walk.mjs`; only the PREDICATE is this test's business. It was a private
   // copy here, and a second copy was about to be written for the `--worker` validation guard — two
   // discoveries of the same tree, which drift, which is the defect this test exists to catch one level up.
   // `dist` and `.test.` exclusions live in the shared walk with the reasons attached.
-  return sourceFiles()
+  // TWO ROOTS since the fleet went flat (a11ign/a11ign#4224): `sourceFiles()` walks the laid `screenreader-fleet`, which now holds `src/` alone (the shared client and
+  // `compare-workers`), while the capture scripts and harnesses (`capture-real-pages`, `repeat-capture`, ...) are this repository's own and were found there before only because the
+  // laid fleet carried the whole repository. Walking both keeps every client in the population, not the two the fleet still holds.
+  return [...sourceFiles(), ...sourceFiles({ root: LAB_ROOT })]
     // The worker SERVES this route; it is not a client of it.
     .filter(([path]) => !path.endsWith("server.mjs"))
     // A CLIENT IS ONE THAT DECLARES A BUDGET, however it sends the request. This matched `method: "POST"`

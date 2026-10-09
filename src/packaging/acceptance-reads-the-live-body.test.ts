@@ -20,9 +20,10 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import { toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const EXECUTABLE = 0o755;
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -56,7 +57,9 @@ const tokenHolders = (workflow: Workflow): Step[] => stepsOf(workflow).filter(ho
 function commandProblems(workflow: Workflow, reader: Step): string[] {
   const command = commandStep(workflow);
   const found: string[] = [];
-  if (Object.keys(command.env ?? {}).join() !== "PR_BODY") found.push(`the command step's env is ${JSON.stringify(command.env)}, not PR_BODY alone`);
+  // `ACCEPTANCE_ROW_LABELS` (a11ign/a11ign#4138) is the one addition: DATA from the reader step beside the body, which lets `acceptance-commands` refuse a PR whose row is a hold; it is no credential.
+  if (Object.keys(command.env ?? {}).join() !== "PR_BODY,ACCEPTANCE_ROW_LABELS") found.push(`the command step's env is ${JSON.stringify(command.env)}, not PR_BODY and ACCEPTANCE_ROW_LABELS alone`);
+  if (!String(command.env?.ACCEPTANCE_ROW_LABELS).includes(`steps.${reader.id}.outputs.row-labels`)) found.push(`the command step's ACCEPTANCE_ROW_LABELS is ${command.env?.ACCEPTANCE_ROW_LABELS}, not the live body's row labels`);
   if (!String(command.env?.PR_BODY).includes(`steps.${reader.id}.outputs.body`)) found.push(`the command step's PR_BODY is ${command.env?.PR_BODY}, not the live body`);
   if (holdsCredential(command)) found.push("the command step holds a credential");
   if (/inputs\.|pull_request\.body/.test(JSON.stringify(stepsOf(workflow)))) found.push("a step still takes the body from an input or the event payload");
@@ -130,6 +133,11 @@ test("clause 2: a token handed to the command step FAILS, however it is spelled"
   }
 });
 
+test("clause 2: the row labels taken from anywhere but the reader's output FAIL", () => {
+  const labels = mutate("ACCEPTANCE_ROW_LABELS: ${{ steps.live-body.outputs.row-labels }}", "ACCEPTANCE_ROW_LABELS: ${{ github.event.pull_request.title }}");
+  assert.ok(problems(labels).some((p) => /ACCEPTANCE_ROW_LABELS/.test(p)), JSON.stringify(problems(labels)));
+});
+
 test("clause 2: a job-level env, or a persisted checkout credential, FAILS", () => {
   assert.ok(problems(mutate("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    env:\n      " + GH_VAR + ": ${{ github.token }}\n")).length > 0);
   assert.ok(problems(mutate("          persist-credentials: false\n", "")).some((p) => /persists/.test(p)));
@@ -154,7 +162,8 @@ function readLive({ body, exitCode = 0 }: { body: string; exitCode?: number }): 
     const gh = join(dir, "gh");
     writeFileSync(gh, [
       "#!/bin/bash",
-      'if [ "$1 $2" != "api repos/o/r/pulls/7" ]; then echo "unexpected: $*" >&2; exit 64; fi',
+      // The step also asks for the labels of each row the body closes (#4138): one `api repos/<repo>/issues/<n>` call per row, answered with none.
+      'case "$1 $2" in "api repos/o/r/pulls/7") ;; "api repos/"*"/issues/"*) printf "[]"; exit 0 ;; *) echo "unexpected: $*" >&2; exit 64 ;; esac',
       'if [ "$FAKE_EXIT" != 0 ]; then echo "HTTP 502" >&2; exit "$FAKE_EXIT"; fi',
       'printf "%s" "$FAKE_BODY"',
     ].join("\n"));
@@ -164,7 +173,9 @@ function readLive({ body, exitCode = 0 }: { body: string; exitCode?: number }): 
     writeFileSync(output, "");
     const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", reader.run!], {
       encoding: "utf8",
-      env: { PATH: `${dir}:/usr/bin:/bin`, GITHUB_OUTPUT: output, REPO: "o/r", PR_NUMBER: "7", FAKE_BODY: body, FAKE_EXIT: String(exitCode) },
+      // `AGENT_ORG_TOOL` is exported by the step that clones the tool (`agent-org-newest-tag.mjs`), and the reader imports `acceptance-commands.mjs` from it
+      // to work out which rows the body closes; `node` is found beside the one running this test, which is not always in /usr/bin.
+      env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, AGENT_ORG_TOOL: toolRoot(), GITHUB_OUTPUT: output, REPO: "o/r", PR_NUMBER: "7", FAKE_BODY: body, FAKE_EXIT: String(exitCode) },
     });
     return { status: result.status, log: `${result.stdout}${result.stderr}`, output: readFileSync(output, "utf8") };
   } finally {
@@ -178,7 +189,11 @@ function outputBody(output: string): string {
   const [name, delimiter] = lines[0].split("<<");
   assert.equal(name, "body");
   const end = lines.indexOf(delimiter, 1);
-  assert.equal(lines.slice(end + 1).join(""), "", "nothing is written after the delimiter");
+  // Since #4138 the step ends by writing the labels of the rows the body closes; that one line is the only thing allowed after the delimiter,
+  // and a body line that ended the value early would show up here as anything else.
+  const after = lines.slice(end + 1).filter((line) => line !== "");
+  assert.equal(after.length, 1, `exactly one output is written after the delimiter: ${JSON.stringify(after)}`);
+  assert.match(after[0], /^row-labels=\{.*\}$/, "and it is the row-labels output");
   return lines.slice(1, end).join("\n");
 }
 

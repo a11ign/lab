@@ -29,10 +29,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { parse } from "yaml";
 import {
-  REPO_ROOT, abstentionSweepPath, captureRoot, datasetExportPath, datasetRoot, realCorpusRoot, runsRoot,
+  REPO_ROOT, abstentionRoot, abstentionSweepPath, captureRoot, datasetExportPath, datasetRoot, realCorpusRoot, runsRoot,
 } from "../dataset-paths.mjs";
 import { captureFilePath } from "../capture/evidence-diff.mjs";
 import { progressPath } from "../training/capture-progress.mjs";
+import { calibrationJudgmentsPath } from "../../scripts/calibrate-abstention.mjs";
 import { TRANSCRIPT } from "../../scripts/everything-pipeline.mjs";
 import { RETRAIN_TRANSCRIPT } from "../../scripts/retrain-pipeline.mjs";
 // #968: importing a PRODUCER runs nothing -- both guard `main()` on `import.meta.url`, and their
@@ -103,6 +104,7 @@ const tracked = (): Resolution => ({ how: "tracked" });
 /** Each entry's producer, and how its path is read from it. The paths themselves are nowhere in this table. */
 const RESOLVED: Record<string, () => Resolution> = {
   "abstention-sweep": () => exported(abstentionSweepPath()),
+  "calibration-judgments": () => exported(calibrationJudgmentsPath(abstentionRoot())),
   "dataset-export": () => exported(datasetExportPath()),
   "capture-progress": () => exported(progressPath(datasetRoot())),
   "capture": () => exported(captureFilePath(captureRoot(datasetRoot()), PARAM, PARAM)),

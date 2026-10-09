@@ -157,6 +157,24 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "(#1067): the count that is also a claim gets an equality, the vacuity guard gets the floor. "
       + "Measured at 132 walked and 11 sending when written.",
   },
+  "packages/cli/src/auth/attach-spike.test.ts": {
+    guard: null,
+    note: "no population: `git show <commit>:<path>` reads ONE named file at the commit a document cites (`docs/auth-attach-spike.md`, "
+      + "#4331's spike), falling back to the working tree. There is no listing to come back empty; a missing file is reported by name "
+      + "(`cites <path>:<line>, which does not exist`), so the answer cannot be a silent pass.",
+  },
+  "packages/guards/src/ci-changed.test.ts": {
+    guard: null,
+    note: "no population: the match is a FIXTURE STRING (`'const files = execFileSync(\"git\", [\"ls-files\", \"docs\"]);'`) written into a "
+      + "git sandbox to test `docsReadingTests`. The file's own git calls stage a sandbox it builds, and `docsReadingTests` is asserted "
+      + "against an explicit list of files it must find, so the fixture is the positive control.",
+  },
+  "packages/guards/src/doc-script-examples.test.ts": {
+    guard: "tracked.length > FEWEST_DOCUMENTS",
+    note: "guarded -- the walk spawns `git ls-files *.md` and asks whether any documented example puts `--` after a script that forwards "
+      + "its argv to ansible-playbook. A clean result is the EXPECTED answer, so the floor on the documents read (50) is what tells "
+      + "'no example does' from 'the listing read nothing'. The core's test, classified here because the scan reads the core's tree.",
+  },
   "packages/guards/src/control-extraction.test.ts": {
     guard: null,
     note: "RETIRED WITH ITS SUBJECT, 2026-10-07 (a11ign/a11ign#3972). #3506 (`d8d9a02fc`) finished the extraction this test guarded, deleted `packages/control` from the workspace and took a11ign/control as a pinned tag, and deleted the history scan (`git log -p` over the moving package, guarded by `diffs.includes(\"diff --git\")`) with it. Kept as an entry rather than deleted, the convention of the three above.",

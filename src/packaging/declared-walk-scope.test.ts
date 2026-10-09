@@ -591,10 +591,28 @@ test("the findPackageJSON read-set check still fails a read outside the director
 // The repository as it is.
 // ---------------------------------------------------------------------------------------------------------
 
+/**
+ * Guards the parser REFUSES and that declare nothing. `walk-scope-declaration.test.ts` is the parser's own test: its OBSERVED LIMIT test says
+ * a regex literal quoting the name after `const` is refused because the scanner blanks strings and not regex literals, and its own
+ * assertions quote the name in one. (This file therefore builds its own pattern from two strings, for the same reason.) It declares no scope (a core file the lab cannot edit), so it is not a declarer; any OTHER refusal
+ * is a malformed declaration and still fails the suite.
+ */
+const REFUSED_AND_DECLARES_NOTHING = ["packages/guards/src/walk-scope-declaration.test.ts"];
+
+const sourceOf = (file: string) => readFileSync(join(REPO, file), "utf8");
+
 let declarers: string[];
 before(() => {
   const every = spawnSync("git", ["ls-files", "packages"], inRepo).stdout.split("\n").filter((f) => /^packages\/[^/]+\/src\/.*\.test\.ts$/.test(f));
-  declarers = every.filter((t: string) => parseWalkScope(readFileSync(join(REPO, t), "utf8")) !== null);
+  declarers = every.filter((t: string) => !REFUSED_AND_DECLARES_NOTHING.includes(t) && parseWalkScope(sourceOf(t)) !== null);
+});
+
+test("each exemption from the declarer scan is real: the parser still refuses it, and it declares no scope of its own", () => {
+  assert.ok(REFUSED_AND_DECLARES_NOTHING.length > 0, "positive control: the exemption names a file");
+  for (const file of REFUSED_AND_DECLARES_NOTHING) {
+    assert.throws(() => parseWalkScope(sourceOf(file)), /named but not declared/, `${file} parses now: delete it from the exemption`);
+    assert.doesNotMatch(sourceOf(file), new RegExp("^export const " + "WALK_SCOPE\\b", "m"), `${file} declares a scope: it must be scanned, not exempted`);
+  }
 });
 
 test("every declaring guard imports walk-scope FIRST and runs its own check", () => {

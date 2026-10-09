@@ -117,8 +117,17 @@ const readsAPullRequestInput = (job: Job): boolean =>
 /** `changed` decides what the diff touched and `gate` is the verdict; neither is a check of its own. */
 const FRAME = ["changed", "gate"];
 
+/**
+ * #4136: `changeset` reads the live body by number for its `no-release:` line, and is DELIBERATELY skipped on a meta event: its own
+ * comment says a corrected body is picked up by rerunning the run's failed jobs, since "a `meta` run skips this job". So it reads a
+ * pull-request input without needing the meta events, and counting it a body check would assert the opposite of what the workflow says.
+ */
+const READS_THE_BODY_BUT_SKIPS_META = ["changeset"];
+
 const bodyChecks = (doc: Workflow): string[] =>
-  Object.entries(doc.jobs).filter(([name, job]) => !FRAME.includes(name) && readsAPullRequestInput(job)).map(([name]) => name);
+  Object.entries(doc.jobs)
+    .filter(([name, job]) => !FRAME.includes(name) && !READS_THE_BODY_BUT_SKIPS_META.includes(name) && readsAPullRequestInput(job))
+    .map(([name]) => name);
 
 const heavyJobs = (doc: Workflow): string[] =>
   Object.keys(doc.jobs).filter((name) => !FRAME.includes(name) && !bodyChecks(doc).includes(name));
@@ -132,6 +141,15 @@ test("the discovery finds the jobs it is about, so no assertion below examines a
     "the jobs that read the pull request's body or number changed; read why each one needs the meta events before editing this list");
   for (const named of ["ts", "guardSweep"]) {
     assert.ok(heavyJobs(CI).includes(named), `${named} is not among the heavy jobs: ${heavyJobs(CI).join(", ")}`);
+  }
+});
+
+test("#4136: the job exempted from the body checks does read a pull-request input AND is skipped on every meta type (the exemption is real)", () => {
+  for (const name of READS_THE_BODY_BUT_SKIPS_META) {
+    assert.equal(readsAPullRequestInput(CI.jobs[name]), true, `${name} no longer reads a pull-request input: delete it from the exemption`);
+    for (const action of META_TYPES) {
+      assert.equal(runsOn(CI.jobs[name], prEvent(action)), false, `${name} runs on '${action}': it is a body check after all, delete it from the exemption`);
+    }
   }
 });
 

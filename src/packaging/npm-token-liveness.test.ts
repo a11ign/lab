@@ -87,6 +87,8 @@ test("the workflow that runs this has no schedule key -- it must fire on push, n
     "trunk.yml must never gain a `schedule:` trigger -- see its own header for why a watchdog "
     + "cannot be a cron");
   assert.match(workflow, /^\s*push:/m, "it must trigger on push, which cannot be disabled by inactivity");
-  assert.match(workflow, /run: node scripts\/npm-token-liveness\.mjs --post --issue=73/,
-    "the token watchdog step must still be in trunk.yml");
+  // #4196: the step is GONE. trunk.yml no longer reads the organisation-secrets token, so there is no token for it to probe; the script
+  // stays for the tests of what it does. The two properties above are what still matter about the workflow, and `push:` is their control.
+  assert.doesNotMatch(workflow, /npm-token-liveness\.mjs/,
+    "#4196 deleted the token watchdog step from trunk.yml: it must not come back without a ruling");
 });
