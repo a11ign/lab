@@ -140,7 +140,7 @@ function uncovered(patterns: readonly string[], reads: Map<string, string[]>): s
  * `scripts/rstest/rstest.config.mjs`, outside the lab's Region, and it is NOT filed yet: the row carries the finding. The effect is bounded to
  * the local `--changed` run (CI runs the whole suite), which does not re-run a test when one of these files changes.
  */
-const OWED_TO_THE_CORE = "a11ign/a11ign#4372 (the core's forceRerunTriggers owe a pattern; no core row filed yet)";
+const OWED_TO_THE_CORE = "a11ign/a11ign#4419 (the core's forceRerunTriggers owe a pattern; found by #4372)";
 const KNOWN_UNCOVERED_BY_THE_CORE: Record<string, string> = Object.fromEntries([
   ".github/chainguard/auto-arm.sts.yaml",
   ".github/chainguard/consumer-gate-pin-write.sts.yaml",

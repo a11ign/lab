@@ -206,7 +206,7 @@ test("the comment changes nothing a reader of the pin reads: the sha, the pin jo
 });
 
 /**
- * KNOWN GAP IN THE CORE (a11ign/a11ign#4041, flagged on lab row #4372): `generate.mjs --version` REPLACES README's own pin comment with `# v<version>`
+ * KNOWN GAP IN THE CORE (a11ign/a11ign#4041; core row a11ign/a11ign#4421, found by lab row #4372): `generate.mjs --version` REPLACES README's own pin comment with `# v<version>`
  * (#4041), but `refuseDriftFromReadme` masks only a `# v<version>` comment, so README's fence (still carrying "the commit of the release tagged ...")
  * differs from the generated line and the file it just wrote fails the drift check (`checkCommitted` still reads it as current). The test reads that as it is, so it goes red the day the core
  * closes the gap, and says to delete it.

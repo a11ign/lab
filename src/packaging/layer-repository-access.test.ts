@@ -31,7 +31,7 @@ const ADMINISTRATOR = "DanBeckDev";
 /** Exists today (public, created empty 2026-09-26) and is not in `code` until #2701 moves code into it. */
 const LAYER_NOT_YET_DECLARED = "a11ign/screenreader-worker";
 /**
- * KNOWN GAP, PINNED SO THE LAB CAN MERGE (#4372): `.agent-org/project.json` lists `a11ign/.github` as a code repository and
+ * KNOWN GAP, PINNED SO THE LAB CAN MERGE (#4372; core row a11ign/a11ign#4417): `.agent-org/project.json` lists `a11ign/.github` as a code repository and
  * `docs/repository-access.json` declares no role on it, so the accounts' permission there is declared nowhere -- the very thing this file
  * exists to prevent. The declaration is a core file outside the lab's Region; it owes a `a11ign/.github` entry, and this line is deleted
  * with it (the test below then refuses a stale exemption).
