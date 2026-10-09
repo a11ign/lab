@@ -21,7 +21,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { layerFile } from "../../../guards/src/layer-file.mjs";
+import { workerSource } from "../packaging/laid-worker.ts";
 import { stripComments } from "@a11ign/evidence/source-text";
 
 import { CASES, pair } from "./case-matrix.mjs";
@@ -36,7 +36,7 @@ import { pair as acceptancePair } from "./acceptance-matrix.mjs";
 // without the flag actually being read. See `@a11ign/evidence/source-text`.
 const read = (path: string) => stripComments(readFileSync(resolve(process.cwd(), path), "utf8"));
 /** A file of the worker package, comments stripped, found by package name (#2613) and not by `packages/nvda-worker/`. */
-const readWorker = (rel: string) => stripComments(readFileSync(layerFile("@a11ign/screenreader-worker", rel, { from: import.meta.dirname }), "utf8"));
+const readWorker = (rel: string) => stripComments(readFileSync(workerSource(rel), "utf8"));
 
 /** Every probe flag any case actually asks for. Derived, never listed — a list is the defect. */
 const PROBE_FLAGS = [...new Set(

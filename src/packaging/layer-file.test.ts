@@ -139,9 +139,14 @@ test("isPublished reads `files` as npm does: entries include, `!entries` exclude
 });
 
 test("the REAL tree: the layer resolves by name from here, to a file that is there and is the layer's own", () => {
-  const found = layerFile(REAL_LAYER, "src/capture-core.mjs", { from: dirname(fileURLToPath(import.meta.url)) });
+  // `dist`, not `src`: the worker went flat (a11ign/a11ign#4156) and publishes `dist`, `README.md` and `LICENSE`, so `layerFile` refuses its `src` (the next test) and it is the PUBLISHED half it can answer for.
+  const found = layerFile(REAL_LAYER, "dist/capture-pure.mjs", { from: dirname(fileURLToPath(import.meta.url)) });
   assert.ok(existsSync(found), `${found} is not a file`);
   // The layer's directory name, not a path into it: this test names the package, which is the point of it.
-  assert.match(realpathSync(found), /screenreader-worker[\\/]src[\\/]capture-core\.mjs$/);
-  assert.match(readFileSync(found, "utf8"), /export /, "resolved a file with no exports: not the layer's capture-core");
+  assert.match(realpathSync(found), /screenreader-worker[\\/]dist[\\/]capture-pure\.mjs$/);
+  assert.match(readFileSync(found, "utf8"), /export /, "resolved a file with no exports: not the layer's capture-pure");
+});
+
+test("the REAL tree: a source file the flat worker does not publish is refused, which is why its text is read from the laid copy", () => {
+  assert.throws(() => layerFile(REAL_LAYER, "src/capture-core.mjs", { from: dirname(fileURLToPath(import.meta.url)) }), /is not in @a11ign\/screenreader-worker's published files/);
 });

@@ -42,15 +42,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REPO, REPO_URL, REPO_GIT_URL, PRODUCT_REPO, PRODUCT_REPO_URL, PRODUCT_GIT_URL }
   from "../../../../scripts/repo-identity.mjs";
-import { layerFile } from "../../../guards/src/layer-file.mjs";
+import { workerSource } from "./laid-worker.ts";
 import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
 
-/** A site is a file of this repository, or -- `layer` set -- a file of a layer PACKAGE, found by node's own lookup
- *  (#2643): `nvda-worker` leaves for its own repository, and a path into `packages/nvda-worker/` is true in this tree only. */
+/** A site is a file of this repository, or -- `layer` set -- a file of the screenreader-worker's SOURCE, read from where the core lays it (`laid-worker.ts`):
+ *  the worker publishes no `src` (#4156), so neither a path into `packages/nvda-worker/` by hand nor the installed package finds it. */
 type Site = { file: string; expect: string; layer?: string };
-const siteFile = ({ file, layer }: Site) => (layer === undefined ? path.join(ROOT, file) : layerFile(layer, file, { from: import.meta.dirname }));
+const siteFile = ({ file, layer }: Site) => (layer === undefined ? path.join(ROOT, file) : workerSource(file));
 const siteName = ({ file, layer }: Site) => (layer === undefined ? file : `${layer}/${file}`);
 
 /**
@@ -89,7 +89,9 @@ const SITES: Site[] = [
   // this pinned was permanently broken -- the first image a visitor saw. Lint runs inside ci.
   { file: "README.md", expect: `${REPO_URL}/actions/workflows/ci.yml/badge.svg` },
   { file: "README.md", expect: `${REPO_URL}/actions/workflows/capture-regression.yml/badge.svg` },
-  { file: "README.md", expect: `uses: ${REPO}@v0.1.0` },
+  // `uses: <repo>@` and no ref: the docs pin the release by commit sha (`@890cd49…  # the commit of the release tagged a11ign@0.3.0`, a11ign/a11ign#3299) and the sha moves with every release,
+  // so the site pins what it is about -- the repository the Action reference names -- and not the ref, which this test never owned. It was `@v0.1.0` until the docs moved off the tag.
+  { file: "README.md", expect: `uses: ${REPO}@` },
   // A hyperlink a reader consciously clicks, and can recover from (try another reporting channel) if it
   // 404s -- PRODUCT_REPO stands, per the header question above.
   { file: "SECURITY.md", expect: `${PRODUCT_REPO_URL}/security/advisories/new` },
@@ -99,14 +101,14 @@ const SITES: Site[] = [
   // NOT the three provisioning one-liners (control-plane-proxmox.md, getting-started.md, nvda-worker-runbook.md) any more (#3504): the scripts they
   // fetch live in `a11ign/screenreader-fleet`, so those URLs name THAT repository, which is the correct identity and not this repository's.
   { file: "docs/backlog-ready.md", expect: `${PRODUCT_REPO_URL}/issues` },
-  { file: "docs/try-it.md", expect: `uses: ${REPO}@v0.1.0` },
+  { file: "docs/try-it.md", expect: `uses: ${REPO}@` },
   // COPY-PASTE-EXECUTE: the getting-started guide's own literal step 1. The `cd a11y-witness` line right
   // after it (the directory `git clone` actually creates) is a real, necessary consequence of this fix
   // but is NOT pinned as its own site here -- a bare `cd <checkout name>` string is exactly the literal
   // `control-plane-checkout-is-one-fact.test.ts` exists to catch, and pinning it here would make THIS
   // guard's own fixture read as an unclassified use of that guard's subject, one file over.
   { file: "docs/getting-started.md", expect: `git clone ${REPO_URL}.git` },
-  { file: "docs/github-action.md", expect: `uses: ${REPO}@v0.1.0` },
+  { file: "docs/github-action.md", expect: `uses: ${REPO}@` },
   { file: "docs/github-action.md", expect: `uses: ${REPO}@<sha>` },
   // REPO, not PRODUCT_REPO -- docs/backlog.md is one of #66's explicit exclusions (historical narrative,
   // never rewritten to match the present), so this link correctly still points at the pre-rename repo.
