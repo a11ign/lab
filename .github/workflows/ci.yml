@@ -40,7 +40,8 @@ env:
   # a11ign/a11ign at `d8d9a02fc`, the commit that carries #3506's repoint (`layers.json` at the root, `packages/control` a LAID layer with no tests and no manifest). Was `2af2b40e7`, 23 commits earlier, which still had `packages/control/layers.json`: agent-org's copy of `isolation-gate.mjs` (header: copied at `d8d9a02fc`) names the root file, so `agent-org-wiring` [36] was red at the newest tag until this pin moved (a11ign/a11ign#3972). Why THIS sha and not a later one (measured 2026-10-07, this suite at the newest tool tag, v0.64.0): `d8d9a02fc` leaves 40 of 4,744 red before the lab's tests were taught the layout, core `main` at `9caf1ab3c` leaves 81, and the red set at `d8d9a02fc` is a strict subset of the later one's, so no later sha is better. Older still is #3904's rule: a pre-#3505 core was kept on purpose (a11ign/a11ign#3839) until this suite could run green over a post-split one. Bumping it is a pull request here that runs this job at the new sha: a newer core's tests can fail the lab's, and that is the pin doing its job. A sha and never a branch: a branch moves under a pull request that did not touch it.
   # a11ign/a11ign#4305: MOVED to `8d59c95e5` (core #4227), the first core commit that pins control at `v0.1.14` (`layers.json`, measured with `git show 8d59c95e5:layers.json`). At `d8d9a02fc` the laid control (`v0.1.12`) has no `calibration-judgments` entry in `packages/control/ansible/lab-fetch.yml`, so `lab-fetch-paths.test.ts`, which now names it, failed 2 of 9 ('names entries lab-fetch.yml no longer has'); `v0.1.14` is the first control tag containing control#22. The comment above describes the previous pin and its reasoning, which this bump supersedes.
   # a11ign/a11ign#4427: MOVED to `a7d6a4158` (past core #4503, #4509 and #4511, the fixes for #4499, #4501 and #4502 that the move to `e45068f59` (core #4491, the merge that closes #4408) exposed), past all three migrations that took the core off agent-org's `src/` paths (#4408 scripts, #4409 packages and guards, #4411 workflows). The core at `8d59c95e5` read `src/*.mjs` names the newest agent-org tag no longer ships, which is why the tool was pinned to `v0.87.9` (#4372) until now. The comment above describes older pins and their reasoning, which this bump supersedes.
-  CORE_REF: a7d6a4158524840480e7d79b0cd92377ff642436
+  # a11ign/a11ign#4569: MOVED to `989c2bcc3c6a3d350cb5d0eb7e612771dfb8589a` (core #4599, the merge that adds the `// STAYS npm` marker to `scripts/release-tags-complete.ts` (a11ign/a11ign#4594), which `no-npm-spawn.test.ts` requires of every allowlisted npm spawn). The oldest core at or after `f3b5c5f59` (the last rename commit of core #4393's first push) that the lab's CI measures green apart from agent-org-wiring [36]/[37], which wait for agent-org#505 and a new tag. It carries the path-name edits agent-org's synced copies now carry (a11ign/a11ign#4557), so `a7d6a4158`, not an ancestor, read them as drifted. The comment above describes the previous pin, which this bump supersedes.
+  CORE_REF: 989c2bcc3c6a3d350cb5d0eb7e612771dfb8589a
 
 jobs:
   # A releasable change needs a changeset or a `no-release:` line (a11ign/a11ign#4127, the class fix of #4084: screenreader-worker#25 and #26 changed shipped code with no changeset and released
@@ -112,10 +113,10 @@ jobs:
           ln -s "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain" packages/lab/node_modules/@a11ign/toolchain
         working-directory: core
       # The core's packaging tests read the TOOL (a11ign/agent-org) by path, and `/home/agent/repos/agent-org` is a host's, not a runner's: the core's own jobs clone it at the newest release tag and export where
-      # (`scripts/agent-org-newest-tag.mjs`, #3534), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
+      # (`scripts/agent-org-newest-tag.ts`, #3534; `.mjs` until core #4393 renamed it), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
       # (measured on the sync pull request, a11ign/a11ign#3791). It was PINNED to `v0.87.9` from lab#39 until `CORE_REF` moved past a11ign/a11ign#4408, #4409 and #4411 (#4372, #4427).
       - name: The tool at the newest release tag, cloned for this run, with `agent-org` on PATH (a11ign/a11ign#3534)
-        run: node scripts/agent-org-newest-tag.mjs --dest="$RUNNER_TEMP/agent-org"
+        run: node scripts/agent-org-newest-tag.ts --dest="$RUNNER_TEMP/agent-org"
         working-directory: core
       # Lint runs before the tests so a style failure reads red without waiting for the suite. `--no-ignore`, because the core's eslint config IGNORES `packages/lab/**` (it is a laid copy of
       # another repository there), and a plain `eslint packages/lab` over an ignored path lints nothing and exits 0.
@@ -127,7 +128,7 @@ jobs:
       - run: pnpm exec tsc -p packages/lab/tsconfig.json --noEmit
         working-directory: core
       # The package's tests AND this repository's own (`src/packaging/*.test.ts`: the workflows, the arming filter, the composition above, the .mjs ratchet), which are typechecked by the program above and run here too.
-      - run: pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
+      - run: pnpm exec rstest run --config scripts/rstest/rstest.config.ts --include "packages/lab/**/*.test.ts"
         working-directory: core
 
   # THE REQUIRED CHECK. `main`'s protection and the `merge-queue-main` ruleset name `gate`, so it stays the one check that answers for the run. It waits for both jobs above and accepts `success`

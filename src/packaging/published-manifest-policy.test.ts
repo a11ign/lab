@@ -48,7 +48,7 @@ import { join } from "node:path";
 // The gate's own derivation, imported rather than retyped: `packages/*` minus `private`. A second walk
 // here would be the fact-stated-twice shape on the very population under test, and #1078 measured that
 // this population was believed to be five when it is six.
-import { allPackages } from "../../../guards/src/isolation-gate.mjs";
+import { allPackages } from "../../../guards/src/isolation-gate.ts";
 
 /** @returns the parsed manifest of every package this repository publishes. */
 function publishedManifests(): { dir: string; name: string; manifest: Record<string, unknown> }[] {

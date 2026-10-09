@@ -30,7 +30,7 @@ import { compareCapture, readCapture, summarise } from "../src/capture/evidence-
 import { REPO_ROOT, datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 // #1185: every `git` spawn in this tree goes through a GIT_* scrubbing helper, and a read-only one is
 // no exception -- a hook exports `GIT_DIR`, so an inherited environment reads another repository.
-import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../guards/src/git-env.ts";
 import { isEvidence } from "../src/training/capture-decisions.mjs";
 import { titleOf } from "@a11ign/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";

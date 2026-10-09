@@ -5,7 +5,7 @@
  * The `agentOrg` job of `ci.yml` copied a11ign/agent-org at `main` into this repository and ran that repository's whole suite, and `gate` needed it. So an
  * agent-org merge turned every a11ign pull request red: #3097 (16 tests, two queue entries ejected, every agent-org PR blocked about 50 minutes) and
  * agent-org#312 (a test importing a file the job never laid, #3879). Every repository is independently deployable; the tool's tests run in ITS CI,
- * before it releases. The jobs that run an `agent-org` COMMAND resolve the newest RELEASED tag through `scripts/agent-org-newest-tag.mjs` and stay.
+ * before it releases. The jobs that run an `agent-org` COMMAND resolve the newest RELEASED tag through `scripts/agent-org-newest-tag.ts` and stay.
  *
  * WHAT IS REFUSED: a job with an `actions/checkout` step naming a `repository:` other than this one (or an inline `git clone` / `gh repo clone`), and in the
  * same job a step whose `run:` invokes a test runner. WHAT IS NOT: a checkout of another repository to READ, and the newest-tag script, which clones

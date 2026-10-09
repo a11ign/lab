@@ -21,7 +21,7 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { parse as parseYaml } from "yaml";
 
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 import {
   checkEntries, deriveDependencyChangeset, parseEntry, refusalFor, renderEntry,

@@ -248,7 +248,7 @@ test("MUTATION: the hardcoded control-plane fallback this row removed does not s
   // now resolved by `requireControlPlaneHost()` inside `main()`, so a reintroduced fallback would sit on
   // THAT line instead. The detector this test proves is unchanged (`findLeaks` scans the whole collapsed
   // file for a private-LAN IPv4 literal, not this one line specifically) -- only the fixture moved with it.
-  for (const file of ["packages/control/src/fleet-playbook.mjs", "packages/control/src/lab-pipeline.mjs"]) {
+  for (const file of ["packages/control/src/fleet-playbook.ts", "packages/control/src/lab-pipeline.ts"]) {
     const clean = collapsedText(file);
     const reintroduced = clean.replace(
       "CONTROL_PLANE = requireControlPlaneHost();",

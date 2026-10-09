@@ -26,7 +26,7 @@
  * never spawns `.cmd`/`.bat`, it resolves npm's OWN CLI script (`npx-cli.js`/`npm-cli.js`, tried at both
  * the Windows-shaped and POSIX-shaped layout relative to `process.execPath`) and returns
  * `{ command: process.execPath, args: [script, ...originalArgs] }` -- so `argv[0]` is always `node`
- * itself. See `scripts/npm-cli-executable.mjs`'s own header for the full incident and the two-layout
+ * itself. See `scripts/npm-cli-executable.ts`'s own header for the full incident and the two-layout
  * resolution. **A unit guard pins the call shape; the consumer gate proves it runs** -- a source-text walk
  * structurally cannot catch a real `EINVAL`, only a real `windows-2022` dispatch can, and this file is the
  * former, not the latter.
@@ -177,7 +177,7 @@ test("MUTATION: an indirected call through a local run() wrapper is still discov
 
 test("CONTROL: a call resolved through npmCliInvocation passes", () => {
   const fixture = 'import { execFileSync } from "node:child_process";\n'
-    + 'import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";\n'
+    + 'import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";\n'
     + 'const npx = npmCliInvocation("npx", ["tsc", "--build"]);\n'
     + 'execFileSync(npx.command, npx.args, { cwd: "/tmp" });\n';
   assert.equal(npmCliCalls(stripComments(fixture)).length, 1);

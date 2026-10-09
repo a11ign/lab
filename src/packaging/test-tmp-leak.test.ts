@@ -29,9 +29,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tempDir } from "../../../guards/src/test-tmp.ts";
-import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.mjs";
+import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.ts";
 // #492: every npx call site resolves npm's own CLI script through this helper (`npm-cli-windows-spawn.test.ts`).
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 // test-tmp.mjs became test-tmp.ts in #4273/#4274; the fixtures below import it by this path.

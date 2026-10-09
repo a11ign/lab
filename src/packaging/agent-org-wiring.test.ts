@@ -33,8 +33,8 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
-import { localImports, stripComments } from "../../../guards/src/local-import-closure.mjs";
-import { toolExportPath, toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { localImports, stripComments } from "../../../guards/src/local-import-closure.ts";
+import { toolExportPath, toolRoot } from "../../../../scripts/agent-org-newest-tag.ts";
 import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 const { SPAWNS_GH, SUITE_SCRIPTS } = await toolModule("src/acceptance-commands.mjs");
 const { GUARDED_WORKFLOWS } = await toolModule("src/board-schedule-liveness.mjs");
@@ -703,7 +703,7 @@ test("[44] #2901: the chairman-messaging units are listed exactly when a11ign's 
 
 // --- a11ign's own units -------------------------------------------------------------------------------------------------------------
 
-const WATCHERS = { lab: "packages/control/src/lab-watch.mjs", fleet: "packages/control/src/fleet-watch.mjs" };
+const WATCHERS = { lab: "packages/control/src/lab-watch.ts", fleet: "packages/control/src/fleet-watch.ts" };
 const ownServices = () => projectDeclaration().units.own.filter((name) => name.endsWith(".service"));
 const ownTimers = () => projectDeclaration().units.own.filter((name) => name.endsWith(".timer"));
 const scriptsOfRoot = () => packageScripts(ROOT);
@@ -782,9 +782,9 @@ test("[50] #2230: the watcher timers are CALENDAR timers, hourly, and off the or
   assert.ok(!Object.values(minutes).includes("00"), ":00 is where every other clock fires (#965)");
 });
 
-/** Every `.mjs` directly under a package's `src/` that exports `ORG_READING_ISSUE`: "this file posts on #928" as it looks in this tree. */
+/** Every `.mjs` or non-test `.ts` directly under a package's `src/` (control's are `.ts` since core #4343) that exports `ORG_READING_ISSUE`: "this file posts on #928" as it looks in this tree. */
 function orgReadingWatchers(dirs: string[]): string[] {
-  return dirs.flatMap((dir) => readdirSync(dir).filter((name) => name.endsWith(".mjs")).map((name) => join(dir, name))
+  return dirs.flatMap((dir) => readdirSync(dir).filter((name) => /\.(?:mjs|ts)$/.test(name) && !name.endsWith(".test.ts")).map((name) => join(dir, name))
     .filter((path) => /^export const ORG_READING_ISSUE\b/m.test(readFileSync(path, "utf8")))).sort();
 }
 
@@ -806,7 +806,7 @@ test("[51] #2230: every script that posts on #928 has a caller -- a watcher noth
   const dirs = readdirSync(join(ROOT, "packages")).map((name) => join(ROOT, "packages", name, "src")).filter((dir) => existsSync(dir));
   const watchers = orgReadingWatchers(dirs);
   // THE POPULATION'S OWN CONTROL: "watchers with no caller" passes when the scan finds no watchers, so the population is pinned to the two it contains.
-  assert.deepEqual(watchers.map((path) => basename(path)), ["fleet-watch.mjs", "lab-watch.mjs"],
+  assert.deepEqual(watchers.map((path) => basename(path)), ["fleet-watch.ts", "lab-watch.ts"],
     "a new --posting watcher is welcome, and this list is where it says so");
   assert.deepEqual(watchersWithNoCaller(watchers, realCallers()), [],
     "each must be started by a unit or a workflow step -- these two need the lab's credential, so they are host units");

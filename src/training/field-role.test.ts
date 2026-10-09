@@ -148,7 +148,7 @@ test("rules:real-pages prints field APART from the conformance line, and the boa
 });
 
 test("field is recaptured on the batch, next to calibration and training", () => {
-  const pipeline = read("packages/control/src/lab-pipeline.mjs");
+  const pipeline = read("packages/control/src/lab-pipeline.ts");
   const realPages = pipeline.slice(pipeline.indexOf('"real-pages": {'), pipeline.indexOf('"rules-real-pages"'));
   for (const role of ["calibration", "training", "field"]) {
     assert.match(realPages, new RegExp(`\\{ job: "capture-real-pages", vars: \\{ role: "${role}" \\} \\}`), role);

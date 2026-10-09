@@ -15,7 +15,7 @@ import { join } from "node:path";
 import {
   findTransferUrls, checkTransferUrls, reportTransferUrls,
 } from "../../../../scripts/check-transfer-urls.ts";
-import { PRODUCT_REPO } from "../../../../scripts/repo-identity.mjs";
+import { PRODUCT_REPO } from "../../../../scripts/repo-identity.ts";
 
 /**
  * #524: every public doc URL naming `a11ign/a11ign` is a 404 today, and nothing tracked the interval

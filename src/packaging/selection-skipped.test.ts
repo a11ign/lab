@@ -15,7 +15,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { firstRunPassRate, inWindow } from "../../../../scripts/ci-health.ts";
 import {
   affectedAt, cleanLine, containsCommit, countAnswers, failingFiles, firstRunReds, lineFor, renderReport, runAnswer, siblingRunId,
