@@ -28,9 +28,11 @@ import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11ign
 import { workerIsUsable } from "@a11ign/screenreader-fleet/health";
 import { configuredWorkers, inventoryWorkerUrls } from "@a11ign/screenreader-fleet/fleet-env";
 import { leasePageServer } from "./page-server.mjs";
-import { realCorpusRoot, datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
+import { realCorpusRoot, datasetRoot, refuseIfRunsReadonly, runsRoot } from "../dataset-paths.mjs";
 import { hostAddressForWorker } from "@a11ign/screenreader-fleet";
 import { assertOneBrowserAcross as refuseSplitFleet } from "./capture-fleet-guard.mjs";
+import { absentFrom, appendRunRecord, buildRunRecord, captureRunsFile } from "./capture-run-record.mjs";
+import { probeWorker } from "../../../control/src/fleet-wake.mjs";
 import { assertFleetRunsThisCheckout } from "@a11ign/screenreader-fleet/worker-code-check";
 import { wakeNamedWorkers, survivingNamedWorkers } from "./wake-by-hand.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";
@@ -404,12 +406,16 @@ async function captureAcrossPool(/** @type {any} */ pages, /** @type {any} */ wo
  * was ever asked, which is the fold `product-manager`'s ruling on #2047 refused. Only the guard can tell
  * its own two refusals apart, so only the guard may waive one.
  *
+ * `runRecord` goes to the check BEFORE the run only (#4459): the check after it describes the same run again,
+ * and a second line would count one run twice.
+ *
  * @param {string[]} workers
  * @param {string} when
+ * @param {import("./capture-fleet-guard.mjs").RunRecordOptions} [runRecord]
  */
-async function assertOneBrowserAcross(workers, when) {
+async function assertOneBrowserAcross(workers, when, runRecord) {
   await refuseSplitFleet(workers, when,
-    { allowMixedBrowsers: ALLOW_MIXED, allowUncheckedFields: ALLOW_UNCHECKED_FIELDS });
+    { allowMixedBrowsers: ALLOW_MIXED, allowUncheckedFields: ALLOW_UNCHECKED_FIELDS, runRecord });
 }
 
 /**
@@ -482,21 +488,43 @@ function reportRecordedRefusals(declared) {
  * down worker must not refuse a run the other boxes could still do -- the same question #2756/#2759
  * answered for `capture-screenreader-dataset.mjs`. `survivingNamedWorkers` narrows to whoever answers
  * `/health` just now and refuses only if none do; see its own header in `wake-by-hand.mjs`.
- * @param {string[]} workers
- * @returns {Promise<string[]>}
+ * @param {string[]} named
+ * @returns {Promise<{ workers: string[], runRecord: import("./capture-fleet-guard.mjs").RunRecordOptions }>}
  */
-async function wakeBeforeCapture(workers) {
+async function wakeBeforeCapture(named) {
+  const runStart = { file: captureRunsFile(runsRoot()), startedAt: new Date().toISOString() };
   try {
-    return await survivingNamedWorkers(workers, await wakeNamedWorkers(workers));
+    const workers = await survivingNamedWorkers(named, await wakeNamedWorkers(named));
+    // The guard's `runRecord` option (#4459): when this run started, and the named boxes the wake step left
+    // out, which only this function saw -- the guard is handed the survivors.
+    const alreadyExcluded = await absentFrom({ named, participants: workers, probe: probeWorker });
+    return { workers, runRecord: { ...runStart, alreadyExcluded } };
   } catch (error) {
     process.stderr.write(`${/** @type {any} */ (error).message}\n`);
+    await recordRunWithNobody(named, runStart);
     process.exit(2);
+  }
+}
+
+/**
+ * A run that found NOBODY still leaves its record (#4459): it is the run a baseline of "how many boxes does a
+ * capture really get" most needs to see. The guard never ran, so `readyCount` is `null` rather than a `0` it did
+ * not read, and a record that cannot be written is said so and does not change the exit.
+ * @param {string[]} named
+ * @param {{ file: string, startedAt: string }} runStart
+ */
+async function recordRunWithNobody(named, { file, startedAt }) {
+  try {
+    const excluded = await absentFrom({ named, participants: [], probe: probeWorker });
+    appendRunRecord(buildRunRecord({ startedAt, readyCount: null, participants: [], excluded }), file);
+  } catch (error) {
+    process.stderr.write(`CAPTURE RUN RECORD NOT WRITTEN to ${file}: ${/** @type {Error} */ (error).message}\n`);
   }
 }
 
 async function main() {
   refuseIfRunsReadonly(realCorpusRoot());
-  let workers;
+  let workers, runRecord;
   try {
     // Validated HERE, at the boundary, before a single page is fetched. This used to be a truthiness check,
     // and `http://:8765` is truthy — so the run started, and every page paid a five-minute readiness timeout
@@ -506,7 +534,7 @@ async function main() {
     process.stderr.write(`${/** @type {any} */ (error).message}\n`);
     process.exit(2);
   }
-  workers = await wakeBeforeCapture(workers);
+  ({ workers, runRecord } = await wakeBeforeCapture(workers));
   const declared = ROLE ? pagesFor(/** @type {any} */ (ROLE)) : REAL_PAGES;
   const selected = capturablePages(declared);
   reportRecordedRefusals(declared);
@@ -550,7 +578,7 @@ async function main() {
   // and a sleeping driver stops it while the workers stay healthy.
   const hostNotice = nonAuthoritativeHostNotice({ cwd: process.cwd(), servesPages: false });
   if (hostNotice) process.stdout.write(hostNotice);
-  await assertOneBrowserAcross(workers, "before the run");
+  await assertOneBrowserAcross(workers, "before the run", runRecord);
   // AND that they are running the code this checkout expects. The browser check asks whether the guests
   // agree with EACH OTHER; this asks whether they agree with the commit that will be stamped on the
   // evidence. A fleet can be perfectly consistent and uniformly four commits behind.

@@ -75,6 +75,12 @@
  */
 import { requestJson } from "@a11ign/screenreader-fleet/worker-http";
 import { fleetConsistency, describeMismatches } from "@a11ign/screenreader-fleet/fleet-consistency";
+import { buildRunRecord, appendRunRecord } from "./capture-run-record.mjs";
+
+/**
+ * @typedef {{ file: string, startedAt: string, alreadyExcluded?: import("./capture-run-record.mjs").Exclusion[],
+ *   append?: (file: string, text: string) => void, makeDir?: (dir: string) => void }} RunRecordOptions
+ */
 
 /** One guest's `/health` is a cheap read, and a box that needs longer than this is not one to capture on. */
 const HEALTH_TIMEOUT_MS = 10_000;
@@ -94,7 +100,7 @@ export const EXIT_FLEET_INCONSISTENT = 3;
  * @param {string} when — "before the run" / "by the END of the run", quoted into the refusal
  * @param {{probe?: (url: string) => Promise<any>, report?: (text: string) => void,
  *   exit?: (code: number) => void, allowMixedBrowsers?: boolean,
- *   allowUncheckedFields?: boolean}} [deps]
+ *   allowUncheckedFields?: boolean, runRecord?: RunRecordOptions}} [deps]
  */
 export async function assertOneBrowserAcross(workers, when, deps = {}) {
   const probe = deps.probe ?? healthOfGuest;
@@ -105,6 +111,12 @@ export async function assertOneBrowserAcross(workers, when, deps = {}) {
   // guests is the whole point of this fix — a `.filter(Boolean)` here leaves the array `(guest|null)[]`,
   // which is how a wrongly-shaped guest reached `fleetConsistency` unchecked in the first place.
   const verdict = fleetConsistency(guests.filter((guest) => guest !== null));
+  // The record is written BEFORE either refusal can exit (#4459), so a run that stops with 3 leaves its
+  // fleet behind. Whether this run is refused is decided once, here, and the two checks below act on it.
+  const { gaps, refused } = refusalOf(verdict, deps);
+  if (deps.runRecord) {
+    recordRunStart(deps.runRecord, { workers, answered: guests.map((guest) => guest !== null), refused }, report);
+  }
   if (!verdict.consistent && deps.allowMixedBrowsers) {
     report(`\n--allow-mixed-browsers: capturing ${when} across a fleet that does NOT agree: `
       + `${describeMismatches(verdict.mismatches)}\n`);
@@ -117,12 +129,11 @@ export async function assertOneBrowserAcross(workers, when, deps = {}) {
   }
   // AGREEING IS NOT ENOUGH; THEY HAVE TO HAVE BEEN ASKED. Checked only once the mismatch verdict is
   // clean, because a genuine split is the more urgent finding and naming both at once would bury it.
-  const gaps = fieldCoverageGaps(verdict.fields);
   if (gaps.length === 0) return;
   if (deps.allowUncheckedFields) {
     // SAID LOUDLY, NAMING EACH FIELD AND ITS REPORTER COUNT (#1989). The waiver is the only record this
-    // path leaves — `capture-real-pages.mjs` writes no structured run record here — so a corpus taken
-    // under it must at least have printed what nobody was asked.
+    // path leaves in the console — the structured record (#4459) says who took part, not what was
+    // never asked — so a corpus taken under it must at least have printed what nobody was asked.
     report(`\n--allow-unchecked-fields: capturing ${when} WITHOUT having asked `
       + `${gaps.length === 1 ? "one field" : `${gaps.length} fields`} of every guest: `
       + `${describeCoverageGaps(gaps)}.\nThese guests are being treated as interchangeable on evidence `
@@ -137,6 +148,55 @@ export async function assertOneBrowserAcross(workers, when, deps = {}) {
     + "Deploy the fleet (`npm run fleet:deploy`), take the field out of `MUST_MATCH`, or run with\n"
     + "--allow-unchecked-fields.\n");
   exit(EXIT_FLEET_INCONSISTENT);
+}
+
+/**
+ * Whether the two refusals below will stop this run, decided once so the record and the checks cannot disagree.
+ * The coverage gaps are read only once the mismatch verdict is clean or waived, as the checks themselves do.
+ *
+ * @param {{ consistent: boolean, fields?: Parameters<typeof fieldCoverageGaps>[0] }} verdict
+ * @param {{ allowMixedBrowsers?: boolean, allowUncheckedFields?: boolean }} waivers
+ */
+function refusalOf(verdict, { allowMixedBrowsers, allowUncheckedFields }) {
+  const split = !verdict.consistent && !allowMixedBrowsers;
+  const gaps = split ? [] : fieldCoverageGaps(verdict.fields);
+  return { gaps, refused: split || (gaps.length > 0 && !allowUncheckedFields) };
+}
+
+/**
+ * Append this run's fleet to `runs/capture-runs.jsonl` (#4459), before the guard can exit.
+ *
+ * `readyCount` is what THIS probe saw answer, counted before any exclusion. The workers the caller left out
+ * ahead of the guard (asleep, or down after the wake step) arrive as `alreadyExcluded` because only the caller
+ * saw them; a worker that does not answer the probe itself is `down`. A refused run took part with nobody, and
+ * the boxes that answered are `inconsistent` rather than guessed at: which one is the odd one out is a human's
+ * call, and the next run's shorter list is the exclusion.
+ *
+ * A record that cannot be written is REPORTED and the run goes on: stopping a capture over its own bookkeeping
+ * would punish the run for the absence this record exists to end, but it is never silent.
+ *
+ * @param {RunRecordOptions} options
+ * @param {{ workers: string[], answered: boolean[], refused: boolean }} fleet
+ * @param {(text: string) => void} report
+ */
+function recordRunStart(options, { workers, answered, refused }, report) {
+  const ready = workers.filter((_, i) => answered[i]);
+  const down = workers.filter((_, i) => !answered[i]);
+  const record = buildRunRecord({
+    startedAt: options.startedAt,
+    readyCount: ready.length,
+    participants: refused ? [] : ready,
+    excluded: [
+      ...(options.alreadyExcluded ?? []),
+      ...down.map((worker) => ({ worker, reason: /** @type {const} */ ("down") })),
+      ...(refused ? ready.map((worker) => ({ worker, reason: /** @type {const} */ ("inconsistent") })) : []),
+    ],
+  });
+  try {
+    appendRunRecord(record, options.file, { append: options.append, makeDir: options.makeDir });
+  } catch (error) {
+    report(`\nCAPTURE RUN RECORD NOT WRITTEN to ${options.file}: ${/** @type {Error} */ (error).message}\n`);
+  }
 }
 
 /**

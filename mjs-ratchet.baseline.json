@@ -23,6 +23,7 @@
     "capture-protocol-census.mjs",
     "capture-real-pages.mjs",
     "capture-resume.mjs",
+    "capture-run-record.mjs",
     "capture-screenreader-dataset.mjs",
     "capture-status.mjs",
     "captured-text.mjs",

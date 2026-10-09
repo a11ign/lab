@@ -68,6 +68,11 @@ const MAY_APPEND = new Map([
   // retrain, and a DRY RUN bypasses the wrapper entirely rather than appending to the last real record.
   ["packages/lab/scripts/retrain-pipeline.mjs",
     "the run transcript, truncated by rmSync at the start of each run so it cannot accumulate across runs"],
+  // NOT a stage's output: a LOG OF RUNS (#4459), one line per capture run, and appending is its point. A re-run is a
+  // new run and earns its own line, so nothing here is DOUBLED; there is no truncation because truncating it would
+  // erase the history the file exists to keep. Nothing downstream reads it as a stage's result.
+  ["packages/lab/src/training/capture-run-record.mjs",
+    "the per-run capture log: one line per run by design, so a re-run adds a run rather than doubling one"],
 ]);
 
 function sourceFiles(dir: string): string[] {
