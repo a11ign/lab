@@ -57,7 +57,7 @@
  *
  * So this test discovers the OPERATION. A name may take any shape; entering a directory takes exactly
  * two forms in this tree — a `cd` in a command string, and `systemd-run --working-directory=`. Every one
- * of them is found and must either interpolate `control-plane-checkout.mjs`'s export or be classified
+ * of them is found and must either interpolate `control-plane-checkout.ts`'s export or be classified
  * with a reason. A new consumer that writes its own literal fails here by name.
  *
  * ## And the two green checks that could not see it
@@ -811,7 +811,7 @@ test("both consumers reach the checkout through the source of truth, and neither
   + "-- the two files that held two shapes of one fact, with only one of them restored", () => {
   for (const consumer of ["packages/control/src/fleet-playbook.ts", "packages/control/src/lab-pipeline.ts"]) {
     const source = read(consumer);
-    assert.match(source, /from "\.\/control-plane-checkout\.mjs"/,
+    assert.match(source, /from "\.\/control-plane-checkout\.ts"/,
       `${consumer} no longer imports the source of truth. If it stopped entering the checkout, remove `
       + "its entry here; if it grew its own literal, that is the outage again.");
     assert.ok(!/=\s*["']\/?root?\/?a11[a-z-]*["']/.test(stripComments(source)),

@@ -625,12 +625,15 @@ test("[35] (1) every non-archived repository in the organisation is a declared s
 interface CopyPair { original: string; copy: string; originalText: string | null; copyText: string; allowedLines: number | null }
 const declaredCopies = () => (readDeclaredCopies({ root: ROOT }) ?? []) as CopyPair[];
 /**
- * The two copies whose header still names an original the core has since renamed to `.ts` (`scripts/product-home.mjs` and `scripts/fixture-symbols.mjs`, the .ts rename of
- * a11ign/a11ign#4273/#4274): the tool reads `${root}/scripts/product-home.mjs`, finds nothing, and the pair is unreadable. The header is the TOOL's to correct
- * (agent-org, filed as a11ign/a11ign#4515), so this file pins the state as it is: exactly these two, and the list only shrinks -- a third unreadable original fails, and a
- * header that is corrected fails here until its entry is deleted.
+ * The one copy whose original the tool cannot read: `src/lib/cli-flags.ts` names `packages/worker-fleet/src/cli-flags.ts`, and the layer laid there (screenreader-fleet's
+ * `src/`, not the core's tree) still holds `cli-flags.mjs`, so the tool finds nothing and the pair is unreadable. It is the screenreader-fleet layer's rename to make (or the header's to
+ * follow), not the lab's, so this file pins the state as it is: exactly this one, and the list only shrinks -- a second unreadable original fails, and a layer or header that is
+ * corrected fails here until its entry is deleted.
+ *
+ * Was TWO at agent-org v0.102.3 (`src/lib/fixture-symbols.ts` and `src/lib/product-home.mjs`, whose headers named `scripts/*.mjs` the core had renamed to `.ts`, a11ign/a11ign#4273/#4274).
+ * v0.104.0's headers name `scripts/fixture-symbols.ts` and `scripts/product-home.ts`, so both read, and `cli-flags` is the one left (measured in lab#53's `checks`, 2026-10-09).
  */
-const KNOWN_UNREADABLE_ORIGINALS = ["src/lib/fixture-symbols.ts", "src/lib/product-home.mjs"];
+const KNOWN_UNREADABLE_ORIGINALS = ["src/lib/cli-flags.ts"];
 
 /**
  * WHAT READS ANOTHER REPOSITORY'S LIVE TREE IS REPORTED, NOT FAILED, ON A PULL REQUEST (chairman, a11ign/a11ign#4425, class `cross-repo-copies`; ceo's rulings on
@@ -740,7 +743,7 @@ function mutationTarget(pairs: CopyPair[], preferred: CopyPair): CopyPair & { or
 }
 
 test("[37] control: the REAL isolation-gate pair with ONE BYTE changed on more lines than its header names, in the original, trips, naming both paths -- and the same bytes in the copy trip too", () => {
-  const ISOLATION = "src/lib/isolation-gate.mjs";
+  const ISOLATION = "src/lib/isolation-gate.ts"; // was `.mjs` until agent-org v0.104.0 (the tool's copies are `.ts`)
   const pairs = declaredCopies();
   const isolation = pairs.find((pair) => pair.copy === ISOLATION);
   assert.ok(isolation, "the pair #2921 edited by hand is among the declared copies");
@@ -923,9 +926,9 @@ test("[50] #2230: the watcher timers are CALENDAR timers, hourly, and off the or
   assert.ok(!Object.values(minutes).includes("00"), ":00 is where every other clock fires (#965)");
 });
 
-/** Every `.mjs` directly under a package's `src/` that exports `ORG_READING_ISSUE`: "this file posts on #928" as it looks in this tree. */
+/** Every `.mjs` or non-test `.ts` directly under a package's `src/` (control's are `.ts` since core #4343) that exports `ORG_READING_ISSUE`: "this file posts on #928" as it looks in this tree. */
 function orgReadingWatchers(dirs: string[]): string[] {
-  return dirs.flatMap((dir) => readdirSync(dir).filter((name) => name.endsWith(".mjs")).map((name) => join(dir, name))
+  return dirs.flatMap((dir) => readdirSync(dir).filter((name) => /\.(?:mjs|ts)$/.test(name) && !name.endsWith(".test.ts")).map((name) => join(dir, name))
     .filter((path) => /^export const ORG_READING_ISSUE\b/m.test(readFileSync(path, "utf8")))).sort();
 }
 
@@ -947,7 +950,7 @@ test("[51] #2230: every script that posts on #928 has a caller -- a watcher noth
   const dirs = readdirSync(join(ROOT, "packages")).map((name) => join(ROOT, "packages", name, "src")).filter((dir) => existsSync(dir));
   const watchers = orgReadingWatchers(dirs);
   // THE POPULATION'S OWN CONTROL: "watchers with no caller" passes when the scan finds no watchers, so the population is pinned to the two it contains.
-  assert.deepEqual(watchers.map((path) => basename(path)), ["fleet-watch.mjs", "lab-watch.mjs"],
+  assert.deepEqual(watchers.map((path) => basename(path)), ["fleet-watch.ts", "lab-watch.ts"],
     "a new --posting watcher is welcome, and this list is where it says so");
   assert.deepEqual(watchersWithNoCaller(watchers, realCallers()), [],
     "each must be started by a unit or a workflow step -- these two need the lab's credential, so they are host units");
