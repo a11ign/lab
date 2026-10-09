@@ -113,10 +113,10 @@ jobs:
           ln -s "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain" packages/lab/node_modules/@a11ign/toolchain
         working-directory: core
       # The core's packaging tests read the TOOL (a11ign/agent-org) by path, and `/home/agent/repos/agent-org` is a host's, not a runner's: the core's own jobs clone it at the newest release tag and export where
-      # (`scripts/agent-org-newest-tag.mjs`, #3534), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
+      # (`scripts/agent-org-newest-tag.ts`, #3534; `.mjs` until core #4393 renamed it), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
       # (measured on the sync pull request, a11ign/a11ign#3791). It was PINNED to `v0.87.9` from lab#39 until `CORE_REF` moved past a11ign/a11ign#4408, #4409 and #4411 (#4372, #4427).
       - name: The tool at the newest release tag, cloned for this run, with `agent-org` on PATH (a11ign/a11ign#3534)
-        run: node scripts/agent-org-newest-tag.mjs --dest="$RUNNER_TEMP/agent-org"
+        run: node scripts/agent-org-newest-tag.ts --dest="$RUNNER_TEMP/agent-org"
         working-directory: core
       # Lint runs before the tests so a style failure reads red without waiting for the suite. `--no-ignore`, because the core's eslint config IGNORES `packages/lab/**` (it is a laid copy of
       # another repository there), and a plain `eslint packages/lab` over an ignored path lints nothing and exits 0.
@@ -128,7 +128,7 @@ jobs:
       - run: pnpm exec tsc -p packages/lab/tsconfig.json --noEmit
         working-directory: core
       # The package's tests AND this repository's own (`src/packaging/*.test.ts`: the workflows, the arming filter, the composition above, the .mjs ratchet), which are typechecked by the program above and run here too.
-      - run: pnpm exec rstest run --config scripts/rstest/rstest.config.mjs --include "packages/lab/**/*.test.ts"
+      - run: pnpm exec rstest run --config scripts/rstest/rstest.config.ts --include "packages/lab/**/*.test.ts"
         working-directory: core
 
   # THE REQUIRED CHECK. `main`'s protection and the `merge-queue-main` ruleset name `gate`, so it stays the one check that answers for the run. It waits for both jobs above and accepts `success`
