@@ -318,6 +318,10 @@ const GEO_REDIRECT_REFUSAL =
   "what a stranger here meets at the global address: the site redirects by location, and the capture "
   + "refuses the page it landed on as the wrong page";
 
+const MOJ_DESIGN_SYSTEM_CLAIM =
+  "MOJ Design System documentation website: fully compliant with WCAG 2.2 AA, own statement "
+  + "(https://design-patterns.service.justice.gov.uk/accessibility/), last reviewed 2 July 2026";
+
 const TUTORIAL_CLAIM =
   "W3C states its site conforms to WCAG 2 Level AA (https://www.w3.org/WAI/), and each tutorial page "
   + "demonstrates the technique it names";
@@ -681,6 +685,49 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant",
     source: "NHS digital service manual: partially compliant, own statement (https://service-manual.nhs.uk/accessibility-statement)",
     demonstrates: "documented data table with a worked example" },
+  // ---- CALIBRATION FILTER AND TABLE PAGES, 2026-10-09 (#4352) --------------------------------------
+  //
+  // The calibration set declared no page whose `demonstrates` says "filter" and three that say "table", so
+  // #4084 outcome 3 ("does the scorer say `cantTell` on data tables and filter screens") was answered at
+  // n=3 and, for filters, n=0 (docs/unfamiliar-ui-findings.md). Six pages here, each from a publisher whose
+  // OWN statement is the claim. None was moved from TRAINING, which is never used to measure anything.
+  //
+  // THE MOJ DESIGN SYSTEM'S STATEMENT (https://design-patterns.service.justice.gov.uk/accessibility/,
+  // read 2026-10-09): "This website is fully compliant with the Web Content Accessibility Guidelines
+  // version 2.2 AA standard", prepared 16 August 2022, last reviewed 2 July 2026. It scopes itself to the
+  // documentation website and says it "does not relate to the components and patterns from the MOJ
+  // Frontend codebase which appear in the examples": the worked example of each page below is an iframe
+  // onto those, so the claim covers the page's frame and not what the frame shows. Same shape, and same
+  // limit, as the GOV.UK Design System and NHS service manual table pages above.
+  //
+  // THE LIMITS: four of the six share the MoJ template, navigation and footer, so they are not six
+  // independent samples of structure, and the two GOV.UK finders share one finder template. The page
+  // shapes differ (a filter panel alone, a panel beside a results table, a sortable table, a wide table in
+  // a scrollable pane, two faceted finders) and the publisher is two, not six.
+  { url: "https://design-patterns.service.justice.gov.uk/components/filter/", role: "calibration",
+    publishedClaim: "conformant", source: MOJ_DESIGN_SYSTEM_CLAIM,
+    demonstrates: "filter panel with checkbox filter groups and selected-filter tags" },
+  { url: "https://design-patterns.service.justice.gov.uk/patterns/filter-a-list/", role: "calibration",
+    publishedClaim: "conformant", source: MOJ_DESIGN_SYSTEM_CLAIM,
+    demonstrates: "filter-a-list pattern: a filter panel beside a filtered results table" },
+  { url: "https://design-patterns.service.justice.gov.uk/components/sortable-table/", role: "calibration",
+    publishedClaim: "conformant", source: MOJ_DESIGN_SYSTEM_CLAIM,
+    demonstrates: "sortable data table, column headers as sort buttons" },
+  { url: "https://design-patterns.service.justice.gov.uk/components/scrollable-pane/", role: "calibration",
+    publishedClaim: "conformant", source: MOJ_DESIGN_SYSTEM_CLAIM,
+    demonstrates: "wide data table inside a keyboard-scrollable pane" },
+  // GOV.UK's finders: the faceted search a user filters a long list with. The statement is the one the
+  // GOV.UK entries above cite (partially compliant, WCAG 2.2 AA, re-read 2026-10-09), and its listed failures
+  // (image descriptions, table headers on some pages, duplicate titles) are site-level "some pages"
+  // disclosures that name no finder; the entries above carry no `claimExcludes` for the same statement.
+  { url: "https://www.gov.uk/search/research-and-statistics", role: "calibration",
+    publishedClaim: "conformant",
+    source: "GOV.UK: partially compliant with WCAG 2.2 AA (https://www.gov.uk/help/accessibility-statement)",
+    demonstrates: "faceted finder: filter controls beside a long results list" },
+  { url: "https://www.gov.uk/search/news-and-communications", role: "calibration",
+    publishedClaim: "conformant",
+    source: "GOV.UK: partially compliant with WCAG 2.2 AA (https://www.gov.uk/help/accessibility-statement)",
+    demonstrates: "faceted finder: topic and date-range filters beside a results list" },
   // #1515: ICO's statement (prepared 2020-09-23, last reviewed 2026-05-22, read 2026-09-14) is "partially
   // compliant with the Web Content Accessibility Guidelines version 2.2 AA standard". `claimExcludes` is its
   // "This fails WCAG" list intersected with SCORED_CRITERIA, EXCEPT 2.4.3: disclosed for its Power BI embed, and
