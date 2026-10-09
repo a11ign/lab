@@ -51,12 +51,13 @@ test("#1626: an undeclared claim is excluded, not treated as conformant by defau
   assert.ok(!urls.includes("https://synthetic.example/calibration-undeclared"));
 });
 
-test("#1626: against the real corpus, this is #1614's own population -- 46 conformant calibration pages", () => {
-  // The number is a fact about REAL_PAGES today, not typed here to be re-derived: it is the same measurement
-  // #1614 and this row's own premise both cite, so a corpus edit that moves it is exactly what should be
-  // re-noticed, not silently absorbed by a test that never looked.
+test("#1626: against the real corpus, this is the corpus's conformant calibration population -- 52 pages (#1614 measured 46; #4352 declared six more)", () => {
+  // The number is a fact about REAL_PAGES today, not typed here to be re-derived: #1614 measured 46, and #4352
+  // declared six more conformant calibration pages (four MoJ, two GOV.UK) for the table-and-filter comparison,
+  // so a corpus edit that moves it is exactly what should be re-noticed, not silently absorbed by a test that
+  // never looked.
   const pages = conformantCalibrationPages();
-  assert.equal(pages.length, 46);
+  assert.equal(pages.length, 52);
   assert.ok(pages.every((p) => p.role === "calibration" && p.publishedClaim === "conformant"));
 });
 
