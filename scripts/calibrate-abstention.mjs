@@ -352,7 +352,7 @@ function reportWithheld(scored) {
 /**
  * The per-floor table: what accepting every page at or above each floor would report.
  *
- * ONE COPY, and #1628 is why it is a function. It was inline in `main()`, and `claim-excludes-recompute.mjs`
+ * ONE COPY, and #1628 is why it is a function. It was inline in `main()`, and `claim-excludes-recompute.ts`
  * recomputes this same table from a STORED sweep output when the corpus's `claimExcludes` change -- a second
  * copy of this loop there would be a second definition of "asserted wrongly", free to drift from the one the
  * sweep prints and the public claim quotes. Both call this.

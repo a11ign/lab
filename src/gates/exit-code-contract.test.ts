@@ -161,7 +161,7 @@ const DOCUMENTED: Record<string, string> = {
     + "prints the same reassuring small number as a cheap run. 0 is a real total. It does not adopt "
     + "the verdict helpers because it is a REPORT rather than a gate: there is no pass/fail subject "
     + "to have partial coverage of, only a sum and the captures it could not bill, which it names",
-  "packages/lab/scripts/referral-repeat-share.mjs":
+  "packages/lab/scripts/referral-repeat-share.ts":
     "#4241, a MEASUREMENT rather than a gate: prints the repeat share of a page's referrals and which side of "
     + "20% the total falls, and gives no verdict on anything. 0 it printed a table, including a total of 0 "
     + "referrals (read as 'no referrals', never as a share); 2 usage, no input file named. An input file "
@@ -234,7 +234,7 @@ const DOCUMENTED: Record<string, string> = {
     + "a shrunk population; 2 REFUSED before any page was scanned — no Chromium at "
     + "PLAYWRIGHT_BROWSERS_PATH (install-axe-browser has not run), or a fatal error aborted the run before "
     + "it could examine anything, so nothing was written (#1626)",
-  "packages/lab/scripts/bench-capture.mjs":
+  "packages/lab/scripts/bench-capture.ts":
     "1 no worker/page given OR every live capture from --from-disk was lost — two causes share one code; "
     + "2 every live capture lost its socket",
   "packages/lab/scripts/build-realism-tier.mjs":
@@ -242,7 +242,7 @@ const DOCUMENTED: Record<string, string> = {
     + "capture truncated on a channel the model reads",
   "packages/lab/scripts/calibrate-abstention.mjs":
     "0 success; 2 no calibration captures found",
-  "packages/lab/scripts/claim-excludes-recompute.mjs":
+  "packages/lab/scripts/claim-excludes-recompute.ts":
     "0 the table printed; 2 a refusal with nothing on stdout — the stored rows do not reproduce through "
     + "`floorRows`, the sweep file is missing or unreadable, a scored page is absent from the corpus, the "
     + "corpus commit cannot be read, or an `--urls` list names no scored page (#1628)",

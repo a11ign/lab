@@ -3,7 +3,7 @@
  * Recompute calibrate-abstention's per-floor table from a STORED sweep output, with the corpus's CURRENT
  * `claimExcludes`. Read-only: no scorer, no lab, no write.
  *
- *   node packages/lab/scripts/claim-excludes-recompute.mjs --sweep=<abstention-sweep.json> --run=<run id>
+ *   npx tsx packages/lab/scripts/claim-excludes-recompute.ts --sweep=<abstention-sweep.json> --run=<run id>
  *        [--urls=<file: one URL per line>]
  *
  * ## Why this exists (#1628)
@@ -39,9 +39,10 @@ import { sandboxGitEnv } from "../../guards/src/git-env.ts";
 import { floorRows } from "./calibrate-abstention.mjs";
 import { normaliseUrl, realPageFor } from "../src/training/real-page-corpus.mjs";
 import { REPO_ROOT } from "../src/dataset-paths.ts";
+import type { Loose } from "../src/capture/loose.ts";
 
 refuseUnknownFlags(["--sweep=", "--run=", "--urls="], {
-  entry: import.meta.url, command: "node packages/lab/scripts/claim-excludes-recompute.mjs",
+  entry: import.meta.url, command: "npx tsx packages/lab/scripts/claim-excludes-recompute.ts",
 });
 
 // git log's pathspec for the module imported above, resolved from this file rather than typed as a
@@ -53,20 +54,20 @@ const REFUSED = 2;
 const WIDTHS = { floor: 7, scored: 7, conformant: 11, wrongly: 17, disclosed: 10, wrongCells: 12, cells: 6 };
 
 /** @param {string} name */
-const arg = (name) => {
+const arg = (name: string) => {
   const prefix = `--${name}=`;
   return process.argv.find((a) => a.startsWith(prefix))?.slice(prefix.length);
 };
 
 /** @param {readonly string[]} a @param {readonly string[]} b */
-const sameSet = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+const sameSet = (a: readonly string[], b: readonly string[]) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
 /**
  * Pure: the first field where two row lists differ, named, so a refusal says WHERE the control failed rather
  * than only that it did.
  * @param {readonly any[]} want @param {readonly any[]} got
  */
-function firstDifference(want, got) {
+function firstDifference(want: readonly Loose[], got: readonly Loose[]) {
   if (want.length !== got.length) return `${got.length} recomputed rows against ${want.length} stored`;
   for (let i = 0; i < want.length; i += 1) {
     const key = Object.keys({ ...want[i], ...got[i] }).find((k) => want[i][k] !== got[i][k]);
@@ -80,7 +81,7 @@ function firstDifference(want, got) {
  * string otherwise.
  * @param {any} sweep @param {readonly number[]} floors
  */
-function controlRefusal(sweep, floors) {
+function controlRefusal(sweep: Loose, floors: readonly number[]) {
   const control = floorRows(sweep.scored, floors);
   if (JSON.stringify(control) === JSON.stringify(sweep.rows)) return null;
   return "the control failed: the stored claimExcludes do not reproduce the stored rows through floorRows "
@@ -92,7 +93,7 @@ function controlRefusal(sweep, floors) {
  * @param {readonly any[]} scored @param {(url: string) => any} corpusFor
  * @returns {{ refusal: string } | { merged: any[], changed: any[] }}
  */
-function withCurrentExcludes(scored, corpusFor) {
+function withCurrentExcludes(scored: readonly Loose[], corpusFor: (url: string) => Loose): { refusal: string; } | { merged: Loose[]; changed: Loose[]; } {
   const merged = [];
   const changed = [];
   for (const page of scored) {
@@ -115,7 +116,7 @@ function withCurrentExcludes(scored, corpusFor) {
  * @param {readonly any[]} merged @param {readonly string[]} urls
  * @returns {{ refusal: string } | { population: any[], unscoredListed: string[] }}
  */
-function filterByUrls(merged, urls) {
+function filterByUrls(merged: readonly Loose[], urls: readonly string[]): { refusal: string; } | { population: Loose[]; unscoredListed: string[]; } {
   const wanted = new Set(urls.map(normaliseUrl));
   const population = merged.filter((p) => wanted.has(normaliseUrl(p.url)));
   if (population.length === 0) return { refusal: `none of the ${urls.length} listed URLs is a scored page in this output` };
@@ -130,11 +131,14 @@ function filterByUrls(merged, urls) {
  * @returns {{ refusal: string } | { rows: any[], floors: number[], scoredPages: number, changed: any[],
  *   population: number, listed: number | null, unscoredListed: string[] }}
  */
-export function recompute({ sweep, corpusFor, urls = null }) {
+export function recompute({ sweep, corpusFor, urls = null }: { sweep: Loose; corpusFor: (url: string) => Loose; urls?: readonly string[] | null; }): { refusal: string; } | {
+    rows: Loose[]; floors: number[]; scoredPages: number; changed: Loose[];
+    population: number; listed: number | null; unscoredListed: string[];
+} {
   if (!Array.isArray(sweep?.scored) || !Array.isArray(sweep?.rows) || sweep.rows.length === 0) {
     return { refusal: "not a sweep output: it needs a `scored` array and a non-empty `rows` array" };
   }
-  const floors = sweep.rows.map((/** @type {any} */ r) => r.floor);
+  const floors = sweep.rows.map((r: Loose) => r.floor);
   const refusal = controlRefusal(sweep, floors);
   if (refusal) return { refusal };
   const current = withCurrentExcludes(sweep.scored, corpusFor);
@@ -147,7 +151,7 @@ export function recompute({ sweep, corpusFor, urls = null }) {
 }
 
 /** @param {any} r one `floorRows` row, as one printed line */
-const tableLine = (r) => `  ${String(r.floor).padEnd(WIDTHS.floor)} ${String(r.scored).padEnd(WIDTHS.scored)} `
+const tableLine = (r: Loose) => `  ${String(r.floor).padEnd(WIDTHS.floor)} ${String(r.scored).padEnd(WIDTHS.scored)} `
   + `${String(r.conformantScored).padEnd(WIDTHS.conformant)} ${String(r.falsePositives).padEnd(WIDTHS.wrongly)} `
   + `${String(r.disclosed).padEnd(WIDTHS.disclosed)} ${String(r.wrongCells).padEnd(WIDTHS.wrongCells)} `
   + `${String(r.cells).padEnd(WIDTHS.cells)} ${r.referred}`;
@@ -157,7 +161,7 @@ const tableLine = (r) => `  ${String(r.floor).padEnd(WIDTHS.floor)} ${String(r.s
  * @param {{ run: string, sha256: string, corpusCommit: string, head: string }} provenance
  * @param {any} result a non-refusal `recompute` result
  */
-export function render(provenance, result) {
+export function render(provenance: { run: string; sha256: string; corpusCommit: string; head: string; }, result: Loose) {
   const lines = [
     "claim-excludes-recompute (#1628)",
     `run: ${provenance.run}`,
@@ -165,11 +169,11 @@ export function render(provenance, result) {
     `corpus: ${CORPUS_FILE} last changed on the first-parent line in ${provenance.corpusCommit}; checkout HEAD ${provenance.head}`,
     `control: the stored claimExcludes reproduce all ${result.floors.length} stored rows exactly`,
     `claimExcludes changed by the corpus since the run: ${result.changed.length}`,
-    ...result.changed.map((/** @type {any} */ c) => `  ${c.url}: ${JSON.stringify(c.before)} -> ${JSON.stringify(c.after)}`),
+    ...result.changed.map((c: Loose) => `  ${c.url}: ${JSON.stringify(c.before)} -> ${JSON.stringify(c.after)}`),
     result.listed === null
       ? `population: all ${result.population} scored pages`
       : `population: ${result.population} of ${result.listed} listed URLs are scored pages in this output`,
-    ...result.unscoredListed.map((/** @type {string} */ u) => `  listed, not scored in this output: ${u}`),
+    ...result.unscoredListed.map((u: string) => `  listed, not scored in this output: ${u}`),
     "",
     "  floor   scored  conformant  asserted-wrongly  disclosed  wrong-cells  cells  referred",
     ...result.rows.map(tableLine),
@@ -178,7 +182,7 @@ export function render(provenance, result) {
 }
 
 /** @param {string} message */
-function refuse(message) {
+function refuse(message: string) {
   process.stderr.write(`claim-excludes-recompute REFUSES -- ${message}\n`);
   process.exitCode = REFUSED;
 }
@@ -188,11 +192,11 @@ function refuse(message) {
  * repository's history. UTC, so the recorded commit time does not depend on who ran it.
  * @param {...string} args
  */
-const git = (...args) => execFileSync("git", ["-C", REPO_ROOT, ...args],
+const git = (...args: string[]) => execFileSync("git", ["-C", REPO_ROOT, ...args],
   { env: sandboxGitEnv({ TZ: "UTC" }), encoding: "utf8" }).trim();
 
 /** @param {string} path */
-function readSweep(path) {
+function readSweep(path: string) {
   const bytes = readFileSync(path);
   return { bytes, sweep: JSON.parse(bytes.toString("utf8")) };
 }
@@ -206,7 +210,7 @@ function main() {
   try {
     read = readSweep(sweepPath);
   } catch (error) {
-    return refuse(`the sweep file could not be read as JSON (${/** @type {Error} */ (error).message})`);
+    return refuse(`the sweep file could not be read as JSON (${(error as Error).message})`);
   }
   const urls = urlsPath
     ? readFileSync(urlsPath, "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"))
@@ -219,7 +223,7 @@ function main() {
     corpusCommit = git("log", "-1", "--first-parent", "--date=format-local:%Y-%m-%dT%H:%M:%SZ", "--format=%h %cd", "--", CORPUS_FILE);
     head = git("rev-parse", "--short=8", "HEAD");
   } catch (error) {
-    return refuse(`the corpus commit could not be read from git (${/** @type {Error} */ (error).message})`);
+    return refuse(`the corpus commit could not be read from git (${(error as Error).message})`);
   }
   if (!corpusCommit) return refuse(`git has no first-parent commit for ${CORPUS_FILE} at this checkout`);
   const sha256 = createHash("sha256").update(read.bytes).digest("hex");

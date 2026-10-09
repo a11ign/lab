@@ -104,7 +104,9 @@ const CHECKED = MJS.filter((path) =>
 // WITHOUT one, so no file lost its check. Measured at core eb33d3c98: 132 of 148 `.mjs` under packages/ and scripts/ carry it, from 165 at a7d6a4158.
 // 132 -> 111 (a11ign/a11ign#4569): core #4343 (efa0ca7ab) pinned control at v0.1.17, whose `src/` is `.ts` with no `.mjs`: 22 `.mjs` left
 // the population (148 -> 126), 21 of them marked. Same reason as above: tsc checks a `.ts` WITHOUT a marker. Measured at core 989c2bcc3: 111 of 126.
-const AT_LEAST = 111; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
+// 111 -> 108 (#4278): the same reason, for `bench-capture`, `claim-excludes-recompute` and `referral-repeat-share`. Measured as the difference at core 989c2bcc3:
+// the same tree with and without this change, 86 -> 83 marked `.mjs`.
+const AT_LEAST = 108; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
 
 test("the typechecked `.mjs` count never falls", () => {
   assert.ok(CHECKED.length >= AT_LEAST,

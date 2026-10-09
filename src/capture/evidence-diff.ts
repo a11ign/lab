@@ -7,7 +7,7 @@
  * NVDA speed-up "costs a full recapture" before you even know whether it changed what NVDA says. The
  * key is a conservative proxy: it asks whether anything that COULD change the evidence changed, never
  * whether the evidence actually did. Nothing in the tooling could answer the second question --
- * `bench-capture.mjs` reports phrase counts, which `CLAUDE.md` explicitly warns are not enough
+ * `bench-capture.ts` reports phrase counts, which `CLAUDE.md` explicitly warns are not enough
  * ("assert what was heard, not how much"), and `check-signals` needs the recapture to have happened.
  *
  * So this compares evidence field by field, on the same pages, and reports one of three verdicts.

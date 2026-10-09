@@ -178,7 +178,7 @@ function candidateFiles(): string[] {
 /**
  * Names its workers directly, in the caller's own words: `configuredWorkers()`, a declared `--worker=`
  * flag, or a bare positional `process.argv` read into a variable spelled `worker` (case-insensitive) --
- * `occurrence-verdict-stability.mjs`'s `const WORKER = process.argv[2]` and `bench-capture.mjs`'s
+ * `occurrence-verdict-stability.mjs`'s `const WORKER = process.argv[2]` and `bench-capture.ts`'s
  * `const [worker, ...] = process.argv.slice(2)` take neither a flag nor `configuredWorkers()`, and are
  * exactly `#2655`'s row 11 either way.
  */
@@ -196,7 +196,7 @@ function discoverByHandEntries(): string[] {
 }
 
 const REGION_ENTRIES = [
-  "packages/lab/scripts/bench-capture.mjs",
+  "packages/lab/scripts/bench-capture.ts",
   "packages/lab/src/harnesses/capture-fixtures.mjs",
   "packages/lab/src/harnesses/occurrence-verdict-stability.mjs",
   "packages/lab/src/harnesses/page-identity-rate.mjs",
@@ -219,7 +219,7 @@ test("the census finds exactly this row's Region, no more and no fewer", () => {
 
 /** The text right after the entry's own wake call: proof it runs BEFORE a single capture is dispatched. */
 const DISPATCH_MARKER: Record<string, string> = {
-  "packages/lab/scripts/bench-capture.mjs": "await collectSamples(page)",
+  "packages/lab/scripts/bench-capture.ts": "await collectSamples(page)",
   "packages/lab/src/harnesses/capture-fixtures.mjs": "await captureOverWorker(url, worker, steps)",
   "packages/lab/src/harnesses/occurrence-verdict-stability.mjs": "await capture(base, variant)",
   "packages/lab/src/harnesses/page-identity-rate.mjs": "await runRounds(base, ROUNDS)",

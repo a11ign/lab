@@ -33,7 +33,7 @@ import type { Loose } from "./loose.ts";
  * population rather than refusing an unreadable one**, and an empty answer looks like a finding about the
  * data. Same rule `evidence-diff` already carries for its own two shapes.
  *
- * Lives here rather than in `bench-capture.mjs` so it can be tested without one: that script resolves
+ * Lives here rather than in `bench-capture.ts` so it can be tested without one: that script resolves
  * `datasetRoot()` at module scope, so anything importing it needs a corpus, and the acceptance classifier
  * refuses such a command on a runner that has none. The decision is pure; only the file walk is not.
  *

@@ -443,7 +443,7 @@ const median = (/** @type {any} */ xs) => {
 // rebuilds the corpus and overwrites `with-realism.jsonl` as a side effect, so the check you are told to run
 // is the check you cannot safely run. Same guard as `calibrate-abstention.mjs:193`, for the same reason.
 //
-// `bench-capture.mjs`, `corpus-snapshot.mjs` and `evidence-check.mjs` still need it and cannot take it as
+// `bench-capture.ts`, `corpus-snapshot.mjs` and `evidence-check.mjs` still need it and cannot take it as
 // one line: their top-level bodies are bare statements rather than a `main()`.
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   main();
