@@ -625,12 +625,13 @@ test("[35] (1) every non-archived repository in the organisation is a declared s
 interface CopyPair { original: string; copy: string; originalText: string | null; copyText: string; allowedLines: number | null }
 const declaredCopies = () => (readDeclaredCopies({ root: ROOT }) ?? []) as CopyPair[];
 /**
- * The two copies whose header still names an original the core has since renamed to `.ts` (`scripts/product-home.mjs` and `scripts/fixture-symbols.mjs`, the .ts rename of
- * a11ign/a11ign#4273/#4274): the tool reads `${root}/scripts/product-home.mjs`, finds nothing, and the pair is unreadable. The header is the TOOL's to correct
- * (agent-org, filed as a11ign/a11ign#4515), so this file pins the state as it is: exactly these two, and the list only shrinks -- a third unreadable original fails, and a
- * header that is corrected fails here until its entry is deleted.
+ * The one copy whose header still names an original that has left the core: `src/lib/cli-flags.mjs` says `packages/worker-fleet/src/cli-flags.mjs`, which moved out with
+ * the fleet layer (a11ign/a11ign#3504), so the tool reads nothing there and the pair is unreadable. The header is the TOOL's to correct (a11ign/agent-org#505), so this file
+ * pins the state as it is: exactly this one, and the list only shrinks -- a second unreadable original fails, and a header that is corrected fails here until its entry is
+ * deleted. (`product-home.mjs` and `fixture-symbols.ts`, the other two this list once held, were corrected by a11ign/agent-org#501, a11ign/a11ign#4515, and left it.)
+ * When #505 is tagged, delete this constant and `withoutKnownUnreadable`, and assert that NO pair has a `null` original and the reading is `clear`.
  */
-const KNOWN_UNREADABLE_ORIGINALS = ["src/lib/fixture-symbols.ts", "src/lib/product-home.mjs"];
+const KNOWN_UNREADABLE_ORIGINALS = ["src/lib/cli-flags.mjs"];
 const withoutKnownUnreadable = (pairs: CopyPair[]) => pairs.filter((pair) => !KNOWN_UNREADABLE_ORIGINALS.includes(pair.copy));
 
 test("[36] control: the real tree's declared copies are discovered, every original is readable, and the pair set is CLEAN", () => {
@@ -642,8 +643,8 @@ test("[36] control: the real tree's declared copies are discovered, every origin
   assert.ok(headed.length > 0, "the scan is not empty: the tree's copies are what the control compares");
   assert.equal(pairs.length, headed.length, `discovery found ${pairs.length} pairs and a scan of lib/ finds ${headed.length} headed files`);
   assert.deepEqual(pairs.filter((pair) => pair.originalText === null).map((pair) => pair.copy).sort(), KNOWN_UNREADABLE_ORIGINALS,
-    "an unreadable original would make 'clean' mean 'not asked': only the two known ones, until agent-org corrects their headers");
-  // The pairs that CAN be read are clean; with the two unreadable ones in, the reading is 'unknown' (not 'clear'), which is the answer the tool gives for a pair it could not ask.
+    "an unreadable original would make 'clean' mean 'not asked': only the known one, until agent-org corrects its header (a11ign/agent-org#505)");
+  // The pairs that CAN be read are clean; with the unreadable one in, the reading is 'unknown' (not 'clear'), which is the answer the tool gives for a pair it could not ask.
   assert.equal(copyDriftReading({ pairs: withoutKnownUnreadable(pairs) }).status, "clear", copyDriftReading({ pairs: withoutKnownUnreadable(pairs) }).detail);
   assert.equal(copyDriftReading({ pairs }).status, "unknown");
 });
