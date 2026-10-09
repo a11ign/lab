@@ -168,6 +168,9 @@ test("#1030 SWEEP: no path in lab-job.yml's operator-facing prose is one that no
 
   const orphans = [...found].filter(([path]) => {
     if (existsSync(resolve(REPO_ROOT, path))) return false;
+    // A lab `.mjs` renamed to `.ts` (a11ign/a11ign#4277) is still READ: control's lab-job.yml spells the old
+    // name in prose until its own row moves it, and the file the prose points at exists under the new one.
+    if (path.endsWith(".mjs") && existsSync(resolve(REPO_ROOT, `${path.slice(0, -".mjs".length)}.ts`))) return false;
     // `git grep -F` over the tree MINUS this file: a path only ever spelled in this YAML is named by
     // nobody who could act on it. `--` with an exclude pathspec keeps lab-job.yml from vouching for itself.
     // The rest of the control layer is LAID, untracked since a11ign/a11ign#3506, so `git grep` cannot see the playbooks and tasks that spell these paths: they are read from the
