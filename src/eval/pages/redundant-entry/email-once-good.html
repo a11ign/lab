@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Create your account</title>
+<style>body{font-family:system-ui,sans-serif;max-width:24rem;margin:2rem auto}label{display:block;margin-top:1rem}input{width:100%;box-sizing:border-box}</style>
+</head>
+<body>
+<!--
+  WCAG 3.3.7 Redundant Entry corpus pair. This file and email-once-good.html differ in ONE thing: whether the
+  form asks for the email address a second time. The criterion: "Information previously entered by or provided
+  to the user that is required to be entered again in the same process is either: auto-populated, or available
+  for the user to select" (https://www.w3.org/WAI/WCAG22/Understanding/redundant-entry). In the bad page the second field
+  has no autocomplete, nothing pre-filled and nothing to select from, and the first answer is on the same page.
+  The Understanding page does not itself show an email-and-confirm form; that this is a failure is a reading of
+  its text ("process" = "series of user actions where each action is required in order to complete an activity").
+-->
+<h1>Create your account</h1>
+<form action="#" method="post">
+  <label for="email">Email</label>
+  <input id="email" name="email" type="email">
+  <p><button type="submit">Create account</button></p>
+</form>
+</body>
+</html>
