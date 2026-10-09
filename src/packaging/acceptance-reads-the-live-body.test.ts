@@ -173,7 +173,11 @@ function readLive({ body, exitCode = 0 }: { body: string; exitCode?: number }): 
     writeFileSync(output, "");
     const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", reader.run!], {
       encoding: "utf8",
-      // `AGENT_ORG_TOOL` is exported by the step that clones the tool (`agent-org-newest-tag.mjs`), and the reader imports `acceptance-commands.mjs` from it
+      // The step asks the tool which file the pull request ADDS under `.acceptance/` (ADR 0044) by reading the checkout it runs in, and hands on only the
+      // `Closes` line when there is one. Run from this repository the answer depends on whether the pull request RUNNING THE TEST adds such a file (every
+      // product pull request does), so the step runs in the scratch directory: no checkout, no added file, the whole live body is what it hands on.
+      cwd: dir,
+      // `AGENT_ORG_TOOL` is exported by the step that clones the tool (`agent-org-newest-tag.ts`), and the reader imports `acceptance-commands` from it
       // to work out which rows the body closes; `node` is found beside the one running this test, which is not always in /usr/bin.
       env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, AGENT_ORG_TOOL: toolRoot(), GITHUB_OUTPUT: output, REPO: "o/r", PR_NUMBER: "7", FAKE_BODY: body, FAKE_EXIT: String(exitCode) },
     });
