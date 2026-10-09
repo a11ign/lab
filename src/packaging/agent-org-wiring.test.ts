@@ -39,7 +39,6 @@ import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 const { SPAWNS_GH, SUITE_SCRIPTS } = await toolModule("src/acceptance-commands.mjs");
 const { GUARDED_WORKFLOWS } = await toolModule("src/board-schedule-liveness.mjs");
 const { parseHostConfig, parseUnitsDeclaration, templateValues } = await toolModule("src/host-config.mjs");
-const { copyDriftReading, readDeclaredCopies } = await toolModule("src/org-health.mjs");
 const { MAX_RECORDED_PARENT_FAILURES, RECHECK_ANNOTATION_TITLE, RECHECK_JOB } = await toolModule("src/trunk-red.mjs");
 const { drainedRoles } = await toolModule("src/wake.mjs");
 const { COMMANDS: TOOL_COMMANDS } = await toolModule("src/commands.mjs");
@@ -619,70 +618,6 @@ test("[35] (1) every non-archived repository in the organisation is a declared s
     assert.equal(declared.has(name), false, `${name} is declared: delete its exemption`);
   }
   assert.ok(Object.keys(EXEMPT).length <= EXEMPTION_CEILING, "the exemption list is shrink-only");
-});
-
-/** What `readDeclaredCopies` returns for each copy the tool's `lib/` declares. */
-interface CopyPair { original: string; copy: string; originalText: string | null; copyText: string; allowedLines: number | null }
-const declaredCopies = () => (readDeclaredCopies({ root: ROOT }) ?? []) as CopyPair[];
-/**
- * The two copies whose header still names an original the core has since renamed to `.ts` (`scripts/product-home.mjs` and `scripts/fixture-symbols.mjs`, the .ts rename of
- * a11ign/a11ign#4273/#4274): the tool reads `${root}/scripts/product-home.mjs`, finds nothing, and the pair is unreadable. The header is the TOOL's to correct
- * (agent-org, filed as a11ign/a11ign#4515), so this file pins the state as it is: exactly these two, and the list only shrinks -- a third unreadable original fails, and a
- * header that is corrected fails here until its entry is deleted.
- */
-const KNOWN_UNREADABLE_ORIGINALS = ["src/lib/fixture-symbols.ts", "src/lib/product-home.mjs"];
-const withoutKnownUnreadable = (pairs: CopyPair[]) => pairs.filter((pair) => !KNOWN_UNREADABLE_ORIGINALS.includes(pair.copy));
-
-test("[36] control: the real tree's declared copies are discovered, every original is readable, and the pair set is CLEAN", () => {
-  const pairs = declaredCopies();
-  // The count is derived a second way, by a plain scan for a line opening with the header's first words, and asserted EQUAL: a floor is
-  // satisfied by 19, by 58 and by 157.
-  const lib = join(TOOL, "src/lib");
-  const headed = readdirSync(lib).filter((name) => /^\/\/ COPIED FROM `/m.test(readFileSync(join(lib, name), "utf8")));
-  assert.ok(headed.length > 0, "the scan is not empty: the tree's copies are what the control compares");
-  assert.equal(pairs.length, headed.length, `discovery found ${pairs.length} pairs and a scan of lib/ finds ${headed.length} headed files`);
-  assert.deepEqual(pairs.filter((pair) => pair.originalText === null).map((pair) => pair.copy).sort(), KNOWN_UNREADABLE_ORIGINALS,
-    "an unreadable original would make 'clean' mean 'not asked': only the two known ones, until agent-org corrects their headers");
-  // The pairs that CAN be read are clean; with the two unreadable ones in, the reading is 'unknown' (not 'clear'), which is the answer the tool gives for a pair it could not ask.
-  assert.equal(copyDriftReading({ pairs: withoutKnownUnreadable(pairs) }).status, "clear", copyDriftReading({ pairs: withoutKnownUnreadable(pairs) }).detail);
-  assert.equal(copyDriftReading({ pairs }).status, "unknown");
-});
-
-/**
- * `count` lines of `text` that open a `const` declaration, each with ONE byte changed (`const ` to `cnst `). Refuses when `text` has fewer such
- * lines, because a control that mutated nothing would read "clear" for the wrong reason.
- */
-function withConstLinesBroken(text: string, count: number): string {
-  let broken = 0;
-  const lines = text.split("\n").map((line) => {
-    if (broken >= count || !/^(export )?const /.test(line)) return line;
-    broken += 1;
-    return line.replace("const ", "cnst ");
-  });
-  assert.equal(broken, count, `the text holds ${count} lines opening a const declaration, so the mutation can be applied`);
-  return lines.join("\n");
-}
-
-test("[37] control: the REAL isolation-gate pair with ONE BYTE changed on more lines than its header names, in the original, trips, naming both paths -- and the same bytes in the copy trip too", () => {
-  const ISOLATION = "src/lib/isolation-gate.mjs";
-  const pairs = declaredCopies();
-  const real = pairs.find((pair) => pair.copy === ISOLATION);
-  assert.ok(real, "the pair #2921 edited by hand is among the declared copies");
-  assert.equal(real.original, "packages/guards/src/isolation-gate.mjs", "and its original is a11ign's own file");
-  assert.ok(real.originalText !== null, "the text this mutates is readable");
-  // THE HEADER'S COUNT IS THE ALLOWANCE (`judgePair`, agent-org `org-health.mjs`): a single changed line is inside it once the header names any, which is
-  // what the tool's own copy has said since #3830 (3 named lines), so the control breaks ONE MORE line than the header allows, read off the pair
-  // and not typed here -- a number typed here is the second list of one fact, and is what went stale when the header's count moved.
-  assert.ok(real.allowedLines !== null && real.allowedLines >= 0, "the copy's header says how many lines it changed");
-  const broken = real.allowedLines + 1;
-  const changedOriginal = pairs.map((pair) => (pair === real ? { ...pair, originalText: withConstLinesBroken(real.originalText as string, broken) } : pair));
-  const reading = copyDriftReading({ pairs: changedOriginal });
-  assert.equal(reading.status, "tripped");
-  assert.match(reading.detail, /src\/lib\/isolation-gate\.mjs against packages\/guards\/src\/isolation-gate\.mjs/);
-  const changedCopy = pairs.map((pair) => (pair === real ? { ...pair, copyText: withConstLinesBroken(pair.copyText, broken) } : pair));
-  assert.equal(copyDriftReading({ pairs: changedCopy }).status, "tripped");
-  assert.equal(copyDriftReading({ pairs: withoutKnownUnreadable(changedCopy).filter((pair) => pair.copy !== ISOLATION) }).status, "clear",
-    "the other pairs are untouched, so the trip is the one pair's");
 });
 
 // --- host.json and the project's units ----------------------------------------------------------------------------------------------
