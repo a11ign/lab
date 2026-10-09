@@ -87,7 +87,7 @@ function matchesRunsSignature(source: string): boolean {
 }
 
 function importsDatasetPaths(source: string): boolean {
-  return /from ["'](\.\.\/)*dataset-paths\.mjs["']/.test(source);
+  return /from ["'](\.\.\/)*dataset-paths\.(mjs|ts)["']/.test(source);
 }
 
 /** The capture filename shape, built either as a template literal or by concatenation. */

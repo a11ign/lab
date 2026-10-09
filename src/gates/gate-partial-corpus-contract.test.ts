@@ -151,7 +151,7 @@ const NO_PARTIAL_POPULATION: Record<string, string> = {
     + "everything' is not the right question; 'did the one thing arrive intact' is, and that is what it "
     + "asks. The corpus-completeness question belongs one step earlier, to `corpus-snapshot.mjs` above, "
     + "which is where it is now guarded. Both `corpus-backup` and `corpus-backup-verify` run this file.",
-  "packages/lab/src/harnesses/capture-check.ts":
+  "packages/lab/src/harnesses/capture-check.mjs":
     "NO EXTERNAL POPULATION: `CHECKS` is a fixed literal list in `capture-check.mjs` and the run iterates "
     + "ALL of it (`for (const check of CHECKS)`), so there is nothing it could examine fewer of. A check "
     + "that throws is counted as a FAILURE by `runCheck` rather than skipped, and a run that cannot start "
@@ -253,7 +253,7 @@ const JOB_SCRIPT_OVERRIDE: Record<string, string> = {
   // expression rather than a list of literals and `resolvedScriptFile` cannot read a path out of it. The
   // override is the designed answer to exactly that, and naming it here keeps "cannot be resolved" and
   // "nobody classified it" different states -- which is this file's own thesis.
-  "capture-check": "packages/lab/src/harnesses/capture-check.ts",
+  "capture-check": "packages/lab/src/harnesses/capture-check.mjs",
   // Same shape: its argv APPENDS `--apply` conditionally, so it is `{{ [...] + ([...] if ... else []) }}`
   // rather than a list of literals. The flag is built that way deliberately -- passing an empty
   // placeholder instead would be refused by `refuseUnknownFlags`, and a job whose no-op form is refused

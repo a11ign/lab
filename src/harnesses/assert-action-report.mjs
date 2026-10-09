@@ -8,9 +8,9 @@
  * iteration on it was an **eight-minute CI round trip**. A check that expensive to change is a check
  * nobody changes.
  *
- *   node packages/lab/src/harnesses/assert-action-report.ts <r.json> --expect-activation --forbid-wcag=1.1.1
- *   node packages/lab/src/harnesses/assert-action-report.ts <r.json> --require-wcag=1.1.1
- *   node packages/lab/src/harnesses/assert-action-report.ts <r.json> --require-rule-layer
+ *   node packages/lab/src/harnesses/assert-action-report.mjs <r.json> --expect-activation --forbid-wcag=1.1.1
+ *   node packages/lab/src/harnesses/assert-action-report.mjs <r.json> --require-wcag=1.1.1
+ *   node packages/lab/src/harnesses/assert-action-report.mjs <r.json> --require-rule-layer
  *
  * In `packages/lab` because that package is private: this is a harness, like `capture-check.mjs` beside
  * it, and it must not ship inside a published package. It also has to sit inside a package's own `src` to
@@ -22,7 +22,6 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import type { Loose } from "../capture/loose.ts";
 
 /**
  * these ARE the assertion: a mistyped `--require-wcag=` asserts nothing and the harness reports success.
@@ -39,8 +38,8 @@ refuseUnknownFlags(["--expect-activation", "--require-wcag=", "--forbid-wcag=", 
  * @param {unknown} report
  * @returns {string | null} the reason it is unusable, or null
  */
-export function contractFailure(report: unknown): string | null {
-  const r = (report as Record<string, Loose>);
+export function contractFailure(report) {
+  const r = /** @type {Record<string, any>} */ (report);
   if (!r?.url) return "report has no url";
   if (!r.verdict || !Array.isArray(r.verdict.findings)) {
     return "report has no verdict.findings — the judge did not run";
@@ -55,7 +54,7 @@ export function contractFailure(report: unknown): string | null {
 
 /** How many controls the capture operated. Zero on a default run means `probe-forms` silently regressed. */
 /** @param {Record<string, any>} report */
-export function activationCount(report: Record<string, Loose>) {
+export function activationCount(report) {
   const interaction = report?.capture?.interaction ?? report?.interaction;
   return (interaction?.formChanges ?? []).length + (interaction?.stateChanges ?? []).length;
 }
@@ -78,7 +77,7 @@ export function activationCount(report: Record<string, Loose>) {
  * @param {Record<string, any>} report
  * @returns {string | null} the reason it is unusable, or null
  */
-export function ruleLayerFailure(report: Record<string, Loose>): string | null {
+export function ruleLayerFailure(report) {
   if (report?.ruleBased === null) {
     return "ruleBased is null: the axe-core layer did not run (or threw) despite being requested -- " +
       "the tool announced a layer it did not produce";
@@ -95,8 +94,8 @@ export function ruleLayerFailure(report: Record<string, Loose>): string | null {
  * @param {string} wcag
  * @returns {Record<string, any>[]}
  */
-export function findingsFor(report: Record<string, Loose>, wcag: string): Record<string, Loose>[] {
-  return (report?.verdict?.findings ?? []).filter((f: Record<string, Loose>) => String(f?.wcag ?? "").startsWith(wcag));
+export function findingsFor(report, wcag) {
+  return (report?.verdict?.findings ?? []).filter((/** @type {Record<string, any>} */ f) => String(f?.wcag ?? "").startsWith(wcag));
 }
 
 /**
@@ -116,11 +115,11 @@ export function findingsFor(report: Record<string, Loose>, wcag: string): Record
  * @param {string} wcag the bare criterion number, e.g. "1.1.1"
  * @returns {string | null} the reason the report accuses the page, or null
  */
-export function accusationFailure(report: Record<string, Loose>, wcag: string): string | null {
+export function accusationFailure(report, wcag) {
   if (!Array.isArray(report?.outcomes)) {
     return `report has no outcomes, so an assertion of ${wcag} cannot be told from a referral of it`;
   }
-  const asserted = report.outcomes.some((o: Record<string, Loose>) =>
+  const asserted = report.outcomes.some((/** @type {Record<string, any>} */ o) =>
     o?.criterion === wcag && o?.outcome === "failed");
   if (!asserted) return null;
   return `${wcag} claimed against a page published as conformant: ` +
@@ -128,13 +127,13 @@ export function accusationFailure(report: Record<string, Loose>, wcag: string): 
 }
 
 /** @param {string[]} args @param {string} name */
-function flagValue(args: string[], name: string) {
+function flagValue(args, name) {
   const hit = args.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : null;
 }
 
 /** @param {string[]} argv */
-function main(argv: string[]) {
+function main(argv) {
   const [path, ...flags] = argv;
   if (!path) {
     process.stderr.write("usage: assert-action-report.mjs <report.json> " +
@@ -179,7 +178,7 @@ function main(argv: string[]) {
 }
 
 /** @param {string} reason @returns {number} */
-function fail(reason: string): number {
+function fail(reason) {
   process.stderr.write(`::error::${reason}\n`);
   return 1;
 }

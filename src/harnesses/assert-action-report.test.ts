@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 
 import {
   accusationFailure, activationCount, contractFailure, findingsFor, ruleLayerFailure,
-} from "./assert-action-report.ts";
+} from "./assert-action-report.mjs";
 
 const CONFORMANT = {
   url: "https://www.w3.org/WAI/demos/bad/after/survey.html",

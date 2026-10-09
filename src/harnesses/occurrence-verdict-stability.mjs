@@ -28,7 +28,6 @@ import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
 import { CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/screenreader-fleet/worker-http";
 import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
-import type { Loose } from "../capture/loose.ts";
 
 /**
  * takes its worker POSITIONALLY and no flags at all, so any flag passed to it is discarded.
@@ -65,7 +64,7 @@ const PAGES = fileURLToPath(new URL("../../../../runs/screenreader-dataset/pages
 // layer checkout stops here saying so and not on a vocabulary read from nowhere.
 const LABELS_PATH = ["packages", "nvda-speech", "nvda_speech", "labels.py"];
 /** @type {Set<string> | undefined} */
-let vocabulary: Set<string> | undefined;
+let vocabulary;
 /** The words NVDA's labels use, read on first need so that importing this module never touches the checkout. */
 function nvdaVocabulary() {
   vocabulary ??= new Set([...readFileSync(join(layerRoot("nvda-worker"), ...LABELS_PATH), "utf8").matchAll(/:\s*'([^']+)'/g)].map((m) => m[1].toLowerCase()));
@@ -76,19 +75,19 @@ function nvdaVocabulary() {
 const ACTIONABLE_WORDS = 3;
 
 /** @param {Record<string, any>} capture */
-function verdict(capture: Record<string, Loose>) {
-  const deltas = (capture.interaction?.formChanges ?? []).map((change: { after?: string; }) => String(change.after ?? ""));
+function verdict(capture) {
+  const deltas = (capture.interaction?.formChanges ?? []).map((/** @type {{ after?: string }} */ change) => String(change.after ?? ""));
   const words = deltas
     .join(" ")
     .toLowerCase()
     .split(/[\s,.]+/)
     .filter(Boolean)
-    .filter((word: string) => !nvdaVocabulary().has(word));
+    .filter((/** @type {string} */ word) => !nvdaVocabulary().has(word));
   return { informed: words.length >= ACTIONABLE_WORDS, spoken: deltas.join(" | ").slice(0, 88) };
 }
 
 /** @param {string} base @param {string} variant */
-async function capture(base: string, variant: string) {
+async function capture(base, variant) {
   const response = await captureTolerantly({
     worker: String(WORKER),
     body: {
@@ -100,7 +99,7 @@ async function capture(base: string, variant: string) {
     timeoutMs: CAPTURE_TIMEOUT_MS,
   });
   const body = response.json ?? {};
-  return (body as Record<string, Loose>).error ? { error: String((body as Record<string, Loose>).error).slice(0, 62) } : verdict(body);
+  return /** @type {Record<string, any>} */ (body).error ? { error: String(/** @type {Record<string, any>} */ (body).error).slice(0, 62) } : verdict(body);
 }
 
 async function main() {
@@ -115,7 +114,7 @@ async function main() {
   const lease = await leasePageServer({ root: PAGES, port: 5050, probePath: "form-error-silent/good.html" });
   const base = hostPagesBase(WORKER);
   /** @type {Record<string, any[]>} */
-  const results: Record<string, Loose[]> = {};
+  const results = {};
   try {
     for (const variant of ["good", "bad"]) {
       results[variant] = [];
@@ -142,9 +141,9 @@ async function main() {
       process.stdout.write(`    run ${index + 1}: informed=${String(result.informed).padEnd(5)}`
         + ` ${correct ? "correct" : "WRONG  "}  spoken="${result.spoken}"\n`);
     }
-    const seen = runs.filter((r: Record<string, Loose>) => !r.error)
-    .map((r: Record<string, Loose>) => r.informed);
-    const stable = seen.length > 0 && seen.every((v: unknown) => v === seen[0]);
+    const seen = runs.filter((/** @type {Record<string, any>} */ r) => !r.error)
+    .map((/** @type {Record<string, any>} */ r) => r.informed);
+    const stable = seen.length > 0 && seen.every((/** @type {unknown} */ v) => v === seen[0]);
     if (!stable) allCorrect = false;
     process.stdout.write(`    -> ${stable ? "STABLE" : "UNSTABLE"} across ${seen.length} run(s)\n`);
   }

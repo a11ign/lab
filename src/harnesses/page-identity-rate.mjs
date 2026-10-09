@@ -40,7 +40,6 @@ import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11ign/screenreader
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
 import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
-import type { Loose } from "../capture/loose.ts";
 
 /**
  * asks whether a capture ever reads the WRONG page. `--rounds=` mistyped silently uses the default,
@@ -79,7 +78,7 @@ const PAGES = [
  * two versions of the stale-page detector in this project's history were both wrong — one matched its own
  * regex, the other flagged a shared site template — and each clean result was read as reassurance.
  */
-export function classifyCapture(/** @type {any} */ { transcript, want, previous }: Loose) {
+export function classifyCapture(/** @type {any} */ { transcript, want, previous }) {
   const text = (transcript ?? []).join(" | ");
   if (!transcript?.length) return "silent";
   if (want.signature.test(text)) return "correct";
@@ -119,7 +118,7 @@ function selfTest() {
  * worker-http.mjs for the measurement.
  */
 
-async function captureOnce(base: Loose, page: Loose) {
+async function captureOnce(/** @type {any} */ base, /** @type {any} */ page) {
   let body;
   try {
     const response = await captureTolerantly({
@@ -131,19 +130,19 @@ async function captureOnce(base: Loose, page: Loose) {
   } catch (error) {
     // One unreachable capture must not end a 60-capture measurement. An unhandled rejection here threw away
     // a whole run's evidence for a single timed-out request.
-    return { error: `transport: ${(error as Error)?.message ?? error}` };
+    return { error: `transport: ${/** @type {any} */ (error)?.message ?? error}` };
   }
   if (body.error) return { error: String(body.error) };
-  const marks = (body.diagnostics ?? []).filter((m: Loose) => m && typeof m === "object");
+  const marks = (body.diagnostics ?? []).filter((/** @type {any} */ m) => m && typeof m === "object");
   return {
     transcript: body.transcript ?? [],
-    reused: marks.some((m: Loose) => m.event === "browserReused"),
-    refreshed: marks.some((m: Loose) => m.event === "browseBufferRefreshed"),
-    title: marks.find((m: Loose) => m.event === "documentReady")?.title ?? null,
+    reused: marks.some((/** @type {any} */ m) => m.event === "browserReused"),
+    refreshed: marks.some((/** @type {any} */ m) => m.event === "browseBufferRefreshed"),
+    title: marks.find((/** @type {any} */ m) => m.event === "documentReady")?.title ?? null,
   };
 }
 
-function report(tally: Record<string, number>, reusedCount: Loose, refreshedCount: Loose, total: Loose) {
+function report(/** @type {any} */ tally, /** @type {any} */ reusedCount, /** @type {any} */ refreshedCount, /** @type {any} */ total) {
   process.stdout.write(`\n  captures            ${total}\n`);
   process.stdout.write(`  on a REUSED window  ${reusedCount}  (the only ones that can express the fault)\n`);
   process.stdout.write(`  buffer refreshed    ${refreshedCount}\n`);
@@ -181,7 +180,7 @@ function report(tally: Record<string, number>, reusedCount: Loose, refreshedCoun
  * Separated from `main` so the narrative there reads as setup, measurement, report — this function is the
  * measurement, and it is the only place that knows a capture's outcome depends on what came before it.
  */
-async function runRounds(base: Loose, rounds: Loose) {
+async function runRounds(/** @type {any} */ base, /** @type {any} */ rounds) {
   const tally = { correct: 0, "wrong-page": 0, silent: 0, unrecognised: 0, error: 0 };
   const counts = { reused: 0, refreshed: 0, total: 0 };
   let previous = null;
@@ -213,7 +212,7 @@ async function runRounds(base: Loose, rounds: Loose) {
 }
 
 /** Anything other than `correct` is called out on its own line, and a stale read names the page it read. */
-function flagFor(outcome: Loose, previous: Loose) {
+function flagFor(/** @type {any} */ outcome, /** @type {any} */ previous) {
   if (outcome === "correct") return "";
   const from = outcome === "wrong-page" ? ` (read ${previous?.page})` : "";
   return `  <-- ${outcome.toUpperCase()}${from}`;
@@ -227,7 +226,7 @@ async function main() {
   try {
     assertWorkerUrl(WORKER, { source: "--worker" });
   } catch (error) {
-    process.stderr.write(`${(error as Error).message}\n`
+    process.stderr.write(`${/** @type {any} */ (error).message}\n`
       + "usage: npm run identity:rate -- --worker=http://<guest-ip>:8765 [--rounds=20]\n");
     process.exit(2);
   }

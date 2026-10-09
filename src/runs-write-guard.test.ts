@@ -76,7 +76,7 @@ function readSource(file: string): string {
 const OWNED_ENV_VARS =
   /process\.env\.(DATASET_ROOT|RUNS_ROOT|A11Y_RUNS_ROOT|REAL_CORPUS_ROOT|DATASET_CAPTURE_ROOT|DATASET_EXPORT|CAPTURE_ROOT)\b/;
 const OWNED_RUNS_LITERAL = /["'`]runs\/[a-zA-Z][a-zA-Z0-9-]*/;
-const IMPORTS_DATASET_PATHS = /from ["'][^"']*dataset-paths\.mjs["']/;
+const IMPORTS_DATASET_PATHS = /from ["'][^"']*dataset-paths\.(mjs|ts)["']/;
 
 function resolvesRunsPath(source: string): boolean {
   return IMPORTS_DATASET_PATHS.test(source) || OWNED_ENV_VARS.test(source) || OWNED_RUNS_LITERAL.test(source);

@@ -18,7 +18,7 @@
  *
  * A COMMENT INSIDE A `.mjs`/`.sh`/`.yml` FILE IS ALSO PROSE, and this is the harder half: of the twelve
  * "in code" mentions measured at filing, all but one turned out to be a comment describing the hazard
- * (`packages/guards/src/mutation-check.mjs`, `packages/lab/src/harnesses/capture-fixtures.ts`,
+ * (`packages/guards/src/mutation-check.mjs`, `packages/lab/src/harnesses/capture-fixtures.mjs`,
  * `packages/control/ansible/lab-reset.yml`'s own six explanatory `#` lines). Comments are stripped before
  * matching — JS-aware `stripComments` for `.mjs`/`.ts` (block comments and string literals both handled
  * correctly), a `#`-to-end-of-line strip for `.sh`/`.yml`, which is the one marker both use.
