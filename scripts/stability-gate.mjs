@@ -45,7 +45,7 @@ import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { assertWorkerUrl } from "@a11ign/screenreader-fleet/worker-http";
 import { datasetRoot, repeatCapturesRoot } from "../src/dataset-paths.ts";
-import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
+import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.ts";
 
 /**
  * the canaries that must pass before a corpus run. `--probe-forms`, `--task` and `--url` appear in

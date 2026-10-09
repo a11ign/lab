@@ -29,7 +29,7 @@ import { resolve, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, runsRoot } from "../src/dataset-paths.ts";
-import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
+import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.ts";
 import { toolModule } from "./tool-source.ts";
 
 const { isPrimaryWorktree } = await toolModule("src/prune-worktrees.mjs");
