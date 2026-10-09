@@ -84,3 +84,30 @@ export function appendRunRecord(record, file, { append = appendFileSync, makeDir
   makeDir(dirname(file));
   append(file, `${JSON.stringify(record)}\n`);
 }
+
+/**
+ * The record of a run that never passes the fleet guard (#4462): `capture-screenreader-dataset.mjs`, which the ruling
+ * leaves OUTSIDE the guard because wiring it in would change what that capture refuses.
+ *
+ * The guard is what reads a ready count, so a run without it read none and `readyCount` is `null`, never a count
+ * borrowed from somewhere else. `named` is the fleet the run was asked to use and `participants` the boxes it did use;
+ * the difference is probed, exactly as for a guarded run. A record that cannot be written is SAID and never changes
+ * the run's exit: the capture is worth more than its trace.
+ *
+ * @param {{ file: string, startedAt: string, named: string[], participants: string[] }} run
+ * @param {{ probe: (url: string) => Promise<{ outcome: string }>, report?: (message: string) => void,
+ *   append?: (file: string, text: string) => void, makeDir?: (dir: string) => void }} io
+ */
+export async function recordUnguardedRun({ file, startedAt, named, participants }, { probe, report = writeStderr, ...io }) {
+  try {
+    const excluded = await absentFrom({ named, participants, probe });
+    appendRunRecord(buildRunRecord({ startedAt, readyCount: null, participants, excluded }), file, io);
+  } catch (error) {
+    report(`CAPTURE RUN RECORD NOT WRITTEN to ${file}: ${/** @type {Error} */ (error).message}\n`);
+  }
+}
+
+/** @param {string} message */
+function writeStderr(message) {
+  process.stderr.write(message);
+}

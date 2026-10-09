@@ -25,7 +25,9 @@ import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.ts";
 import { wakeNamedWorkers, survivingNamedWorkers } from "./wake-by-hand.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
-import { datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.ts";
+import { datasetRoot, captureRoot, refuseIfRunsReadonly, runsRoot } from "../dataset-paths.ts";
+import { captureRunsFile, recordUnguardedRun } from "./capture-run-record.mjs";
+import { probeWorker } from "../../../control/src/fleet-wake.ts";
 import { captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.ts";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";
@@ -736,6 +738,38 @@ async function captureAll(/** @type {any} */ ctxBase, /** @type {any} */ cases, 
   }
 }
 
+/**
+ * The fleet this run was ASKED to use, named the way `acquireDatasetWorkers` names it (the explicit pool, else the
+ * inventory); empty when the run leases local guests, which nobody named. Read again here rather than threaded out
+ * of `acquireDatasetWorkers`, because a run that finds nobody throws before it has anything to return.
+ */
+function namedFleet() {
+  const named = configuredWorkers();
+  return named.length ? named.map((/** @type {{ url: string }} */ w) => w.url) : inventoryWorkerUrls();
+}
+
+/**
+ * This run's line in `runs/capture-runs.jsonl` (#4462), the same record `capture-real-pages.mjs` writes (#4459). NOT
+ * behind `capture-fleet-guard.mjs`, so no ready count was read and the record says `null` (see `recordUnguardedRun`).
+ * @param {{ file: string, startedAt: string, named: string[] }} run
+ * @param {string[]} participants
+ */
+function recordDatasetRun(run, participants) {
+  return recordUnguardedRun({ ...run, participants }, { probe: probeWorker });
+}
+
+/**
+ * A run that found NOBODY still leaves its record, then fails as it would have: it is the run a baseline of "how
+ * many boxes does a capture really get" most needs to see.
+ * @param {{ file: string, startedAt: string, named: string[] }} run
+ * @param {unknown} error
+ * @returns {Promise<never>}
+ */
+async function recordNobodyThenFail(run, error) {
+  await recordDatasetRun(run, []);
+  throw error;
+}
+
 async function acquireDatasetWorkers() {
   // Same lease as the witness CLI: an explicit A11Y_WORKER is used untouched, otherwise a
   // local VM is started on demand and put back as it was found. Dataset capture is the run
@@ -958,9 +992,11 @@ async function main() {
     port: PAGES_PORT,
     probePath: `${cases[0].id}/good.html`,
   });
-  const { pool, lease } = await acquireDatasetWorkers();
+  const run = { file: captureRunsFile(runsRoot()), startedAt: new Date().toISOString(), named: namedFleet() };
+  const { pool, lease } = await acquireDatasetWorkers().catch((error) => recordNobodyThenFail(run, error));
   try {
-    const checked = await checkDatasetWorkers(pool, lease);
+    const checked = await checkDatasetWorkers(pool, lease).catch((error) => recordNobodyThenFail(run, error));
+    await recordDatasetRun(run, checked ?? [lease.worker]);
     await captureDataset(cases, done, checked, lease);
   } finally {
     // Workers first: they are the expensive resource, and the page server costs nothing to hold for
