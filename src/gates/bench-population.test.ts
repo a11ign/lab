@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { populationOf, selectPopulation } from "../../scripts/bench-capture.mjs";
+import { populationOf, selectPopulation } from "../../scripts/bench-capture.ts";
 
 /**
  * `bench-capture --from-disk` reported a p50 across every capture in a directory, and a capture

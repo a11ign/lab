@@ -100,7 +100,8 @@ const CHECKED = MJS.filter((path) =>
  */
 // 168 -> 165 (#4277): 3 marked `.mjs` files became `.ts`, which tsc checks WITHOUT a marker, so the count of
 // checked files did not fall -- only the count of files that need the marker did. Lower it again only for that reason.
-const AT_LEAST = 165; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
+// 165 -> 162 (#4278): the same reason, for `bench-capture`, `claim-excludes-recompute` and `referral-repeat-share`.
+const AT_LEAST = 162; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
 
 test("the typechecked `.mjs` count never falls", () => {
   assert.ok(CHECKED.length >= AT_LEAST,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { pageShare, pagesOf, referralsOf, repeatShare, render, GROUPING_THRESHOLD } from "../../scripts/referral-repeat-share.mjs";
+import { pageShare, pagesOf, referralsOf, repeatShare, render, GROUPING_THRESHOLD } from "../../scripts/referral-repeat-share.ts";
 
 const r = (criterion: string, text: string) => ({ criterion, text });
 

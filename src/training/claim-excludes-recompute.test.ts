@@ -2,7 +2,7 @@
  * #1628: the per-floor table has ONE definition, and the recompute over a stored sweep refuses unless that
  * definition reproduces the stored table first.
  *
- * `floorRows` was a loop inline in `calibrate-abstention.mjs`'s `main()`. `claim-excludes-recompute.mjs`
+ * `floorRows` was a loop inline in `calibrate-abstention.mjs`'s `main()`. `claim-excludes-recompute.ts`
  * recomputes the same table from a stored `abstention-sweep.json` when the corpus's `claimExcludes` change, and
  * the public claim (#1579) quotes what it prints -- so a second copy of the loop there would be a second
  * definition of "asserted wrongly" free to drift from the one the sweep prints. Both call `floorRows`, pinned
@@ -17,18 +17,21 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { SCORED_CRITERIA } from "@a11ign/judge/coverage";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 import { floorRows } from "../../scripts/calibrate-abstention.mjs";
-import { recompute, render } from "../../scripts/claim-excludes-recompute.mjs";
+import { recompute, render } from "../../scripts/claim-excludes-recompute.ts";
 import { REAL_PAGES } from "./real-page-corpus.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const ABSTENTION = resolve(REPO, "packages/lab/scripts/calibrate-abstention.mjs");
-const RECOMPUTE = resolve(REPO, "packages/lab/scripts/claim-excludes-recompute.mjs");
+const RECOMPUTE = resolve(REPO, "packages/lab/scripts/claim-excludes-recompute.ts");
+// The script is TypeScript now, and the host's plain node has no type stripping (ADR 0043), so it is spawned through tsx like the other .ts scripts.
+const TSX = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
 const REFUSED = 2;
 
 /** Cells a page contributes: every scored criterion its publisher does not exclude. Hand-derived. */
@@ -161,7 +164,7 @@ test("CLI: over a stored sweep built from real corpus entries it prints the tabl
   try {
     const good = join(dir, "sweep.json");
     writeFileSync(good, JSON.stringify({ scored, rows: floorRows(scored, floors) }));
-    const ok = spawnSync(process.execPath, [RECOMPUTE, `--sweep=${good}`, "--run=fixture-run"], { cwd: REPO, encoding: "utf8" });
+    const ok = spawnSync(process.execPath, ["--import", TSX, RECOMPUTE, `--sweep=${good}`, "--run=fixture-run"], { cwd: REPO, encoding: "utf8" });
     if (corpusHasHistory()) {
       assert.equal(ok.status, 0, ok.stderr);
       assert.match(ok.stdout, /^control: the stored claimExcludes reproduce all 2 stored rows exactly$/m);
@@ -178,7 +181,7 @@ test("CLI: over a stored sweep built from real corpus entries it prints the tabl
     const rows = floorRows(scored, floors);
     rows[1].referred += 1;
     writeFileSync(bad, JSON.stringify({ scored, rows }));
-    const refused = spawnSync(process.execPath, [RECOMPUTE, `--sweep=${bad}`, "--run=fixture-run"], { cwd: REPO, encoding: "utf8" });
+    const refused = spawnSync(process.execPath, ["--import", TSX, RECOMPUTE, `--sweep=${bad}`, "--run=fixture-run"], { cwd: REPO, encoding: "utf8" });
     assert.equal(refused.status, REFUSED, refused.stderr);
     assert.equal(refused.stdout, "", "nothing is printed when the control fails");
     assert.match(refused.stderr, /control failed/);
