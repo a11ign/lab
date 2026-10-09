@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { driftDistributionsByUrl, driftSummaryLine } from "./real-page-drift-summary.mjs";
+import { driftDistributionsByUrl, driftSummaryLine } from "./real-page-drift-summary.ts";
 import { runsRoot } from "../dataset-paths.mjs";
 import { corpusReadable, skipLine } from "./corpus-settled.mjs";
 

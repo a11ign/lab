@@ -27,10 +27,10 @@
  *
  * @param {string | undefined} gateOutput
  */
-export function gateVerdicts(gateOutput) {
+export function gateVerdicts(gateOutput: string | undefined) {
   const lines = String(gateOutput ?? "").split("\n");
   /** @type {{ verdict: string, line: string }[]} */
-  const found = [];
+  const found: { verdict: string; line: string; }[] = [];
   for (const raw of lines) {
     const line = raw.trim();
     // A verdict is the word at the head of its own clause, so `RULES: PASS -- ...` and `PASS -- ...`
@@ -43,9 +43,9 @@ export function gateVerdicts(gateOutput) {
 
 /** The single worst verdict a gate printed, or null when it printed none.
  * @param {string | undefined} gateOutput */
-export function worstVerdict(gateOutput) {
+export function worstVerdict(gateOutput: string | undefined) {
   /** @type {Record<string, number>} */
-  const order = { PASS: 0, INCONCLUSIVE: 1, BLOCKED: 2, FAIL: 3 };
+  const order: Record<string, number> = { PASS: 0, INCONCLUSIVE: 1, BLOCKED: 2, FAIL: 3 };
   const all = gateVerdicts(gateOutput);
   if (all.length === 0) return null;
   return all.reduce((w, v) => (order[v.verdict] > order[w.verdict] ? v : w), all[0]);
