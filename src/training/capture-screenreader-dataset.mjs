@@ -21,7 +21,7 @@ import { cacheDecision, cacheKey, hashPageDir, stampProvenance } from "./capture
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
 import { leasePageServer } from "./page-server.mjs";
-import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
+import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.ts";
 import { wakeNamedWorkers, survivingNamedWorkers } from "./wake-by-hand.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";

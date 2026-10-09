@@ -50,12 +50,10 @@ import { documentIdentity } from "@a11ign/evidence/document-identity";
  * reaches this vector without a second edit.
  * @type {string[][]}
  */
-const STRUCTURE_FIELDS = EVIDENCE_FIELDS.filter((field) => field.length === 2 && field[0] === "structure");
+const STRUCTURE_FIELDS: string[][] = EVIDENCE_FIELDS.filter((field) => field.length === 2 && field[0] === "structure");
 
-/**
- * @typedef {{ url: string, capturedAt: string | null, workerCode: string | null, targetMatch: string | null,
- *   vector: Record<string, number>, incomplete: string[] }} ShapeReading
- */
+type ShapeReading = { url: string, capturedAt: string | null, workerCode: string | null, targetMatch: string | null,
+  vector: Record<string, number>, incomplete: string[] };
 
 /**
  * One capture, reduced to its structure-count vector -- pure, and the only place `EVIDENCE_FIELDS` is
@@ -65,11 +63,11 @@ const STRUCTURE_FIELDS = EVIDENCE_FIELDS.filter((field) => field.length === 2 &&
  *
  * @param {any} record @returns {ShapeReading | null} null when the record carries no capture at all
  */
-export function shapeReadingFor(record) {
+export function shapeReadingFor(record: unknown): ShapeReading | null {
   const capture = captureIn(record);
   if (!capture) return null;
   /** @type {Record<string, number>} */
-  const vector = {};
+  const vector: Record<string, number> = {};
   for (const field of STRUCTURE_FIELDS) vector[fieldKey(field)] = fieldValues(capture, field).length;
   // Only an explicit `false`: an absent verdict (older captures) or a channel with no exhaustion signal
   // is not a sweep that said it stopped short, and excluding it would drop every pre-#985 capture.
@@ -91,14 +89,14 @@ export function shapeReadingFor(record) {
  *
  * @param {ShapeReading[]} readings @returns {{ field: string, incompleteCount: number }[]}
  */
-export function incompleteFields(readings) {
+export function incompleteFields(readings: ShapeReading[]): { field: string; incompleteCount: number; }[] {
   return STRUCTURE_FIELDS.map(fieldKey)
     .map((field) => ({ field, incompleteCount: readings.filter((r) => r.incomplete.includes(field)).length }))
     .filter(({ incompleteCount }) => incompleteCount > 0);
 }
 
 /** `readings` with `fields` removed from every vector, so neither the shapes nor the spread can see them. */
-function withoutFields(/** @type {ShapeReading[]} */ readings, /** @type {string[]} */ fields) {
+function withoutFields(/** @type {ShapeReading[]} */ readings: ShapeReading[], /** @type {string[]} */ fields: string[]) {
   return readings.map((reading) => ({
     ...reading,
     vector: Object.fromEntries(Object.entries(reading.vector).filter(([key]) => !fields.includes(key))),
@@ -106,7 +104,7 @@ function withoutFields(/** @type {ShapeReading[]} */ readings, /** @type {string
 }
 
 /** Stable key for exact vector equality -- object key order is fixed by `STRUCTURE_FIELDS` above. */
-const vectorKey = (/** @type {Record<string, number>} */ vector) => JSON.stringify(vector);
+const vectorKey = (/** @type {Record<string, number>} */ vector: Record<string, number>) => JSON.stringify(vector);
 
 /**
  * "The number of distinct shapes observed" -- #781's acceptance 1. Groups by EXACT vector equality, never
@@ -116,9 +114,9 @@ const vectorKey = (/** @type {Record<string, number>} */ vector) => JSON.stringi
  *
  * @param {ShapeReading[]} readings @returns {{ vector: Record<string, number>, count: number, capturedAt: (string | null)[] }[]}
  */
-export function distinctShapes(readings) {
+export function distinctShapes(readings: ShapeReading[]): { vector: Record<string, number>; count: number; capturedAt: (string | null)[]; }[] {
   /** @type {Map<string, { vector: Record<string, number>, count: number, capturedAt: (string | null)[] }>} */
-  const byKey = new Map();
+  const byKey: Map<string, { vector: Record<string, number>; count: number; capturedAt: (string | null)[]; }> = new Map();
   for (const reading of readings) {
     const key = vectorKey(reading.vector);
     const existing = byKey.get(key);
@@ -136,7 +134,7 @@ export function distinctShapes(readings) {
  *
  * @param {ShapeReading[]} readings @returns {number} 0 when fewer than two readings (nothing to spread)
  */
-export function worstFieldSpreadPercent(readings) {
+export function worstFieldSpreadPercent(readings: ShapeReading[]): number {
   if (readings.length < 2) return 0;
   let worst = 0;
   for (const field of Object.keys(readings[0].vector)) {
@@ -149,11 +147,9 @@ export function worstFieldSpreadPercent(readings) {
   return worst;
 }
 
-/**
- * @typedef {{ url: string, n: number, excludedCount: number, refused: string | null, build?: string | null,
- *   shapes?: ReturnType<typeof distinctShapes>, spreadPercent?: number,
- *   notComparable?: ReturnType<typeof incompleteFields> }} PageDrift
- */
+type PageDrift = { url: string, n: number, excludedCount: number, refused: string | null, build?: string | null,
+  shapes?: ReturnType<typeof distinctShapes>, spreadPercent?: number,
+  notComparable?: ReturnType<typeof incompleteFields> };
 
 /**
  * The per-page drift distribution -- #781's whole deliverable. One entry per URL seen, always, so a page
@@ -163,17 +159,17 @@ export function worstFieldSpreadPercent(readings) {
  * @param {any[]} records raw captures or `runs/witness/` records, any mix of pages and rounds
  * @returns {PageDrift[]}
  */
-export function driftDistributionsByUrl(records) {
-  const readings = records.map(shapeReadingFor).filter(/** @returns {r is ShapeReading} */ (r) => r !== null);
+export function driftDistributionsByUrl(records: unknown[]): PageDrift[] {
+  const readings = records.map(shapeReadingFor).filter(/** @returns {r is ShapeReading} */ (r): r is ShapeReading => r !== null);
   /** @type {Map<string, ShapeReading[]>} */
-  const byUrl = new Map();
+  const byUrl: Map<string, ShapeReading[]> = new Map();
   for (const reading of readings) {
     const list = byUrl.get(reading.url) ?? [];
     list.push(reading);
     byUrl.set(reading.url, list);
   }
   /** @type {PageDrift[]} */
-  const out = [];
+  const out: PageDrift[] = [];
   for (const [url, group] of byUrl) {
     const matched = group.filter((reading) => reading.targetMatch === "matched");
     const excludedCount = group.length - matched.length;
@@ -203,7 +199,7 @@ export function driftDistributionsByUrl(records) {
  *
  * @param {PageDrift} entry @returns {string}
  */
-export function driftSummaryLine(entry) {
+export function driftSummaryLine(entry: PageDrift): string {
   const excludedNote = entry.excludedCount
     ? ` (${entry.excludedCount} more excluded: not a matched document identity)` : "";
   if (entry.refused) return `${entry.url}: REFUSED -- ${entry.refused}.${excludedNote}\n`;
@@ -211,8 +207,8 @@ export function driftSummaryLine(entry) {
     return `${entry.url}: only ${entry.n} usable capture(s) -- a pair cannot measure a distribution.`
       + `${excludedNote}\n`;
   }
-  const shapes = /** @type {NonNullable<PageDrift["shapes"]>} */ (entry.shapes);
-  const spreadPercent = /** @type {number} */ (entry.spreadPercent);
+  const shapes = entry.shapes as NonNullable<PageDrift["shapes"]>;
+  const spreadPercent = entry.spreadPercent as number;
   const at = shapes.map((shape) => `${shape.count}x at ${shape.capturedAt.join(", ")}`).join("; ");
   const notComparable = entry.notComparable ?? [];
   const notComparableNote = notComparable.length

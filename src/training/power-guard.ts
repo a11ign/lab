@@ -48,7 +48,7 @@ const MIN_BATTERY_PERCENT = 30;
 /**
  * @param {{onAcPower: boolean, batteryPercent: number, estimatedHours: number}} reading
  */
-export function powerVerdict({ onAcPower, batteryPercent, estimatedHours }) {
+export function powerVerdict({ onAcPower, batteryPercent, estimatedHours }: { onAcPower: boolean; batteryPercent: number; estimatedHours: number; }) {
   if (onAcPower) return { ok: true };
   // A run measured in hours on battery will not finish, and the failure it produces is misleading
   // rather than obvious — that is what makes this worth refusing rather than warning about.

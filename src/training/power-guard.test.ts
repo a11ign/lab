@@ -13,7 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { powerVerdict } from "./power-guard.mjs";
+import { powerVerdict } from "./power-guard.ts";
 
 test("AC power is always allowed, whatever the battery reads", () => {
   // A charging laptop at 3% is fine — it is not going to sleep. Refusing here would block the exact
