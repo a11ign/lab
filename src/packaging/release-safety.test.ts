@@ -149,7 +149,8 @@ test("guards 5, 6 and 7 are not skippable: the call needs all three and the guar
 });
 
 test("a dispatch rehearses with every guard, and the provenance request still names provenance, before anything publishes", () => {
-  const rehearsal = parsed.jobs.guards.steps?.find((step) => /release-publish-rehearsal\.mjs/.test(step.run ?? ""));
+  const rehearsal = parsed.jobs.guards.steps?.find((step) => /release-publish-rehearsal\.ts/.test(step.run ?? ""));
+  assert.ok(rehearsal, "the step that runs the rehearsal is found (the script is `.ts` since #4274; a stale extension finds nothing and reads as no env)");
   assert.equal(rehearsal?.if, undefined, "the provenance request runs on every run, a real one included: nothing else here can read the called workflow's publish");
   assert.equal(rehearsal?.env?.NPM_CONFIG_PROVENANCE, "true");
 });

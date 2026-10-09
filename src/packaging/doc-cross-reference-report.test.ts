@@ -1,5 +1,5 @@
 /**
- * #905: the nightly doc cross-reference report -- `scripts/doc-cross-reference-report.mjs`.
+ * #905: the nightly doc cross-reference report -- `scripts/doc-cross-reference-report.ts`.
  *
  * The fifteen checks it runs are the SAME modules the pull-request tests assert on, so this file does not
  * re-test any check's rule. It tests what only the report adds, and the three ways a report like this lies:
@@ -16,14 +16,18 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   CHECKS, COMMENT_LIMIT, fitToComment, headline, renderReport, runChecks,
-} from "../../../../scripts/doc-cross-reference-report.mjs";
+} from "../../../../scripts/doc-cross-reference-report.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
-const REPORT = join(REPO, "scripts/doc-cross-reference-report.mjs");
+const REPORT = join(REPO, "scripts/doc-cross-reference-report.ts");
+// #4274: the report is TypeScript, and a bare `node` cannot run one (ADR 0043 Decision 8: `node --import tsx`).
+const TSX = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
 
 /** A throwaway tree holding exactly `files`; removed when `body` returns. */
 async function withTree(files: Record<string, string>, body: (root: string) => Promise<void> | void) {
@@ -41,7 +45,7 @@ async function withTree(files: Record<string, string>, body: (root: string) => P
 
 /** The report as the nightly workflow would post it: the real command, the real exit status. */
 function runReport(root: string) {
-  return spawnSync(process.execPath, [REPORT, `--root=${root}`], { encoding: "utf8", timeout: 120_000 });
+  return spawnSync(process.execPath, ["--import", TSX, REPORT, `--root=${root}`], { encoding: "utf8", timeout: 120_000 });
 }
 
 /** The rows of one check's disagreement table. */
@@ -92,10 +96,10 @@ test("the registry is the fifteen, and each surviving pull-request test asserts 
   for (const { name, test: testFile } of CHECKS) {
     if (testFile === null) continue; // retired above, and asserted there
     assert.ok(existsSync(join(REPO, testFile)), `${name}: its test ${testFile} does not exist`);
-    // ONE COPY: the test imports the module the report runs -- `doc-checks/<name>.mjs`, or for the two whose
-    // module composes an existing script, that script (`scripts/<name>.mjs`).
+    // ONE COPY: the test imports the module the report runs -- `doc-checks/<name>.ts`, or for the two whose
+    // module composes an existing script, that script (`scripts/<name>.ts`; both were `.mjs` until #4274).
     const source = readFileSync(join(REPO, testFile), "utf8");
-    assert.match(source, new RegExp(`scripts/(?:doc-checks/)?${name}\\.mjs"`),
+    assert.match(source, new RegExp(`scripts/(?:doc-checks/)?${name}\\.ts"`),
       `${testFile} does not import the module the report runs for ${name} -- a second copy can drift`);
   }
 });

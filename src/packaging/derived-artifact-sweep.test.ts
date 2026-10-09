@@ -59,13 +59,13 @@ const SKIP_DIRS = new Set(["node_modules", "dist", ".git", "runs", "__pycache__"
 
 /**
  * A generator is a `generate-*.mjs` or `generate-*.ts` that is not a TEST of one: `generate-consumer-gate.test.ts` (the core's pin of
- * `scripts/generate-consumer-gate.mjs`'s pure steps) writes nothing, and classifying it would name a second producer of the same file.
+ * `scripts/generate-consumer-gate.ts`'s pure steps) writes nothing, and classifying it would name a second producer of the same file.
  */
 const isGeneratorFile = (name: string): boolean => /^generate-.*\.(mjs|ts)$/.test(name) && !/\.test\.(mjs|ts)$/.test(name);
 
 test("a generate-*.test.ts is a test OF a generator, not a generator; a generate-*.ts is one", () => {
   assert.equal(isGeneratorFile("generate-consumer-gate.test.ts"), false);
-  assert.equal(isGeneratorFile("generate-consumer-gate.mjs"), true);
+  assert.equal(isGeneratorFile("generate-consumer-gate.ts"), true);
   assert.equal(isGeneratorFile("generate-coverage-doc.ts"), true);
   assert.equal(isGeneratorFile("regenerate-things.ts"), false);
 });
@@ -97,12 +97,13 @@ interface GeneratorEntry {
 }
 
 const CLASSIFICATION: Record<string, GeneratorEntry> = {
-  "scripts/generate-commands-doc.mjs": {
+  // #4274 renamed the two `scripts/` generators from `.mjs` to `.ts`.
+  "scripts/generate-commands-doc.ts": {
     produces: "docs/commands.md",
     status: "pinnedBy",
     detail: "packages/lab/src/packaging/commands-documented.test.ts",
   },
-  "scripts/generate-consumer-gate.mjs": {
+  "scripts/generate-consumer-gate.ts": {
     produces: ".github/workflows/consumer-gate.yml",
     status: "chickenEgg",
     detail: "#558 -- embeds a literal sha resolved at generation time (git rev-parse HEAD); committing a "

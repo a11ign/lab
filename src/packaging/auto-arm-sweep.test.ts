@@ -31,7 +31,7 @@ const {
   confirmArmed, CONFIRM_ARMED_READS, CONFIRM_ARMED_WAIT_MS, armedFromApi, unarmedCandidates, armFailureVerdict,
 } = await toolModule("src/auto-arm-sweep.mjs");
 import { stripComments } from "@a11ign/evidence/source-text";
-import { toolModule, toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOW = `${REPO}.github/workflows/auto-arm.yml`;
@@ -482,7 +482,8 @@ test("and an unarmed pull request is still unarmed", () => {
 test("#2046: the armed predicate is DEFINED in `pr-armed-state.mjs` and only re-exported here -- the "
   + "sweep is one of its readers, not its owner", () => {
   const source = stripComments(readFileSync(toolPath("src/auto-arm-sweep.mjs"), "utf8"));
-  assert.match(source, /from "\.\/pr-armed-state\.mjs"/,
+  // agent-org imports its sources by their `.ts` name since agent-org#435 (they were `.mjs`).
+  assert.match(source, /from "\.\/pr-armed-state\.ts"/,
     "read from the shared module, the way `pr-hold-state.mjs` is on the line above it");
   assert.doesNotMatch(source, /export function armedFromApi/,
     "and NOT defined here: a definition inside one caller is what let the other two miss it");

@@ -30,7 +30,7 @@ import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
 import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
-import { toolModule } from "../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule } from "./tool-source.ts";
 
 const { isPrimaryWorktree } = await toolModule("src/prune-worktrees.mjs");
 

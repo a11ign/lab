@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolPath } from "../../scripts/tool-source.ts";
 
 // Not `REPO_ROOT` from host-units.mjs: importing it reaches the gate's `history` reader and taxes this file
 // in `work-gate.test.ts`'s closure population, for a path this file can compute itself.

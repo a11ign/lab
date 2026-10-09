@@ -19,8 +19,8 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFi
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
-import { installedPackageDir, isPublished, layerFile } from "../../../guards/src/layer-file.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
+import { installedPackageDir, isPublished, layerFile } from "../../../guards/src/layer-file.ts";
 
 const NAME = "@a11ign/fixture-layer";
 const REAL_LAYER = "@a11ign/screenreader-worker";

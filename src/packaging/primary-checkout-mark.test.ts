@@ -27,7 +27,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule } from "../../scripts/tool-source.ts";
 const { COMMANDS: TOOL_COMMANDS } = await toolModule("src/commands.mjs");
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -66,6 +66,6 @@ test("the shared check reads LOCAL git config, which a clone or a pull cannot ca
 test("the mark is settable by a documented command, so an unmarked primary is fixable not mysterious", () => {
   // An opt-in guard that nobody can find the switch for is an off guard. `doctor` reports the gap and this
   // is what closes it; both are named in the hook's own refusal text.
-  // #3534: it is the tool's `primary:mark` command, run as `agent-org primary:mark`, so the tool's command table must still name a program for it.
-  assert.equal(TOOL_COMMANDS["primary:mark"], "mark-primary-checkout.mjs", "the installed tool must still name the program `primary:mark` runs");
+  // #3534: it is the tool's `primary:mark` command, run as `agent-org primary:mark`, so the tool's command table must still name a program for it (a `.ts` since agent-org#435).
+  assert.equal(TOOL_COMMANDS["primary:mark"], "mark-primary-checkout.ts", "the installed tool must still name the program `primary:mark` runs");
 });

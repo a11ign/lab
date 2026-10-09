@@ -14,7 +14,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { walkTree } from "../../../guards/src/tree-wide-guard.mjs";
+import { walkTree } from "../../../guards/src/tree-wide-guard.ts";
 
 const LAYER = "packages/control";
 const NOT_THE_LAYER_S = /(^|\/)node_modules(\/|$)|(^|\/)\.layer-ref$|^packages\/control\/ansible\/(inventory\.yml|[^/]*\.local\.yml)$/;

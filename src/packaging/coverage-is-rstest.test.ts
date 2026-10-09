@@ -1,13 +1,13 @@
 /**
  * #1320, STEP 4 OF THE RSTEST ADOPTION (#1317): `npm run coverage` runs `@rstest/coverage-v8`, not c8, and
  * enforces the SAME threshold number c8 enforced -- `.c8rc.json`'s own `lines`/`statements`, read once by
- * `scripts/coverage.mjs`, never retyped here or there.
+ * `scripts/coverage.ts`, never retyped here or there.
  *
  * POSITIVE CONTROL FOR THIS WHOLE FILE: every assertion below fails against the manifest this row started
  * from, where `"coverage": "c8 node packages/guards/src/assert-glob-not-empty.mjs …"` was the script and
  * nothing under `scripts/` ran rstest's coverage provider at all.
  *
- * MUTATION: put c8 back (literally, or by reverting `scripts/coverage.mjs` to spawn it) and `usesC8` below
+ * MUTATION: put c8 back (literally, or by reverting `scripts/coverage.ts` to spawn it) and `usesC8` below
  * -- exercised first against a real c8 invocation, so the predicate is shown to fire before it is trusted --
  * catches it.
  */
@@ -15,12 +15,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { classifyCoverageFailure, KIND } from "../../../../scripts/coverage-failure-classifier.mjs";
-import { coverageVerdict, takeProviderExitCode, thresholdMissLines } from "../../../../scripts/coverage.mjs";
+import { classifyCoverageFailure, KIND } from "../../../../scripts/coverage-failure-classifier.ts";
+import { coverageVerdict, takeProviderExitCode, thresholdMissLines } from "../../../../scripts/coverage.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPTS = (JSON.parse(readFileSync(`${REPO}package.json`, "utf8")) as { scripts: Record<string, string> }).scripts;
-const COVERAGE_SOURCE = readFileSync(`${REPO}scripts/coverage.mjs`, "utf8");
+const COVERAGE_SOURCE = readFileSync(`${REPO}scripts/coverage.ts`, "utf8");
 const C8RC = JSON.parse(readFileSync(`${REPO}.c8rc.json`, "utf8")) as { lines: number; statements: number };
 
 /** Whether a command line invokes c8 as a program, not merely mentions it in prose. */
@@ -35,14 +35,14 @@ test("#1320 ACCEPTANCE: the coverage npm script does not invoke c8", () => {
 test("MUTATION: usesC8 really detects a c8 invocation -- the positive control for the assertion above", () => {
   assert.equal(usesC8("c8 node packages/guards/src/assert-glob-not-empty.mjs \"x\" --min=300 --run"), true);
   // A word that merely CONTAINS "c8" (a path segment, a variable) must not false-positive.
-  assert.equal(usesC8("node scripts/coverage.mjs"), false);
+  assert.equal(usesC8("node scripts/coverage.ts"), false);
 });
 
-test("#1320: the coverage script is scripts/coverage.mjs, run directly with node", () => {
-  assert.equal(SCRIPTS.coverage, "node scripts/coverage.mjs");
+test("#1320: the coverage script is scripts/coverage.ts, run by node through tsx", () => {
+  assert.equal(SCRIPTS.coverage, "node --import tsx scripts/coverage.ts");
 });
 
-test("#1320: scripts/coverage.mjs itself imports @rstest/coverage-v8, and spawns no c8 command", () => {
+test("#1320: scripts/coverage.ts itself imports @rstest/coverage-v8, and spawns no c8 command", () => {
   assert.match(COVERAGE_SOURCE, /from\s+["']@rstest\/coverage-v8["']/);
   const spawnedCommands = [...COVERAGE_SOURCE.matchAll(/step\(\[[^\]]*\]\)/g)].map((m) => m[0]);
   assert.ok(spawnedCommands.length > 0, "POSITIVE CONTROL: at least one spawned step was found to check");
@@ -78,7 +78,7 @@ test("#1320: thresholdMissLines names a metric under threshold, in c8's own erro
 });
 
 test("#1320: MUTATION -- a threshold quietly loosened past .c8rc.json's number would still be caught here", () => {
-  // If someone edited scripts/coverage.mjs to compare against a lower number than .c8rc.json's, this call
+  // If someone edited scripts/coverage.ts to compare against a lower number than .c8rc.json's, this call
   // (which uses .c8rc.json itself, exactly as the real script does) would still refuse just-under-threshold
   // figures -- the check lives in the number this file reads, not in a copy of it.
   const totals = { lines: { pct: C8RC.lines - 0.1 }, statements: { pct: C8RC.statements - 0.1 } };
@@ -88,8 +88,8 @@ test("#1320: MUTATION -- a threshold quietly loosened past .c8rc.json's number w
 
 // --- the coupling: coverage-failure-classifier.mjs (#169) still reads this wording -------------------------
 
-test("#1320: a real threshold miss from scripts/coverage.mjs is classified REGRESSION by #169's own classifier, "
-  + "naming the same metric, actual and threshold -- the coupling `.c8rc.json`'s comment on scripts/coverage.mjs "
+test("#1320: a real threshold miss from scripts/coverage.ts is classified REGRESSION by #169's own classifier, "
+  + "naming the same metric, actual and threshold -- the coupling `.c8rc.json`'s comment on scripts/coverage.ts "
   + "warns about", () => {
   const totals = { lines: { pct: LINES_UNDER }, statements: { pct: C8RC.statements } };
   const [line] = thresholdMissLines(totals as never, C8RC);
@@ -98,7 +98,7 @@ test("#1320: a real threshold miss from scripts/coverage.mjs is classified REGRE
   assert.deepEqual(verdict.thresholdMisses, [{ metric: "lines", actual: LINES_UNDER, threshold: C8RC.lines }]);
 });
 
-// --- #3865: scripts/coverage.mjs never exits non-zero without saying why -----------------------------------
+// --- #3865: scripts/coverage.ts never exits non-zero without saying why -----------------------------------
 
 const TOTALS_ABOVE = { lines: { pct: C8RC.lines + 1 }, statements: { pct: C8RC.statements + 1 } };
 const TOTALS_BELOW = { lines: { pct: C8RC.lines - 1 }, statements: { pct: C8RC.statements - 1 } };

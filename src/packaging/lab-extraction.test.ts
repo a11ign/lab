@@ -32,7 +32,7 @@ import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { MARKER_MODULE, treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.mjs";
-import { applyReplacementRules, parseReplacementRules } from "../../../../scripts/history-purge-rehearsal.mjs";
+import { applyReplacementRules, parseReplacementRules } from "../../../../scripts/history-purge-rehearsal.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "../../../..");
@@ -170,7 +170,8 @@ const coreHas = (path: string) => existsSync(join(REPO_ROOT, path));
 test("the baseline gives no edge to #2703: every edge out of lab is decided", () => {
   const baseline = baselineOf(REPO_ROOT);
   assert.deepEqual(undecided(baseline), []);
-  assert.ok(outOfLab(baseline).length > 600, "too few edges out of lab read: the baseline was read wrongly");
+  // Was 600 over 620 edges; the tests that read the tool now import scripts/tool-source.ts instead of the core's agent-org-newest-tag.mjs (a11ign/a11ign#4427), which leaves 590, so the floor is 500.
+  assert.ok(outOfLab(baseline).length > 500, "too few edges out of lab read: the baseline was read wrongly");
 });
 
 test("every checkout-path edge out of lab names a path the core has, so laying the core beside lab resolves it", () => {

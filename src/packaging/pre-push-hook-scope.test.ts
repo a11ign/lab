@@ -112,7 +112,8 @@ const NOT_A_CHECK: Record<string, string> = {
   "agent-org merge-guard":
     "the #386 armed-PR lookup: refusing to race a merge that can complete underneath the push. It fails "
     + "OPEN and loudly on anything that stops it asking, and never refuses for an unrelated reason",
-  "node scripts/changeset-untracked-check.mjs":
+  // The hook runs it under tsx since #4274 renamed the script to `.ts`; the key is the invocation the hook now writes.
+  "node --import tsx scripts/changeset-untracked-check.ts":
     "the #1127 untracked-changeset guard: catches a state CI cannot see BY CONSTRUCTION (`actions/"
     + "checkout` clones the pushed tree, and an untracked file never survives a push), never runs "
     + "`npm ci`-dependent code, and refuses only for the exact state `changeset status` itself would "

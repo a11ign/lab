@@ -34,7 +34,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
-import { declareTreeWideGuard, walkTree } from "../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../guards/src/tree-wide-guard.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard

@@ -1,7 +1,7 @@
 /**
  * THE WEEKLY CALLS-AND-DOLLARS READING IS POSTED BY A HOST TIMER, AFTER THE CI-HEALTH COMMENT EXISTS (#3690, the host half of #3217).
  *
- * `scripts/token-cost.mjs --post` edits the comment `ci-health.yml` posts on Mondays at 06:43Z, and exits non-zero without
+ * `scripts/token-cost.ts --post` edits the comment `ci-health.yml` posts on Mondays at 06:43Z, and exits non-zero without
  * changing anything while that comment is absent. A scheduled run has started up to 8h44m late (#965, #3678), so what must hold
  * of `.agent-org/units/a11ign-token-cost-weekly.{service,timer}` is that it RETRIES, that the retry is BOUNDED and ends inside
  * Monday UTC (the script reads the week of TODAY's UTC day), and that a final failure is a FAILED unit. It is the PROJECT's
@@ -89,10 +89,11 @@ test("the service declares the workers account and has no [Install] section; the
   assert.equal(accountAndInstallProblems(`${unitText(SERVICE)}\n[Install]\nWantedBy=default.target\n`).length, 1);
 });
 
-test("ExecStart runs scripts/token-cost.mjs with --post, repository-relative, and a service that does not is refused", () => {
+// token-cost.mjs became token-cost.ts in #4273/#4274, and the unit runs it as `node --import tsx` (ca9629934).
+test("ExecStart runs scripts/token-cost.ts with --post, repository-relative, and a service that does not is refused", () => {
   const execStart = setting(unitText(SERVICE), "ExecStart") ?? "";
-  assert.ok(execStart.includes("scripts/token-cost.mjs") && /\s--post(\s|$)/.test(execStart), `ExecStart is ${execStart}`);
-  assert.ok(!(setting(unitText("a11ign-weekly-review.service"), "ExecStart") ?? "").includes("scripts/token-cost.mjs"), "POSITIVE CONTROL: the reading can say no");
+  assert.ok(execStart.includes("scripts/token-cost.ts") && /\s--post(\s|$)/.test(execStart), `ExecStart is ${execStart}`);
+  assert.ok(!(setting(unitText("a11ign-weekly-review.service"), "ExecStart") ?? "").includes("scripts/token-cost.ts"), "POSITIVE CONTROL: the reading can say no");
   assert.ok(!(setting(withoutLine(unitText(SERVICE), "ExecStart") , "ExecStart") ?? "").includes("--post"));
 });
 

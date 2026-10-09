@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { filesUnder } from "../../../guards/src/files-under.mjs";
+import { filesUnder } from "../../../guards/src/files-under.ts";
 
 /**
  * NO TEST MAY REACH GUIDEPUP — known-gaps §12, and this is its SECOND occurrence.

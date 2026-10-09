@@ -52,13 +52,18 @@ test("#977: the top-level channels in EVIDENCE_FIELDS are one-segment paths -- e
   assert.deepEqual(EVIDENCE_FIELDS.filter((f) => f.length === 1).map((f) => f[0]).sort(), ["formInputs", "media"]);
 });
 
-/** A `@typedef {{ ... }} Name` line's field names -- the wire test's reading: one line, flat, colon-anchored. */
+/**
+ * A typedef line's field names -- the wire test's reading: one line, flat, colon-anchored. The worker's sources are `.ts` since a11ign/a11ign#4274, so the line is
+ * `type Name = { ... };`; the `@typedef {{ ... }} Name` spelling it replaced is still read, so the parser does not care which one the laid worker carries.
+ */
 const CAPTURE_CORE = readFileSync(workerSource("src/capture-core.mjs"), "utf8");
 function typedefFields(name: string): string[] {
-  const line = CAPTURE_CORE.split("\n").find((l) => l.includes("@typedef {{") && new RegExp(`\\}\\}\\s*${name}\\b`).test(l));
-  assert.ok(line, `@typedef {{ ... }} ${name} not found on one line -- capture-core.mjs has moved`);
-  const body = (line as string).match(/\{\{([^]*)\}\}/);
-  assert.ok(body, `no {{ ... }} body on the ${name} typedef line`);
+  const jsdoc = new RegExp(`\\}\\}\\s*${name}\\b`);
+  const alias = new RegExp(`^\\s*(?:export )?type ${name}\\s*=\\s*\\{`);
+  const line = CAPTURE_CORE.split("\n").find((l) => (l.includes("@typedef {{") && jsdoc.test(l)) || alias.test(l));
+  assert.ok(line, `type ${name} = { ... } not found on one line -- capture-core has moved`);
+  const body = (line as string).match(/\{\{([^]*)\}\}/) ?? (line as string).match(/=\s*\{([^]*)\}\s*;?\s*$/);
+  assert.ok(body, `no { ... } body on the ${name} typedef line`);
   return [...new Set([...(body as RegExpMatchArray)[1].matchAll(/\b([A-Za-z_$][\w$]*)\??:\s*/g)].map((m) => m[1]))].sort();
 }
 

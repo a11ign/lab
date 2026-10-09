@@ -34,7 +34,7 @@ import { dirname, join } from "node:path";
 // `withSandbox` keeps the failure RED and replaces its message with one that names the root, the
 // filesystem's free space, and the host as the cause. It is this file's first adoption (#2158's Region);
 // the other 103 exposed suites are explicitly a later decision.
-import { EXHAUSTION_MARKER, withSandbox } from "../../../guards/src/sandbox-exhaustion.mjs";
+import { EXHAUSTION_MARKER, withSandbox } from "../../../guards/src/sandbox-exhaustion.ts";
 const {
   claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, moveProjectStatus,
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
@@ -53,7 +53,7 @@ const { laneReason } = await toolModule("src/row-claim/runner-rule.mjs");
 import { stripComments } from "@a11ign/evidence/source-text";
 const { READY_LABEL, WAS_READY_LABEL } = await toolModule("src/ready-label-audit.mjs");
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { toolModule, toolUrl } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolUrl } from "../../scripts/tool-source.ts";
 
 // #2782: EVERY REMOVAL WRITES A LINE AND READS THE ROW'S CLAIM, and a fixture must do neither to the host -- a fixture directory
 // named for a row number would otherwise read the real row over `gh`, and every removal would land in the real log. The tests
@@ -2218,7 +2218,8 @@ test("#2782 DONE-WHEN 1: decline's removal writes `removing` then `removed`, nam
     removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => git(primary, args), session: "worker-me", branch: "agent/test-branch" });
     const mine = removalLines().slice(before).filter((l) => l.path === worktree);
     assert.deepEqual(mine.map((l) => l.event), ["removing", "removed"]);
-    assert.equal(mine[0].caller, "row-claim.mjs");
+    // The caller is the script's own basename, which is `row-claim.ts` since agent-org#435 renamed the tool's sources.
+    assert.equal(mine[0].caller, "row-claim.ts");
     assert.equal(mine[0].owner, "worker-me");
     assert.equal(mine[0].branch, "agent/test-branch");
     assert.match(mine[0].reason, /decline by worker-me/);
@@ -2259,7 +2260,7 @@ test("#2782: the undo of a LOST claim writes its own line, and never asks the ro
   worktreeClaim(stub, { claimResult: { claimed: false, reason: "B4: overlaps #9" } }).call();
   const mine = removalLines().slice(before).filter((l) => l.path === "/repos/wt-1432");
   assert.deepEqual(mine.map((l) => l.event), ["removing", "removed"]);
-  assert.equal(mine[0].caller, "row-claim.mjs");
+  assert.equal(mine[0].caller, "row-claim.ts"); // the basename, renamed from `.mjs` by agent-org#435
   assert.match(mine[0].reason, /the claim did not win/);
   assert.ok(!stub.calls.some((c) => c[0] === "gh"), "the undo spent no `gh` call on the row");
 });

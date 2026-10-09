@@ -21,7 +21,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { toolModule, toolPath, toolUrl } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolPath, toolUrl } from "../../scripts/tool-source.ts";
 const {
   METRICS, EXIT, figure, passRate, renderFigure, renderTable, totalCount, mainColour,
   firstFailingAssertion, byConclusion, queueReport, utilisation, boardDeadline, watchReport,

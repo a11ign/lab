@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, type ExecFileSyncOptions } from "node:child_process";
-import { describeSpawnFailure } from "../../../../scripts/spawn-failure.mjs";
+import { describeSpawnFailure } from "../../../../scripts/spawn-failure.ts";
 
 const EXIT_CODE = 3;
 // THE STDERR TEXT TRAVELS BY ENVIRONMENT, NEVER IN THE SCRIPT. The script IS the argv, and the argv is in

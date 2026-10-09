@@ -14,7 +14,7 @@ import { join } from "node:path";
 
 import {
   findTransferUrls, checkTransferUrls, reportTransferUrls,
-} from "../../../../scripts/check-transfer-urls.mjs";
+} from "../../../../scripts/check-transfer-urls.ts";
 import { PRODUCT_REPO } from "../../../../scripts/repo-identity.mjs";
 
 /**

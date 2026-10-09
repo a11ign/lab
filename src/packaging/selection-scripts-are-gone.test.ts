@@ -25,7 +25,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
 
 declareTreeWideGuard();
 
@@ -63,7 +63,8 @@ function trackedFiles(): string[] {
 // 1. THE FILES ARE GONE, AND THE WALK THAT SAYS SO READ A REAL TREE.
 test("the walk reads a real tree: ci.yml, package.json and a script under scripts/ are in it (the positive control)", () => {
   const files = trackedFiles();
-  for (const expected of [".github/workflows/ci.yml", "package.json", "scripts/ci-changed.mjs", "scripts/verify.mjs"]) {
+  // verify.mjs became verify.ts in #4273/#4274 (the core's scripts/ moved to TypeScript).
+  for (const expected of [".github/workflows/ci.yml", "package.json", "scripts/ci-changed.mjs", "scripts/verify.ts"]) {
     assert.ok(files.includes(expected), `${expected} is not tracked, so every assertion below read the wrong tree`);
   }
 });

@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { classifyCoverageFailure, commentBody, KIND, testFailuresIn } from "../../../../scripts/coverage-failure-classifier.mjs";
+import { classifyCoverageFailure, commentBody, KIND, testFailuresIn } from "../../../../scripts/coverage-failure-classifier.ts";
 
 test("npm ci failing is INFRA, and the coverage log is never even consulted", () => {
   const v = classifyCoverageFailure({ ciOutcome: "failure", buildOutcome: "success", coverageLog: "anything" });

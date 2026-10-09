@@ -29,7 +29,7 @@ const {
   undecidedRefusal, classifyTmpQuota, readTmpQuota, tmpQuotaRow, QUOTACTL_PY,
 } = await toolModule("src/control-plane-hygiene.mjs");
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { toolModule, toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 
 test("the real repo's dist-trap check finds every package it claims to check, protected by the root's "
   + "own prepare (#168), and none currently exposed", () => {

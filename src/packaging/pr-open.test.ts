@@ -37,7 +37,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { toolModule, toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 const { acceptanceEnv, checkBody, bodyFromArgs, armAfterCreate, labelAfterCreate, sendToGitHub,
   headTreeRefusal, editTreeRefusal, mutationReport,
   main: prOpenMain,
@@ -135,16 +135,16 @@ test("--body wins when both are given, matching gh's own last-flag-wins conventi
 
 test("checkBody's own source imports its reports from acceptance-commands.mjs and calls them there -- never a "
   + "local regex re-implementing the question", () => {
-  const dir = toolPath("src/");
-  const source = stripComments(readFileSync(`${dir}pr-open.mjs`, "utf8"));
-  assert.match(source, /from\s+["']\.\/acceptance-commands\.mjs["']/);
+  // The tool's sources are `.ts` since agent-org#435, and import each other by that extension; `toolPath` finds the file under either.
+  const source = stripComments(readFileSync(toolPath("src/pr-open.mjs"), "utf8"));
+  assert.match(source, /from\s+["']\.\/acceptance-commands\.(?:mjs|ts)["']/);
   // agent-org 0.2.4 (#3209) composes the reports through `runCiBodyReports`, so the two named functions are called
   // from the list in acceptance-commands.mjs and not from pr-open.mjs. Either spelling is the SAME parser; what this
   // pins is that no third spelling (a local regex) stands in for it.
   if (/\brunCiBodyReports\s*\(/.test(source)) {
     // The LIST, not the file: both names also appear as definitions elsewhere in acceptance-commands.mjs, so a
     // whole-file match would pass with the list's own call deleted.
-    const all = stripComments(readFileSync(`${dir}acceptance-commands.mjs`, "utf8"));
+    const all = stripComments(readFileSync(toolPath("src/acceptance-commands.mjs"), "utf8"));
     const start = all.indexOf("export const CI_BODY_REPORTS");
     assert.ok(start >= 0, "acceptance-commands.mjs exports CI_BODY_REPORTS");
     const list = all.slice(start, all.indexOf("\n];", start));
@@ -215,6 +215,11 @@ const gitStub = (args: string[]) => (args.includes("--abbrev-ref") ? "agent/my-b
 // That includes the tests driven through `main()`, which forwards its own `owner` to `sendToGitHub`: two of
 // them left it out and failed in every tree `row-claim` stamps while passing in CI's unstamped one (#1925).
 const UNSTAMPED = () => null;
+
+// A create that SENDS needs a live owner: since agent-org#436 (a11ign/a11ign#4386) `main` refuses a create that cannot name one, before it sends
+// anything, so a `main()` test whose subject is a create that goes out stamps it. The stamp adds the owner's label step to what is spawned.
+// `ceo` is a standing session in `sessions.json`, so `isLiveSession` knows it with no fixture of its own.
+const LIVE_OWNER = () => "ceo";
 
 // #2929: the line a create that LANDED prints last. Matched on its fixed words, so a line that merely mentions CI does not count.
 const CI_PENDING = /CI has NOT run on it/;
@@ -505,7 +510,7 @@ function driveMain(argv: string[], outcomes: { create: () => void; arm: () => vo
       runAcceptance: () => 0,
       run: (args: string[]) => { spawned.push(args); (args[1] === "merge" ? outcomes.arm : outcomes.create)(); },
       git: gitStub,
-      owner: UNSTAMPED,
+      owner: LIVE_OWNER,
       err: (l: string) => { errs.push(l); },
       out: () => {},
     });
@@ -553,7 +558,7 @@ test("#1479 CONTROL: a create that FAILS still exits EXIT_NOTHING_SENT and never
   assert.equal(clean.code, 0);
   assert.equal(clean.errs.length, 1, "the CI-pending line and nothing else");
   assert.match(clean.errs[0], CI_PENDING);
-  assert.deepEqual(clean.spawned.map((a) => a[1]), ["create", "merge"], "and the arm really ran");
+  assert.deepEqual(clean.spawned.map((a) => a[1]), ["create", "merge", "edit"], "and the arm really ran, then the owner's label");
 });
 
 test("#1479: the script's header documents every exit code main returns, each on its own line", () => {
@@ -615,7 +620,7 @@ test("#1578 ACCEPTANCE, MUTATION TARGET: driven through main(), the Acceptance r
   try {
     code = prOpenMain(["create", "--draft", "--body", body], {
       run: (args: string[]) => { spawned.push(args); },
-      git: () => "agent/x", owner: UNSTAMPED, out: () => {}, err: () => {},
+      git: () => "agent/x", owner: LIVE_OWNER, out: () => {}, err: () => {},
     });
   } finally {
     if (saved === undefined) delete process.env.A11Y_ACCEPTANCE_PATH; else process.env.A11Y_ACCEPTANCE_PATH = saved;
@@ -624,8 +629,8 @@ test("#1578 ACCEPTANCE, MUTATION TARGET: driven through main(), the Acceptance r
   rmSync(dir, { recursive: true, force: true });
   assert.equal(recorded, "--version", "the Acceptance child resolved `node` from A11Y_ACCEPTANCE_PATH");
   assert.equal(code, 0, "the body checked clean and the create was sent");
-  assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"]],
-    "pr-open's own create still went through its injected `gh`, untouched by the override");
+  assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"], ["pr", "edit"]],
+    "pr-open's own create (and the owner's label after it) still went through its injected `gh`, untouched by the override");
 });
 
 // --- #2099: A BARE `gh` ACCEPTANCE IS THE ACCEPTANCE JOB'S REFUSAL, DELIVERED HERE ---
@@ -664,10 +669,10 @@ test("#2099 CONTROL: the SAME body carrying the declaration is SENT, and reports
     + '\n## Hand-run output\n\n```\n$ gh pr view 1\n"ok"\n```\n';
   const code = prOpenMain(["create", "--draft", "--body", body], {
     run: (args: string[]) => { spawned.push(args); },
-    git: () => "agent/x", owner: UNSTAMPED, out: (line: string) => { outs.push(line); }, err: () => {},
+    git: () => "agent/x", owner: LIVE_OWNER, out: (line: string) => { outs.push(line); }, err: () => {},
   });
   assert.equal(code, 0);
-  assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"]], "the create was sent");
+  assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"], ["pr", "edit"]], "the create was sent, then the owner's label");
   assert.match(outs.join("\n"), /ACCEPTANCE: NOT RUN/);
 });
 
@@ -819,6 +824,29 @@ test("#2929 CONTROL: an `edit`, a failed create and an arm that fails after the 
   assert.equal(armFailed.filter((l) => CI_PENDING.test(l)).length, 0, "its own line, not this one in place of it");
 });
 
+// --- agent-org#436 (a11ign/a11ign#4386): a create that cannot name its owner is refused BEFORE it sends ---
+
+test("#4386: a create whose tree is unstamped and whose row names no session is REFUSED and sends nothing; a live owner is sent", () => {
+  const body = "## Acceptance\n\nnode -e \"process.exit(0)\"\n\nCloses: none -- a probe\n";
+  const drive = (owner: () => string | null) => {
+    const spawned: string[][] = [];
+    const said: string[] = [];
+    const code = prOpenMain(["create", "--draft", "--body", body], {
+      runAcceptance: () => 0, run: (args: string[]) => { spawned.push(args); },
+      git: gitStub, owner, out: () => {}, err: (l: string) => { said.push(l); },
+    });
+    return { code, spawned, said: said.join("\n") };
+  };
+  const unstamped = drive(UNSTAMPED);
+  assert.equal(unstamped.code, EXIT_NOTHING_SENT);
+  assert.deepEqual(unstamped.spawned, [], "nothing was sent");
+  assert.match(unstamped.said, /no session could be named as its owner/);
+  const retired = drive(() => "dispatcher");
+  assert.equal(retired.code, EXIT_NOTHING_SENT, "a session that is not live is refused too, in its own words");
+  assert.match(retired.said, /`dispatcher` is not a live session/);
+  assert.equal(drive(LIVE_OWNER).code, 0, "POSITIVE CONTROL: the same body with a live owner is sent");
+});
+
 // --- #2307: a declared `Mutation:` command is RUN, and a guard that does not bite is WARNED about ---------------
 //
 // `ceo`'s ruling (#2305 part b): WARN, never refuse. `mutation-check.mjs` observes a nonzero exit and not WHY, so
@@ -844,7 +872,7 @@ function driveMutation(body: string, mutateExit: number) {
     runAcceptance: () => 0,
     runMutation: (command: string) => { ran.push(command); return mutateExit; },
     run: (args: string[]) => { spawned.push(args); },
-    git: gitStub, owner: UNSTAMPED, out: (l: string) => { outs.push(l); }, err: () => {},
+    git: gitStub, owner: LIVE_OWNER, out: (l: string) => { outs.push(l); }, err: () => {},
   });
   return { code, ran, outs: outs.join(""), spawned };
 }
@@ -857,7 +885,7 @@ test("#2307 ACCEPTANCE: a Mutation whose guard does NOT bite prints a warning na
   assert.ok(outs.includes("DID NOT BITE"), "the warning says plainly that the guard does not bite");
   assert.ok(outs.includes(MUTATE_COMMAND), "and names the command");
   assert.equal(code, 0, "a warning, never a refusal (ceo, #2305)");
-  assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"]]);
+  assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"], ["pr", "edit"]], "the create, then the owner's label (a draft is labelled, not armed)");
 });
 
 test("#2307: a guard that bites is reported beside the Acceptance result, without a warning", () => {

@@ -54,12 +54,12 @@ import { fileURLToPath } from "node:url";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
-import { commandScripts, commandHeader } from "../../../../scripts/generate-commands-doc.mjs";
+import { commandScripts, commandHeader } from "../../../../scripts/generate-commands-doc.ts";
 // #905: the prose-coverage and page-freshness halves live in the doc cross-reference check the nightly report
 // also runs -- one copy. The `// command:` header rule and the MUTATION cases below stay here.
 import {
   INTERNAL, npmScripts as npmScriptsIn,
-} from "../../../../scripts/doc-checks/commands-documented.mjs";
+} from "../../../../scripts/doc-checks/commands-documented.ts";
 
 const npmScripts = () => npmScriptsIn(REPO);
 

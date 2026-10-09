@@ -13,8 +13,8 @@ import {
   CATEGORIES, PRICE_LIST, attributeCalls, biggestContributor, callsFromTranscript, categoryOf, costOfCall, countContributors,
   failureIntervals, markRereads, parseHours, readRepository, readTargetsFile, readWindow, renderSection, reviewRounds,
   unreadSection, windowContains, withFiveMinuteWrites,
-} from "../../../../scripts/token-cost.mjs";
-import { TARGETS_FILE, targetsFrom } from "../../../../scripts/ci-health.mjs";
+} from "../../../../scripts/token-cost.ts";
+import { TARGETS_FILE, targetsFrom } from "../../../../scripts/ci-health.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const TARGETS = targetsFrom(JSON.parse(readFileSync(TARGETS_FILE, "utf8")));

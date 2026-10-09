@@ -1,8 +1,8 @@
 /**
- * #2612, child 1 of #69: `packages/guards/src/layer-edges.mjs`, the guard that makes the boundary of `nvda-worker` and
+ * #2612, child 1 of #69: `packages/guards/src/layer-edges.ts`, the guard that makes the boundary of `nvda-worker` and
  * `nvda-speech` a thing a machine can read, and refuses a reach across it that the baseline does not name.
  *
- * EVERY FIXTURE IS A REPOSITORY OF ITS OWN under `fixtures/layer-edges/<case>/`, holding a real `packages/other/src/x.mjs`.
+ * EVERY FIXTURE IS A REPOSITORY OF ITS OWN under `fixtures/layer-edges/<case>/`, holding a real `packages/other/src/x.ts`.
  * That file is the CONFOUND control: a fixture that names it in a comment or as data passes because of the comment or the
  * data, and never because the target was missing (`a-negative-fixture-needs-the-confound-in-it`). Each such case asserts the
  * target exists and that the mention is really there, so a fixture emptied by accident is not read as a pass.
@@ -20,13 +20,14 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
 import {
   BASELINE_PATH, LAYER_PACKAGES, countByDisposition, describeVerdict, findEdges, isScanned, judgeEdges, packageOf,
   trackedFiles,
-} from "../../../guards/src/layer-edges.mjs";
+} from "../../../guards/src/layer-edges.ts";
 import { laidControlFiles } from "./laid-control.ts";
 
 // #3610: "the real tree agrees with the committed baseline" walks `trackedFiles()`, so this file's population is the whole
@@ -35,13 +36,15 @@ import { laidControlFiles } from "./laid-control.ts";
 declareTreeWideGuard();
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-const GUARD = join(ROOT, "packages/guards/src/layer-edges.mjs");
+const GUARD = join(ROOT, "packages/guards/src/layer-edges.ts");
 const FIXTURES = join(ROOT, "packages/guards/src/fixtures/layer-edges");
 
 const fixture = (name: string) => join(FIXTURES, name);
 const edgesOf = (name: string) => findEdges({ root: fixture(name), tracked: trackedFiles(fixture(name)) });
 const textOf = (name: string, path: string) => readFileSync(join(fixture(name), path), "utf8");
-const cli = (...args: string[]) => spawnSync(process.execPath, [GUARD, ...args], { encoding: "utf8" });
+// a11ign/a11ign#4273: the guard is TypeScript, and a bare `node` cannot run one (ADR 0043 Decision 8: `node --import tsx`).
+const TSX = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
+const cli = (...args: string[]) => spawnSync(process.execPath, ["--import", TSX, GUARD, ...args], { encoding: "utf8" });
 
 /** The lab's OWN baseline (a11ign/a11ign#3904): #3505 took the lab's edges out of the core's `BASELINE_PATH`, so the lab records the reaches it makes by path into the core it is laid over. */
 const LAB_BASELINE_PATH = "packages/lab/baselines/layer-edges.baseline.json";
@@ -52,13 +55,13 @@ const fromLab = (e: { from: string }) => packageOf(e.from) === "lab";
 const trackedAndLaid = (root: string) => [...trackedFiles(root), ...laidControlFiles(root.replace(/\/$/, ""))];
 const labEdges = () => findEdges({ root: ROOT, tracked: trackedAndLaid(ROOT) }).filter(fromLab);
 
-const TARGET = "packages/other/src/x.mjs";
-const LAYER_FILE = "packages/nvda-worker/src/x.mjs";
+const TARGET = "packages/other/src/x.ts";
+const LAYER_FILE = "packages/nvda-worker/src/x.ts";
 /** The layers that left, or are leaving, first (#2612, #2976): the ones whose every `out` edge a named row owns. */
 const FIRST_LAYERS = ["nvda-worker", "nvda-speech", "agent-org"];
 /** The three the fence of #3501 adds, for moves 2-4 of #69. */
 const SPLIT_LAYERS = ["worker-fleet", "lab", "control"];
-/** One x.mjs and one own.mjs per layer, and the other package's x.mjs. */
+/** One x.ts and one own.ts per layer, and the other package's x.ts. */
 const THREE_LAYERS_CLEAN_FILES = 7;
 /** The row counted 12 code back edges when `worker-fleet` was in the tree and 11 of them were its own; #3504 took the 11 with the code, so the one left is lab's. */
 const BACK_EDGES_AT_LEAST = 1;
@@ -71,9 +74,9 @@ const TEST_PATH = /\.test\.|\/fixtures\/|\/test-support\/|\/tests?\/|(?:^|\/)tes
 
 test("the layer packages are DECLARED, all six, and packageOf reads the directory under packages/", () => {
   assert.deepEqual([...LAYER_PACKAGES], [...FIRST_LAYERS, ...SPLIT_LAYERS]);
-  assert.equal(packageOf("packages/nvda-worker/src/server.mjs"), "nvda-worker");
+  assert.equal(packageOf("packages/nvda-worker/src/server.ts"), "nvda-worker");
   assert.equal(packageOf("packages/nvda-speech"), "nvda-speech");
-  assert.equal(packageOf("scripts/x.mjs"), null, "the repository root and scripts/ are in no package");
+  assert.equal(packageOf("scripts/x.ts"), null, "the repository root and scripts/ are in no package");
 });
 
 // ------------------------------------------------------------------ the clean fixture PASSES
@@ -81,7 +84,7 @@ test("the layer packages are DECLARED, all six, and packageOf reads the director
 test("a clean layer package PASSES: its own imports, a bare package import, and another package reaching it by NAME", () => {
   const scanned = trackedFiles(fixture("clean")).filter((path) => isScanned(path));
   assert.deepEqual(scanned.sort(), [
-    "packages/nvda-worker/src/own.mjs", "packages/nvda-worker/src/x.mjs", "packages/other/src/x.mjs", "packages/other/src/y.mjs",
+    "packages/nvda-worker/src/own.ts", "packages/nvda-worker/src/x.ts", "packages/other/src/x.ts", "packages/other/src/y.ts",
   ], "POSITIVE CONTROL: the clean fixture is scanned, so no edges is a scan that found none");
   assert.deepEqual(edgesOf("clean"), []);
 });
@@ -92,7 +95,7 @@ test("an import that leaves the layer is REFUSED, naming both ends", () => {
   const edges = edgesOf("imports-across");
   assert.deepEqual(edges, [{ from: LAYER_FILE, to: TARGET, kind: "import", direction: "out" }]);
   const message = describeVerdict(judgeEdges(edges, [])).join("\n");
-  assert.match(message, /NEW EDGE out: packages\/nvda-worker\/src\/x\.mjs -> packages\/other\/src\/x\.mjs/);
+  assert.match(message, /NEW EDGE out: packages\/nvda-worker\/src\/x\.ts -> packages\/other\/src\/x\.ts/);
 });
 
 test("a `new URL(..., import.meta.url)` read that leaves the layer is REFUSED", () => {
@@ -121,7 +124,7 @@ test("a `<rev>:<path>` argument (the shape of `git show`) naming another package
 const viaOf = (name: string) => edgesOf(name).map((e) => ({ file: e.from.split("/").pop(), via: e.via }));
 
 test("a path assigned to a `const` and read a few lines later is REFUSED, naming the declaration and the read", () => {
-  assert.match(textOf("const-read", LAYER_FILE), /^const SIBLING = "packages\/other\/src\/x\.mjs";$/m, "CONTROL: the const is really there");
+  assert.match(textOf("const-read", LAYER_FILE), /^const SIBLING = "packages\/other\/src\/x\.ts";$/m, "CONTROL: the const is really there");
   const edges = edgesOf("const-read");
   assert.deepEqual(edges, [{ from: LAYER_FILE, to: TARGET, kind: "path-literal", direction: "out", via: { declaredLine: 4, readLine: 7 } }]);
   const message = describeVerdict(judgeEdges(edges, [])).join("\n");
@@ -132,44 +135,44 @@ test("a path assigned to a `const` and read a few lines later is REFUSED, naming
 test("a `const` that is only handed to a function that does not read PASSES: a parser, an `includes`, a `.map` over strings", () => {
   assert.ok(existsSync(join(fixture("const-parsed"), TARGET)), "CONTROL: the target exists, so this passes because the const is not read");
   const source = textOf("const-parsed", LAYER_FILE);
-  assert.match(source, /^const PATH = "packages\/other\/src\/x\.mjs";$/m);
-  assert.match(source, /mentions\("see packages\/other\/src\/x\.mjs", PATH\)/, "and the const is passed to a call");
+  assert.match(source, /^const PATH = "packages\/other\/src\/x\.ts";$/m);
+  assert.match(source, /mentions\("see packages\/other\/src\/x\.ts", PATH\)/, "and the const is passed to a call");
   assert.match(source, /LIST\.map\(\(entry\) => entry\.toUpperCase\(\)\)/, "and a list of paths is walked by a callback that reads nothing");
   const scanned = trackedFiles(fixture("const-parsed")).filter((path) => isScanned(path));
-  assert.ok(scanned.includes(LAYER_FILE) && scanned.includes("packages/nvda-worker/src/y.mjs"), "POSITIVE CONTROL: both files are scanned");
+  assert.ok(scanned.includes(LAYER_FILE) && scanned.includes("packages/nvda-worker/src/y.ts"), "POSITIVE CONTROL: both files are scanned");
   assert.deepEqual(edgesOf("const-parsed"), []);
   assert.equal(cli("--check", `--root=${fixture("const-parsed")}`).status, 0);
 });
 
 test("the property a read takes is the property that is read: `expect` holds another package's path as DATA and `file` is the layer's own", () => {
-  const source = textOf("const-parsed", "packages/nvda-worker/src/y.mjs");
-  assert.match(source, /file: "packages\/nvda-worker\/src\/own\.mjs", expect: "packages\/other\/src\/x\.mjs"/);
+  const source = textOf("const-parsed", "packages/nvda-worker/src/y.ts");
+  assert.match(source, /file: "packages\/nvda-worker\/src\/own\.ts", expect: "packages\/other\/src\/x\.ts"/);
   assert.match(source, /readFileSync\(join\(ROOT, file\)/);
-  assert.deepEqual(edgesOf("const-parsed").filter((e) => e.from.endsWith("y.mjs")), [], "the destructured `file` is judged, not every string in the list");
-  const swapped = viaOf("const-array").filter((e) => e.file === "z.mjs");
-  assert.deepEqual(swapped, [{ file: "z.mjs", via: { declaredLine: 4, readLine: 7 } }], "CONTROL: with the paths the other way round the same loop IS refused");
+  assert.deepEqual(edgesOf("const-parsed").filter((e) => e.from.endsWith("y.ts")), [], "the destructured `file` is judged, not every string in the list");
+  const swapped = viaOf("const-array").filter((e) => e.file === "z.ts");
+  assert.deepEqual(swapped, [{ file: "z.ts", via: { declaredLine: 4, readLine: 7 } }], "CONTROL: with the paths the other way round the same loop IS refused");
 });
 
 test("a path in a list `const` that is walked into a read is REFUSED: for-of into existsSync, a spread list mapped into join, a destructured loop", () => {
   assert.deepEqual(viaOf("const-array"), [
-    { file: "x.mjs", via: { declaredLine: 4, readLine: 8 } },
-    { file: "y.mjs", via: { declaredLine: 3, readLine: 7 } },
-    { file: "z.mjs", via: { declaredLine: 4, readLine: 7 } },
+    { file: "x.ts", via: { declaredLine: 4, readLine: 8 } },
+    { file: "y.ts", via: { declaredLine: 3, readLine: 7 } },
+    { file: "z.ts", via: { declaredLine: 4, readLine: 7 } },
   ]);
-  assert.match(textOf("const-array", "packages/nvda-worker/src/y.mjs"), /const ALL = \[\.\.\.A, \.\.\.B\];/, "CONTROL: the list is built by spreading two");
+  assert.match(textOf("const-array", "packages/nvda-worker/src/y.ts"), /const ALL = \[\.\.\.A, \.\.\.B\];/, "CONTROL: the list is built by spreading two");
   assert.ok(edgesOf("const-array").every((e) => e.to === TARGET), "the layer's own path in B is not a reach");
 });
 
 test("a `const` shadowed in an inner scope is judged on the value that reaches the read, on both sides of the block", () => {
-  for (const file of ["x.mjs", "y.mjs"]) {
-    assert.match(textOf("const-shadowed", `packages/nvda-worker/src/${file}`), /const P = "\.\/own\.mjs"|const P = "\.\.\/\.\.\/other\/src\/x\.mjs"/);
+  for (const file of ["x.ts", "y.ts"]) {
+    assert.match(textOf("const-shadowed", `packages/nvda-worker/src/${file}`), /const P = "\.\/own\.ts"|const P = "\.\.\/\.\.\/other\/src\/x\.ts"/);
   }
-  assert.ok(existsSync(join(fixture("const-shadowed"), "packages/nvda-worker/src/own.mjs")), "CONTROL: `./own.mjs` exists, so an unresolved read is not why one read is clean");
+  assert.ok(existsSync(join(fixture("const-shadowed"), "packages/nvda-worker/src/own.ts")), "CONTROL: `./own.ts` exists, so an unresolved read is not why one read is clean");
   assert.deepEqual(viaOf("const-shadowed"), [
     // the INNER const names the other package and is declared BEFORE a file-level const that names the layer's own file
-    { file: "x.mjs", via: { declaredLine: 3, readLine: 4 } },
+    { file: "x.ts", via: { declaredLine: 3, readLine: 4 } },
     // the FILE-LEVEL const names the other package, an inner block shadows it with the layer's own file, and the read AFTER the block is the outer one
-    { file: "y.mjs", via: { declaredLine: 2, readLine: 7 } },
+    { file: "y.ts", via: { declaredLine: 2, readLine: 7 } },
   ]);
 });
 
@@ -178,22 +181,22 @@ test("a `const` shadowed in an inner scope is judged on the value that reaches t
 test("a declared layer of moves 2-4 that reaches across by path is REFUSED, naming both ends, for each of the three", () => {
   const edges = edgesOf("three-layers");
   assert.deepEqual(edges, [
-    { from: "packages/other/src/y.mjs", to: "packages/control/src/own.mjs", kind: "import", direction: "in" },
-    { from: "packages/lab/src/x.mjs", to: "packages/worker-fleet/src/own.mjs", kind: "import", direction: "out" },
-    { from: "packages/worker-fleet/src/x.mjs", to: "packages/other/src/x.mjs", kind: "import", direction: "out" },
-    { from: "packages/control/src/x.mjs", to: "packages/lab/src/own.mjs", kind: "path-literal", direction: "out" },
+    { from: "packages/other/src/y.ts", to: "packages/control/src/own.ts", kind: "import", direction: "in" },
+    { from: "packages/lab/src/x.ts", to: "packages/worker-fleet/src/own.ts", kind: "import", direction: "out" },
+    { from: "packages/worker-fleet/src/x.ts", to: "packages/other/src/x.ts", kind: "import", direction: "out" },
+    { from: "packages/control/src/x.ts", to: "packages/lab/src/own.ts", kind: "path-literal", direction: "out" },
   ]);
   const message = describeVerdict(judgeEdges(edges, [])).join("\n");
-  assert.match(message, /NEW EDGE out: packages\/worker-fleet\/src\/x\.mjs -> packages\/other\/src\/x\.mjs/);
-  assert.match(message, /NEW EDGE out: packages\/lab\/src\/x\.mjs -> packages\/worker-fleet\/src\/own\.mjs/, "an edge between two layers is named by both");
-  assert.match(message, /NEW EDGE out: packages\/control\/src\/x\.mjs -> packages\/lab\/src\/own\.mjs/);
+  assert.match(message, /NEW EDGE out: packages\/worker-fleet\/src\/x\.ts -> packages\/other\/src\/x\.ts/);
+  assert.match(message, /NEW EDGE out: packages\/lab\/src\/x\.ts -> packages\/worker-fleet\/src\/own\.ts/, "an edge between two layers is named by both");
+  assert.match(message, /NEW EDGE out: packages\/control\/src\/x\.ts -> packages\/lab\/src\/own\.ts/);
   assert.equal(cli("--check", `--root=${fixture("three-layers")}`).status, 1, "and the command refuses it too");
 });
 
 test("the same three layers importing only themselves and a package by NAME PASS, with every file scanned", () => {
   const scanned = trackedFiles(fixture("three-layers-clean")).filter((path) => isScanned(path));
-  assert.equal(scanned.length, THREE_LAYERS_CLEAN_FILES, "POSITIVE CONTROL: the clean fixture holds one x.mjs and one own.mjs per layer and one other package");
-  assert.ok(SPLIT_LAYERS.every((layer) => scanned.includes(`packages/${layer}/src/x.mjs`)), "and each of the three is among them");
+  assert.equal(scanned.length, THREE_LAYERS_CLEAN_FILES, "POSITIVE CONTROL: the clean fixture holds one x.ts and one own.ts per layer and one other package");
+  assert.ok(SPLIT_LAYERS.every((layer) => scanned.includes(`packages/${layer}/src/x.ts`)), "and each of the three is among them");
   assert.deepEqual(edgesOf("three-layers-clean"), []);
   assert.equal(cli("--check", `--root=${fixture("three-layers-clean")}`).status, 0);
 });
@@ -207,7 +210,7 @@ test("a `packages/<name>` token in a launcher whose <name> is no package is not 
 
 test("the OTHER direction: a package that imports into the layer by path is REFUSED", () => {
   assert.deepEqual(edgesOf("reach-in"), [
-    { from: "packages/other/src/y.mjs", to: "packages/nvda-worker/src/own.mjs", kind: "import", direction: "in" },
+    { from: "packages/other/src/y.ts", to: "packages/nvda-worker/src/own.ts", kind: "import", direction: "in" },
   ]);
 });
 
@@ -223,15 +226,15 @@ test("a workflow and a config file naming a layer path are REFUSED, as `in` edge
 
 test("a path mentioned ONLY in a comment PASSES, with the real target and the comment both present", () => {
   assert.ok(existsSync(join(fixture("comment-only"), TARGET)), "CONTROL: the target exists, so this passes because it is a comment");
-  assert.match(textOf("comment-only", "packages/nvda-worker/src/x.mjs"), /\/\/ import \{ X \} from "\.\.\/\.\.\/other\/src\/x\.mjs"/);
-  assert.match(textOf("comment-only", "packages/nvda-worker/src/run.cmd"), /^rem node "packages\\other\\src\\x\.mjs"/m);
+  assert.match(textOf("comment-only", "packages/nvda-worker/src/x.ts"), /\/\/ import \{ X \} from "\.\.\/\.\.\/other\/src\/x\.ts"/);
+  assert.match(textOf("comment-only", "packages/nvda-worker/src/run.cmd"), /^rem node "packages\\other\\src\\x\.ts"/m);
   assert.deepEqual(edgesOf("comment-only"), []);
 });
 
 test("a path handed to a parser as DATA PASSES: a region body and a fixture list are named, never read", () => {
   assert.ok(existsSync(join(fixture("data-only"), TARGET)), "CONTROL: the target exists, so this passes because it is data");
-  assert.match(textOf("data-only", LAYER_FILE), /REGION_BODY = "packages\/other\/src\/x\.mjs/);
-  assert.match(textOf("data-only", LAYER_FILE), /parseRegion\("packages\/other\/src\/x\.mjs"\)/, "and a path literal is handed to a call");
+  assert.match(textOf("data-only", LAYER_FILE), /REGION_BODY = "packages\/other\/src\/x\.ts/);
+  assert.match(textOf("data-only", LAYER_FILE), /parseRegion\("packages\/other\/src\/x\.ts"\)/, "and a path literal is handed to a call");
   assert.deepEqual(edgesOf("data-only"), []);
 });
 
@@ -253,7 +256,7 @@ test("an edge the baseline names is not new, and the same baseline over a tree w
   assert.deepEqual(judgeEdges(edges, [ENTRY]), { unlisted: [], stale: [], malformed: [] });
   const stale = judgeEdges(edgesOf("clean"), [ENTRY]);
   assert.deepEqual(stale.stale, [ENTRY]);
-  assert.match(describeVerdict(stale).join("\n"), /STALE ENTRY: packages\/nvda-worker\/src\/x\.mjs -> packages\/other\/src\/x\.mjs/);
+  assert.match(describeVerdict(stale).join("\n"), /STALE ENTRY: packages\/nvda-worker\/src\/x\.ts -> packages\/other\/src\/x\.ts/);
 });
 
 test("an entry the baseline cannot honour is MALFORMED: no disposition, no reason, a bare owned-by, a retired word, or not a list", () => {
@@ -379,7 +382,7 @@ test("`--check` exits 0 over a clean tree, and non-zero, naming both ends, over 
   assert.match(clean.stdout, /baseline agrees/);
   const crossing = cli("--check", `--root=${fixture("imports-across")}`);
   assert.equal(crossing.status, 1);
-  assert.match(crossing.stderr, /NEW EDGE out: packages\/nvda-worker\/src\/x\.mjs -> packages\/other\/src\/x\.mjs/);
+  assert.match(crossing.stderr, /NEW EDGE out: packages\/nvda-worker\/src\/x\.ts -> packages\/other\/src\/x\.ts/);
 });
 
 test("`--check` over a tree whose only baseline entry names an edge that is gone exits non-zero as STALE", () => {
@@ -388,7 +391,7 @@ test("`--check` over a tree whose only baseline entry names an edge that is gone
   assert.deepEqual(edgesOf("stale-baseline"), [], "and the fixture's tree no longer has it");
   const stale = cli("--check", `--root=${fixture("stale-baseline")}`);
   assert.equal(stale.status, 1);
-  assert.match(stale.stderr, /STALE ENTRY: packages\/nvda-worker\/src\/x\.mjs -> packages\/other\/src\/x\.mjs/);
+  assert.match(stale.stderr, /STALE ENTRY: packages\/nvda-worker\/src\/x\.ts -> packages\/other\/src\/x\.ts/);
 });
 
 test("a mistyped flag is refused rather than run as the default, and no mode is a usage error", () => {

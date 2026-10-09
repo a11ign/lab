@@ -26,10 +26,10 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolExportPath } from "../../../../scripts/agent-org-newest-tag.mjs";
 
 import { TRACKER_WRITERS, TRACKER_WRITER_DIRS, sendsABody, bodyFromArgv, assertNoLeakInArgv }
-  from "../../../guards/src/leak-patterns.mjs";
+  from "../../../guards/src/leak-patterns.ts";
 import { localImports, stripComments } from "../../../guards/src/local-import-closure.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
@@ -43,25 +43,25 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
  * the writers reach, and it is excluded in code, here, rather than declared a writer. It lived outside the walk's roots until #3505 relocated it to `packages/guards/src`,
  * and the positive control below (the census finds exactly the declared senders) is what notices a REAL writer that stops being found.
  */
-const THE_DETECTOR = "packages/guards/src/leak-patterns.mjs";
+const THE_DETECTOR = "packages/guards/src/leak-patterns.ts";
 
-/** Every `.mjs` a tracker writer could live in, from git rather than a glob, so an untracked scratch file
+/** Every `.mjs` or `.ts` source a tracker writer could live in (a test file is not one), from git rather than a glob, so an untracked scratch file
  * is not a writer. TWO ROOTS, not one: the repo-hygiene guards live in `packages/guards/src`, and a census pointed at `scripts/` alone would walk
  * what is left and report a clean population having never looked at the writers. */
 const trackedScripts = () =>
   execFileSync("git", ["ls-files", "scripts", "packages/guards/src"],
     { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
-    .split("\n").filter((f) => f.endsWith(".mjs") && f !== THE_DETECTOR);
+    // #4273/#4274 renamed the core's scripts/ and guards sources to `.ts`, and TRACKER_WRITERS names them so; a `.mjs`-only census walked 46 files and no declared writer.
+    .split("\n").filter((f) => /\.(mjs|ts)$/.test(f) && !f.endsWith(".test.ts") && f !== THE_DETECTOR);
 
-// #3534: a script here takes the tool by PATH (`toolModule("src/board-data.mjs")`), a call `localImports` does not follow, so
-// `scripts/npm-token-liveness.mjs` would read as reaching no guard though it reaches the very one it did. The walk follows
-// that one call into the tool's own checkout (`toolRoot()`), and the guard is that checkout's.
-const INSTALLED_TOOL = toolRoot();
-const INSTALLED_GUARD = resolve(INSTALLED_TOOL, "src/lib/leak-patterns.mjs");
+// #3534, then #4408: a script here takes the tool by its DECLARED EXPORT (`toolExport("board-data")`; it was `toolModule("src/board-data.mjs")` until #4408 removed that), a call
+// `localImports` does not follow, so `scripts/ci-health.ts` would read as reaching no guard though it reaches the very one it did. The walk follows that one call
+// into the tool, through the file its `exports` names, and the guard is the tool's declared `leak-patterns`.
+const INSTALLED_GUARD = toolExportPath("leak-patterns");
 const importsThroughDependency = (file: string): string[] => [
   ...localImports(file),
-  ...[...stripComments(readFileSync(file, "utf8")).matchAll(/toolModule\(\s*["'](src\/[^"']+)["']/g)]
-    .map((m) => resolve(INSTALLED_TOOL, m[1])),
+  ...[...stripComments(readFileSync(file, "utf8")).matchAll(/toolExport\(\s*["']([^"']+)["']/g)]
+    .map((m) => toolExportPath(m[1])),
 ];
 
 /** Does `entry`'s local-import closure reach the guard? */

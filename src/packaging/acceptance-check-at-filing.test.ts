@@ -40,7 +40,7 @@ import { resolve } from "node:path";
 const { wholeSuiteAcceptanceReason } = await toolModule("src/row-claim/template-fields-rule.mjs");
 const { fileRefusalReason } = await toolModule("src/row-file.mjs");
 import { parse } from "yaml";
-import { toolModule, toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 const {
   acceptancePathTokens, acceptancePathsReason, labFetchArtifacts, labFetchPathHits, runsTheWholeSuite,
   testFileArgumentsResolve, unresolvedAcceptancePaths,
@@ -115,10 +115,11 @@ test("the refusal names the tool that refused, so two callers do not read as one
     "a filer reading `row-file:` when row-claim refused would look in the wrong place");
 });
 
+// agent-org imports its own `.ts` modules by their `.ts` name since agent-org#435 (it was `.mjs`), so the import specifiers below are matched as `.ts`.
 test("the import is the SHARED function, not a second copy", () => {
   const rule = readFileSync(
     toolPath("src/row-claim/template-fields-rule.mjs"), "utf8");
-  assert.match(rule, /import \{[^}]*runsTheWholeSuite[^}]*\} from "\.\.\/acceptance-commands\.mjs"/,
+  assert.match(rule, /import \{[^}]*runsTheWholeSuite[^}]*\} from "\.\.\/acceptance-commands\.ts"/,
     "template-fields-rule must IMPORT the whole-suite test; a local regex here would be the second "
     + "implementation this row exists to avoid");
   assert.doesNotMatch(rule, /npm\\s\+\(\?:run/,
@@ -315,7 +316,7 @@ test("CALIBRATION: the rule refuses ONE of the Acceptance sections on `main`'s o
 
 test("the path check is the SHARED function in `row-file`, not a second copy", () => {
   const tool = readFileSync(toolPath("src/row-file.mjs"), "utf8");
-  assert.match(tool, /import \{[^}]*acceptancePathsReason[^}]*\} from "\.\/acceptance-commands\.mjs"/s,
+  assert.match(tool, /import \{[^}]*acceptancePathsReason[^}]*\} from "\.\/acceptance-commands\.ts"/s,
     "row-file must IMPORT the path check; a local `existsSync` loop here would be the second "
     + "implementation this row exists to avoid");
   assert.doesNotMatch(tool, /existsSync/,
@@ -510,7 +511,7 @@ test("a playbook with no `lab_artifacts` map THROWS rather than reporting an emp
 
 test("the lab-fetch check is the SHARED function in `row-file`, not a second copy", () => {
   const tool = readFileSync(toolPath("src/row-file.mjs"), "utf8");
-  assert.match(tool, /import \{[^}]*labFetchPathReason[^}]*\} from "\.\/acceptance-commands\.mjs"/s,
+  assert.match(tool, /import \{[^}]*labFetchPathReason[^}]*\} from "\.\/acceptance-commands\.ts"/s,
     "row-file must IMPORT the check; a local copy of the fetch mapping here would be the third statement "
     + "of a path that already exists twice");
   assert.doesNotMatch(tool, /lab_artifacts|runs\/fetched/,

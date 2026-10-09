@@ -11,8 +11,8 @@ import { mkdtempSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { scanBlob, KEY_FILENAME_RE, TEMPLATE_SUFFIX_RE, scanHistory } from "../../../../scripts/history-secret-scan.mjs";
-import { nonStandardRefs } from "../../../../scripts/history-purge-rehearsal.mjs";
+import { scanBlob, KEY_FILENAME_RE, TEMPLATE_SUFFIX_RE, scanHistory } from "../../../../scripts/history-secret-scan.ts";
+import { nonStandardRefs } from "../../../../scripts/history-purge-rehearsal.ts";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 /**

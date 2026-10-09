@@ -114,8 +114,12 @@ const READS_THE_LIVE_BODY = "./.github/workflows/reusable-acceptance.yml";
 const readsAPullRequestInput = (job: Job): boolean =>
   /github\.event\.pull_request\.(body|number)/.test(JSON.stringify(job)) || job.uses === READS_THE_LIVE_BODY;
 
-/** `changed` decides what the diff touched and `gate` is the verdict; neither is a check of its own. */
-const FRAME = ["changed", "gate"];
+/**
+ * `changed` decides what the diff touched and `gate` is the verdict; neither is a check of its own.
+ * #4413: `bodyEdit` is the third frame job. It classifies a body edit (prose-only or not) for the body checks to `need`, so it names the pull
+ * request's body in its `env` without CHECKING anything, and it runs on every event by design ("a job whose `needs` was skipped is skipped itself").
+ */
+const FRAME = ["changed", "gate", "bodyEdit"];
 
 /**
  * #4136: `changeset` reads the live body by number for its `no-release:` line, and is DELIBERATELY skipped on a meta event: its own
@@ -228,8 +232,9 @@ test("2. the body checks still run on a meta event: they are what a body edit or
 
 test("2. a closed pull request still runs nothing on a meta event (#690)", () => {
   for (const action of META_TYPES) {
+    // #4413: `bodyEdit` is ungated on purpose and always succeeds, so it is the one job named here (and asserted to run, so the exemption is not a hole).
     const running = Object.entries(CI.jobs).filter(([name, job]) => name !== "gate" && runsOn(job, prEvent(action, "closed"))).map(([name]) => name);
-    assert.deepEqual(running, [], `a ${action} on a merged pull request runs ${running.join(", ")}`);
+    assert.deepEqual(running, ["bodyEdit"], `a ${action} on a merged pull request runs ${running.join(", ")}`);
   }
 });
 

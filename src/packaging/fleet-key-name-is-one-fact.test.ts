@@ -45,7 +45,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
 import { trackedAndLaidPaths } from "./laid-control.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here

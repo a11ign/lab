@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 // The size limit below is not a cross-reference and stays here, on the pull-request path.
 import {
   headingAnchors, localAnchorLinks, slugify,
-} from "../../../../scripts/doc-checks/claude-md-links.mjs";
+} from "../../../../scripts/doc-checks/claude-md-links.ts";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const CLAUDE_MD = "CLAUDE.md";

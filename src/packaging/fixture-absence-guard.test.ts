@@ -31,7 +31,7 @@ import { resolve, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { ABSENT_FIXTURE_SYMBOLS, fixtureSymbol } from "../../../../scripts/fixture-symbols.mjs";
+import { ABSENT_FIXTURE_SYMBOLS, fixtureSymbol } from "../../../../scripts/fixture-symbols.ts";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -210,8 +210,8 @@ test("#1038 POSITIVE CONTROL: the tree this guard reads CONTAINS THE FILE UNDER 
 test("#1038: the registry module does not itself contain any symbol whole -- it assembles them", () => {
   // The registry lives in the tree the guard searches, so a symbol written whole THERE would fail the live
   // assertion above. `fixtureSymbol(...)` splitting the parts is what keeps the one file allowed to name
-  // every symbol from being the file that leaks them.
-  const source = readFileSync(resolve(REPO, "scripts/fixture-symbols.mjs"), "utf8");
+  // every symbol from being the file that leaks them. (`fixture-symbols` is `.ts` since a11ign/a11ign#4274, the js-to-ts conversion of scripts/.)
+  const source = readFileSync(resolve(REPO, "scripts/fixture-symbols.ts"), "utf8");
   for (const [claim, symbol] of Object.entries(ABSENT_FIXTURE_SYMBOLS)) {
     assert.ok(!source.includes(symbol), `${claim}: written whole in the registry itself`);
   }

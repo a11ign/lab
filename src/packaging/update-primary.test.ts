@@ -15,7 +15,7 @@ const { updatePrimary, lockfileMoved, readPrimaryDrift } = await toolModule("src
 const { changedFiles } = await toolModule("src/lib/changed-files.mjs");
 import { withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 import { UPDATE_PRIMARY_VERBS } from "./update-primary-argv.mjs";
-import { toolModule, toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 
 /**
  * MOVING THE PRIMARY MOVES EVERY WORKTREE'S `dist`, AND NOTHING ELSE DOES.

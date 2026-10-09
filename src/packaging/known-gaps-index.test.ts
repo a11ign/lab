@@ -23,7 +23,7 @@ import {
   isClosed,
   parseHeadings,
   slugify,
-} from "../../../../scripts/known-gaps-index.mjs";
+} from "../../../../scripts/known-gaps-index.ts";
 
 const text = () => readFileSync(new URL(`../../../../${KNOWN_GAPS_FILE}`, import.meta.url), "utf8");
 

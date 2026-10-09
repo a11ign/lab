@@ -16,11 +16,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { firstRunPassRate, inWindow } from "../../../../scripts/ci-health.mjs";
+import { firstRunPassRate, inWindow } from "../../../../scripts/ci-health.ts";
 import {
   affectedAt, cleanLine, containsCommit, countAnswers, failingFiles, firstRunReds, lineFor, renderReport, runAnswer, siblingRunId,
   skippedByChanged, traceRed, windowReading, windowsAround,
-} from "../../../../scripts/selection-skipped.mjs";
+} from "../../../../scripts/selection-skipped.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const ESC = String.fromCharCode(27);
@@ -307,7 +307,8 @@ test("CONTRIBUTING.md states the rule beside the stamp's wording", () => {
   const contributing = readFileSync(join(REPO, "CONTRIBUTING.md"), "utf8");
   const stamp = contributing.split("\n").find((line) => line.includes("the affected set passed at this head")) ?? "";
   assert.ok(stamp.length > 0, "POSITIVE CONTROL: the paragraph carrying the stamp's wording is found");
-  assert.match(stamp, /scripts\/selection-skipped\.mjs/);
+  // The script is selection-skipped.ts since #4273/#4274 (the core's scripts/ moved to TypeScript), and the paragraph runs it under tsx.
+  assert.match(stamp, /scripts\/selection-skipped\.ts/);
   assert.match(stamp, /forceRerunTriggers/);
   assert.match(stamp, /cites? the run id/);
 });

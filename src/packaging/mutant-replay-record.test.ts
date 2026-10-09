@@ -22,8 +22,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { OPERATORS } from "../../../guards/src/mutant-survivors.mjs";
-import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { OPERATORS } from "../../../guards/src/mutant-survivors.ts";
+import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO = join(import.meta.dirname, "../../../..");
 const RECORD = readFileSync(join(REPO, "docs/mutant-replay.md"), "utf8");

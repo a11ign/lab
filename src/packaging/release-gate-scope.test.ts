@@ -1,6 +1,6 @@
 // no-token: gh -- reads package.json and runs a local script; no `gh`, `herdr` or network is reached
 /**
- * #3277: `scripts/release-gate-scope.mjs` PARSED ZERO STAGES and printed it as a count.
+ * #3277: `scripts/release-gate-scope.ts` PARSED ZERO STAGES and printed it as a count.
  *
  * `release:gate` changed its links from `pnpm run <stage>` to `node scripts/pnpm.mjs run <stage>`, the script's
  * pattern (`npm run ...`) stopped matching, and its subset check passed `0 + 0 === 0`, so the release workflow
@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { stagesOf, gateScope } from "../../../../scripts/release-gate-scope.mjs";
+import { stagesOf, gateScope } from "../../../../scripts/release-gate-scope.ts";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const { scripts } = JSON.parse(readFileSync(`${ROOT}package.json`, "utf8")) as { scripts: Record<string, string> };
@@ -61,7 +61,7 @@ test("gateScope separates what ci runs from what it leaves to the lab", () => {
 });
 
 test("run against the real package.json the script states a nonzero count", () => {
-  const out = execFileSync("node", ["scripts/release-gate-scope.mjs"], { cwd: ROOT, encoding: "utf8" });
+  const out = execFileSync("node", ["--import", "tsx", "scripts/release-gate-scope.ts"], { cwd: ROOT, encoding: "utf8" });
   const { full, ci } = gateScope(scripts);
   assert.ok(out.startsWith(`::warning::release:gate:ci ran ${ci.length} of release:gate's ${full.length} stages.`), out);
   assert.doesNotMatch(out.split("\n")[0], /ran 0 of/);

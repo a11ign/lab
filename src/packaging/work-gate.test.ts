@@ -28,7 +28,8 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { toolModule, toolPath, toolUrl, toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolPath, toolUrl } from "../../scripts/tool-source.ts";
 const { shippedUnits } = await toolModule("src/host-units.mjs");
 const { localImports } = await toolModule("src/lib/local-import-closure.mjs");
 const { deriveClosureRequirements } = await toolModule("src/acceptance-commands.mjs");
@@ -2183,7 +2184,10 @@ test("main hands the switch the UN-COALESCED read, not the `?? []` one", () => {
   const helper = taking.find((t) => t.members.includes(name))?.helper ?? "";
   assert.ok(helper,
     `main must take ${name} from a lanes helper by that name, not renamed and rebound through a coalescing \`?? []\`; destructurings found: ${JSON.stringify(taking)}`);
-  assert.ok(helper === "readTrackerLanes" || new RegExp(`function ${helper}\\([^)]*\\) \\{[^]*?\\.\\.\\.readTrackerLanes\\(read\\)`).test(source),
+  // The helper's body is read up to its closing brace at column 0, not by a `[^)]*` over its parameter list: since agent-org's TypeScript conversion (agent-org#435) the parameters carry
+  // function types (`run: (args: string[], repo?: string) => string = defaultRun`), whose own `)` ended that match before the body.
+  const helperBody = source.slice(source.indexOf(`function ${helper}(`)).split(/^}$/m)[0];
+  assert.ok(helper === "readTrackerLanes" || (source.includes(`function ${helper}(`) && helperBody.includes("...readTrackerLanes(read)")),
     `${helper} must be readTrackerLanes or carry its lanes through (\`...readTrackerLanes(read)\`), or ${name} is no longer the raw read`);
   // AND THE READ ITSELF IS NOW ONE CALL, which is the other half of #1938's done-when.
   assert.equal(source.match(/"issue", "list", "--state", "open", "--limit", "500"/g)?.length, 1,
@@ -4224,10 +4228,12 @@ test("#2003: the pool reading has ONE definition, and the gate pays for it only 
   // A SECOND COPY OF "HOW TO READ A POOL" IS REFUSED (#2003's Region says so). The header name is the
   // fingerprint: whoever writes it again has written the second copy this move exists to prevent.
   const src = toolPath("src/");
+  // agent-org's modules are `.ts` since agent-org#435 (its tests sit beside them in `src/`, and quote the header to test it), so the walk reads both spellings, tests excluded, by module name.
   const definers = readdirSync(src)
-    .filter((f: string) => f.endsWith(".mjs"))
-    .filter((f: string) => readFileSync(join(src, f), "utf8").includes("X-Ratelimit-Remaining"));
-  assert.deepEqual(definers, ["api-pool.mjs"],
+    .filter((f: string) => /\.(mjs|ts)$/.test(f) && !f.endsWith(".test.ts"))
+    .filter((f: string) => readFileSync(join(src, f), "utf8").includes("X-Ratelimit-Remaining"))
+    .map((f: string) => f.replace(/\.(mjs|ts)$/, ""));
+  assert.deepEqual(definers, ["api-pool"],
     `only the leaf module may know how to read a pool; found ${definers.join(", ")}`);
 });
 
@@ -4635,7 +4641,6 @@ test("#2174: decide() routes it, and only when it is handed drift", () => {
  * import, the second one fails and says what it costs.
  */
 test("#2174: the gate does NOT import host-units.mjs -- the spawn is the fence, not a preference", () => {
-  const SRC = toolPath("src/");
   const closure = (entry: string): Set<string> => {
     const seen = new Set<string>();
     const stack = [entry];
@@ -4647,12 +4652,15 @@ test("#2174: the gate does NOT import host-units.mjs -- the spawn is the fence, 
     }
     return seen;
   };
-  assert.ok(!closure(join(SRC, "work-gate.mjs")).has(join(SRC, "host-units.mjs")),
+  // The tool's modules are `.ts` since agent-org#435: `toolPath` returns the file that exists under either spelling, and a hand-joined `.mjs` name would walk nothing.
+  const [gate, hostUnits, acceptanceCommands] = ["work-gate", "host-units", "acceptance-commands"].map((name) => toolPath(`src/${name}.mjs`));
+  assert.ok(closure(gate).size > 10, "the walk reached no import of the gate, so the absence below would be a walk that found nothing");
+  assert.ok(!closure(gate).has(hostUnits),
     "importing it drags `git log --all` into the gate's capability closure and taxes 24 unrelated test "
     + "files with `History: full`; the gate runs `host-units.mjs --json` as a child process instead");
   // THE CONTROL: the walker really can see this edge when it exists, so the assertion above is a fact
   // about the gate rather than about a walker that finds nothing.
-  assert.ok(closure(join(SRC, "host-units.mjs")).has(join(SRC, "acceptance-commands.mjs")),
+  assert.ok(closure(hostUnits).has(acceptanceCommands),
     "the same walker DOES find host-units.mjs's own edges");
 });
 
@@ -4764,7 +4772,7 @@ test("#2174: work-gate.mjs loads in a tree with NO node_modules, host-units edge
     ...host, projects: host.projects.map((project: { id: string }) => ({ ...project, checkout: root })),
   }));
   const run = spawnSync(process.execPath, ["--input-type=module", "-e",
-    `import(${JSON.stringify(pathToFileURL(join(root, "agent-org/src/work-gate.mjs")).href)})`
+    `import(${JSON.stringify(pathToFileURL(join(root, "agent-org", relative(toolRoot(), entry))).href)})`
     + ".then(m => { if (!m.CAUSES.includes('host-units-stale')) throw new Error('cause missing'); })"],
   // The installed tool no longer sits inside the project, so it cannot guess the checkout from its own location: the unit's `AGENT_ORG_HOST` names it.
   { encoding: "utf8", cwd: root, env: { ...process.env, AGENT_ORG_HOST: join(root, ".agent-org/host.json") } });
@@ -5321,7 +5329,8 @@ test("#2202: main feeds the closed-row read into `answerOwed` beside the open on
     "a closed row owing an answer must reach `decide` -- the open read alone is the defect");
   assert.match(source, /closedRows: readClosedAnswerRows\(read\)/,
     "the closed-row read is one of the follow-ups, so what `main` hands `closedAnswerRows` is that read's answer");
-  assert.match(source, /function closedAnswerRows\(rows\) \{[^]*?NOTE: could not read the closed rows/,
+  // agent-org#435 made the source TypeScript: the parameter now carries a type (`rows: any[] | null`), so the signature is matched loosely.
+  assert.match(source, /function closedAnswerRows\(rows[^)]*\)[^{]*\{[^]*?NOTE: could not read the closed rows/,
     "a refused read is a line on stderr, never a silent empty list");
 });
 
@@ -5398,7 +5407,8 @@ test("#2609: `endedSessionLabels` reads a teardown's record, and a label that ST
 test("#2609: `closedAnswerRows` runs the ended-session filter on what `readClosedAnswerRows` returned", () => {
   const source = readFileSync(toolUrl("src/work-gate.mjs"), "utf8");
   // Since v0.54.11 the rows are a PARAMETER (the read is one of the follow-ups asked together), not a local read inside the function.
-  assert.match(source, /function closedAnswerRows\(rows\) \{[^]*?return withoutEndedAnswerSessions\(rows\);/);
+  // agent-org#435 made the source TypeScript: the parameter now carries a type (`rows: any[] | null`), so the signature is matched loosely.
+  assert.match(source, /function closedAnswerRows\(rows[^)]*\)[^{]*\{[^]*?return withoutEndedAnswerSessions\(rows\);/);
 });
 
 // --- #2492: answer:<session> on a PULL REQUEST woke nobody, because `gh issue list` does not return PRs ---

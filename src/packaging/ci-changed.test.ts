@@ -611,8 +611,25 @@ test("#690: every pull_request job is gated on the PR still being OPEN -- `edite
   // 'unknown'`. Three pushes today were red for exactly this: a verification that does not include the
   // one tool that checks the thing being got wrong.
   const jobs = doc.jobs as Record<string, { if?: string; needs?: unknown }>;
+  // #4413: `bodyEdit` is the one job that is DELIBERATELY ungated -- "it runs on EVERY event and always succeeds with an answer, because a job
+  // whose `needs` was skipped is skipped itself" (the job's own comment in ci.yml), and `acceptance`/`ownedPaths` need it. On a closed PR it
+  // reads a body diff and a run list and prints `proseOnly=...`; it checks out nothing and cannot go red on a merged head, which is the harm this
+  // test exists to refuse. Exempted by name, with its two defining properties pinned so the exemption cannot widen to a job that does real work.
+  const BODY_EDIT_CLASSIFIER = "bodyEdit";
+  assert.ok(jobs[BODY_EDIT_CLASSIFIER] && jobs[BODY_EDIT_CLASSIFIER].if === undefined && jobs[BODY_EDIT_CLASSIFIER].needs === undefined,
+    "POSITIVE CONTROL for the exemption: `bodyEdit` exists, and is ungated and needs nothing -- the shape the exemption is for");
+  assert.ok(!JSON.stringify(doc.jobs[BODY_EDIT_CLASSIFIER].steps).includes("actions/checkout"),
+    "and it checks nothing out: an ungated job that builds or runs the suite on a merged head would be the permanent red this test refuses");
+  // #4434: `boundary` is the second deliberate exception -- the NON-BLOCKING cross-repository reach report. It is neither state-gated nor behind `changed`;
+  // instead its own `if` excludes the three event types that reach a closed PR (`edited`/`labeled`/`unlabeled`, the list pinned above), so it can never run on a
+  // merged head. Exempted by name with those properties pinned, so the exemption cannot widen to a job that runs on a closed PR.
+  const BOUNDARY_REPORT = "boundary";
+  const boundaryIf = String(jobs[BOUNDARY_REPORT]?.if ?? "");
+  assert.ok(["edited", "labeled", "unlabeled"].every((event) => boundaryIf.includes(`"${event}"`)) && boundaryIf.includes("!contains("),
+    "POSITIVE CONTROL for the exemption: `boundary` exists and its `if` still EXCLUDES edited, labeled and unlabeled -- the only events that reach a closed PR");
+  assert.equal(jobs[BOUNDARY_REPORT].needs, undefined, "and it needs nothing, so it is not quietly relying on `changed`'s state gate either");
   const reachableOnPullRequest = Object.entries(jobs)
-    .filter(([name]) => name !== "gate")
+    .filter(([name]) => name !== "gate" && name !== BODY_EDIT_CLASSIFIER && name !== BOUNDARY_REPORT)
     .filter(([, job]) => job.if === undefined || !String(job.if).includes("merge_group"));
 
   const unguarded = reachableOnPullRequest
@@ -712,7 +729,10 @@ test("ci.yml has a gate job needing every scoped job, running even when one of t
   // which is a refusal to verify rather than a verdict on the code, and blocking on "I could not check"
   // is the whole point of a gate. `edited` is in ci.yml's triggers, so a corrected body re-runs the
   // check: the body-only deadlock of 2026-09-07 is what made this unsafe before, and it cannot recur.
-  const NOT_REQUIRED_BY_GATE = ["board"];
+  //
+  // #4434: `boundary` JOINED THIS LIST. It is a report, never a red (`continue-on-error`), and ci.yml's own comment says it is "deliberately NOT in
+  // `gate`'s `needs`" -- the core's `boundary-report-job.test.ts` refuses it there, so a report on cross-repository reach can never hold a merge.
+  const NOT_REQUIRED_BY_GATE = ["board", "boundary"];
   const scopedJobs = Object.keys(doc.jobs)
     .filter((name) => name !== "gate" && !NOT_REQUIRED_BY_GATE.includes(name));
   assert.deepEqual([...gate.needs as string[]].sort(), scopedJobs.sort(),
@@ -803,9 +823,11 @@ test("ci.yml's board job runs exactly the board guards and the claim guard, and 
     "the board job must run the board-*.test.ts glob -- board-liveness, board-schedule, board-markdown, "
     + "board-achievement-staleness, board-style and board-summary-origin, discovered rather than "
     + "hand-listed");
-  assert.match(runLines, /packages\/guards\/src\/public-claim\.test\.ts/,
-    "the board job must also run public-claim.test.ts -- \"the claim guard\", which reads "
-    + "docs/board/reported.json but does not match the board-*.test.ts glob by name");
+  // #4442 (98be0b411): `public-claim.test.ts` was DELETED from the core by #2975, and the board job's glob guard still named it -- `assert-glob-not-empty`
+  // matched 0 files and refused the whole job. So the old pin ("the board job must also run the claim guard") has no subject left; what is pinned now is the
+  // reverse, that the job does not name a file that no longer exists.
+  assert.doesNotMatch(runLines, /public-claim\.test\.ts/,
+    "the board job must not name public-claim.test.ts: #2975 deleted it, and a glob that matches 0 files refuses the whole job");
   // A BUILD IS NEEDED, and the first version of this test asserted the opposite on the strength of a grep
   // that checked only these files' own top-level imports. Running the job's real command with no build
   // present (not reading it) found that board-liveness/board-markdown/board-style/board-summary-origin

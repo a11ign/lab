@@ -27,12 +27,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { LEAK_PATTERNS } from "../../../guards/src/leak-patterns.mjs";
+import { LEAK_PATTERNS } from "../../../guards/src/leak-patterns.ts";
 // #905: the index <-> file rules live in the doc cross-reference check the nightly report also runs.
 import {
 
   MEMORY_DIR, factFiles as factFilesIn,
-} from "../../../../scripts/doc-checks/roles-memory.mjs";
+} from "../../../../scripts/doc-checks/roles-memory.ts";
 
 /**
  * A private-LAN address, BUILT FROM OCTETS, because #63's history purge rewrote every written-out one

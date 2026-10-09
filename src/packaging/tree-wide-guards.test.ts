@@ -22,7 +22,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { treeWideGuardFiles, MARKER_MODULE, MARKER_MODULES } from "../../../guards/src/tree-wide-guards.mjs";
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here rather
 // than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard population must

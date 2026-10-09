@@ -73,7 +73,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -226,6 +226,16 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
   "repo": "a PLACEHOLDER in `.agent-org/roles/README.md`'s instructions, the shape `<repo>` would have if the "
     + "author had written the angle brackets",
   "checkout": "the same, one line down",
+  "<control>": "a PLACEHOLDER in `docs/adr/0045-a-repository-uses-another-only-through-its-published-package.md` (#4439), in the commands its "
+    + "census rows print their counts from (`git -C <control> grep -l layers.json origin/main`). It stands for a clone of the `control` REPOSITORY "
+    + "that the reader makes to repeat the measurement, with the angle brackets written; not a path this repository enters, and the ADR says the "
+    + "very thing the checkout constant is not for: a repository reading another's source.",
+  "<agent-org>": "the same ADR (0045, #4439), a PLACEHOLDER for the reader's clone of the `agent-org` repository in the census command of row 5 "
+    + "(`git -C <agent-org> grep -l -i 'a11y-witness' v0.92.2`). A repeat-it-yourself instruction, not a directory this tree enters.",
+  "<screenreader-fleet>": "the same ADR (0045, #4439), a PLACEHOLDER for the reader's clone of `screenreader-fleet` in row 6's `git -C ... show origin/main:package.json`. "
+    + "Prose with the angle brackets written; not a directory.",
+  "<lab>": "the same ADR (0045, #4439), a PLACEHOLDER for the reader's clone of the `lab` repository in its `git -C <lab> show origin/main:package.json`. "
+    + "Prose with the angle brackets written; not a directory.",
   "<dir>": "a PLACEHOLDER for the primary checkout in the role files that tell a session where to work: "
     + "`.agent-org/roles/product-manager.md`'s resume rules and `.agent-org/roles/reviewer.md`'s worktree steps "
     + "(`git -C <dir>`, never a bare `cd`). Prose stating the rule this guard enforces, with the angle "

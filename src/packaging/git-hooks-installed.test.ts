@@ -22,7 +22,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { installHooks, HOOKS_PATH } from "../../../../scripts/install-git-hooks.mjs";
+import { installHooks, HOOKS_PATH } from "../../../../scripts/install-git-hooks.ts";
 
 const ROOT = JSON.parse(readFileSync(fileURLToPath(new URL("../../../../package.json", import.meta.url)), "utf8"));
 
@@ -49,7 +49,8 @@ test("`npm install` installs the hooks — the lifecycle script exists and names
   // packages' own racing `prepare: tsc --build` scripts (see control-plane-hygiene.mjs's
   // `rootPrepareBuildsEverything` for the full mechanism). The installer must still be the FIRST thing
   // `prepare` runs, so a hook-install failure is never masked by a build that happened to succeed.
-  assert.match(ROOT.scripts?.prepare ?? "", /^node scripts\/install-git-hooks\.mjs\b/,
+  // #4274: the installer is TypeScript now, so `prepare` runs it under tsx (`node --import tsx scripts/install-git-hooks.ts`).
+  assert.match(ROOT.scripts?.prepare ?? "", /^node --import tsx scripts\/install-git-hooks\.ts\b/,
     "a fresh clone gets hooks only if `prepare` runs the installer FIRST — `prepare` fires on `npm "
     + "install` in a git checkout and never for a consumer installing a published package");
   assert.equal(ROOT.private, true,

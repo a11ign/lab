@@ -81,7 +81,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
 
 // #716/#704: this file's population is the whole tracked tree, declared by importing and CALLING the
 // marker rather than left to be discovered from its source text.

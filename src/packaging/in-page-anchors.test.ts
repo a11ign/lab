@@ -1,5 +1,5 @@
 /**
- * #1602: IN-PAGE ANCHOR LINKS -- `scripts/doc-checks/in-page-anchors.mjs`, a check the nightly doc cross-reference
+ * #1602: IN-PAGE ANCHOR LINKS -- `scripts/doc-checks/in-page-anchors.ts`, a check the nightly doc cross-reference
  * report runs.
  *
  * worker-capture typo'd #1600's new README fragment (`…-measurd-on`) and every doc check stayed green: the one
@@ -18,10 +18,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { check, inPageAnchorLinks, trackedMarkdown } from "../../../../scripts/doc-checks/in-page-anchors.mjs";
+import { check, inPageAnchorLinks, trackedMarkdown } from "../../../../scripts/doc-checks/in-page-anchors.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
-const MODULE = join(REPO, "scripts/doc-checks/in-page-anchors.mjs");
+const MODULE = join(REPO, "scripts/doc-checks/in-page-anchors.ts");
 
 /** worker-capture's typo on #1600, as the row quotes it: the real fragment with one letter gone. */
 const REAL_FRAGMENT = "what-this-tool-claims-with-the-number-it-was-measured-on";
@@ -102,7 +102,7 @@ test("#1602: a link resolves against the file's own headings as `claude-md-links
 
 test("#1602 ONE COPY: the module imports `headingAnchors` from `claude-md-links` and defines no slugger of its own", () => {
   const source = readFileSync(MODULE, "utf8");
-  assert.match(source, /^import \{ headingAnchors \} from "\.\/claude-md-links\.mjs";$/m);
+  assert.match(source, /^import \{ headingAnchors \} from "\.\/claude-md-links\.ts";$/m);
   assert.doesNotMatch(source, /function (?:slugify|headingAnchors)\b/, "a second slugger can drift from the pinned one");
 });
 

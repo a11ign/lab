@@ -9,7 +9,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { releasability } from "./releasability.mjs";
 import { readAcceptedSilentHeads } from "./accepted-silent-heads.mjs";
 import { promote } from "../../scripts/promote-model.mjs";

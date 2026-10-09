@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { corpusState, SETTLED_AFTER_MINUTES, corpusReadable, skipLine, captureCount } from "./corpus-settled.mjs";
 import { progressPath } from "./capture-progress.mjs";
 

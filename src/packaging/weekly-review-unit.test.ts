@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolPath } from "../../scripts/tool-source.ts";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const UNITS = join(ROOT, ".agent-org/units");
@@ -48,8 +48,9 @@ function accountAndInstallProblems(text: string): string[] {
   ];
 }
 
-/** The service's `ExecStart` must run the weekly script, named repository-relative so it resolves from any checkout. */
-const runsWeeklyScript = (text: string): boolean => (setting(text, "ExecStart") ?? "").includes("scripts/weekly-review.mjs");
+/** The service's `ExecStart` must run the weekly script, named repository-relative so it resolves from any checkout.
+ *  weekly-review.mjs became weekly-review.ts in #4273/#4274, and the unit runs it as `node --import tsx` (ca9629934). */
+const runsWeeklyScript = (text: string): boolean => (setting(text, "ExecStart") ?? "").includes("scripts/weekly-review.ts");
 
 /** Whether an `OnCalendar` expression names Monday as its weekday (systemd's weekday comes FIRST, before the date). */
 const firesOnMonday = (expression: string): boolean => /^Mon\b/i.test(expression.trim());
@@ -72,7 +73,7 @@ test("NEGATIVE CONTROL: a copy of the weekly service with GH_CONFIG_DIR deleted 
   assert.ok(problems.some((problem) => /GH_CONFIG_DIR is null/.test(problem)), `read: ${JSON.stringify(problems)}`);
 });
 
-test("the weekly service's ExecStart names scripts/weekly-review.mjs, and a service that does not is refused", () => {
+test("the weekly service's ExecStart names scripts/weekly-review.ts, and a service that does not is refused", () => {
   assert.ok(runsWeeklyScript(unitText(SERVICE)));
   assert.ok(!runsWeeklyScript(unitText("a11ign-lab-watch.service")), "POSITIVE CONTROL: the reading can say no");
   assert.ok(!runsWeeklyScript(withoutLine(unitText(SERVICE), "ExecStart")));
@@ -95,12 +96,12 @@ test("the timer does not `Requires=` the service: `host:install` must not file a
 test("#1352: the unit declares a launch reason for `row-file`, and the script it runs is the one that needs it", () => {
   const reason = setting(unitText(SERVICE), "Environment=\"A11Y_POLICY_LAUNCH_REASON");
   assert.ok(reason !== null && reason.length > "\"".length, "without the reason `row-file` refuses the host's primary checkout and the unit fails every Monday");
-  const script = readFileSync(join(ROOT, "scripts/weekly-review.mjs"), "utf8");
+  const script = readFileSync(join(ROOT, "scripts/weekly-review.ts"), "utf8");
   assert.match(script, /"row-file"/, "the filing really goes through `row-file`, which is what launchGate guards");
 });
 
 test("the unit supplies GITHUB_SHA, which the script refuses to run without, and updates the checkout first", () => {
-  const script = readFileSync(join(ROOT, "scripts/weekly-review.mjs"), "utf8");
+  const script = readFileSync(join(ROOT, "scripts/weekly-review.ts"), "utf8");
   assert.match(script, /process\.env\.GITHUB_SHA/, "POSITIVE CONTROL: the script still reads it, so the line below is still needed");
   assert.match(setting(unitText(SERVICE), "ExecStart") ?? "", /GITHUB_SHA=/);
   assert.equal(setting(unitText(SERVICE), "ExecStartPre"), "-%h/.local/bin/agent-org primary:update",

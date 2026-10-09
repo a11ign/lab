@@ -2,7 +2,7 @@
  * #3159 (sibling of #3137): A DEPENDENCY PULL REQUEST'S CHANGESET ENTRY IS DERIVED FROM ITS DIFF, NEVER FROM ITS TITLE.
  *
  * The `changeset` job reads FILES (`changeset status --since`), so #3137's body fragment cannot clear it: #3155
- * (`yaml` 2.9.0 -> 2.9.1) failed it. `scripts/dependency-changeset.mjs` is the derivation; this calls it over the two
+ * (`yaml` 2.9.0 -> 2.9.1) failed it. `scripts/dependency-changeset.ts` is the derivation; this calls it over the two
  * REAL diffs the row names (`fixtures/dependency-pr/`, the manifests those pull requests changed, fetched at their
  * base and head commits and trimmed to the keys the derivation reads).
  *
@@ -17,15 +17,21 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 import {
   checkEntries, deriveDependencyChangeset, parseEntry, refusalFor, renderEntry,
-} from "../../../../scripts/dependency-changeset.mjs";
+} from "../../../../scripts/dependency-changeset.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
+// #4274: the derivation is TypeScript, and a bare `node` cannot run one (ADR 0043 Decision 8: `node --import tsx`). `tsx` is resolved to a URL HERE, since the
+// scripts below run with a throwaway repository as their cwd, where a bare `--import tsx` would find no `node_modules`.
+const TSX = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
+const DEPENDENCY_CHANGESET = resolve(REPO, "scripts/dependency-changeset.ts");
 const OWNED: string[] = JSON.parse(readFileSync(resolve(REPO, "docs/owned-path-facts.json"), "utf8")).owned;
 
 type Manifest = Record<string, unknown>;
@@ -173,7 +179,7 @@ function recognisedInTheQueue(step: Step, message: string): boolean {
 /** Whether the `dependency` step RUNS for this event; `changeset` is what the `precise` step found (default: a published package is touched). */
 function dependencyStepRuns(event: { title?: string; queueMessage?: string; changeset?: string }): boolean {
   const steps = changesetSteps();
-  const dependency = steps.find((s) => s.run?.includes("dependency-changeset.mjs check"));
+  const dependency = steps.find((s) => s.run?.includes("dependency-changeset.ts check"));
   const recogniser = steps.find((s) => s.id === "dependencyQueue");
   assert.ok(dependency?.if && recogniser?.run, "ci.yml's `changeset` job lost the derivation or the step that recognises its queue entry; re-read this test");
   const queue = event.queueMessage !== undefined && evaluate(recogniser.if ?? "false", { github: { event_name: "merge_group" } })
@@ -186,7 +192,7 @@ function dependencyStepRuns(event: { title?: string; queueMessage?: string; chan
 
 test("THE JOB IS WIRED: a `deps:` pull request is read from the diff; any other pull request keeps the old rule", () => {
   const steps = changesetSteps();
-  const dependency = steps.find((s) => s.run?.includes("dependency-changeset.mjs check"));
+  const dependency = steps.find((s) => s.run?.includes("dependency-changeset.ts check"));
   assert.ok(dependency, "ci.yml's `changeset` job no longer runs the derivation");
   assert.ok(dependency.id, "the derivation step needs an id for the standard step to read its outcome");
   assert.equal(dependencyStepRuns({ title: "deps: bump yaml from 2.9.0 to 2.9.1" }), true, "the pull_request event is recognised by its title prefix");
@@ -243,10 +249,10 @@ function repoWithAnEntryAheadInTheQueue(): { root: string; entryOne: string; run
   const entryOne = git("rev-parse", "HEAD").trim();
   write("packages/a/package.json", manifest("^2.9.1"));
   git("commit", "-qam", "deps: bump yaml");
-  const script = resolve(REPO, "scripts/dependency-changeset.mjs");
+  const script = DEPENDENCY_CHANGESET;
   const run = (...args: string[]) => {
     try {
-      return execFileSync("node", [script, ...args], { cwd: root, encoding: "utf8" });
+      return execFileSync(process.execPath, ["--import", TSX, script, ...args], { cwd: root, encoding: "utf8" });
     } catch (error) {
       return String((error as { stdout?: string }).stdout ?? error);
     }
@@ -292,8 +298,8 @@ function repoWhereMainMovedOn(): { root: string; run: (...args: string[]) => str
   write("packages/a/package.json", { name: "a", version: "1.0.1", dependencies: { yaml: "^2.9.0" } });
   git("commit", "-qam", "main moves on: the SAME manifest changes its version");
   git("checkout", "-q", "dependabot/yaml");
-  const script = resolve(REPO, "scripts/dependency-changeset.mjs");
-  return { root, run: (...args) => execFileSync("node", [script, ...args], { cwd: root, encoding: "utf8" }) };
+  const script = DEPENDENCY_CHANGESET;
+  return { root, run: (...args) => execFileSync(process.execPath, ["--import", TSX, script, ...args], { cwd: root, encoding: "utf8" }) };
 }
 
 test("the `before` side is the MERGE-BASE: what `main` moved since the branch left is not the pull request's doing", () => {
@@ -327,7 +333,7 @@ test("#3283: git's output is read WHOLE: a manifest far over 256 bytes is a bump
     write("packages/a/package.json", manifest("^2.9.1"));
     git("commit", "-qam", "deps: bump yaml");
     assert.ok(git("show", "HEAD:packages/a/package.json").length > 4096, "the control: the manifest git must hand back is far over 256 bytes");
-    const out = execFileSync("node", [resolve(REPO, "scripts/dependency-changeset.mjs"), "check", "--base=main"], { cwd: root, encoding: "utf8" });
+    const out = execFileSync(process.execPath, ["--import", TSX, DEPENDENCY_CHANGESET, "check", "--base=main"], { cwd: root, encoding: "utf8" });
     assert.doesNotMatch(out, /was added/, "a read that overflowed its buffer reports the manifest as missing");
     assert.match(out, /ACCEPTED \(entries\)/);
   } finally {
@@ -357,8 +363,8 @@ function repoReleasedThenBumped(): { root: string; run: (...args: string[]) => s
   write("packages/a/package.json", manifest("^2.9.1", "^4.23.0", "^1.1.0"));
   git("commit", "-qam", "deps: bump yaml, tsx and the sibling");
   mkdirSync(join(root, ".changeset"));
-  const script = resolve(REPO, "scripts/dependency-changeset.mjs");
-  return { root, run: (...args) => execFileSync("node", [script, ...args], { cwd: root, encoding: "utf8" }) };
+  const script = DEPENDENCY_CHANGESET;
+  return { root, run: (...args) => execFileSync(process.execPath, ["--import", TSX, script, ...args], { cwd: root, encoding: "utf8" }) };
 }
 
 test("VERSION TIME: `compile` writes the entry from the manifest at the last release tag, and only for a THIRD-PARTY RUNTIME range", () => {

@@ -20,7 +20,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
 
 // Four levels up, to the REPO ROOT. The gate is monorepo tooling, not a package: it has to pack and install
 // every package including this one, so it cannot live inside any of them. Its tests live here because `lab` is

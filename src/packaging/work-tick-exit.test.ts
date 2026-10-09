@@ -19,7 +19,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 // `work-tick.mjs`'s own `EXIT.CANNOT_ASK`, restated: importing it would pull `wake.mjs` and its `gh` reach into a file

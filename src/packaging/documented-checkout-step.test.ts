@@ -89,7 +89,12 @@ const IDENTITIES = [["DanBeckDev", "a11y-witness"].join("/"), ["a11ign", "a11ign
  * consumer guidance. Naming both whole identities keeps the population to real references.
  */
 const ACTION_NAME = new RegExp(IDENTITIES.map((i) => i.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
-const USES_PATTERN = new RegExp(`uses:\\s*(?:${ACTION_NAME.source})@\\S+`);
+/**
+ * A `uses:` KEY, at the start of a line (after an optional `- `), not the words `uses: <owner>/a11ign@` anywhere in a line. The core's workflows gained two lines that carry those words INSIDE a
+ * shell script -- `consumer-gate-pin.yml`'s `grep -oE 'uses: a11ign/a11ign@[0-9a-f]{40}'` (#4374) and `release.yml`'s `grep -qx -- "      - uses: a11ign/a11ign@$TAG_SHA ..."` (#4359) -- and the
+ * unanchored pattern read each as a documented consumer snippet with "no parseable steps block". A line a shell reads is not a step a reader copies.
+ */
+const USES_PATTERN = new RegExp(`^\\s*(?:-\\s+)?uses:\\s*(?:${ACTION_NAME.source})@\\S+`, "m");
 
 /**
  * Discard everything from an UNQUOTED `#` onward on each line -- YAML's own comment rule, applied only

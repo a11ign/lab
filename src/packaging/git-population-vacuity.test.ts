@@ -61,7 +61,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -348,6 +348,11 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     guard: "files.length > 650",
     note: "guarded -- `git ls-files` for lockfiles in any directory, and the floor asserts the listing is not nearly empty, so a clean tree "
       + "is not read from a listing that broke. Relocated to the core's guards by #3505.",
+  },
+  "packages/guards/src/agent-org-src-reach.test.ts": {
+    guard: "files.size > MIN_FILES_READ",
+    note: "guarded -- `git ls-files -z --cached --others` for every source file that could reach into agent-org's `src/` by path, and the floor asserts the walk read the tree, so 'nothing reaches' "
+      + "is not read from a listing that broke. Added to the core by a11ign/a11ign#4410; the core's test, classified here because the scan reads the core's tree.",
   },
   "packages/control/src/fleet-layer/protocol-guard.test.ts": {
     guard: null,

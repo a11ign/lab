@@ -28,13 +28,14 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.mjs";
 // #492: every npx call site resolves npm's own CLI script through this helper (`npm-cli-windows-spawn.test.ts`).
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const HELPER = join(REPO, "packages/guards/src/test-tmp.mjs");
+// test-tmp.mjs became test-tmp.ts in #4273/#4274; the fixtures below import it by this path.
+const HELPER = join(REPO, "packages/guards/src/test-tmp.ts");
 
 /**
  * The test files that adopted the helper under #2457, one subject each. `acceptance-exit-code.test.ts` is named by the row

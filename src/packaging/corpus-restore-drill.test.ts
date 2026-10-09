@@ -24,7 +24,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { CASES } from "../training/case-matrix.mjs";
 import { hashPageDir } from "../training/capture-cache.mjs";
 import { captureFilePath } from "../capture/evidence-diff.mjs";

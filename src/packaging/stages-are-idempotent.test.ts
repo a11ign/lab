@@ -39,7 +39,7 @@ import { STEPS } from "../../scripts/everything-pipeline.mjs";
 
 // #2171: shared, because four private copies of this walk descended a directory symlink and threw ELOOP.
 // It reads nothing of its own -- the roots below are this guard's, so WALK_SCOPE above still holds.
-import { filesUnder } from "../../../guards/src/files-under.mjs";
+import { filesUnder } from "../../../guards/src/files-under.ts";
 
 // #929: THIS GUARD READS ONLY `packages/lab`, so a diff that cannot reach it need not run this file.
 // Undeclared means unbounded, which is why the selector runs 173 always-run guards on every pull

@@ -337,7 +337,11 @@ test("the deciding job hands the decision on: each output reads the plan step, a
 
 type Row = { title: string; labels: string[]; body: string };
 
-/** Runs the filing job's OWN shell with a fake `gh` that records every call and answers the two lookups. */
+/**
+ * Runs the filing job's OWN shell with a fake `gh` that records every call and answers the two lookups.
+ * The label lookup is `gh api repos/$GH_REPO/labels/<name>` since #4466 (a capped `gh label list` read a label past the cap as missing): the fake
+ * answers 200 for a label it holds and `HTTP 404` for one it does not, which is the only answer the step reads as "missing".
+ */
 function runFilingStep(existing: { rows: number; labelsPresent: string[] }, ...rows: Row[]) {
   const dir = mkdtempSync(join(tmpdir(), "filing-"));
   try {
@@ -347,13 +351,15 @@ function runFilingStep(existing: { rows: number; labelsPresent: string[] }, ...r
 printf '%s\\n' "$*" >> "$RECORD"
 case "$1 $2" in
   "issue list") echo "$FAKE_ROWS" ;;
-  "label list") if printf '%s\\n' "$FAKE_LABELS" | grep -qxF "$LABEL"; then echo 1; else echo 0; fi ;;
+  "api repos/"*)
+    name="\${2##*/labels/}"; name="$(printf '%b' "\${name//%/\\\\x}")"
+    if printf '%s\\n' "$FAKE_LABELS" | grep -qxF "$name"; then exit 0; else echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi ;;
 esac
 `);
     chmodSync(join(dir, "bin/gh"), EXECUTABLE);
     const step = jobs()["promotion-row"].steps!.find((candidate) => /gh issue create/.test(candidate.run ?? ""))!;
     const result = spawnSync("bash", ["-c", step.run!], { encoding: "utf8", env: {
-      PATH: `${join(dir, "bin")}:${process.env.PATH}`, RECORD: record, FAKE_ROWS: String(existing.rows),
+      PATH: `${join(dir, "bin")}:${process.env.PATH}`, RECORD: record, GH_REPO: "a11ign/a11ign", FAKE_ROWS: String(existing.rows),
       FAKE_LABELS: existing.labelsPresent.join("\n"), ROWS: JSON.stringify(rows) } });
     assert.equal(result.status, 0, result.stderr);
     let calls: string[] = [];

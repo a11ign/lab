@@ -27,7 +27,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { parse } from "yaml";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { layerFile } from "../../../guards/src/layer-file.mjs";
+import { layerFile } from "../../../guards/src/layer-file.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const NEW_NAME = "@a11ign/screenreader-worker";

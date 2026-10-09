@@ -28,6 +28,8 @@
  *     verdict now). `promote` (npm's OIDC `dist-tag add`, in the `npm-publish` environment), `promote-action-tag` (an Octo STS token for three ref writes,
  *     #4154, #4194) and `promotion-record` (`contents: write`, for the Release notes) hold what only the call held; they are NAMED below, each must run no
  *     repository code, and a fourth holder is a decision.
+ *   - #4359: `refresh-outsider-pin` joined the holders. It writes the outside repository's pin with an Octo STS token and runs no repository code; the job that does
+ *     (`decide-outsider-pin`: checkout, install, the generator) holds `contents: read` and no `id-token`, which is the split the holder rule exists to force.
  *   - #3999: the whole-repo coverage floor is a pull-request check, not a release guard.
  *   - #4000: a dispatch ON `main` publishes, so the call's `if` names it. #4154: the dispatch takes `action-tag-version`, which runs one job and nothing else.
  *   - #3947: the guard jobs carry an `if` that skips a `status` event and that one-job dispatch, and no other.
@@ -83,12 +85,12 @@ const runsOnPush = (step: Step): boolean =>
 /** Each guard that must be a step of the `guards` job, as a predicate over one step, found by what it DOES. */
 const GUARDS: Record<string, (step: Step) => boolean> = {
   "access-check": (step) => /config\.json/.test(step.run ?? "") && /\.access/.test(step.run ?? "") && /!=\s*"public"/.test(step.run ?? ""),
-  "manifest-repository-check": (step) => /node scripts\/manifest-repository-check\.mjs/.test(step.run ?? ""),
+  "manifest-repository-check": (step) => /node --import tsx scripts\/manifest-repository-check\.ts/.test(step.run ?? ""),
   "packed-install-check": (step) => /pnpm run gate:isolation/.test(step.run ?? ""),
-  "provenance-request": (step) => step.env?.NPM_CONFIG_PROVENANCE === "true" && /release-publish-rehearsal\.mjs/.test(step.run ?? ""),
+  "provenance-request": (step) => step.env?.NPM_CONFIG_PROVENANCE === "true" && /release-publish-rehearsal\.ts/.test(step.run ?? ""),
   "release-gate-ci": (step) => /pnpm run release:gate:ci/.test(step.run ?? ""),
-  "gate-scope-statement": (step) => /node scripts\/release-gate-scope\.mjs/.test(step.run ?? ""),
-  "consumer-gate-current": (step) => /node scripts\/generate-consumer-gate\.mjs --check/.test(step.run ?? ""),
+  "gate-scope-statement": (step) => /node --import tsx scripts\/release-gate-scope\.ts/.test(step.run ?? ""),
+  "consumer-gate-current": (step) => /node --import tsx scripts\/generate-consumer-gate\.ts --check/.test(step.run ?? ""),
   "hold-3126": (step) => step.env?.A11Y_CHECK_RELEASE_HOLD === "1",
   "never-older-than-the-registry": (step) =>
     /steps\.readings\.outputs\.readings/.test(JSON.stringify(step.env ?? {})) && /process\.exit\(1\)/.test(step.run ?? "") && /behind/.test(step.run ?? ""),
@@ -118,6 +120,7 @@ const ACTION_TAG_INPUT = "inputs.action-tag-version";
 const ID_TOKEN_HOLDERS: Record<string, string> = {
   "promote": "npm's OIDC `dist-tag add`, in the `npm-publish` environment (#3969)",
   "promote-action-tag": "mints the Octo STS token for the major tag's ref writes, bound to this workflow as on main (#4194)",
+  "refresh-outsider-pin": "mints the Octo STS token that writes the outside repository's pin, bound to this workflow as on main; its twin `decide-outsider-pin` runs the repository code and holds no `id-token` (#4359)",
 };
 const CONTENTS_WRITE_HOLDERS: Record<string, string> = { "promotion-record": "appends `Promoted to latest:` to a Release's notes, with `gh` and `jq` only (#3947)" };
 const ENVIRONMENT_HOLDERS: Record<string, string> = { "promote": "npm-publish" };

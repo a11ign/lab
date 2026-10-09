@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-import { DUE_DATE, EXIT, tokenLivenessVerdict } from "../../../../scripts/npm-token-liveness.mjs";
+import { DUE_DATE, EXIT, tokenLivenessVerdict } from "../../../../scripts/npm-token-liveness.ts";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const BEFORE = "2026-09-10";

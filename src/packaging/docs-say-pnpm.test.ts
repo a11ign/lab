@@ -350,14 +350,6 @@ const LEFT_AS_TYPED: RecordGroup[] = [
       "docs/new-code-repository.md": 1,
     },
   },
-  {
-    kind: "record",
-    reason: "KNOWN DEFECT, PINNED SO THE LAB CAN MERGE (#4372; core row a11ign/a11ign#4416): docs/evidence-pack.md:16 (#4252) tells a reader to `npm run witness`, which is an instruction, "
-      + "not a record. The fix is one word in the core's doc, outside the lab's Region; DELETE THIS ENTRY when it says pnpm (the count pin then fails at 0 and says so)",
-    files: {
-      "docs/evidence-pack.md": 1,
-    },
-  },
 ];
 
 const PINS: Record<string, number> = Object.fromEntries(LEFT_AS_TYPED.flatMap((g) => Object.entries(g.files)));
