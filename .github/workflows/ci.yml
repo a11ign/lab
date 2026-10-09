@@ -125,10 +125,7 @@ jobs:
       # The core's `tsc --noEmit` is NOT run: its tsconfig excludes `packages/lab` (the laid copy is not the core's to typecheck), so it would check the core and say nothing about the lab. The lab's own
       # program is `packages/lab/tsconfig.json`, which extends the core's and includes the lab's `src`, `scripts`, `nightly` and `tests` (a11ign/a11ign#3927). It lives INSIDE `packages/lab`: a second tsconfig
       # laid at the core's root is a file naming lab's paths, which the layer-edge test reads as a new edge.
-      - run: ls -la node_modules/@types node_modules/estree 2>&1 | head -20; pnpm --version; pnpm why @types/estree 2>&1 | head -15
-        working-directory: core
-      - continue-on-error: true
-        run: pnpm exec tsc -p packages/lab/tsconfig.json --noEmit
+      - run: pnpm exec tsc -p packages/lab/tsconfig.json --noEmit
         working-directory: core
       # The package's tests AND this repository's own (`src/packaging/*.test.ts`: the workflows, the arming filter, the composition above, the .mjs ratchet), which are typechecked by the program above and run here too.
       - run: pnpm exec rstest run --config scripts/rstest/rstest.config.ts --include "packages/lab/**/*.test.ts"
