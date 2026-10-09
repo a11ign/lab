@@ -162,6 +162,21 @@ const SPAWNS_GIT_DIRECTLY = /\b\w+\(\s*["']git["']/;
 // `wake-review-recheckout.test.ts`, went with it. The mechanism stays for the next file whose `"git"` is data.
 const GIT_IS_DATA_NOT_A_SPAWN: Record<string, string> = {};
 
+/**
+ * Files whose `"git"` literal is a STUB written into a temp directory and put first on the `PATH` of a spawned `bash`, so real git is never
+ * run. They DO import `node:child_process`, so `GIT_IS_DATA_NOT_A_SPAWN` cannot hold them; what makes them safe is a different fact, and
+ * `stubsGitUnderAClosedEnv` checks it: the spawn's `env` is a literal object, never `process.env`, so a leaked `GIT_DIR` cannot reach it.
+ */
+const GIT_IS_A_STUB_UNDER_A_CLOSED_ENV: Record<string, string> = {
+  "packages/guards/src/outsider-release-tag.test.ts": "runs promote-action-tag's shell step with a `git` stub that prints a canned `ls-remote` "
+    + "listing and a `gh` stub that records its argv; the spawn's env is a literal object (PATH, GH_REPO, PROMOTED, ...), so no GIT_* is inherited.",
+};
+
+/** A `stub("git", …)` writes the fake, and an `env:` spread of `process.env` would hand the spawn every GIT_* the runner holds. */
+function stubsGitUnderAClosedEnv(executable: string): boolean {
+  return /\bstub\(\s*["']git["']/.test(executable) && !/\.\.\.process\.env\b|\benv:\s*process\.env\b/.test(executable);
+}
+
 /** The spawning capability a file must import before it can spawn anything, whatever the callee is named. */
 const CAN_SPAWN = /from\s+["']node:child_process["']|require\(\s*["']node:child_process["']/;
 
@@ -236,6 +251,26 @@ test("every GIT_IS_DATA_NOT_A_SPAWN entry names a real file that genuinely CANNO
   }
 });
 
+test("every GIT_IS_A_STUB_UNDER_A_CLOSED_ENV entry is a tracked file that stubs git and never forwards process.env", () => {
+  const tracked = new Set(trackedSourceFiles());
+  assert.ok(Object.keys(GIT_IS_A_STUB_UNDER_A_CLOSED_ENV).length > 0, "positive control: the exemption table names a file");
+  for (const [file, reason] of Object.entries(GIT_IS_A_STUB_UNDER_A_CLOSED_ENV)) {
+    assert.ok(tracked.has(file), `${file} is exempted but is not a tracked source file`);
+    const executable = stripComments(read(file));
+    assert.ok(spawnsGit(executable), `${file} is exempted from a rule it no longer trips -- delete the entry`);
+    assert.ok(stubsGitUnderAClosedEnv(executable), `${file} no longer stubs git under a closed env: its git literal may be a real spawn`);
+    assert.ok(reason.trim().length > 40, `${file}'s exemption needs a reason a reader can check`);
+  }
+});
+
+test("MUTATION: forwarding process.env to a stubbed-git spawn, or spawning a real git, is NOT classified a stub under a closed env", () => {
+  const stubbed = 'stub("git", "cat listing");\nspawnSync("bash", ["-c", s], { env: { PATH: p } });\n';
+  assert.ok(stubsGitUnderAClosedEnv(stubbed), "the closed-env stub must be recognised, or every real entry would fail too");
+  assert.ok(!stubsGitUnderAClosedEnv(stubbed.replace("{ PATH: p }", "{ ...process.env, PATH: p }")), "a spread of process.env leaks GIT_*");
+  assert.ok(!stubsGitUnderAClosedEnv(stubbed.replace("{ env: { PATH: p } }", "{ env: process.env }")), "env: process.env leaks GIT_*");
+  assert.ok(!stubsGitUnderAClosedEnv('execFileSync("git", ["status"], { env: { PATH: p } });'), "a real git spawn is not a stub");
+});
+
 test("every git-spawning file imports and USES a canonical GIT_* scrubbing helper", () => {
   const files = trackedSourceFiles();
   const unclassified: string[] = [];
@@ -244,7 +279,7 @@ test("every git-spawning file imports and USES a canonical GIT_* scrubbing helpe
     if (!spawnsGit(executable)) continue;
     // #446/trunk-red: a declared "the literal is data" file is classified, not skipped -- see
     // GIT_IS_DATA_NOT_A_SPAWN, and the test below that proves each entry genuinely cannot spawn.
-    if (file in GIT_IS_DATA_NOT_A_SPAWN) continue;
+    if (file in GIT_IS_DATA_NOT_A_SPAWN || file in GIT_IS_A_STUB_UNDER_A_CLOSED_ENV) continue;
     if (!usesCanonicalHelper(executable)) unclassified.push(file);
   }
   assert.deepEqual(unclassified, [],

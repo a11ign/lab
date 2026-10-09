@@ -116,6 +116,9 @@ function bareDiffSites(): { sites: string[]; scanned: number } {
  * fails if it disappears, because an exemption for a site that no longer exists is a claim about nothing.
  */
 const BARE_IS_DELIBERATE: Record<string, string> = {
+  "packages/guards/src/consumer-gate-pin-needed.test.ts": "#4331's window test asks whether EITHER of two named files "
+    + "changed between a commit and its parent, with both paths as a pathspec; it is a test of the decider, "
+    + "not a reader of a changed-path list, and a core file this lab pins but cannot edit",
   ".github/workflows/ci.yml": "the /tmp/changed.txt feed for owned-path-signoff, which #902 deletes with the "
     + "ownedPaths job; CODEOWNERS replaces it and #916 carries the same rename question",
 };

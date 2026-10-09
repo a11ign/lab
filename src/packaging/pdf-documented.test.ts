@@ -177,8 +177,10 @@ test("runPdfLayer is checked for what it does: each way to make 'no worker' fals
   assert.deepEqual(runPdfLayerProblems(cli), []);
   const leasing = cli.replace("const result = await scanPdfTagTree(args.url);", "const lease = await leaseWorker(args);\n  const result = await scanPdfTagTree(args.url);");
   assert.match(runPdfLayerProblems(leasing).join("|"), /worker or a capture/);
-  const reordered = cli.replace("if (looksLikePdfUrl(args.url)) { await runPdfLayer(args); return; }\n  const lease = await leaseWorker(args);",
-    "const lease = await leaseWorker(args);\n  if (looksLikePdfUrl(args.url)) { await runPdfLayer(args); return; }");
+  // `main` passes the sink since the evidence pack (`resultSink(args.evidencePack)`); the line is read as it stands in the CLI, so the mutation
+  // is a swap of the two statements and not a retyped call.
+  const route = "if (looksLikePdfUrl(args.url)) { await runPdfLayer(args, resultSink(args.evidencePack)); return; }";
+  const reordered = cli.replace(`${route}\n  const lease = await leaseWorker(args);`, `const lease = await leaseWorker(args);\n  ${route}`);
   assert.notEqual(reordered, cli, "the mutation must change the source");
   assert.match(runPdfLayerProblems(reordered).join("|"), /before leasing/);
   const claimsAScreenReader = cli.replace('screenReader: "not applicable', 'screenReader: "NVDA');

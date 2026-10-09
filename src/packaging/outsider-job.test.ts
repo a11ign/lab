@@ -181,16 +181,41 @@ test("the pin job checks out the repository it runs in, with no `repository:` of
 const PIN_LINE = `      - uses: a11ign/a11ign@${SHA}`;
 const annotated = generateOutsiderJob(readme, SHA, "1.2.3");
 
-test("a version writes `# v<version>` after the pin, and the file without one carries no comment", () => {
+/**
+ * README's own pin line, whose comment ("the commit of the release tagged a11ign@0.3.0") is TRUE of README's sha. Since #4153 a generated line
+ * with no version keeps that comment rather than losing it: the comment is README's, it names README's release, and the generator only
+ * ever substitutes the sha before it. (`generate-consumer-gate.mjs` restates it in ITS generator, because there the sha is not a release's.)
+ */
+const READMES_PIN_COMMENT = /^(\s*- uses: a11ign\/a11ign@)[0-9a-f]{40}(\s+#.*)$/m.exec(readme)?.[2];
+
+test("a version writes `# v<version>` after the pin, and the file without one keeps README's comment and writes no version", () => {
   assert.ok(annotated.split("\n").includes(`${PIN_LINE} # v1.2.3`));
-  assert.ok(generated.split("\n").includes(PIN_LINE), "no version, no comment: a false one would name a release the sha is not");
+  assert.ok(READMES_PIN_COMMENT, "positive control: README's pin line carries a comment to keep");
+  assert.ok(generated.split("\n").includes(`${PIN_LINE}${READMES_PIN_COMMENT}`),
+    "no version: README's own comment rides through, because it names README's release");
+  assert.doesNotMatch(generated.split("\n").find((line) => line.startsWith(PIN_LINE)) ?? "", /#\s*v\d/,
+    "and no `# v<version>` is invented: a false one would name a release the sha is not");
 });
 
-test("the comment changes nothing a reader of the pin reads: the sha, the drift check, the pin job and --check", () => {
+test("the comment changes nothing a reader of the pin reads: the sha, the pin job and the committed file; the drift check is the known gap below", () => {
   assert.equal(extractPinnedSha(annotated), SHA);
-  refuseDriftFromReadme(readme, annotated);
+  refuseDriftFromReadme(readme, generated);
   assert.deepEqual(runPinJob({ workflow: annotated, tagSha: SHA, inputSha: SHA }).status, 0, "the pin job reads the bare sha, never the comment");
-  assert.deepEqual(checkCommitted(readme, annotated), { ok: true });
+  assert.deepEqual(checkCommitted(readme, generated), { ok: true });
+  assert.deepEqual(checkCommitted(readme, annotated), { ok: true }, "and `--check` reads the annotated file as current: only the drift check below disagrees");
+});
+
+/**
+ * KNOWN GAP IN THE CORE (a11ign/a11ign#4041, flagged on lab row #4372): `generate.mjs --version` REPLACES README's own pin comment with `# v<version>`
+ * (#4041), but `refuseDriftFromReadme` masks only a `# v<version>` comment, so README's fence (still carrying "the commit of the release tagged ...")
+ * differs from the generated line and the file it just wrote fails the drift check (`checkCommitted` still reads it as current). The test reads that as it is, so it goes red the day the core
+ * closes the gap, and says to delete it.
+ */
+test("KNOWN GAP: a file generated WITH a version fails the drift check on README's replaced pin comment, until the core masks it", () => {
+  const readmesComment = READMES_PIN_COMMENT?.trim() ?? "";
+  assert.ok(readmesComment.length > 1, "positive control: README's pin line carries a comment that the version replaces");
+  assert.throws(() => refuseDriftFromReadme(readme, annotated), (error: Error) => error.message.includes(readmesComment) && error.message.includes("# v1.2.3"),
+    "the core now masks the replaced comment: delete this test and run the drift check on `annotated` above");
 });
 
 test("a comment that is not a version is drift, and so is a pin line whose comment was dropped or changed", () => {
@@ -205,9 +230,11 @@ test("a version this generator cannot name a pin for, or a pin line that already
   for (const version of ["1.2", "v1.2.3", "latest", ""]) {
     assert.throws(() => generateOutsiderJob(readme, SHA, version), /not a version this generator can name/);
   }
-  const fence = extractDocumentedJobsBlock(readme);
-  const commented = readme.replace(fence, replaced(fence, "- uses: a11ign/a11ign@v0.1.0", "- uses: a11ign/a11ign@v0.1.0 # mine"));
-  assert.throws(() => generateOutsiderJob(commented, SHA, "1.2.3"), /already ends in "# mine"/);
+  // README's pin line ends in a COMMENT, which `--version` replaces (#4041); trailing text that is not a comment is still refused.
+  const pinWithComment = /(uses: a11ign\/a11ign@[0-9a-f]{40})\s+#[^\n]*/;
+  const notAComment = readme.replace(pinWithComment, "$1 extra");
+  assert.notEqual(notAComment, readme, "positive control: README's pin line had a comment to turn into text");
+  assert.throws(() => generateOutsiderJob(notAComment, SHA, "1.2.3"), /already ends in "extra".*not a comment/);
 });
 
 test("the pin job tells whoever regenerates it to pass the version too", () => {
@@ -273,12 +300,14 @@ test("the summary step names every route it did not run, and each document it na
 test("the summary prints every substituted line by README line, and each README line number is true", () => {
   const fence = extractDocumentedJobsBlock(readme);
   const lines = substitutionList({ readmeText: readme, fence, targeted: extractDocumentedJobsBlock(readme).replace(/^(\s*url:\s*).*$/m, "$1X") });
-  assert.equal(lines.length, 2, "one changed line and the generator's own addition");
-  const named = /^README\.md line (\d+): `(.*)` became/.exec(lines[0]);
+  // Since #4041 the pin line is listed too, with the sha replaced by a sentence (the record must not quote README's sha as a second pin text).
+  assert.equal(lines.length, 3, "the pin line, the changed url line and the generator's own addition");
+  const named = /^README\.md line (\d+): `(.*)` became/.exec(lines.find((line) => line.includes("url:")) ?? "");
   assert.equal(readme.split("\n")[Number(named?.[1]) - 1].trim(), named?.[2], "positive control: the number points at the line");
   const summary = generated.slice(generated.indexOf("### Substitutions"));
-  for (const what of ["uses: a11ign/a11ign@v0.1.0", "url: https://example.com/contact", "task: Send an enquiry"]) {
-    assert.ok(summary.includes(`\`- ${what}\``) || summary.includes(`\`${what}\``), `the summary must show ${what} being replaced`);
+  assert.ok(lines.some((line) => line.includes("a11ign/a11ign@<the release's full commit sha")), "the pin line is listed without README's sha");
+  for (const what of ["uses: a11ign/a11ign@<the release's full commit sha", "url: https://example.com/contact", "task: Send an enquiry"]) {
+    assert.ok(summary.includes(what), `the summary must show ${what} being replaced`);
   }
   assert.match(summary, /- added: `needs: \[pin\]`/);
 });

@@ -57,6 +57,19 @@ import { join } from "node:path";
 const REPO = join(import.meta.dirname, "..", "..", "..", "..");
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git", "runs", "__pycache__", ".venv"]);
 
+/**
+ * A generator is a `generate-*.mjs` or `generate-*.ts` that is not a TEST of one: `generate-consumer-gate.test.ts` (the core's pin of
+ * `scripts/generate-consumer-gate.mjs`'s pure steps) writes nothing, and classifying it would name a second producer of the same file.
+ */
+const isGeneratorFile = (name: string): boolean => /^generate-.*\.(mjs|ts)$/.test(name) && !/\.test\.(mjs|ts)$/.test(name);
+
+test("a generate-*.test.ts is a test OF a generator, not a generator; a generate-*.ts is one", () => {
+  assert.equal(isGeneratorFile("generate-consumer-gate.test.ts"), false);
+  assert.equal(isGeneratorFile("generate-consumer-gate.mjs"), true);
+  assert.equal(isGeneratorFile("generate-coverage-doc.ts"), true);
+  assert.equal(isGeneratorFile("regenerate-things.ts"), false);
+});
+
 /** Every `generate-*.mjs` or `generate-*.ts` file under `root`, repo-relative. Widened past `.mjs` only
  * after that narrower glob silently missed a real `.ts` generator -- see this file's own header. */
 function discoverGenerators(root: string): string[] {
@@ -66,7 +79,7 @@ function discoverGenerators(root: string): string[] {
       if (SKIP_DIRS.has(entry.name)) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) { walk(full); continue; }
-      if (/^generate-.*\.(mjs|ts)$/.test(entry.name)) out.push(full.slice(REPO.length + 1));
+      if (isGeneratorFile(entry.name)) out.push(full.slice(REPO.length + 1));
     }
   };
   walk(root);

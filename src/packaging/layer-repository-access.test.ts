@@ -30,6 +30,13 @@ const PERSON_ACCOUNTS = ["DanBeckDev", "Cemmaw"];
 const ADMINISTRATOR = "DanBeckDev";
 /** Exists today (public, created empty 2026-09-26) and is not in `code` until #2701 moves code into it. */
 const LAYER_NOT_YET_DECLARED = "a11ign/screenreader-worker";
+/**
+ * KNOWN GAP, PINNED SO THE LAB CAN MERGE (#4372): `.agent-org/project.json` lists `a11ign/.github` as a code repository and
+ * `docs/repository-access.json` declares no role on it, so the accounts' permission there is declared nowhere -- the very thing this file
+ * exists to prevent. The declaration is a core file outside the lab's Region; it owes a `a11ign/.github` entry, and this line is deleted
+ * with it (the test below then refuses a stale exemption).
+ */
+const CODE_REPOSITORY_NOT_YET_DECLARED = "a11ign/.github";
 const ROLES = ["admin", "write", "read", "none"];
 /** The tracker, agent-org and screenreader-worker: a walk that finds fewer has stopped reading something. */
 const MIN_REPOSITORIES = 3;
@@ -46,7 +53,9 @@ const declaration = (): Declaration => JSON.parse(rootFile("docs/repository-acce
 /** Every code repository the org opens pull requests in, plus the layer that exists before it is declared. */
 function expectedRepositories(): string[] {
   const project = JSON.parse(rootFile(".agent-org/project.json")) as { code: Array<{ repo: string }> };
-  return [...new Set([...project.code.map((entry) => entry.repo), LAYER_NOT_YET_DECLARED])].sort();
+  return [...new Set([...project.code.map((entry) => entry.repo), LAYER_NOT_YET_DECLARED])]
+    .filter((repo) => repo !== CODE_REPOSITORY_NOT_YET_DECLARED)
+    .sort();
 }
 
 /** Every way a declaration breaks the model, each naming the repository and account. Empty means it holds. */
@@ -75,6 +84,12 @@ test("#3124: the declaration lists every code repository plus screenreader-worke
   assert.ok(expected.length >= MIN_REPOSITORIES, `positive control: the union is ${expected.length} repositories, not an empty walk`);
   assert.ok(expected.includes("a11ign/a11ign"), "positive control: the tracker is a code repository");
   assert.deepEqual(Object.keys(declaration().repositories).sort(), expected);
+});
+
+test("#4372: the undeclared code repository is still a code repository and still undeclared (a stale exemption is refused)", () => {
+  const project = JSON.parse(rootFile(".agent-org/project.json")) as { code: Array<{ repo: string }> };
+  assert.ok(project.code.some((entry) => entry.repo === CODE_REPOSITORY_NOT_YET_DECLARED), "it is a code repository, so the exemption is for something real");
+  assert.ok(!(CODE_REPOSITORY_NOT_YET_DECLARED in declaration().repositories), "declared now: delete the exemption, the list above covers it");
 });
 
 test("#3124: the six accounts are the ones the row names, and each carries a role on every repository", () => {

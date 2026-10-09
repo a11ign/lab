@@ -430,10 +430,17 @@ test("[22] the answer is recorded even when an earlier step died, and an unreada
   assert.match(step.run ?? "", /\*\) RECHECK_RESULT=unknown/, "anything that is not pass|fail|unknown is unknown");
 });
 
+/**
+ * The test step is an expression since #3999: `pnpm run coverage` where the CALLER sets `run-coverage`, `pnpm run test:all` otherwise. The trunk's call
+ * sets none, so the red job it re-checks ran the default arm, and that is the command the parent re-check must run too.
+ */
+const unscopedArm = (run: string): string => /^\$\{\{ inputs\.run-coverage && '[^']+' \|\| '([^']+)' \}\}$/.exec(run)?.[1] ?? run;
+
 /** The commands the red job (`trunkBuildTest`'s reusable workflow) runs for its verdict, read from that workflow and not retyped here. */
 function redJobBattery(): string[] {
   const reusable = workflow("reusable-build-test.yml");
   return Object.values(reusable.jobs).flatMap((job) => job.steps ?? []).map((step) => (step.run ?? "").trim())
+    .map(unscopedArm)
     .filter((run) => /^(pnpm run (lint|typecheck|test:all)|PYTHONDONTWRITEBYTECODE=1 pytest\b.*)$/.test(run));
 }
 
@@ -447,6 +454,9 @@ test("[23] POSITIVE CONTROL: the red job's battery was found, all four commands,
   const battery = redJobBattery();
   assert.equal(battery.length, RED_JOB_COMMAND_COUNT, `lint, typecheck, the unscoped suite, pytest; found: ${JSON.stringify(battery)}`);
   assert.ok(battery.includes("pnpm run test:all"), "the unscoped suite is the one that covers every package");
+  // The reading above is only the red job's if the trunk's call leaves the default arm in place.
+  assert.doesNotMatch(JSON.stringify(trunk().jobs.trunkBuildTest ?? {}), /run-coverage/, "trunk.yml asks for no coverage run, so the unscoped arm is what the red job ran");
+  assert.equal(unscopedArm("${{ inputs.run-coverage && 'pnpm run coverage' || 'pnpm run test:all' }}"), "pnpm run test:all", "the arm is read off the expression");
   assert.ok(parentCommands().length > 0);
 });
 

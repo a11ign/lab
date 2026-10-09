@@ -159,18 +159,30 @@ const RELEASE_ALLOWLIST: Record<string, string> = {
     + "landed', which a schedule cannot know.",
 };
 
-test("every workflow triggering on push to main is on one of the four closed allowlists, with a reason", () => {
+// A FIFTH, SEPARATE closed category -- #4331 (the stale `consumer-gate.yml` pin). It is none of the four above: not a watchdog, not a check
+// of main's own tip, not a followup on other PRs, and it does not release. It REPAIRS: a merge that changes `action.yml` can never carry a pin
+// containing its own change, so the push that landed it is the moment the pin goes stale, and a person used to notice. It gates nothing (the
+// repair is judged by `ci.yml` on its own pull request) and a schedule cannot do it, for the reason the followup category gives: only `push`
+// means 'a merge just landed'. The structural requirement is below: the filter is exactly the two files the pin derives from.
+const PIN_REPAIR_ALLOWLIST: Record<string, string> = {
+  "consumer-gate-pin.yml": "#4331: a push to main that touches `action.yml` or `consumer-gate.yml` leaves the generated pin stale; this regenerates it on "
+    + "ONE branch and opens the repair pull request, which meets the queue and the approving review like any other. Nothing is merged here "
+    + "and main is never written. Authority is an Octo STS mint bound to this workflow at `refs/heads/main`, with no stored token and no "
+    + "fallback to `GITHUB_TOKEN`. `push` is the one event that means 'a merge just landed', which a schedule cannot know.",
+};
+
+test("every workflow triggering on push to main is on one of the five closed allowlists, with a reason", () => {
   const offenders: string[] = [];
   for (const file of allWorkflowFiles()) {
     const doc = parseYaml(readWorkflow(file));
     if (triggersOnPushToMain(doc) && !(file in PUSH_TO_MAIN_ALLOWLIST) && !(file in TRUNK_GATE_ALLOWLIST)
-      && !(file in TRUNK_FOLLOWUP_ALLOWLIST) && !(file in RELEASE_ALLOWLIST)) {
+      && !(file in TRUNK_FOLLOWUP_ALLOWLIST) && !(file in RELEASE_ALLOWLIST) && !(file in PIN_REPAIR_ALLOWLIST)) {
       offenders.push(file);
     }
   }
   assert.deepEqual(offenders, [],
     `${offenders.join(", ")} trigger(s) on push to main and are not on PUSH_TO_MAIN_ALLOWLIST, `
-    + "TRUNK_GATE_ALLOWLIST, TRUNK_FOLLOWUP_ALLOWLIST or RELEASE_ALLOWLIST -- a check that gates code must run on the PR "
+    + "TRUNK_GATE_ALLOWLIST, TRUNK_FOLLOWUP_ALLOWLIST, RELEASE_ALLOWLIST or PIN_REPAIR_ALLOWLIST -- a check that gates code must run on the PR "
     + "(chairman's direction, 2026-09-06: a check that runs after the merge cannot stop it). If this is a "
     + "non-gating watchdog immune to the schedule-disable problem the same way board-liveness.yml is, add "
     + "it to PUSH_TO_MAIN_ALLOWLIST; if it is a reactive trunk check like trunk.yml, argue its case "
@@ -183,15 +195,16 @@ test("the watchdog allowlist is EMPTY since #901 -- a watchdog is a step in trun
   assert.deepEqual(Object.keys(PUSH_TO_MAIN_ALLOWLIST), []);
   const doc = parseYaml(readWorkflow("trunk.yml")) as { jobs: Record<string, { steps?: Array<Record<string, unknown>> }> };
   const runLines = (doc.jobs.watchdogs?.steps ?? []).map((s) => String(s.run ?? "")).join("\n");
-  // Each watchdog by the thing that RUNS it: the two that live in the agent-org dependency are `agent-org <command>` (#2975), and
-  // npm-token-liveness, which stayed in scripts/, is a path. Pinning one shape for all three would assert where each lives rather
-  // than that it still runs.
+  // Each watchdog by the thing that RUNS it: both live in the agent-org dependency and are `agent-org <command>` (#2975).
+  // #4196 deleted the third, the NPM_TOKEN liveness step: trunk.yml no longer reads the organisation-secrets token, so there is
+  // nothing for it to probe. Its script stays in scripts/ (npm-token-liveness.test.ts pins what is left of it).
   for (const [script, runs] of [["board-schedule-liveness.mjs", /agent-org board:liveness\b/],
-    ["npm-token-liveness.mjs", /\/npm-token-liveness\.mjs/], ["workflow-run-liveness.mjs", /agent-org workflow:liveness\b/]] as const) {
+    ["workflow-run-liveness.mjs", /agent-org workflow:liveness\b/]] as const) {
     assert.match(runLines, runs,
       `${script} is no longer a workflow of its own and must therefore be a step in trunk.yml's `
       + "watchdogs job -- a watchdog that is in neither place has silently stopped running");
   }
+  assert.doesNotMatch(runLines, /npm-token-liveness/, "#4196 deleted the token watchdog step: it must not come back without a ruling");
 });
 
 test("the trunk-gate allowlist names exactly the one known trunk check", () => {
@@ -207,6 +220,21 @@ const releasePushPaths = (): string[] => {
   return doc.on.push?.paths ?? [];
 };
 const matchesAnyPath = (file: string, globs: string[]): boolean => globs.some((glob) => matchesGlob(file, glob));
+
+test("#4331: the pin-repair allowlist names exactly consumer-gate-pin.yml, whose push trigger is filtered to the two files the pin derives from", () => {
+  assert.deepEqual(Object.keys(PIN_REPAIR_ALLOWLIST), ["consumer-gate-pin.yml"]);
+  const text = readWorkflow("consumer-gate-pin.yml");
+  const doc = parseYaml(text) as { on: { push?: { branches?: string[]; paths?: string[] } }; permissions: unknown; jobs: Record<string, { steps?: Array<Record<string, unknown>> }> };
+  assert.deepEqual(doc.on.push?.branches, ["main"]);
+  assert.deepEqual(doc.on.push?.paths, ["action.yml", ".github/workflows/consumer-gate.yml"],
+    "the push trigger is exactly the pin's two inputs: a catch-all would regenerate on every merge, and a narrower list misses the stale one");
+  assert.deepEqual(doc.permissions, {}, "no workflow-wide token: each job asks for what it needs");
+  const steps = Object.values(doc.jobs).flatMap((job) => job.steps ?? []);
+  assert.ok(steps.some((step) => String(step.uses ?? "").startsWith("octo-sts/action@")), "the authority is an Octo STS mint, not a stored token");
+  const runLines = steps.map((step) => String(step.run ?? "")).join("\n");
+  assert.ok(!/\b(npm test|npm run test|pnpm run test|pytest|ansible-playbook)\b/.test(runLines), "a repair that runs the suite has grown into a gate");
+  assert.doesNotMatch(stripYamlComments(text), /secrets\.(?!github_token\b)/i, "no stored secret: the mint is the authority (a PAT would be the standing hole #4331 refused)");
+});
 
 test("#3131/#3717: the release allowlist names exactly release.yml, and its push trigger is filtered to the changesets it acts on", () => {
   assert.deepEqual(Object.keys(RELEASE_ALLOWLIST), ["release.yml"]);
@@ -331,7 +359,9 @@ test("#3046: auto-arm.yml has no job that pushes main into a PR branch, and stil
 
 test("#3046: auto-arm.yml is triggered by every event it was before the job went", () => {
   const { on } = parseYaml(readWorkflow("auto-arm.yml")) as { on: Record<string, unknown> };
-  assert.deepEqual(Object.keys(on).sort(), ["pull_request", "push", "workflow_dispatch", "workflow_run"]);
+  // #4198: `pull_request_target` joined the list so `arm` and `sweep` run THIS FILE AS IT IS ON `main` and Octo STS can bind the mint to
+  // `refs/heads/main`; `stalled` keeps `pull_request` because it mints nothing. Every event it had before is still here.
+  assert.deepEqual(Object.keys(on).sort(), ["pull_request", "pull_request_target", "push", "workflow_dispatch", "workflow_run"]);
   assert.deepEqual(on.push, { branches: ["main"] }, "`sweep` and `stalled` ride a push to main");
   assert.deepEqual((on.workflow_run as { workflows: string[] }).workflows, ["ci"], "`stalled` rides a ci completion");
 });

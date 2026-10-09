@@ -126,7 +126,9 @@ export function preInstallScripts(workflowText: string): string[] {
     if (/npm (ci|install)\b/.test(line)) installed = true;
     if (installed) continue;
     if (/^\s*echo\b/.test(line)) continue;                                 // prose, not an invocation
-    const call = /\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/.exec(line);
+    if (/^\s*#/.test(line)) continue;                                      // a YAML comment, equally (#4372: consumer-gate-pin.yml's header names the command it runs)
+    // A trailing YAML comment is prose too: `- uses: a11ign/a11ign@<sha>   # ... (node scripts/generate-consumer-gate.mjs)` on `consumer-gate.yml`'s pin line.
+    const call = /\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/.exec(line.replace(/\s+#\s.*$/, ""));
     if (call) found.push(call[1]);
   }
   return found;
@@ -325,6 +327,19 @@ test("#558 MUTATION TARGET: an echo line MENTIONING a script's name is not read 
   ].join("\n");
   assert.deepEqual(preInstallScripts(yaml), [],
     "an echo string naming a script is prose, not a pre-install invocation of it");
+});
+
+test("#4372: a YAML comment naming a script is prose too, and the same line as a real step is still found", () => {
+  // `consumer-gate-pin.yml` opens with a header comment ("regenerate  runs `node scripts/generate-consumer-gate.mjs`, ...") before any job, where
+  // nothing has installed: read as an invocation it made a script that imports a workspace package look like a pre-install entry, and the
+  // walk reported an import the workflow never runs uninstalled (its real step is after `pnpm install`).
+  const comment = ["# regenerate  runs `node scripts/generate-consumer-gate.mjs`, then pushes", "jobs:", "  a:", "    steps:", "      - run: pnpm install"].join("\n");
+  assert.deepEqual(preInstallScripts(comment), []);
+  const step = ["jobs:", "  a:", "    steps:", "      - run: node scripts/generate-consumer-gate.mjs"].join("\n");
+  assert.deepEqual(preInstallScripts(step), ["scripts/generate-consumer-gate.mjs"], "positive control: the same command as a step is found");
+  const trailing = ["jobs:", "  a:", "    steps:", "      - uses: a11ign/a11ign@0123   # the commit this was regenerated at (node scripts/generate-consumer-gate.mjs)"].join("\n");
+  assert.deepEqual(preInstallScripts(trailing), [], "a trailing comment on a `uses:` line names the command without running it");
+  assert.deepEqual(preInstallScripts("jobs:\n  a:\n    steps:\n      - run: node scripts/x.mjs   # then more"), ["scripts/x.mjs"], "and a command with a trailing comment is still found");
 });
 
 test("#567 alwaysStepScripts: finds a script invoked by an always() step, ignores one that isn't", () => {

@@ -130,11 +130,47 @@ function uncovered(patterns: readonly string[], reads: Map<string, string[]>): s
 }
 
 /**
- * What the core's own tests read by name and its trigger list does not cover: a REAL gap in the core, found by this guard and filed (a11ign/a11ign#3980), not a thing to
- * be excused for good. `layers.json` moved to the root in #3506 and the seven tests of `packages/guards/src` that read it by name were left without a trigger. Each entry is asserted
- * to be STILL uncovered, so the lab pull request that moves the pin to a core which fixes it goes red here until the entry is deleted.
+ * What the core's own tests read by name and its trigger list does not cover: a REAL gap in the core, found by this guard and filed, not a thing to
+ * be excused for good. Each entry is asserted to be STILL uncovered, so the lab pull request that moves the pin to a core which fixes it goes red
+ * here until the entry is deleted.
+ *
+ * `layers.json` (a11ign/a11ign#3980) is covered now and left this table. At CORE_REF 8d59c95e5 (#4372) the core grew twenty-seven more, from
+ * the Octo STS policies and their fixtures (`.github/chainguard/`, `scripts/fixtures/octo-sts-*`), the registry consumer gate's fixtures, the
+ * outsider job and four docs a test reads by name. The fix is one set of patterns in the core's
+ * `scripts/rstest/rstest.config.mjs`, outside the lab's Region, and it is NOT filed yet: the row carries the finding. The effect is bounded to
+ * the local `--changed` run (CI runs the whole suite), which does not re-run a test when one of these files changes.
  */
-const KNOWN_UNCOVERED_BY_THE_CORE: Record<string, string> = { "layers.json": "a11ign/a11ign#3980" };
+const OWED_TO_THE_CORE = "a11ign/a11ign#4372 (the core's forceRerunTriggers owe a pattern; no core row filed yet)";
+const KNOWN_UNCOVERED_BY_THE_CORE: Record<string, string> = Object.fromEntries([
+  ".github/chainguard/auto-arm.sts.yaml",
+  ".github/chainguard/consumer-gate-pin-write.sts.yaml",
+  ".github/chainguard/dependency-pr-body.sts.yaml",
+  ".github/chainguard/nightly-board-read.sts.yaml",
+  ".github/chainguard/promote-action-tag.sts.yaml",
+  "docs/auth-attach-spike.md",
+  "docs/ci-targets.json",
+  "docs/evidence-pack.md",
+  "docs/licence-faq.md",
+  "scripts/fixtures/octo-sts-policy-names-auth-capture-check.sts.yaml",
+  "scripts/fixtures/octo-sts-policy-names-corpus-backups.sts.yaml",
+  "scripts/fixtures/octo-sts-policy-ordinary.sts.yaml",
+  "scripts/fixtures/octo-sts-policy-whole-organisation.sts.yaml",
+  "scripts/fixtures/octo-sts-trusted-issuers-absent.txt",
+  "scripts/fixtures/octo-sts-trusted-issuers-two-issuers.yaml",
+  "scripts/fixtures/registry-consumer-gate/clean.json",
+  "scripts/fixtures/registry-consumer-gate/cli-unrunnable.json",
+  "scripts/fixtures/registry-consumer-gate/current-release.json",
+  "scripts/fixtures/registry-consumer-gate/duplicate-evidence.json",
+  "scripts/fixtures/registry-consumer-gate/entry-point-import-not-defined.json",
+  "scripts/fixtures/registry-consumer-gate/entry-point-throws-where-it-must-work.json",
+  "scripts/fixtures/registry-consumer-gate/entry-point-unresolvable.json",
+  "scripts/fixtures/registry-consumer-gate/nothing-installed.json",
+  "scripts/fixtures/registry-consumer-gate/unsatisfied-range.json",
+  "scripts/fixtures/registry-consumer-gate/version-mismatch.json",
+  "scripts/fixtures/registry-consumer-gate/workspace-protocol.json",
+  "scripts/fixtures/registry-consumer-gate/zero-pin.json",
+  "scripts/outsider/outsider-job.yml",
+].map((file) => [file, OWED_TO_THE_CORE]));
 const unexempted = (files: readonly string[]) => files.filter((file) => !(file in KNOWN_UNCOVERED_BY_THE_CORE));
 
 const READS = readsByPath();

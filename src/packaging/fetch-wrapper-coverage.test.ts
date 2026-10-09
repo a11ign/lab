@@ -102,6 +102,26 @@ const EXEMPT: { file: string; count: number; reason: string }[] = [
       + "never a capture worker.",
   },
   {
+    file: "packages/cli/src/auth/attach-spike.mjs", count: 2,
+    reason: "a SPIKE's reads of Chrome's own CDP endpoints (`/json/version`, `/json/list`) on a debugging port it just opened -- "
+      + "the browser's contract, not a capture worker's JSON API, and a throwaway script (docs/auth-attach-spike.md).",
+  },
+  {
+    file: "packages/cli/src/auth/fixtures/cross-origin-idp.mjs", count: 2,
+    reason: "a TEST FIXTURE's client of its own fake identity provider (`/userinfo`, `/token`) on localhost -- an OAuth server the "
+      + "fixture itself starts, never a capture worker.",
+  },
+  {
+    file: "packages/nvda-worker/src/auth-flow.mjs", count: 1,
+    reason: "Chrome's CDP `/json/list` on the worker's own debugging port, in the laid worker layer -- the browser's contract, "
+      + "not a capture worker's JSON API. Same target as browser-session.mjs below.",
+  },
+  {
+    file: "packages/nvda-worker/src/browser-session.mjs", count: 2,
+    reason: "Chrome's CDP endpoints (`/json/version`, `/json/list`), in the laid worker layer, the same reason `browser-session.mjs` "
+      + "carried when it lived in this tree: a browser's own HTTP interface, not a capture worker's JSON contract.",
+  },
+  {
     file: "packages/judge/src/judge.ts", count: 1,
     reason: "a rented LLM's chat-completions endpoint (JUDGE_BASE_URL), for the codex/anthropic/openai "
       + "judge backends -- a different external service entirely, not a capture worker.",

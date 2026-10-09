@@ -588,6 +588,10 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
   "AppData": "Windows' per-user application data, in `action.yml` and the guest paths #584 owns.",
   "a11y-worker-vm": "the DEPRECATED local UTM VM's bundle in `docs/local-worker-vm.md`. A machine class "
     + "nobody has measured, under a placeholder account -- see the boundary in this file's header.",
+  "usr": "`$HOME/.cache/a11y-spike-libs/root/usr/lib/...` in `docs/auth-attach-spike.md` (#4331's auth spike): `usr` is the /usr of an "
+    + "unpacked library root under a cache directory, which the guard reads as a segment directly under a home root. Not a checkout.",
+  ".test": "`/=~/.test(` in `release-promotes-by-evidence.test.ts`: a JavaScript regex-literal method call, which the pattern reads as `~/` "
+    + "followed by a segment. It is source text, not a path anybody has.",
   "g": "`~/g` in a `claude-md-links.test.ts` fixture, a two-character stand-in for a path, not a "
     + "directory anybody has.",
   "workers": "the AGENT host's `gh` CONFIG ROOT for the machine account `a11ign-ai-workers` -- "
