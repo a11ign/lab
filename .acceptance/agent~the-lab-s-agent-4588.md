@@ -1,8 +1,13 @@
 Closes a11ign/a11ign#4588
+Closes a11ign/a11ign#4569
+Closes a11ign/a11ign#4568
+Closes a11ign/a11ign#4561
 
-Acceptance: `bash -c '! grep -qE "readDeclaredCopies|copyDriftReading|KNOWN_UNREADABLE_ORIGINALS" src/packaging/agent-org-wiring.test.ts && test "$(grep -c "COPIED FROM" src/packaging/agent-org-wiring.test.ts)" = 0'` (the row's first two commands, run from this tree instead of `/home/agent/repos/lab`; its third, `npx tsc --noEmit`, needs the lab laid as `packages/lab` of a core checkout, see Evidence)
+Acceptance: `bash -c '! grep -qE "readDeclaredCopies|copyDriftReading|KNOWN_UNREADABLE_ORIGINALS" src/packaging/agent-org-wiring.test.ts && test "$(grep -c "COPIED FROM" src/packaging/agent-org-wiring.test.ts)" = 0 && sha=$(grep -E "^  CORE_REF: [0-9a-f]{40}$" .github/workflows/ci.yml | grep -oE "[0-9a-f]{40}") && test -n "$sha" && git -C /home/agent/repos/role-product-manager merge-base --is-ancestor f3b5c5f59 "$sha"'` (#4588's two greps from this tree, then #4569's pin check: the pin is at or after the core commit that follows #4393's renames; the row's `npx tsc --noEmit` needs the lab laid into a core checkout, which CI's `checks` does)
 
 ## What changes
+One PR for #4588 and #4569 (product-manager's ruling on #4588, 2026-10-09T18:50Z): lab#53's branch (`agent/the-lab-s-ci-4569`, head `a38a606a`: the `CORE_REF` bump, the `.ts` specifier sweep, lab#50 and lab#51, the lab-owned fact updates) is merged onto the deletion, and lab#53's own [36]/[37] softening hunks are dropped because the deletion supersedes them. The rest of this section is the deletion.
+
 `src/packaging/agent-org-wiring.test.ts` loses tests [36] and [37] (65 lines) and everything only they used: `CopyPair`, `declaredCopies`, `KNOWN_UNREADABLE_ORIGINALS`, `withoutKnownUnreadable`, `withConstLinesBroken`, and the `copyDriftReading` / `readDeclaredCopies` destructuring from `org-health.mjs`. Nothing replaces them in the lab: agent-org's own tests own its tree (row 5 deletes the copies). The other tests are untouched, and each import that remains is still used by one (`readdirSync`, `readFileSync`, `join`, `TOOL`, `ROOT`).
 
 ## Evidence
