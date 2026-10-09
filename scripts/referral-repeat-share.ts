@@ -29,6 +29,7 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import type { Loose } from "../src/capture/loose.ts";
 
 /** The repeat share at or above which grouping repeats cuts the load by a fifth (the row's own threshold). */
@@ -126,6 +127,8 @@ function readPages(files: readonly string[]): PageReferrals[] {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  // It takes file paths and NO flags, so a typo'd `--flag` would otherwise be read as a file and fail as "cannot read referrals from --flag".
+  refuseUnknownFlags([], { entry: import.meta.url, command: "npx tsx packages/lab/scripts/referral-repeat-share.ts" });
   const files = process.argv.slice(2);
   if (files.length === 0) {
     console.error("usage: referral-repeat-share.ts <judgment-or-referrals.json> [...]");
