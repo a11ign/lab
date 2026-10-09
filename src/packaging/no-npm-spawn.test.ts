@@ -11,6 +11,8 @@
  *
  *   - `scripts/registry-consumer-gate.ts`: `npm install a11ign` IS what a user runs, so a gate that installed with pnpm would
  *     test a different install than the one they get. `npm view` and `npx --no-install` are registry reads.
+ *   - `scripts/release-tags-complete.ts`: `npm view a11ign versions` reads the registry the consumer's `npm install` reads, so a
+ *     pnpm here would read a different thing than a user's install.
  *   - `scripts/release-publish-rehearsal.ts`: trusted publishing is bound to npm's OIDC, and `pnpm publish` shells out to
  *     `npm publish`, so the rehearsal reads the npm the publish would use.
  *   - `packages/guards/src/isolation-gate.ts`: the CONSUMER half of the isolation gate installs the packed tarballs with npm
@@ -47,6 +49,8 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const ALLOWED: Record<string, string> = {
   "scripts/registry-consumer-gate.ts": "`npm install a11ign` is the consumer's experience; `npm view` reads the registry",
   // `.ts` since a11ign/a11ign#4274 (d9ea0c438): the same two `npm` spawns, the same reason, a new extension.
+  // a11ign/a11ign#4594 (core 989c2bcc3) added its `STAYS npm` comment; `npm view` reads the registry the consumer's install reads.
+  "scripts/release-tags-complete.ts": "`npm view` reads the registry the consumer's `npm install` reads",
   "scripts/release-publish-rehearsal.ts": "trusted publishing is bound to npm's OIDC, and `pnpm publish` shells out to `npm publish`",
   "packages/guards/src/isolation-gate.ts": "the consumer half installs the packed tarballs with npm, outside any workspace",
   "scripts/agent-org-newest-tag.ts": "installs the tool's own dependencies in a clone of its repository, which declares them for npm (#3534)",
@@ -165,12 +169,13 @@ test("positive control: the walk is not empty, and finds the spawns that ARE all
   }
 });
 
-test("the allowlist is EXACTLY these named files (the two registry gates, the isolation gate and the tool resolver), so a fifth is a decision made here", () => {
+test("the allowlist is EXACTLY these named files (the registry gates, the isolation gate and the tool resolver), so a fifth is a decision made here", () => {
   assert.deepEqual(Object.keys(ALLOWED).sort(), [
     "packages/guards/src/isolation-gate.ts",
     "scripts/agent-org-newest-tag.ts",
     "scripts/registry-consumer-gate.ts",
     "scripts/release-publish-rehearsal.ts",
+    "scripts/release-tags-complete.ts",
   ]);
 });
 
