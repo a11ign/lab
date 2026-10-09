@@ -25,7 +25,7 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { pagesFor } from "../src/training/real-page-corpus.mjs";
-import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 
 const require = createRequire(import.meta.url);

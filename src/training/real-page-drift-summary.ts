@@ -38,8 +38,8 @@
  * sweeps stopping for different reasons (`cap`, then `silent`/`exhausted`) -- and the tool reported that as a
  * 96% "drift" of the page. A change in why a sweep STOPPED is not the page moving.
  */
-import { EVIDENCE_FIELDS, fieldKey, fieldValues } from "../capture/evidence-diff.mjs";
-import { captureIn } from "../capture/sweep-costs.mjs";
+import { EVIDENCE_FIELDS, fieldKey, fieldValues } from "../capture/evidence-diff.ts";
+import { captureIn } from "../capture/sweep-costs.ts";
 import { documentIdentity } from "@a11ign/evidence/document-identity";
 
 /**

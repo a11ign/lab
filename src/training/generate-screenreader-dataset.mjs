@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { relative, resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
+import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.ts";
 
 /**
  * takes no flags: it regenerates every page from the case definitions.

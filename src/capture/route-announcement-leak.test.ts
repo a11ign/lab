@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { compareCapture } from "./evidence-diff.mjs";
+import { compareCapture } from "./evidence-diff.ts";
 
 test("a route-announcement visited leak alone is not an evidence change (#1726)", () => {
   // MEASURED on the ORIGINAL #1106 repeat pair, re-derived while confirming #1106's own fix:

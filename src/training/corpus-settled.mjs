@@ -33,7 +33,7 @@ import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { readProgress, isStale } from "./capture-progress.mjs";
-import { datasetRoot, captureRoot, realCorpusRoot } from "../dataset-paths.mjs";
+import { datasetRoot, captureRoot, realCorpusRoot } from "../dataset-paths.ts";
 
 /** Below this a corpus with NO self-report is treated as still being written. The fallback, not the rule. */
 export const SETTLED_AFTER_MINUTES = 10;

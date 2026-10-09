@@ -17,7 +17,7 @@ import { pathToFileURL } from "node:url";
 
 import { ACCOMPANYING_DEFECTS } from "../src/training/case-matrix.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 
 /**
  * takes no flags: it emits the JS-side declarations for the Python audit to read.

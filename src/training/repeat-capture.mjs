@@ -27,9 +27,9 @@ import { workerIsUsable } from "@a11ign/screenreader-fleet/health";
 import { assertWorkerUrl } from "@a11ign/screenreader-fleet/worker-http";
 import { captureIsSelfConsistent } from "@a11ign/evidence/verify";
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
-import { repeatCapturesRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
+import { repeatCapturesRoot, refuseIfRunsReadonly } from "../dataset-paths.ts";
 import { wakeNamedWorkers } from "./wake-by-hand.mjs";
-import { EVIDENCE_FIELDS, fieldKey, fieldValues } from "../capture/evidence-diff.mjs";
+import { EVIDENCE_FIELDS, fieldKey, fieldValues } from "../capture/evidence-diff.ts";
 import { compareIdentity, documentIdentity } from "@a11ign/evidence/document-identity";
 
 /**

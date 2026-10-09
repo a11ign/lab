@@ -28,7 +28,7 @@ import { resolve } from "node:path";
 import { signalMatches } from "./case-matrix.mjs";
 import { ruleFindings } from "@a11ign/judge/rules";
 import { oracleCounts } from "@a11ign/evidence/verify";
-import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
 
 const CAPTURES = captureRoot(datasetRoot());

@@ -6,7 +6,7 @@ import { relative, resolve } from "node:path";
 // acceptance blind to the case the trained heads actually fail on — see `alsoCarrying` for the measurement.
 import { ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
+import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.ts";
 
 /**
  * takes no flags: the held-out set is generated whole or not at all.

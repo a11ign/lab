@@ -31,7 +31,7 @@ import { execFileSync } from "node:child_process";
 import { CASES } from "../src/training/case-matrix.mjs";
 import { MODEL_EXCLUDED_SUBTYPES } from "../src/training/export-screenreader-dataset.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.ts";
 
 /**
  * takes no flags: it reads the corpus on disk and reports which features are constant across a

@@ -22,21 +22,19 @@
  * calls, which `exit-code-contract.test.ts` and `lab-job.test.ts` read to count it as a verdict adopter, so this
  * module never sets `process.exitCode`.
  */
-import { exitCodeFor } from "./verdict.mjs";
+import { exitCodeFor } from "./verdict.ts";
+import type { GateVerdict } from "./verdict.ts";
 
-/**
- * @typedef {import("./verdict.mjs").GateVerdict} GateVerdict
- * @typedef {"ASSERTED" | "REFERRED" | "UNRECORDED"} Outcome
- * @typedef {{ criterion: string, url: string, outcome: Outcome, evidence: string }} NewFinding
- *   `evidence` is the gate's evidence for the page: its census line, then its `opens:` line.
- */
+type Outcome = "ASSERTED" | "REFERRED" | "UNRECORDED";
+/** `evidence` is the gate's evidence for the page: its census line, then its `opens:` line. */
+type NewFinding = { criterion: string; url: string; outcome: Outcome; evidence: string };
 
 /**
  * The new findings split by how each reaches a user. One split, read by the report's count line and by the
  * verdict, so the two cannot count differently.
  * @param {NewFinding[]} findings
  */
-export function partitionByOutcome(findings) {
+export function partitionByOutcome(findings: NewFinding[]) {
   return {
     asserted: findings.filter((finding) => finding.outcome === "ASSERTED"),
     referred: findings.filter((finding) => finding.outcome === "REFERRED"),
@@ -51,7 +49,7 @@ export function partitionByOutcome(findings) {
  *   INCONCLUSIVE exactly as it did before #1504.
  * @returns {{ verdict: GateVerdict, exitCode: number, warning: string | null }}
  */
-export function newFindingsVerdict({ findings, verdictFor }) {
+export function newFindingsVerdict({ findings, verdictFor }: { findings: NewFinding[]; verdictFor: (failures: number) => GateVerdict; }): { verdict: GateVerdict; exitCode: number; warning: string | null; } {
   const { asserted, referred, unrecorded } = partitionByOutcome(findings);
   const verdict = verdictFor(asserted.length + unrecorded.length);
   const referralOnly = referred.length > 0 && asserted.length === 0 && unrecorded.length === 0;
@@ -63,7 +61,7 @@ export function newFindingsVerdict({ findings, verdictFor }) {
  * that only gave a count would send the reader back to the log above it, which is the step this removes.
  * @param {NewFinding[]} referred
  */
-function referralWarning(referred) {
+function referralWarning(referred: NewFinding[]) {
   const named = referred.map((finding) =>
     `    ${finding.criterion}  ${finding.url.replace(/^https:\/\//, "")}\n           ${finding.evidence}\n`);
   return `  WARNING -- ${referred.length} NEW finding(s) on conformant pages, every one REFERRED and none ASSERTED.\n`

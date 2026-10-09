@@ -31,7 +31,7 @@
  *   `examined`: the scored pages less the unusable ones among them. `unusablePages`: those unusable scored pages,
  *   in input order. `notScored`: every other unusable URL, in input order.
  */
-export function scoredCoverage({ scored, unusable }) {
+export function scoredCoverage({ scored, unusable }: { scored: readonly string[]; unusable: Iterable<string>; }): { examined: number; unusablePages: string[]; notScored: string[]; } {
   const scoredSet = new Set(scored);
   const distinct = [...new Set(unusable)];
   const unusablePages = distinct.filter((url) => scoredSet.has(url));
@@ -60,7 +60,7 @@ export function scoredCoverage({ scored, unusable }) {
  * @returns {{ consent: string[], shell: string[], notScored: string[] }}
  *   The scored pages in each bucket, and every other furniture URL, each distinct and in input order.
  */
-export function scoredFurniture({ scored, consent, shell }) {
+export function scoredFurniture({ scored, consent, shell }: { scored: readonly string[]; consent: Iterable<string>; shell: Iterable<string>; }): { consent: string[]; shell: string[]; notScored: string[]; } {
   const scoredSet = new Set(scored);
   // READ EACH BUCKET ONCE. Both are used twice below, and a single-use iterable (a generator) is spent by its first
   // read, which emptied `notScored` and lost every unscored capture (reviewer-2's should-fix on #1546).

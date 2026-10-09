@@ -23,7 +23,7 @@
  * stages have no lab wall-clock (#3141), and a description that implied them would be the scope-dropped-at-
  * the-boundary defect `verdict.mjs` was written about.
  */
-import { exitCodeFor } from "./verdict.mjs";
+import { exitCodeFor } from "./verdict.ts";
 
 /** The status context the release reads. One fact: #3136's reader and the poster must agree on it. */
 export const QUALIFICATION_CONTEXT = "qualification";

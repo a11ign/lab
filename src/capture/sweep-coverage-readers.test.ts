@@ -17,9 +17,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { sweepCompleteness as evidenceCompleteness } from "@a11ign/evidence/verify";
-import { whatItAsked } from "./what-it-asked.mjs";
-import { sweepCompleteness as labCompleteness } from "./sweep-costs.mjs";
-import { sweepAgainstCensus } from "./sweep-vs-census.mjs";
+import { whatItAsked } from "./what-it-asked.ts";
+import { sweepCompleteness as labCompleteness } from "./sweep-costs.ts";
+import { sweepAgainstCensus } from "./sweep-vs-census.ts";
 import { observationAmbiguity } from "../training/observation-ambiguity.mjs";
 
 type Sweep = Record<string, unknown>;

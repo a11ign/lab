@@ -21,23 +21,23 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { compareIdentity, documentIdentity } from "@a11ign/evidence/document-identity";
+import type { Loose } from "./loose.ts";
 
 /** Fields a dataset signal can read. A difference in any of these is a change in evidence. */
 /**
- * @typedef {Record<string, any>} EvidenceCapture
- *
  * `any` deliberately, and only here. This module's whole job is walking a parsed capture by field paths
  * held in data (`EVIDENCE_FIELDS` below), so a precise shape would have to be re-stated for every field
  * the table names -- a second spelling of the table, which is the duplication this repo pays most for.
  * The paths are the contract; the object is JSON.
  */
+export type EvidenceCapture = Record<string, Loose>;
 
 /**
  * A field is a PATH: `[group, name]` inside `structure`/`interaction`, or `[name]` for a channel at the capture's top
  * level (#977). `fieldValues` walks any depth, and a field is named by `path.join(".")`.
  * @type {string[][]}
  */
-const TABLE = [
+const TABLE: string[][] = [
   ["structure", "headings"], ["structure", "landmarks"], ["structure", "formFields"],
   ["structure", "tableCells"], ["structure", "links"], ["structure", "lists"],
   ["structure", "graphics"],
@@ -138,7 +138,7 @@ const ASKED_OF_EACH_SWEEP = [
 ];
 
 /** @type {string[][]} */
-export const EVIDENCE_FIELDS = [...TABLE, ...ASKED_OF_EACH_SWEEP];
+export const EVIDENCE_FIELDS: string[][] = [...TABLE, ...ASKED_OF_EACH_SWEEP];
 
 /**
  * The key a field goes by in `gate:stability`'s `comparable()` and anywhere else a field needs one name: the bare
@@ -147,7 +147,7 @@ export const EVIDENCE_FIELDS = [...TABLE, ...ASKED_OF_EACH_SWEEP];
  * `top-level-channels.test.ts` holds every key distinct.
  * @param {readonly string[]} field @returns {string}
  */
-export function fieldKey(field) {
+export function fieldKey(field: readonly string[]): string {
   return field.length === 2 ? field[1] : field.join(".");
 }
 
@@ -160,7 +160,7 @@ export function fieldKey(field) {
  * one list.
  * @type {Readonly<Record<string, string>>}
  */
-export const NOT_COMPARED = Object.freeze({
+export const NOT_COMPARED: Readonly<Record<string, string>> = Object.freeze({
   // `interaction.navigatedOnSubmit` moved OUT of this list 2026-09-19 (#984): measured stable, 0 flips
   // in 81 comparisons -- see its entry in `TABLE` above.
   "interaction.leftSite": "where an activation took the browser off the page's site (#1363): a record of what "
@@ -209,7 +209,7 @@ export const COMPARED_OUTSIDE_THE_TABLE = Object.freeze(["transcript"]);
  * punctuation, numbers, role words) would hide exactly the differences this tool exists to find.
  */
 /** @param {unknown} phrase */
-function normalise(phrase) {
+function normalise(phrase: unknown) {
   return String(phrase ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
@@ -243,7 +243,7 @@ function normalise(phrase) {
  *
  * @param {string} normalisedControl already run through `normalise`
  */
-function stripVisitedState(normalisedControl) {
+function stripVisitedState(normalisedControl: string) {
   return normalisedControl.split(", ").filter((segment) => segment !== "visited").join(", ");
 }
 
@@ -272,7 +272,7 @@ function stripVisitedState(normalisedControl) {
  *   `kind` check can be made without a second walk of the capture
  * @param {string} normalisedValue already run through `normalise`
  */
-function isRouteAnnouncementLeak(fieldPath, key, record, normalisedValue) {
+function isRouteAnnouncementLeak(fieldPath: string, key: string, record: Record<string, unknown> | null | undefined, normalisedValue: string) {
   if (normalisedValue !== "visited") return false;
   if (fieldPath === "interaction.routeChange" && key === "announced") return true;
   return fieldPath === "interaction.formChanges" && key === "after" && record?.kind === "route";
@@ -287,7 +287,7 @@ function isRouteAnnouncementLeak(fieldPath, key, record, normalisedValue) {
  * @param {Record<string, unknown> | null | undefined} record the object `key` was read from
  * @returns {string}
  */
-function normaliseValue(key, value, fieldPath, record) {
+function normaliseValue(key: string, value: unknown, fieldPath: string, record: Record<string, unknown> | null | undefined): string {
   const normalised = normalise(value);
   if (key === "control") return stripVisitedState(normalised);
   if (isRouteAnnouncementLeak(fieldPath, key, record, normalised)) return "";
@@ -376,13 +376,13 @@ export const NOT_EVIDENCE_KEYS = new Set([
  *   so `normaliseValue` can tell a `formChanges[].after` leak from an unrelated field sharing the key name)
  * @returns {string}
  */
-function flatten(entry, fieldPath) {
+function flatten(entry: unknown, fieldPath: string): string {
   if (!entry || typeof entry !== "object") return normalise(entry);
   return Object.entries(entry)
     .filter(([key]) => !NOT_EVIDENCE_KEYS.has(key))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${normaliseValue(key, value, fieldPath,
-      /** @type {Record<string, unknown>} */ (entry))}`)
+      (entry as Record<string, unknown>))}`)
     .join(" ");
 }
 
@@ -396,8 +396,8 @@ function flatten(entry, fieldPath) {
  * @param {string[]} field a path -- `[group, name]`, or `[name]` for a top-level channel (#977)
  * @returns {string[]}
  */
-export function fieldValues(capture, field) {
-  const value = field.reduce((/** @type {any} */ at, key) => at?.[key], capture);
+export function fieldValues(capture: EvidenceCapture | null | undefined, field: string[]): string[] {
+  const value = field.reduce((at: Loose, key) => at?.[key], capture);
   const fieldPath = field.join(".");
   if (Array.isArray(value)) return value.map((entry) => flatten(entry, fieldPath));
   // AN OBJECT, FLATTENED. `routeChange` is `{control, titleBefore, titleAfter, headingBefore,
@@ -432,7 +432,7 @@ export function fieldValues(capture, field) {
  * Items in `a` that are absent from `b`, preserving order and duplicates.
  * @param {string[]} a @param {string[]} b @returns {string[]}
  */
-function missingFrom(a, b) {
+function missingFrom(a: string[], b: string[]): string[] {
   const remaining = [...b];
   return a.filter((item) => {
     const at = remaining.indexOf(item);
@@ -476,7 +476,7 @@ function missingFrom(a, b) {
  * @param {EvidenceCapture} baseline
  * @param {EvidenceCapture} candidate
  */
-export function compareCapture(baseline, candidate) {
+export function compareCapture(baseline: EvidenceCapture, candidate: EvidenceCapture) {
   const identity = compareIdentity(documentIdentity(baseline), documentIdentity(candidate));
   if (identity.verdict === "DIFFERENT_DOCUMENT") {
     // `phrases: null` rather than zeroed counts. A transcript comparison that did not happen must not
@@ -519,7 +519,7 @@ export function compareCapture(baseline, candidate) {
 /**
  * @param {{ comparison?: { verdict?: string } | null }[]} results
  */
-export function summarise(results) {
+export function summarise(results: { comparison?: { verdict?: string; } | null; }[]) {
   // SKIPPED is a verdict about the CHECK, not the evidence: the page title could not be read, so the
   // capture could not be gated and must not be compared. It was added when a down page server made
   // every title read fail, the gate was bypassed, and 48 captures of Edge's error page were reported
@@ -529,7 +529,7 @@ export function summarise(results) {
   // path unexpressible -- the shape of "a check must never reject evidence whose absence is the finding",
   // applied to a lookup.
   /** @type {Record<string, number>} */
-  const counts = { SAME: 0, DRIFT: 0, CHANGED: 0, REJECTED: 0, SKIPPED: 0, DIFFERENT_DOCUMENT: 0 };
+  const counts: Record<string, number> = { SAME: 0, DRIFT: 0, CHANGED: 0, REJECTED: 0, SKIPPED: 0, DIFFERENT_DOCUMENT: 0 };
   // Count defensively. An unknown verdict used to land as `undefined + 1` -> NaN, which propagates
   // through `compared`, the drift share and the recommendation, so a new verdict silently turned the
   // whole summary into nonsense rather than failing.
@@ -617,7 +617,10 @@ export function summarise(results) {
  *           examinedNothing: boolean, inconclusive: boolean, driftShare: number }} state
  * @returns {string}
  */
-function recommendationFor({ counts, compared, attempted, examinedNothing, inconclusive, driftShare }) {
+function recommendationFor({ counts, compared, attempted, examinedNothing, inconclusive, driftShare }: {
+        counts: Record<string, number>; compared: number; attempted: number;
+        examinedNothing: boolean; inconclusive: boolean; driftShare: number;
+    }): string {
   return (counts.DIFFERENT_DOCUMENT
       ? `DIFFERENT DOCUMENT — ${counts.DIFFERENT_DOCUMENT} of ${attempted} capture(s) were served a `
         + "page other than their baseline's, so this cannot say whether the evidence moved and MUST NOT "
@@ -648,7 +651,7 @@ const WIDESPREAD_DRIFT_SHARE = 0.5;
  * @param {string} dir @param {string} id @param {string} variant
  * @returns {string}
  */
-export function captureFilePath(dir, id, variant) {
+export function captureFilePath(dir: string, id: string, variant: string): string {
   return resolve(dir, `${id}.${variant}.json`);
 }
 
@@ -660,7 +663,7 @@ export function captureFilePath(dir, id, variant) {
  * @param {string} dir @param {string} id @param {string} variant @param {number} attempt
  * @returns {string}
  */
-export function rejectedCaptureFilePath(dir, id, variant, attempt) {
+export function rejectedCaptureFilePath(dir: string, id: string, variant: string, attempt: number): string {
   return resolve(dir, `${id}.${variant}.attempt${attempt}.json`);
 }
 
@@ -678,13 +681,13 @@ export function rejectedCaptureFilePath(dir, id, variant, attempt) {
  *
  * @param {string} dir @param {string} id @param {string} variant
  */
-export function readCapture(dir, id, variant) {
+export function readCapture(dir: string, id: string, variant: string) {
   const path = captureFilePath(dir, id, variant);
   if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, "utf8"));
   } catch (error) {
-    throw new Error(`could not read ${path}: ${/** @type {Error} */ (error).message}`, { cause: error });
+    throw new Error(`could not read ${path}: ${(error as Error).message}`, { cause: error });
   }
 }
 
@@ -704,7 +707,7 @@ export function readCapture(dir, id, variant) {
  *
  * @param {Record<string, any> | null} capture
  */
-export function isUsableCapture(capture) {
+export function isUsableCapture(capture: Record<string, Loose> | null) {
   return unusableReason(capture) === null;
 }
 
@@ -727,10 +730,10 @@ export function isUsableCapture(capture) {
  * @param {Record<string, any> | null} capture
  * @returns {string | null}
  */
-export function unusableReason(capture) {
+export function unusableReason(capture: Record<string, Loose> | null): string | null {
   if (capture?.screenReader !== "NVDA") return "not a capture NVDA made";
   if (!Array.isArray(capture.transcript) || capture.transcript.length === 0) return "empty transcript";
-  if (capture.transcript.every((/** @type {unknown} */ line) => typeof line === "string" && line.trim() === "blank")) {
+  if (capture.transcript.every((line: unknown) => typeof line === "string" && line.trim() === "blank")) {
     return `NVDA read only "blank" (${capture.transcript.length} line(s)), so it never read the page`;
   }
   const title = lastDocumentReadyTitle(capture.diagnostics);
@@ -744,7 +747,7 @@ export function unusableReason(capture) {
 const CONSOLE_WINDOW_TITLE = /\bcmd dot exe\b/i;
 
 /** @param {unknown} diagnostics @returns {unknown} */
-function lastDocumentReadyTitle(diagnostics) {
+function lastDocumentReadyTitle(diagnostics: unknown): unknown {
   if (!Array.isArray(diagnostics)) return undefined;
   const marks = diagnostics.filter((event) => event?.event === "documentReady");
   return marks.at(-1)?.title;
@@ -761,9 +764,9 @@ function lastDocumentReadyTitle(diagnostics) {
  * @param {readonly E[]} entries
  * @returns {{ kept: E[], refused: { url: string, reason: string }[] }}
  */
-export function refuseUnusableEntries(entries) {
-  /** @type {E[]} */ const kept = [];
-  /** @type {{ url: string, reason: string }[]} */ const refused = [];
+export function refuseUnusableEntries<E extends { capture?: Record<string, Loose> | null }>(entries: readonly E[]): { kept: E[]; refused: { url: string; reason: string; }[]; } {
+  /** @type {E[]} */ const kept: E[] = [];
+  /** @type {{ url: string, reason: string }[]} */ const refused: { url: string; reason: string; }[] = [];
   for (const entry of entries) {
     const reason = unusableReason(entry.capture ?? null);
     if (reason === null) kept.push(entry);
@@ -778,7 +781,7 @@ export function refuseUnusableEntries(entries) {
  * @param {readonly { url: string, reason: string }[]} refused
  * @returns {string[]}
  */
-export function refusalLines(refused) {
+export function refusalLines(refused: readonly { url: string; reason: string; }[]): string[] {
   if (!refused.length) return [];
   return [
     `  REFUSED ${refused.length} capture(s) NVDA did not read the page in; they are not in the scored total:`,

@@ -33,7 +33,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { REPO_ROOT } from "./dataset-paths.mjs";
+import { REPO_ROOT } from "./dataset-paths.ts";
 import { stripComments } from "@a11ign/evidence/source-text";
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
@@ -76,7 +76,7 @@ function readSource(file: string): string {
 const OWNED_ENV_VARS =
   /process\.env\.(DATASET_ROOT|RUNS_ROOT|A11Y_RUNS_ROOT|REAL_CORPUS_ROOT|DATASET_CAPTURE_ROOT|DATASET_EXPORT|CAPTURE_ROOT)\b/;
 const OWNED_RUNS_LITERAL = /["'`]runs\/[a-zA-Z][a-zA-Z0-9-]*/;
-const IMPORTS_DATASET_PATHS = /from ["'][^"']*dataset-paths\.mjs["']/;
+const IMPORTS_DATASET_PATHS = /from ["'][^"']*dataset-paths\.(mjs|ts)["']/;
 
 function resolvesRunsPath(source: string): boolean {
   return IMPORTS_DATASET_PATHS.test(source) || OWNED_ENV_VARS.test(source) || OWNED_RUNS_LITERAL.test(source);
@@ -96,7 +96,7 @@ function callsRefusalGuard(source: string): boolean {
  * Why a file that resolves a runs/ path and writes does not call the guard. A REASON, never a bare name.
  */
 const EXEMPT: Record<string, string> = {
-  "packages/lab/src/dataset-paths.mjs":
+  "packages/lab/src/dataset-paths.ts":
     "It is the implementation of refuseIfRunsReadonly itself -- the guard cannot call itself, and its own "
     + "writeJsonAtomic-shaped text is inside a doc comment describing OTHER files, not a write this file "
     + "performs.",
@@ -183,7 +183,7 @@ test("MUTATION: the write-call regex fires on every real write shape this guard 
 test("MUTATION: a NEW writer reproducing the gap would be caught, not just the ones already fixed", () => {
   const hypotheticalNewWriter =
     'import { writeFileSync } from "node:fs";\n'
-    + 'import { runsRoot } from "../src/dataset-paths.mjs";\n'
+    + 'import { runsRoot } from "../src/dataset-paths.ts";\n'
     + 'function main() {\n'
     + '  writeFileSync(resolve(runsRoot(), "new-report.json"), "{}");\n'
     + '}\n';

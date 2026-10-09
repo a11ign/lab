@@ -49,7 +49,8 @@
  * with the numbers rather than to force a verdict from five records that were never one population.
  */
 import { censusElementCounts } from "@a11ign/evidence/conformance";
-import { sweepCompleteness } from "./sweep-costs.mjs";
+import { sweepCompleteness } from "./sweep-costs.ts";
+import type { Loose } from "./loose.ts";
 
 /** Which census key each swept type is comparable against. Named once; `null` means no ground truth. */
 export const CENSUS_KEY_FOR_SWEEP = Object.freeze({
@@ -72,7 +73,11 @@ export const CENSUS_KEY_FOR_SWEEP = Object.freeze({
  *             completeness: "complete" | "truncated" | "never-ran" | "elsewhere", ratio: number | null,
  *             censusReadAt: number | null, sweptAt: number | null, apartMs: number | null }[]}
  */
-export function sweepAgainstCensus(capture) {
+export function sweepAgainstCensus(capture: { diagnostics?: unknown[]; }): {
+    type: string; found: number; present: number | null; basis: "raw" | "none";
+    completeness: "complete" | "truncated" | "never-ran" | "elsewhere"; ratio: number | null;
+    censusReadAt: number | null; sweptAt: number | null; apartMs: number | null;
+}[] {
   const diagnostics = Array.isArray(capture?.diagnostics) ? capture.diagnostics : [];
   const raw = censusElementCounts(diagnostics);
   // WHEN THE CENSUS WAS READ, or `null` because the record does not say. `structureCensus.atMs` is stamped
@@ -84,15 +89,15 @@ export function sweepAgainstCensus(capture) {
   // NESTED because the census's element counts are read off a DENYLIST (`censusElementCounts` takes every
   // numeric field except `event` and `atMs`), so a flat `readAtMs` on that mark would arrive downstream as
   // an element type. Read the nested field, never invent a flat one.
-  const censusMark = diagnostics.find((/** @type {any} */ m) =>
+  const censusMark = diagnostics.find((m: Loose) =>
     m && typeof m === "object" && m.event === "structureCensus");
-  const readAt = /** @type {any} */ (censusMark)?.readAt;
+  const readAt = (censusMark as Loose)?.readAt;
   const censusReadAt = typeof readAt?.startedAtMs === "number" ? readAt.startedAtMs : null;
   return diagnostics
-    .filter((/** @type {any} */ m) => m && typeof m === "object" && m.event === "sweep"
+    .filter((m: Loose) => m && typeof m === "object" && m.event === "sweep"
       && typeof m.type === "string" && typeof m.error !== "string")
-    .map((/** @type {any} */ mark) => {
-      const key = /** @type {Record<string, string|null>} */ (CENSUS_KEY_FOR_SWEEP)[mark.type] ?? null;
+    .map((mark: Loose) => {
+      const key = (CENSUS_KEY_FOR_SWEEP as Record<string, string|null>)[mark.type] ?? null;
       const present = key && raw && typeof raw[key] === "number" ? raw[key] : null;
       const found = typeof mark.found === "number" ? mark.found : 0;
       // A SWEEP THAT NEVER RAN HAS NO RATIO, and this is the same defect `sweep-costs.mjs` found in its
@@ -112,7 +117,7 @@ export function sweepAgainstCensus(capture) {
       const sweptAt = typeof mark.atMs === "number" ? mark.atMs : null;
       return {
         type: mark.type, found, present, completeness,
-        basis: /** @type {"raw" | "none"} */ (present === null ? "none" : "raw"),
+        basis: (present === null ? "none" : "raw") as "raw" | "none",
         censusReadAt, sweptAt,
         // `null` when either moment is missing -- an unknown gap is not a gap of zero, which is the whole
         // distinction #854 was about one field over.
@@ -155,7 +160,7 @@ export function sweepAgainstCensus(capture) {
  * @param {readonly { type: string, ratio: number | null, completeness: string }[]} rows one capture's rows
  * @returns {boolean | null} `null` when the control could not be read
  */
-export function pageHeldStill(rows) {
+export function pageHeldStill(rows: readonly { type: string; ratio: number | null; completeness: string; }[]): boolean | null {
   const control = rows.find((row) => row.type === "heading");
   if (!control || control.completeness !== "complete" || control.ratio === null) return null;
   // BELOW 1 IS NOT AN ANSWER ABOUT THE PAGE. A sweep that found fewer than the census counted did not
@@ -207,7 +212,7 @@ export const RATIO_IS_AGREEMENT_WITHIN = 1.25;
  * @param {{ censusReadAt?: readonly (number | null)[], heldStill?: boolean | null }} [moments]
  *   when each capture's census was READ, and whether the `heading` control says the page held still
  */
-export function populationVerdict(ratios, moments = {}) {
+export function populationVerdict(ratios: readonly (number | null)[], moments: { censusReadAt?: readonly (number | null)[]; heldStill?: boolean | null; } = {}) {
   // THE MOMENT GATE COMES FIRST, before any arithmetic on the ratios. Checking the numbers and then
   // qualifying them would put a verdict in front of a reader who stops at the first line.
   const readAt = moments.censusReadAt;
@@ -222,7 +227,7 @@ export function populationVerdict(ratios, moments = {}) {
   // length. `undefined` means the caller did not pass a control -- a comparison nobody controlled is not
   // one this may rule on, which is the same refusal the moments themselves get above.
   if (moments.heldStill !== true) return "not-simultaneous";
-  const usable = /** @type {number[]} */ (ratios.filter((r) => typeof r === "number" && Number.isFinite(r)));
+  const usable = (ratios.filter((r) => typeof r === "number" && Number.isFinite(r)) as number[]);
   if (usable.length < 2) return "cannot say";
   const above = usable.filter((r) => r > RATIO_IS_AGREEMENT_WITHIN).length;
   const below = usable.filter((r) => r < 1 / RATIO_IS_AGREEMENT_WITHIN).length;

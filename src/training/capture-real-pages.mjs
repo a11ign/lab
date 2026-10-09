@@ -28,7 +28,7 @@ import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11ign
 import { workerIsUsable } from "@a11ign/screenreader-fleet/health";
 import { configuredWorkers, inventoryWorkerUrls } from "@a11ign/screenreader-fleet/fleet-env";
 import { leasePageServer } from "./page-server.mjs";
-import { realCorpusRoot, datasetRoot, refuseIfRunsReadonly, runsRoot } from "../dataset-paths.mjs";
+import { realCorpusRoot, datasetRoot, refuseIfRunsReadonly, runsRoot } from "../dataset-paths.ts";
 import { hostAddressForWorker } from "@a11ign/screenreader-fleet";
 import { assertOneBrowserAcross as refuseSplitFleet } from "./capture-fleet-guard.mjs";
 import { absentFrom, appendRunRecord, buildRunRecord, captureRunsFile } from "./capture-run-record.mjs";

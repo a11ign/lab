@@ -1,8 +1,8 @@
 // @ts-check
 // REBUILD A LAB FROM A CORPUS RELEASE, and run a real gate off the result. #2051.
 //
-//   node packages/lab/src/packaging/corpus-restore-drill.mjs --archive=<corpus-….tar.gz> --live-runs=/opt/a11y/runs
-//   node packages/lab/src/packaging/corpus-restore-drill.mjs --release=corpus-2026-09-23_03-00-00 --live-runs=<path>
+//   node packages/lab/src/packaging/corpus-restore-drill.ts --archive=<corpus-….tar.gz> --live-runs=/opt/a11y/runs
+//   node packages/lab/src/packaging/corpus-restore-drill.ts --release=corpus-2026-09-23_03-00-00 --live-runs=<path>
 //
 // ## What `corpus:release --verify` proves, and what it cannot
 //
@@ -59,14 +59,15 @@ import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
-import { gateVerdict, renderVerdict, exitCodeFor } from "../gates/verdict.mjs";
+import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../dataset-paths.ts";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../gates/verdict.ts";
 import { DEFAULT_REPO } from "../../scripts/corpus-release.mjs";
+import type { Loose } from "../capture/loose.ts";
 
 const run = promisify(execFile);
 
 refuseUnknownFlags(["--archive=", "--release=", "--repo=", "--live-runs=", "--scratch=", "--require-complete"],
-  { entry: import.meta.url, command: "node packages/lab/src/packaging/corpus-restore-drill.mjs" });
+  { entry: import.meta.url, command: "node packages/lab/src/packaging/corpus-restore-drill.ts" });
 
 const DATASET_DIR = "screenreader-dataset";
 
@@ -99,7 +100,7 @@ const COUNT_COLUMN = 6;
 const QUESTIONS = 3;
 
 /** @param {string} path @returns {string} the real path of the deepest ancestor that exists, with the rest re-appended */
-function realpathOfNearest(path) {
+function realpathOfNearest(path: string): string {
   const missing = [];
   let here = resolve(path);
   while (!existsSync(here) && dirname(here) !== here) {
@@ -110,7 +111,7 @@ function realpathOfNearest(path) {
 }
 
 /** @param {string} inner @param {string} outer */
-const isWithin = (inner, outer) => inner === outer || inner.startsWith(outer + sep);
+const isWithin = (inner: string, outer: string) => inner === outer || inner.startsWith(outer + sep);
 
 /**
  * Why `target` may not be a restore target, or `null`. Pure over the paths it is given, so the refusal is
@@ -122,7 +123,7 @@ const isWithin = (inner, outer) => inner === outer || inner.startsWith(outer + s
  * @param {string} target
  * @param {{ protectedRoots: string[] }} options
  */
-export function targetRefusal(target, { protectedRoots }) {
+export function targetRefusal(target: string, { protectedRoots }: { protectedRoots: string[]; }) {
   const spellings = [resolve(target), realpathOfNearest(target)];
   for (const root of protectedRoots) {
     const roots = existsSync(root) ? [resolve(root), realpathSync(root)] : [resolve(root)];
@@ -144,7 +145,7 @@ export function targetRefusal(target, { protectedRoots }) {
  *
  * @param {string} path
  */
-export async function countJson(path) {
+export async function countJson(path: string) {
   if (!existsSync(path)) return 0;
   const { stdout } = await run("find", ["-L", path, "-type", "f", "-name", "*.json"],
     { maxBuffer: MAX_LISTING_BYTES });
@@ -156,13 +157,13 @@ export async function countJson(path) {
  * @param {string} runs
  * @returns {Promise<Record<string, number>>}
  */
-export async function countMembers(runs) {
+export async function countMembers(runs: string): Promise<Record<string, number>> {
   const entries = await Promise.all(Object.entries(MEMBER_LAYOUT)
-    .map(async ([member, where]) => /** @type {const} */ ([member, await countJson(join(runs, where))])));
+    .map(async ([member, where]) => ([member, await countJson(join(runs, where))] as const)));
   return Object.fromEntries(entries);
 }
 
-const sum = (/** @type {Record<string, number>} */ counts) => Object.values(counts).reduce((a, b) => a + b, 0);
+const sum = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
 
 /**
  * What the archive holds, from its own listing: the JSON count, and the top-level member names.
@@ -170,7 +171,7 @@ const sum = (/** @type {Record<string, number>} */ counts) => Object.values(coun
  *
  * @param {string} archive
  */
-export async function inspectArchive(archive) {
+export async function inspectArchive(archive: string) {
   const { stdout } = await run("tar", ["-tzf", archive], { maxBuffer: MAX_LISTING_BYTES });
   const entries = stdout.split("\n").filter(Boolean);
   const unsafe = entries.filter((e) => e.startsWith("/") || e.split("/").includes(".."));
@@ -182,10 +183,10 @@ export async function inspectArchive(archive) {
  * Restore `archive` under `<scratch>/runs`, each member back where a lab keeps it.
  * @param {{ archive: string, scratch: string, members: string[] }} request
  */
-async function extract({ archive, scratch, members }) {
+async function extract({ archive, scratch, members }: { archive: string; scratch: string; members: string[]; }) {
   const byBase = new Map();
   for (const member of members) {
-    const base = join(scratch, "runs", dirname(MEMBER_LAYOUT[/** @type {keyof typeof MEMBER_LAYOUT} */ (member)]));
+    const base = join(scratch, "runs", dirname(MEMBER_LAYOUT[(member as keyof typeof MEMBER_LAYOUT)]));
     byBase.set(base, [...(byBase.get(base) ?? []), member]);
   }
   for (const [base, names] of byBase) {
@@ -198,7 +199,7 @@ async function extract({ archive, scratch, members }) {
  * Rebuild `pages/` and the manifest the way a lab does (`training:generate`), in the restored dataset.
  * @param {{ env: NodeJS.ProcessEnv }} request
  */
-async function regeneratePages({ env }) {
+async function regeneratePages({ env }: { env: NodeJS.ProcessEnv; }) {
   await run(process.execPath, [join(REPO_ROOT, "packages/lab/src/training/generate-screenreader-dataset.mjs")],
     { cwd: REPO_ROOT, env, maxBuffer: MAX_GATE_OUTPUT_BYTES });
 }
@@ -211,9 +212,9 @@ async function regeneratePages({ env }) {
  * @param {string} scratch
  * @returns {NodeJS.ProcessEnv}
  */
-function scratchEnv(scratch) {
+function scratchEnv(scratch: string): NodeJS.ProcessEnv {
   /** @type {NodeJS.ProcessEnv} */
-  const env = { ...process.env, RUNS_ROOT: join(scratch, "runs"), DATASET_ROOT: join(scratch, "runs", DATASET_DIR) };
+  const env: NodeJS.ProcessEnv = { ...process.env, RUNS_ROOT: join(scratch, "runs"), DATASET_ROOT: join(scratch, "runs", DATASET_DIR) };
   for (const name of ["A11Y_RUNS_ROOT", "DATASET_KIND", "DATASET_CAPTURE_ROOT", "DATASET_EXPORT",
     "A11Y_DATASET_GRADE", "A11Y_RUNS_READONLY"]) delete env[name];
   return env;
@@ -226,13 +227,13 @@ function scratchEnv(scratch) {
  * @param {{ env: NodeJS.ProcessEnv, requireComplete: boolean }} request
  * @returns {Promise<{ status: number, summary: string }>}
  */
-async function runGate({ env, requireComplete }) {
+async function runGate({ env, requireComplete }: { env: NodeJS.ProcessEnv; requireComplete: boolean; }): Promise<{ status: number; summary: string; }> {
   const args = [join(REPO_ROOT, "packages/lab/src/training/check-signals.mjs"),
     ...(requireComplete ? ["--require-complete"] : [])];
   /** @type {{ status: number, output: string }} */
-  const done = await run(process.execPath, args, { cwd: REPO_ROOT, env, maxBuffer: MAX_GATE_OUTPUT_BYTES })
+  const done: { status: number; output: string; } = await run(process.execPath, args, { cwd: REPO_ROOT, env, maxBuffer: MAX_GATE_OUTPUT_BYTES })
     .then(({ stdout, stderr }) => ({ status: 0, output: stdout + stderr }))
-    .catch((/** @type {any} */ e) => ({ status: typeof e.code === "number" ? e.code : 1,
+    .catch((e: Loose) => ({ status: typeof e.code === "number" ? e.code : 1,
       output: String(e.stdout ?? "") + String(e.stderr ?? "") }));
   // The verdict line, not the last line: on a non-zero exit the gate prints a hint AFTER it.
   const verdict = done.output.split("\n").find((l) => /^(PASS|FAIL|INCONCLUSIVE)\b/.test(l));
@@ -243,10 +244,10 @@ async function runGate({ env, requireComplete }) {
  * Restored against live, member by member, with the difference stated.
  * @param {{ restored: Record<string, number>, live: Record<string, number> }} counts
  */
-function compareToLive({ restored, live }) {
+function compareToLive({ restored, live }: { restored: Record<string, number>; live: Record<string, number>; }) {
   const total = sum(restored);
   const liveTotal = sum(live);
-  /** @type {string[]} */ const failures = [];
+  /** @type {string[]} */ const failures: string[] = [];
   const lines = [`restored ${total} JSON file(s); the live corpus holds ${liveTotal}; `
     + `difference ${liveTotal - total} (${liveTotal >= total ? "live has more" : "the RESTORE has more"})`];
   for (const member of Object.keys(MEMBER_LAYOUT)) {
@@ -278,10 +279,13 @@ function compareToLive({ restored, live }) {
  * @param {{ listed: number, restored: Record<string, number>, live: Record<string, number> | null,
  *           gate: { status: number, summary: string } | null }} measured
  */
-export function drillVerdict({ listed, restored, live, gate }) {
+export function drillVerdict({ listed, restored, live, gate }: {
+        listed: number; restored: Record<string, number>; live: Record<string, number> | null;
+        gate: { status: number; summary: string; } | null;
+    }) {
   const total = sum(restored);
-  /** @type {string[]} */ const failures = [];
-  /** @type {string[]} */ const lines = [];
+  /** @type {string[]} */ const failures: string[] = [];
+  /** @type {string[]} */ const lines: string[] = [];
   if (total !== listed) {
     failures.push(`the archive lists ${listed} JSON file(s) and ${total} came back out of it -- extraction lost or `
       + "invented files");
@@ -307,7 +311,7 @@ export function drillVerdict({ listed, restored, live, gate }) {
  * @param {string} scratch
  * @param {string[]} protectedRoots
  */
-function refuseTarget(scratch, protectedRoots) {
+function refuseTarget(scratch: string, protectedRoots: string[]) {
   const why = targetRefusal(scratch, { protectedRoots });
   if (why) throw Object.assign(new Error(why), { usage: true });
 }
@@ -317,7 +321,7 @@ function refuseTarget(scratch, protectedRoots) {
  *
  * @param {{ archive: string, scratch: string, liveRuns?: string, requireComplete?: boolean }} request
  */
-export async function restoreDrill({ archive, scratch, liveRuns, requireComplete = false }) {
+export async function restoreDrill({ archive, scratch, liveRuns, requireComplete = false }: { archive: string; scratch: string; liveRuns?: string; requireComplete?: boolean; }) {
   refuseTarget(scratch, [...LIVE_CORPUS_ROOTS, runsRoot(), ...(liveRuns ? [liveRuns] : [])]);
   const inspected = await inspectArchive(archive);
   if (inspected.unsafe.length) {
@@ -340,10 +344,10 @@ export async function restoreDrill({ archive, scratch, liveRuns, requireComplete
 }
 
 /** @param {string} name */
-const flag = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(`--${name}=`.length);
+const flag = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(`--${name}=`.length);
 
 /** @param {string} repo @param {string} tag @param {string} into */
-async function downloadRelease(repo, tag, into) {
+async function downloadRelease(repo: string, tag: string, into: string) {
   await run("gh", ["release", "download", tag, "--repo", repo, "--dir", into], { maxBuffer: MAX_GATE_OUTPUT_BYTES });
   const asset = readdirSync(into).find((f) => f.endsWith(".tar.gz"));
   if (!asset) throw Object.assign(new Error(`release ${tag} downloaded, but holds no .tar.gz`), { usage: true });
@@ -352,12 +356,12 @@ async function downloadRelease(repo, tag, into) {
 
 async function main() {
   const made = flag("scratch") ? null : mkdtempSync(join(tmpdir(), "corpus-restore-drill-"));
-  const scratch = flag("scratch") ?? join(/** @type {string} */ (made), "restore");
+  const scratch = flag("scratch") ?? join((made as string), "restore");
   refuseIfRunsReadonly(scratch);
   try {
     const archive = flag("archive") ?? await downloadFrom(flag("release"), flag("repo") ?? DEFAULT_REPO, made);
     const result = await restoreDrill({ archive: resolve(archive), scratch,
-      liveRuns: flag("live-runs") ? resolve(/** @type {string} */ (flag("live-runs"))) : undefined,
+      liveRuns: flag("live-runs") ? resolve((flag("live-runs") as string)) : undefined,
       requireComplete: process.argv.includes("--require-complete") });
     process.stdout.write(result.lines.join("\n") + "\n");
     if (!result.ok) {
@@ -367,14 +371,14 @@ async function main() {
     }
     process.stdout.write("DRILL PASSED: the release restores into a tree a real gate runs off.\n");
     if (made) rmSync(made, { recursive: true, force: true });
-  } catch (/** @type {any} */ error) {
+  } catch (error: Loose) {
     process.stderr.write(`REFUSING: ${error.message}\n`);
     process.exit(error.usage ? 2 : 1);
   }
 }
 
 /** @param {string | undefined} tag @param {string} repo @param {string | null} made */
-async function downloadFrom(tag, repo, made) {
+async function downloadFrom(tag: string | undefined, repo: string, made: string | null) {
   if (!tag) throw Object.assign(new Error("--archive=<path> or --release=<tag> is required"), { usage: true });
   const into = join(made ?? tmpdir(), "download");
   mkdirSync(into, { recursive: true });

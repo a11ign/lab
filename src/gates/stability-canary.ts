@@ -20,9 +20,9 @@ const VARIANT_LINE = /^\s+\d+: /;
  * @param {string} stdout repeat-capture's report
  * @returns {string[]} trimmed, in report order; empty when nothing varies
  */
-export function varianceLines(stdout) {
+export function varianceLines(stdout: string): string[] {
   /** @type {string[]} */
-  const kept = [];
+  const kept: string[] = [];
   let underVaries = false;
   for (const line of stdout.split("\n")) {
     if (line.includes("VARIES")) underVaries = true;
@@ -42,7 +42,7 @@ export function varianceLines(stdout) {
  * @param {{ root: string, runId: string, name: string }} where `name` is the canary's path or live URL
  * @returns {string}
  */
-export function canaryOutDir({ root, runId, name }) {
+export function canaryOutDir({ root, runId, name }: { root: string; runId: string; name: string; }): string {
   const slug = name.replace(/^[a-z]+:\/\//i, "").replace(/[^A-Za-z0-9.]+/g, "-").replace(/^-+|-+$/g, "");
   return resolve(root, "stability", runId, slug);
 }
@@ -53,7 +53,7 @@ export function canaryOutDir({ root, runId, name }) {
  * @param {{ lines: string[], outDir: string }} found
  * @returns {string}
  */
-export function unstableDetail({ lines, outDir }) {
+export function unstableDetail({ lines, outDir }: { lines: string[]; outDir: string; }): string {
   return `${lines.join("; ")}; captures kept in ${outDir}`;
 }
 
@@ -64,7 +64,10 @@ export function unstableDetail({ lines, outDir }) {
  *   probeForms?: boolean, task?: string, probeFocus?: boolean }} canary
  * @returns {string[]}
  */
-export function repeatCaptureArgs({ script, url, times, worker, outDir, probeForms, task, probeFocus }) {
+export function repeatCaptureArgs({ script, url, times, worker, outDir, probeForms, task, probeFocus }: {
+        script: string; url: string; times: number; worker: string; outDir: string;
+        probeForms?: boolean; task?: string; probeFocus?: boolean;
+    }): string[] {
   const args = [script, `--url=${url}`, `--times=${times}`, `--worker=${worker}`, `--out=${outDir}`];
   // Opt-in per canary: a capture must never pay for evidence nobody asked for, and a probe that does not
   // run is cheaper than one that does.

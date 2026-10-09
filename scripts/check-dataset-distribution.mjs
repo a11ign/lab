@@ -15,13 +15,13 @@
  * record count and the path are printed on every run, pass or fail — `rules:coverage` earns its keep the
  * same way.
  */
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { distributionProblems } from "../src/training/dataset-distribution.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.ts";
 
 const REPO = REPO_ROOT;
 

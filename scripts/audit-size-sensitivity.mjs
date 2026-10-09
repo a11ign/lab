@@ -53,7 +53,7 @@ import { resolve, join } from "node:path";
 
 import { annotateCapture } from "@a11ign/evidence";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, datasetRoot, captureRoot } from "../src/dataset-paths.ts";
 
 /**
  * `--evaluating` and `--stdin` appear in this file because it PASSES them to the Python scorer.

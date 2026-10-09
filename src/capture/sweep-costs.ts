@@ -1,6 +1,7 @@
 // @ts-check
 // #951: the capture-level verdict on a sweep that found far less than the census, whatever held it -- the ONE verdict.
 import { sweptElsewhere } from "@a11ign/evidence/verify";
+import type { Loose } from "./loose.ts";
 /**
  * WHAT IS THE SWEEP TIME SPENT ON? — #659, and the question is NOT how to cut it.
  *
@@ -38,7 +39,7 @@ import { sweptElsewhere } from "@a11ign/evidence/verify";
  *
  * @param {any} record @returns {any | null}
  */
-export function captureIn(record) {
+export function captureIn(record: Loose): Loose | null {
   if (Array.isArray(record?.diagnostics)) return record;
   return Array.isArray(record?.capture?.diagnostics) ? record.capture : null;
 }
@@ -57,7 +58,7 @@ export function captureIn(record) {
  *
  * @param {any} mark a `sweep` diagnostic
  */
-export function sweepNeverRan(mark) {
+export function sweepNeverRan(mark: Loose) {
   const ms = (mark?.prevMs ?? 0) + (mark?.nextMs ?? 0);
   return [mark?.prevStop, mark?.nextStop].includes("deadline") && ms === 0;
 }
@@ -93,9 +94,9 @@ const SWEEP_RAN_OUT = new Set(["exhausted", "silent"]);
  * @param {readonly unknown[]} diagnostics the capture's own, which the verdict reads
  * @returns {"complete" | "truncated" | "never-ran" | "elsewhere"}
  */
-export function sweepCompleteness(mark, diagnostics) {
+export function sweepCompleteness(mark: Loose, diagnostics: readonly unknown[]): "complete" | "truncated" | "never-ran" | "elsewhere" {
   if (sweepNeverRan(mark)) return "never-ran";
-  if (sweptElsewhere(/** @type {any} */ ({ diagnostics })).some((s) => s.type === mark?.type)) return "elsewhere";
+  if (sweptElsewhere(({ diagnostics } as Loose)).some((s) => s.type === mark?.type)) return "elsewhere";
   const stops = [mark?.prevStop, mark?.nextStop].filter((s) => typeof s === "string");
   // EVERY direction must have ended on its own. A sweep whose backward half exhausted and whose forward
   // half hit the deadline reached everything behind the caret and an unknown fraction ahead of it.
@@ -103,7 +104,7 @@ export function sweepCompleteness(mark, diagnostics) {
 }
 
 /** A sweep mark that can be read: it names a type and did not fail. */
-const isReadableSweep = (/** @type {any} */ mark) =>
+const isReadableSweep = (mark: Loose) =>
   mark && typeof mark === "object" && mark.event === "sweep"
   && typeof mark.type === "string" && typeof mark.error !== "string";
 
@@ -125,7 +126,10 @@ const isReadableSweep = (/** @type {any} */ mark) =>
  * @returns {{ type: string, found: number, ms: number, trips: number, msPerTrip: number | null,
  *             examined: boolean }[]}
  */
-export function sweepCostsOf(diagnostics) {
+export function sweepCostsOf(diagnostics: readonly unknown[]): {
+    type: string; found: number; ms: number; trips: number; msPerTrip: number | null;
+    examined: boolean;
+}[] {
   return (Array.isArray(diagnostics) ? diagnostics : []).filter(isReadableSweep).map((mark) => {
     // BOTH DIRECTIONS SUMMED, because a sweep is one walk in two halves and either can dominate. The
     // per-direction split is still on the mark for anyone who needs it; the rate is a property of the walk.
@@ -157,13 +161,16 @@ export function sweepCostsOf(diagnostics) {
  * @returns {Map<string, Map<string, { type: string, page: string, runs: number, neverRan: number,
  *            ms: number[], trips: number[], msPerTrip: number[], found: number[] }>>}
  */
-export function sweepCostsByPage(captures) {
+export function sweepCostsByPage(captures: readonly { url?: string; diagnostics?: unknown[]; }[]): Map<string, Map<string, {
+    type: string; page: string; runs: number; neverRan: number;
+    ms: number[]; trips: number[]; msPerTrip: number[]; found: number[];
+}>> {
   /** @type {Map<string, Map<string, any>>} */
-  const pages = new Map();
+  const pages: Map<string, Map<string, Loose>> = new Map();
   for (const capture of captures) {
     const page = typeof capture?.url === "string" ? capture.url : "(url unrecorded)";
     if (!pages.has(page)) pages.set(page, new Map());
-    const byType = /** @type {Map<string, any>} */ (pages.get(page));
+    const byType = (pages.get(page) as Map<string, Loose>);
     for (const cost of sweepCostsOf(capture?.diagnostics ?? [])) {
       if (!byType.has(cost.type)) {
         byType.set(cost.type, {
@@ -189,7 +196,7 @@ export function sweepCostsByPage(captures) {
 }
 
 /** The middle value, or `null` for an empty set — an average of nothing is not zero. */
-export function median(/** @type {readonly number[]} */ values) {
+export function median(values: readonly number[]) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -213,10 +220,13 @@ export function median(/** @type {readonly number[]} */ values) {
  * @returns {{ pages: number, thin: number, rates: number[], slowest: number | null,
  *             fastest: number | null, spread: number | null }}
  */
-export function rateAcrossPages(perPage) {
+export function rateAcrossPages(perPage: readonly { page: string; msPerTrip: number[]; trips: number[]; }[]): {
+    pages: number; thin: number; rates: number[]; slowest: number | null;
+    fastest: number | null; spread: number | null;
+} {
   const thick = perPage.filter((p) => (median(p.trips) ?? 0) >= MIN_TRIPS_FOR_A_RATE);
-  const rates = thick.map((p) => median(p.msPerTrip)).filter((r) => /** @type {number|null} */ (r) !== null);
-  const numbers = /** @type {number[]} */ (rates);
+  const rates = thick.map((p) => median(p.msPerTrip)).filter((r) => (r as number|null) !== null);
+  const numbers = (rates as number[]);
   const slowest = numbers.length ? Math.max(...numbers) : null;
   const fastest = numbers.length ? Math.min(...numbers) : null;
   return {
@@ -276,11 +286,11 @@ export const RATE_IS_FLAT_WITHIN = 2.5;
  * @param {readonly { type: string, msPerTrip: number[] }[]} perTypePerPage every page's rate, all types
  * @param {string} carrier the one type with an `onItem`, excluded from the baseline
  */
-export function walkRate(perTypePerPage, carrier = "formField") {
+export function walkRate(perTypePerPage: readonly { type: string; msPerTrip: number[]; }[], carrier: string = "formField") {
   return median(perTypePerPage
     .filter((entry) => entry.type !== carrier)
     .map((entry) => median(entry.msPerTrip))
-    .filter((rate) => /** @type {number|null} */ (rate) !== null));
+    .filter((rate): rate is number => rate !== null));
 }
 
 /**
@@ -304,7 +314,7 @@ export function walkRate(perTypePerPage, carrier = "formField") {
  * @param {ReturnType<typeof rateAcrossPages>} rate
  * @returns {"per-element" | "per-step" | "cannot say"}
  */
-export function costCause(rate) {
+export function costCause(rate: ReturnType<typeof rateAcrossPages>): "per-element" | "per-step" | "cannot say" {
   if (rate.pages < 2 || rate.spread === null) return "cannot say";
   return rate.spread <= RATE_IS_FLAT_WITHIN ? "per-element" : "per-step";
 }

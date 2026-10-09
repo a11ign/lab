@@ -35,9 +35,9 @@
  *
  * Needs `runs/`, so it SKIPS HONESTLY where the corpus is absent rather than passing quietly.
  */
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
-import { newFindingsVerdict, partitionByOutcome } from "../src/gates/referral-only-verdict.mjs";
-import { scoredCoverage, scoredFurniture } from "../src/gates/real-page-coverage.mjs";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
+import { newFindingsVerdict, partitionByOutcome } from "../src/gates/referral-only-verdict.ts";
+import { scoredCoverage, scoredFurniture } from "../src/gates/real-page-coverage.ts";
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -56,7 +56,7 @@ import {
 // (#955): `field-role.test.ts` asserts through both, so what this gate scores and prints and what that test
 // checks are one copy.
 import { conformanceLineAnswer, fieldPopulationLines } from "../src/training/real-page-selection.mjs";
-import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.ts";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 
 const REPO = REPO_ROOT;

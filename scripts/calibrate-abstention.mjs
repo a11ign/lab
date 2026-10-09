@@ -47,11 +47,11 @@ import { oracleCounts } from "@a11ign/evidence/verify";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 // THE FIGURES' SELECTION, imported rather than written here (#955): `field-role.test.ts` asserts through it.
 import { calibrationEntries } from "../src/training/real-page-selection.mjs";
-import { refuseUnusableEntries, refusalLines } from "../src/capture/evidence-diff.mjs";
+import { refuseUnusableEntries, refusalLines } from "../src/capture/evidence-diff.ts";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { captureProtocolCensus } from "../src/training/capture-protocol-census.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, realCorpusRoot, abstentionRoot, abstentionSweepPath, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, realCorpusRoot, abstentionRoot, abstentionSweepPath, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 
 /**
  * takes NO flags — it is configured entirely by environment, so any flag passed to it today is

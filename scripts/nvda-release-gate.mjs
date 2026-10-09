@@ -15,10 +15,10 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
-import { readCapture } from "../src/capture/evidence-diff.mjs";
-import { nvdaReleaseRegression } from "../src/packaging/nvda-release-regression.mjs";
-import { REPO_ROOT, datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
+import { readCapture } from "../src/capture/evidence-diff.ts";
+import { nvdaReleaseRegression } from "../src/packaging/nvda-release-regression.ts";
+import { REPO_ROOT, datasetRoot, captureRoot } from "../src/dataset-paths.ts";
 
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run gate:nvda-release" });
 

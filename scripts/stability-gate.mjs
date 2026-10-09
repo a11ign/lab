@@ -37,14 +37,14 @@ const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs
 
 import { guestReachableUrl } from "@a11ign/screenreader-fleet";
 import { leasePageServer } from "../src/training/page-server.mjs";
-import { renderVerdict, exitCodeFor, crashVerdict } from "../src/gates/verdict.mjs";
+import { renderVerdict, exitCodeFor, crashVerdict } from "../src/gates/verdict.ts";
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
-  from "../src/gates/fleet.mjs";
-import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
-import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "../src/gates/stability-canary.mjs";
+  from "../src/gates/fleet.ts";
+import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.ts";
+import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "../src/gates/stability-canary.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { assertWorkerUrl } from "@a11ign/screenreader-fleet/worker-http";
-import { datasetRoot, repeatCapturesRoot } from "../src/dataset-paths.mjs";
+import { datasetRoot, repeatCapturesRoot } from "../src/dataset-paths.ts";
 import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 /**

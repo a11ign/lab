@@ -74,7 +74,7 @@ import { resolve, relative } from "node:path";
 
 /**
  * Computed from THIS file's own location, once, rather than by every caller re-deriving it from ITS
- * location. `packages/lab/src/dataset-paths.mjs` sits three directories below the repo root
+ * location. `packages/lab/src/dataset-paths.ts` sits three directories below the repo root
  * (`packages`, `lab`, `src`), so three ".." get there regardless of whether a caller imports the
  * `src` copy directly (scripts do) or the built `dist` copy (a cross-package `@a11ign/lab`
  * import would) — `dist/` mirrors `src/`'s depth under the package root.
@@ -90,7 +90,7 @@ export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
  *
  * @returns {string}
  */
-export function runsRoot() {
+export function runsRoot(): string {
   const override = process.env.RUNS_ROOT ?? process.env.A11Y_RUNS_ROOT;
   return resolve(REPO_ROOT, override ?? "runs");
 }
@@ -111,7 +111,7 @@ const DEFAULT_DATASET_SUBDIR = "screenreader-dataset";
  * @param {string} [defaultSubdir]
  * @returns {string}
  */
-export function datasetRoot(defaultSubdir = DEFAULT_DATASET_SUBDIR) {
+export function datasetRoot(defaultSubdir: string = DEFAULT_DATASET_SUBDIR): string {
   const override = process.env.DATASET_ROOT;
   return override ? resolve(REPO_ROOT, override) : resolve(runsRoot(), defaultSubdir);
 }
@@ -131,7 +131,7 @@ export function datasetRoot(defaultSubdir = DEFAULT_DATASET_SUBDIR) {
  * @param {string} root
  * @returns {string}
  */
-export function captureRoot(root) {
+export function captureRoot(root: string): string {
   return resolve(root, process.env.DATASET_CAPTURE_ROOT || "captures");
 }
 
@@ -144,7 +144,7 @@ export function captureRoot(root) {
  *
  * @returns {string}
  */
-export function datasetExportPath() {
+export function datasetExportPath(): string {
   const override = process.env.DATASET_EXPORT;
   return override ? resolve(REPO_ROOT, override) : resolve(datasetRoot(), "screenreader-evidence.jsonl");
 }
@@ -157,7 +157,7 @@ export function datasetExportPath() {
  *
  * @returns {string}
  */
-export function realCorpusRoot() {
+export function realCorpusRoot(): string {
   // THROUGH `runsRoot()`, NOT A SECOND SPELLING OF `runs/` — #930. This resolved
   // `"runs/real-page-corpus"` against REPO_ROOT directly, so it was the one root in this file that did
   // NOT move when `runs/` moved: `RUNS_ROOT=/mnt/corpus` relocated the dataset, the captures and the
@@ -184,7 +184,7 @@ export function realCorpusRoot() {
  *
  * @returns {string}
  */
-export function repeatCapturesRoot() {
+export function repeatCapturesRoot(): string {
   return resolve(runsRoot(), "repeat-captures");
 }
 
@@ -199,7 +199,7 @@ export function repeatCapturesRoot() {
  *
  * @returns {string}
  */
-export function abstentionRoot() {
+export function abstentionRoot(): string {
   return resolve(runsRoot(), "abstention");
 }
 
@@ -210,7 +210,7 @@ export function abstentionRoot() {
  * @param {string} [outDir]
  * @returns {string}
  */
-export function abstentionSweepPath(outDir = abstentionRoot()) {
+export function abstentionSweepPath(outDir: string = abstentionRoot()): string {
   return resolve(outDir, "abstention-sweep.json");
 }
 
@@ -240,7 +240,7 @@ export function abstentionSweepPath(outDir = abstentionRoot()) {
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ path: string } | null}
  */
-export function runsWriteRefusal(targetPath, env = process.env) {
+export function runsWriteRefusal(targetPath: string, env: NodeJS.ProcessEnv = process.env): { path: string; } | null {
   if (env.A11Y_RUNS_READONLY !== "1") return null;
   const resolved = resolve(targetPath);
   const root = resolve(runsRoot());
@@ -255,7 +255,7 @@ export function runsWriteRefusal(targetPath, env = process.env) {
  *
  * @param {string} targetPath
  */
-export function refuseIfRunsReadonly(targetPath) {
+export function refuseIfRunsReadonly(targetPath: string) {
   const refusal = runsWriteRefusal(targetPath);
   if (!refusal) return;
   console.error(`REFUSING to write ${refusal.path} — A11Y_RUNS_READONLY=1 is set.`);

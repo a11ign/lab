@@ -38,11 +38,11 @@ import { pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { captureSupports, consentBanner } from "@a11ign/evidence/verify";
-import { datasetRoot, captureRoot, realCorpusRoot, repeatCapturesRoot } from "../src/dataset-paths.mjs";
+import { datasetRoot, captureRoot, realCorpusRoot, repeatCapturesRoot } from "../src/dataset-paths.ts";
 // "What did it ask?" lives in a module with NO imports (#343), so its test runs where CI's acceptance job
 // can run it: this file reaches `dataset-paths.mjs`, and any test importing it is classed as needing a
 // corpus. `absent` moves with it, so NOT RECORDED is still spelled in one place.
-import { absent, whatItAsked } from "../src/capture/what-it-asked.mjs";
+import { absent, whatItAsked } from "../src/capture/what-it-asked.ts";
 
 export { whatItAsked };
 
@@ -265,7 +265,7 @@ export function heldStill(capture) {
 /**
  * THE INTERACTION PROBES: which ones RAN, and what each one concluded.
  *
- * `whatItAsked` (`../src/capture/what-it-asked.mjs`) reads `observed`, which covers the SWEEP channels. The interaction probes are not in
+ * `whatItAsked` (`../src/capture/what-it-asked.ts`) reads `observed`, which covers the SWEEP channels. The interaction probes are not in
  * it — `stateChanges` deliberately has no `observed` entry, and `focusReveal`, `focusEvents`,
  * `focusContext` and `routeChange` post-date it — so their verdicts live only in diagnostic marks, and
  * nothing read them. That is the hole this section fills, and it is a hole with a measured cost.

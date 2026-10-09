@@ -58,7 +58,7 @@ import { protocolCensusLines, protocolCensusOfTheMix } from "../src/training/cap
 import { rejectedAsTruncated } from "../src/training/rejected-as-truncated.mjs";
 import { captureWasTruncated } from "@a11ign/evidence/verify";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, realCorpusRoot, datasetExportPath, datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, realCorpusRoot, datasetExportPath, datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 
 /**
  * run by the `build-realism` job and by `training:train`; a mistyped `--out=` writes the realism tier

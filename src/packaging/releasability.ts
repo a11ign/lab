@@ -1,3 +1,4 @@
+import type { Loose } from "../capture/loose.ts";
 // @ts-check
 /**
  * MAY THIS MODEL SHIP? One function, computed from the facts, at the moment you ask.
@@ -29,13 +30,13 @@ const REGRESSION_TOLERANCE = 0.005;
  * because the rule owns that subtype and `findingsFromScores` suppresses the model for it. A release
  * refused over output nobody receives is a gate measuring the wrong thing.
  */
-const isRuleDecided = (/** @type {Record<string, any>} */ subtype) => subtype?.decisionOwner === "deterministic-rules";
+const isRuleDecided = (subtype: Record<string, Loose>) => subtype?.decisionOwner === "deterministic-rules";
 
 /** Every (criterion, subtype, report) triple in a training report, flattened. */
 /** @param {Record<string, any>} training */
-function* heads(training) {
-  for (const [criterion, entry] of Object.entries(training?.criteria ?? {})) {
-    for (const [name, subtype] of Object.entries(entry?.subtypes ?? {})) {
+function* heads(training: Record<string, Loose>) {
+  for (const [criterion, entry] of Object.entries<Record<string, Loose>>(training?.criteria ?? {})) {
+    for (const [name, subtype] of Object.entries<Record<string, Loose>>(entry?.subtypes ?? {})) {
       yield { criterion, name, subtype };
     }
   }
@@ -50,7 +51,7 @@ function* heads(training) {
  * passing.
  */
 /** @param {Record<string, any>} training @param {Set<string>} acceptedSilent head ids `ceo` ruled may ship silent */
-function calibrationFailures(training, acceptedSilent) {
+function calibrationFailures(training: Record<string, Loose>, acceptedSilent: Set<string>) {
   const failures = [];
   const notes = [];
   const accepted = [];
@@ -106,7 +107,7 @@ function calibrationFailures(training, acceptedSilent) {
  * refusing those would refuse every model trained before this existed.
  */
 /** @param {Record<string, any>|null} acceptance @param {string|null} candidateModelSha256 */
-function acceptanceBelongsToTheseWeights(acceptance, candidateModelSha256) {
+function acceptanceBelongsToTheseWeights(acceptance: Record<string, Loose> | null, candidateModelSha256: string | null) {
   const claimed = acceptance?.artifact?.modelSha256;
   if (!acceptance || !claimed) return [];
   if (!candidateModelSha256) {
@@ -146,7 +147,7 @@ function acceptanceBelongsToTheseWeights(acceptance, candidateModelSha256) {
  * other — so the copies are pinned equal rather than deleted.
  */
 /** @param {string} name @param {Record<string, any>} subtype @param {Record<string, any>} development */
-export function typeOneErrorFailures(name, subtype, development) {
+export function typeOneErrorFailures(name: string, subtype: Record<string, Loose>, development: Record<string, Loose>) {
   const guarantee = subtype.guarantee;
   if (!guarantee) {
     return development.falsePositive > 0
@@ -171,7 +172,7 @@ export function typeOneErrorFailures(name, subtype, development) {
 }
 
 /** @param {Record<string, any>} development */
-const isSilent = (development) => development.truePositive === 0 && development.positive > 0;
+const isSilent = (development: Record<string, Loose>) => development.truePositive === 0 && development.positive > 0;
 
 /**
  * Has this head gone SILENT?
@@ -209,7 +210,7 @@ const isSilent = (development) => development.truePositive === 0 && development.
  *
  * @param {string} name @param {Record<string, any>} subtype @param {Record<string, any>} development
  */
-function silentHeadFailures(name, subtype, development) {
+function silentHeadFailures(name: string, subtype: Record<string, Loose>, development: Record<string, Loose>) {
   if (isSilent(development)) {
     return { silent: `${name}: SILENT — 0 of ${development.positive} positive record(s) found at threshold `
       + `${subtype.threshold}. A head that reports nothing scores perfect precision, which is why this is `
@@ -240,10 +241,10 @@ function silentHeadFailures(name, subtype, development) {
  * forty means the head is genuinely weak and the threshold is doing its job.
  */
 /** @param {Record<string, any>} subtype @param {Record<string, any>} development */
-function whatPinnedTheThreshold(subtype, development) {
+function whatPinnedTheThreshold(subtype: Record<string, Loose>, development: Record<string, Loose>) {
   const sweep = Array.isArray(subtype.thresholdSweep) ? subtype.thresholdSweep : [];
-  const below = sweep.filter((/** @type {Record<string, any>} */ row) => Number(row.threshold) < Number(subtype.threshold));
-  const nextDown = below.sort((/** @type {Record<string, any>} */ a, /** @type {Record<string, any>} */ b) => Number(b.threshold) - Number(a.threshold))[0];
+  const below = sweep.filter((row: Record<string, Loose>) => Number(row.threshold) < Number(subtype.threshold));
+  const nextDown = below.sort((a: Record<string, Loose>, b: Record<string, Loose>) => Number(b.threshold) - Number(a.threshold))[0];
   if (!nextDown) return "";
   const recovered = development.falseNegative - Number(nextDown.falseNegative);
   if (recovered <= 0) return "";
@@ -281,7 +282,7 @@ function whatPinnedTheThreshold(subtype, development) {
  * available and it holds its bound. What is worth knowing is that it has no margin.
  */
 /** @param {Record<string, any>} training */
-function marginNotes(training) {
+function marginNotes(training: Record<string, Loose>) {
   const out = [];
   for (const { name, subtype } of heads(training)) {
     if (isRuleDecided(subtype)) continue;
@@ -314,7 +315,7 @@ function marginNotes(training) {
  * loud, because every regression check downstream is inert while it holds.
  */
 /** @param {Record<string, any>} training @param {Record<string, any>|null} shipped */
-function comparabilityNotes(training, shipped) {
+function comparabilityNotes(training: Record<string, Loose>, shipped: Record<string, Loose> | null) {
   const candidateSchema = training?.representation?.schema;
   const shippedSchema = shipped?.representation?.schema;
   if (!shippedSchema || !candidateSchema || shippedSchema === candidateSchema) return [];
@@ -344,9 +345,9 @@ function comparabilityNotes(training, shipped) {
  *
  * @param {Record<string, any>|null} acceptance @param {Record<string, any>|null} shippedAcceptance
  */
-function coverageHandedOver(acceptance, shippedAcceptance) {
+function coverageHandedOver(acceptance: Record<string, Loose> | null, shippedAcceptance: Record<string, Loose> | null) {
   if (!acceptance || !shippedAcceptance) return [];
-  const dropped = Object.entries(shippedAcceptance.criteria ?? {})
+  const dropped = Object.entries<Record<string, Loose>>(shippedAcceptance.criteria ?? {})
     .filter(([criterion, was]) => was?.modelEvaluated
       && (acceptance.criteria ?? {})[criterion]?.modelEvaluated === false)
     .map(([criterion]) => `${criterion} (${(acceptance.criteria ?? {})[criterion]?.reason ?? "no reason recorded"})`);
@@ -364,9 +365,9 @@ function coverageHandedOver(acceptance, shippedAcceptance) {
  * this time, or is not in this candidate at all. Either way the list should be revisited, so it is named
  * rather than left to look like a live excuse.
  *
- * @param {Record<string, any>} training @param {import("./accepted-silent-heads.mjs").AcceptedSilentHead[]} entries
+ * @param {Record<string, any>} training @param {import("./accepted-silent-heads.ts").AcceptedSilentHead[]} entries
  */
-function staleSilentEntries(training, entries) {
+function staleSilentEntries(training: Record<string, Loose>, entries: import("./accepted-silent-heads.ts").AcceptedSilentHead[]) {
   const all = [...heads(training)];
   return entries.flatMap((entry) => {
     const found = all.find(({ criterion, name }) => name === entry.id && entry.id.startsWith(`${criterion}:`));
@@ -379,10 +380,10 @@ function staleSilentEntries(training, entries) {
 }
 
 /** @param {Record<string, any>|null} acceptance @param {Record<string, any>|null} shippedAcceptance @param {number} tolerance */
-function regressions(acceptance, shippedAcceptance, tolerance) {
+function regressions(acceptance: Record<string, Loose> | null, shippedAcceptance: Record<string, Loose> | null, tolerance: number) {
   if (!acceptance || !shippedAcceptance) return [];
   const worse = [];
-  for (const [criterion, now] of Object.entries(acceptance.criteria ?? {})) {
+  for (const [criterion, now] of Object.entries<Record<string, Loose>>(acceptance.criteria ?? {})) {
     const was = (shippedAcceptance.criteria ?? {})[criterion];
     if (!was?.modelEvaluated || !now?.modelEvaluated) continue;
     for (const metric of ["precision", "recall"]) {
@@ -402,7 +403,7 @@ function regressions(acceptance, shippedAcceptance, tolerance) {
  * @param {Record<string, any>|null} input.shipped     the shipped model's training report, or null
  * @param {Record<string, any>|null} [input.shippedAcceptance] its ACCEPTANCE report — the only fixed-set baseline
  * @param {string|null} [input.candidateModelSha256] hash of the weights actually being promoted
- * @param {import("./accepted-silent-heads.mjs").AcceptedSilentHead[]} [input.acceptedSilentHeads] heads `ceo`
+ * @param {import("./accepted-silent-heads.ts").AcceptedSilentHead[]} [input.acceptedSilentHeads] heads `ceo`
  *   ruled may ship silent, read by the CALLER from `accepted-silent-heads.json` (this function does no I/O).
  *   Absent means none, so a caller that forgets to pass it gets the strict gate.
  * @param {number} [input.tolerance] the noise floor below which a difference is not a regression --
@@ -413,7 +414,7 @@ function regressions(acceptance, shippedAcceptance, tolerance) {
  *   `stale` the accepted-silent entries that no longer apply, reported and never failing
  */
 export function releasability({ training, acceptance, shipped, shippedAcceptance,
-  candidateModelSha256 = null, tolerance = REGRESSION_TOLERANCE, acceptedSilentHeads = [] }) {
+  candidateModelSha256 = null, tolerance = REGRESSION_TOLERANCE, acceptedSilentHeads = [] }: { training: Record<string, Loose>; acceptance: Record<string, Loose> | null; shipped: Record<string, Loose> | null; shippedAcceptance?: Record<string, Loose> | null; candidateModelSha256?: string | null; acceptedSilentHeads?: import("./accepted-silent-heads.ts").AcceptedSilentHead[]; tolerance?: number; }): { releasable: boolean; blockers: string[]; notes: string[]; acceptedSilent: string[]; stale: string[]; } {
   const blockers = [];
   const notes = [];
 

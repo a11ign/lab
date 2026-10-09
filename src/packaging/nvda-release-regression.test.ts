@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { nvdaReleaseRegression } from "./nvda-release-regression.mjs";
+import { nvdaReleaseRegression } from "./nvda-release-regression.ts";
 
 /** A minimal usable capture -- NVDA, a non-empty non-blank transcript, nothing console-shaped. */
 const capture = (over: Record<string, unknown> = {}) => ({

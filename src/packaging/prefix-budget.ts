@@ -69,7 +69,7 @@ export const WARN_REMEDY = "THE ADDING AUTHOR PAYS, IN THE SAME PULL REQUEST: ad
  * @returns {{ verdict: "ok" | "warn" | "over", total: number, headroom: number, remedy: string, message: string }}
  *   `headroom` is bytes left to the REFUSAL, negative once over; `remedy` is empty when the verdict is `ok`.
  */
-export function prefixBudgetVerdict(total) {
+export function prefixBudgetVerdict(total: number): { verdict: "ok" | "warn" | "over"; total: number; headroom: number; remedy: string; message: string; } {
   const headroom = BUDGET_BYTES - total;
   if (total > BUDGET_BYTES) {
     return { verdict: "over", total, headroom, remedy: REMEDY, message: overMessage(total, headroom) };
@@ -81,13 +81,13 @@ export function prefixBudgetVerdict(total) {
 }
 
 /** @param {number} n */
-const bytes = (n) => `${n.toLocaleString("en-US")} B`;
+const bytes = (n: number) => `${n.toLocaleString("en-US")} B`;
 
 /**
  * @param {number} total
  * @param {number} headroom
  */
-function warnMessage(total, headroom) {
+function warnMessage(total: number, headroom: number) {
   return `PREFIX BUDGET WARNING: the loaded set is ${bytes(total)}, at or past the ${bytes(WARN_BYTES)} warn band, `
     + `with ${bytes(headroom)} of headroom before the ${bytes(BUDGET_BYTES)} refusal. This run passes; the next `
     + `rule written the old way may not.\n${WARN_REMEDY}`;
@@ -97,6 +97,6 @@ function warnMessage(total, headroom) {
  * @param {number} total
  * @param {number} headroom
  */
-function overMessage(total, headroom) {
+function overMessage(total: number, headroom: number) {
   return `OVER BUDGET by ${bytes(-headroom)}.\n${REMEDY}`;
 }

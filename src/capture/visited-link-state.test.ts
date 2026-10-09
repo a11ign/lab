@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { compareCapture } from "./evidence-diff.mjs";
+import { compareCapture } from "./evidence-diff.ts";
 
 test("a visited-link difference alone is NOT an evidence change (#1106)", () => {
   // MEASURED on the acceptance repeat pair, 5109abd7, protocol 17: `acceptance-route-changes-title-does-not`

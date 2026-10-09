@@ -6,9 +6,10 @@
 // corpus and the row's own acceptance command was refused. `explain-capture.mjs` imports and re-exports it,
 // so no reader of the report changes. Its one import is `@a11ign/evidence/verify`, for #951's verdict.
 import { SWEEP_OF, sweptElsewhere, whatHeldTheSweep } from "@a11ign/evidence/verify";
+import type { Loose } from "./loose.ts";
 
 /** `NOT RECORDED` is a distinct answer from `no`, and collapsing them is this repo's oldest defect. */
-export const absent = (/** @type {string} */ what) => `    NOT RECORDED — this capture cannot say ${what}`;
+export const absent = (what: string) => `    NOT RECORDED — this capture cannot say ${what}`;
 
 /**
  * WHAT DID THIS CAPTURE ASK? — read from `observed`, which the capture records for itself since protocol 10.
@@ -25,7 +26,7 @@ export const absent = (/** @type {string} */ what) => `    NOT RECORDED — this
  * @param {any} capture
  * @returns {string[]}
  */
-export function whatItAsked(capture) {
+export function whatItAsked(capture: Loose): string[] {
   const observed = capture?.observed;
   if (!observed || typeof observed !== "object") {
     return [absent("which channels it asked about — it predates CAPTURE_PROTOCOL_VERSION 10")];
@@ -42,9 +43,9 @@ export function whatItAsked(capture) {
     ? Object.entries(capture.structure).filter(([, value]) => Array.isArray(value)).map(([key]) => key)
     : [];
   // A SWEEP THAT RAN OUT OF A CONTAINER (#951), keyed by the channel it fills (`links`), from the one verdict.
-  const elsewhere = new Map(sweptElsewhere(capture).map((s) => [/** @type {string} */ (SWEEP_OF[s.type]), s]));
+  const elsewhere = new Map(sweptElsewhere(capture).map((s) => [(SWEEP_OF[s.type] as string), s]));
   const rows = [...new Set([...swept, ...Object.keys(observed)])]
-    .map((channel) => askedRow(channel, /** @type {Record<string, any>} */ (observed)[channel], elsewhere.get(channel)));
+    .map((channel) => askedRow(channel, (observed as Record<string, Loose>)[channel], elsewhere.get(channel)));
   return rows.length ? rows : [absent("which channels it asked about — `observed` is empty")];
 }
 
@@ -53,7 +54,7 @@ export function whatItAsked(capture) {
  * @param {string} channel @param {any} seen the channel's `observed` entry, `undefined` when there is none
  * @param {{ container: string | null } | undefined} [elsewhere] the verdict (#951), when this sweep found far less than the census
  */
-function askedRow(channel, seen, elsewhere) {
+function askedRow(channel: string, seen: Loose, elsewhere?: { container: string | null; } | undefined) {
   if (seen === undefined) {
     return absent(`whether it finished sweeping ${channel} -- it swept into \`structure.${channel}\` and recorded no verdict`);
   }

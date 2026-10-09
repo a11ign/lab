@@ -13,9 +13,9 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
 import { rehearsalReading, rehearsalMarkerSha, ageInDays, REHEARSAL_DOCUMENTS, publishedPackagePaths }
-  from "../src/packaging/rehearsal-currency.mjs";
+  from "../src/packaging/rehearsal-currency.ts";
 import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
 
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run release:rehearsal-check" });

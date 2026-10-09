@@ -82,7 +82,7 @@ function scriptChain(name: string, scripts: Record<string, string>, seen = new S
 
 /** The subdirectory of `runs/` `datasetRoot()` uses when nothing names one. */
 function defaultDatasetDir(): string {
-  const found = /DEFAULT_DATASET_SUBDIR\s*=\s*"([\w-]+)"/.exec(read("packages/lab/src/dataset-paths.mjs"));
+  const found = /DEFAULT_DATASET_SUBDIR\s*=\s*"([\w-]+)"/.exec(read("packages/lab/src/dataset-paths.ts"));
   if (!found) throw new Error("DEFAULT_DATASET_SUBDIR not found in dataset-paths.mjs — parsing the wrong shape");
   return found[1];
 }

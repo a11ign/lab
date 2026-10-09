@@ -32,7 +32,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { readCapture, isUsableCapture } from "../capture/evidence-diff.mjs";
+import { readCapture, isUsableCapture } from "../capture/evidence-diff.ts";
 
 const KEY_LENGTH = 16; // enough to be unique across ~2k cases, short enough to read in a log
 
@@ -224,7 +224,7 @@ export function stampProvenance(capture, { key, pageHash = null, options, enviro
  * A cache decision must never CRASH on a corrupted file -- the remedy is to recapture, so here a read
  * failure means the same thing an absent file does, deliberately. This is the one place in the four that
  * used to duplicate `readCapture` where swallowing is kept, on purpose, rather than inherited by accident:
- * `readCapture` itself (`../capture/evidence-diff.mjs`) throws on a malformed file everywhere else, because
+ * `readCapture` itself (`../capture/evidence-diff.ts`) throws on a malformed file everywhere else, because
  * a torn write is a real data-integrity problem the other three consumers must not read as "not captured
  * yet". A stale cache entry has a cheap, automatic remedy this file already runs for the missing case, so
  * treating "unreadable" the same as "absent" is the right call HERE and only here.

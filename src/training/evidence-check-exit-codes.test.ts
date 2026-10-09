@@ -76,7 +76,7 @@ test("a run that THROWS exits with THREW, not with the CHANGED code (real script
  */
 function writeDriver(dir: string): string {
   const exitModule = pathToFileURL(join(REPO, "packages/lab/src/training/evidence-check-exit.mjs")).href;
-  const evidenceDiff = pathToFileURL(join(REPO, "packages/lab/src/capture/evidence-diff.mjs")).href;
+  const evidenceDiff = pathToFileURL(join(REPO, "packages/lab/src/capture/evidence-diff.ts")).href;
   const file = join(dir, "driver.mjs");
   writeFileSync(file, `
     import { runToExit, exitCodeFor } from ${JSON.stringify(exitModule)};

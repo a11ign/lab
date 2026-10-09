@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { comparable } from "./repeat-capture.mjs";
-import { EVIDENCE_FIELDS, fieldKey } from "../capture/evidence-diff.mjs";
+import { EVIDENCE_FIELDS, fieldKey } from "../capture/evidence-diff.ts";
 
 /**
  * TWO TOOLS ASK THE SAME QUESTION.

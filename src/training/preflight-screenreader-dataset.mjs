@@ -6,7 +6,7 @@ import { SIGNAL_TYPES } from "./case-matrix.mjs";
 // #978: the three-direction manifest check every reader shares, and the case set for this dataset kind.
 import { assertManifestMatchesCases, casesForKind } from "./manifest-matches-cases.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
+import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.ts";
 
 /**
  * takes no flags: it checks every case is ready for capture.

@@ -20,7 +20,7 @@ import { watch } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { isStale, readProgress, tally } from "./capture-progress.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { datasetRoot } from "../dataset-paths.mjs";
+import { datasetRoot } from "../dataset-paths.ts";
 
 /**
  * its EXIT CODE is the contract — 0 clean, 1 failures, 2 no run, 3 wedged — so a caller reading it has

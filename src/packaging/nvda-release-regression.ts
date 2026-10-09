@@ -6,7 +6,7 @@
  * against the shipped model's, same 35-case set, `REGRESSION_TOLERANCE`. Nothing asked the equivalent
  * question of the screen-reader/NVDA LAYER itself -- `ceo`'s #928 ruling point 1, against "if we are not
  * releasing each version better than the last then what are we doing?" `compareCapture`
- * (`../capture/evidence-diff.mjs`) already answers "did the evidence change", field by field, with NVDA's
+ * (`../capture/evidence-diff.ts`) already answers "did the evidence change", field by field, with NVDA's
  * own run-to-run wording variance (DRIFT) already separated from a change a signal reads (CHANGED) --
  * that split IS a tolerance floor, in a different shape from `REGRESSION_TOLERANCE`'s number: a verdict
  * `compareCapture` already computes rather than a threshold this file would have had to invent. This
@@ -16,16 +16,16 @@
  * (from disk, from a cache, from a fixture), this decides. `compareCapture` is itself pure, so calling it
  * here does not cross that line.
  */
-import { compareCapture, isUsableCapture, unusableReason } from "../capture/evidence-diff.mjs";
+import { compareCapture, isUsableCapture, unusableReason } from "../capture/evidence-diff.ts";
+import type { EvidenceCapture } from "../capture/evidence-diff.ts";
 
 /**
- * @typedef {Record<string, any>} EvidenceCapture
- * @typedef {{ id: string, variant: string, shipped: EvidenceCapture | null, candidate: EvidenceCapture | null }} HeldOutPair
- *   One held-out case's one variant, and both readings of it -- `shipped` is what the currently-released
- *   NVDA layer said, `candidate` is what this release candidate says. Either may be `null`: a case added
- *   since the last ship has no `shipped` reading, and a case this candidate has not been evaluated
- *   against yet has no `candidate` reading. The caller reads both off disk; nothing here does.
+ * One held-out case's one variant, and both readings of it -- `shipped` is what the currently-released
+ * NVDA layer said, `candidate` is what this release candidate says. Either may be `null`: a case added
+ * since the last ship has no `shipped` reading, and a case this candidate has not been evaluated
+ * against yet has no `candidate` reading. The caller reads both off disk; nothing here does.
  */
+type HeldOutPair = { id: string; variant: string; shipped: EvidenceCapture | null; candidate: EvidenceCapture | null };
 
 /**
  * One pair's verdict -- worst first, the same ABSENT/FAILED/STALE discipline `releasability.mjs` states
@@ -35,7 +35,7 @@ import { compareCapture, isUsableCapture, unusableReason } from "../capture/evid
  * @param {HeldOutPair} pair
  * @returns {{ blocker: string | null, note: string | null }}
  */
-function judgePair({ id, variant, shipped, candidate }) {
+function judgePair({ id, variant, shipped, candidate }: HeldOutPair): { blocker: string | null; note: string | null; } {
   const name = `${id}.${variant}`;
 
   if (!candidate) {
@@ -90,11 +90,11 @@ function judgePair({ id, variant, shipped, candidate }) {
  *   the shipped and candidate readings of it (either may be `null` -- see `HeldOutPair`)
  * @returns {{ releasable: boolean, blockers: string[], notes: string[] }}
  */
-export function nvdaReleaseRegression({ pairs }) {
+export function nvdaReleaseRegression({ pairs }: { pairs: HeldOutPair[]; }): { releasable: boolean; blockers: string[]; notes: string[]; } {
   /** @type {string[]} */
-  const blockers = [];
+  const blockers: string[] = [];
   /** @type {string[]} */
-  const notes = [];
+  const notes: string[] = [];
   if (pairs.length === 0) {
     // ABSENT is not a pass. Nothing evaluated is not "nothing regressed" -- the same principle
     // `evidence-diff.mjs`'s own `summarise()` states for a zero-comparison run: a check that passes when

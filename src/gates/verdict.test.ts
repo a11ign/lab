@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gateVerdict, exitCodeFor, renderVerdict, crashVerdict } from "./verdict.mjs";
+import { gateVerdict, exitCodeFor, renderVerdict, crashVerdict } from "./verdict.ts";
 
 /**
  * determinism-plan D6. The rule is not "print the population" — `evidence-check` printed its coverage and

@@ -11,7 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { interactionTextParts } from "./signal-predicates.mjs";
-import { capturedText } from "../harnesses/captured-text.mjs";
+import { capturedText } from "../harnesses/captured-text.ts";
 
 const ERRORED = { control: "Delivery options, button, collapsed", after: null, afterSource: "focus", error: "reportFocus timed out after 6000ms" };
 const MEASURED = { control: "FAQ, button, collapsed", after: "FAQ, button, expanded", afterSource: "focus" };

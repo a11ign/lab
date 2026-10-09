@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 import { hashPageDir } from "./capture-cache.mjs";
-import { REPO_ROOT } from "../dataset-paths.mjs";
-import { captureFilePath } from "../capture/evidence-diff.mjs";
+import { REPO_ROOT } from "../dataset-paths.ts";
+import { captureFilePath } from "../capture/evidence-diff.ts";
 
 // The repo root, resolved from THIS FILE rather than from the cwd. It was `process.cwd()`, which is the repo
 // root for `npm test` and nothing else — and it broke outright when M8 moved this file into a package, because

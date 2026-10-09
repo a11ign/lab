@@ -29,7 +29,7 @@ declareTreeWideGuard();
 const DERIVED_VERDICT = /\b(gateVerdict|fleetVerdict)\(/;
 
 test("fleetVerdict is only allowed here because it DELEGATES — proved, not asserted in a comment", () => {
-  const source = readFileSync(resolve(ROOT, "packages/lab/src/gates/fleet.mjs"), "utf8");
+  const source = readFileSync(resolve(ROOT, "packages/lab/src/gates/fleet.ts"), "utf8");
   assert.match(source, /export function fleetVerdict[\s\S]*?\breturn gateVerdict\(/,
     "fleetVerdict must build its result with gateVerdict(). If it ever computes a verdict itself, every "
     + "gate that uses it silently loses the coverage guarantee, and this list would still be waving them "

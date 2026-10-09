@@ -17,8 +17,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { typeOneErrorFailures } from "./releasability.mjs";
-import { releasability } from "./releasability.mjs";
+import { typeOneErrorFailures } from "./releasability.ts";
+import { releasability } from "./releasability.ts";
 
 const head = (over = {}) => ({
   threshold: 0.9,

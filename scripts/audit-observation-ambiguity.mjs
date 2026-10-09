@@ -21,7 +21,7 @@ import { pathToFileURL } from "node:url";
 
 import { observationAmbiguity } from "../src/training/observation-ambiguity.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { datasetRoot, captureRoot, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { datasetRoot, captureRoot, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
 
 const arg = (/** @type {string} */ name) =>
   process.argv.slice(2).find((value) => value.startsWith(name))?.slice(name.length);

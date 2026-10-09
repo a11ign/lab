@@ -27,7 +27,7 @@ import { resolve } from "node:path";
 
 import { CASES } from "./case-matrix.mjs";
 import { cacheKey } from "./capture-cache.mjs";
-import { datasetRoot } from "../dataset-paths.mjs";
+import { datasetRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
 
 const MANIFEST = resolve(datasetRoot(), "manifest.json");

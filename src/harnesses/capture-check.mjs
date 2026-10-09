@@ -12,7 +12,7 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { captureWithNvda } from "@a11ign/screenreader-worker";
-import { capturedText } from "./captured-text.mjs";
+import { capturedText } from "./captured-text.ts";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
 import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl, requestJson } from "@a11ign/screenreader-fleet/worker-http";

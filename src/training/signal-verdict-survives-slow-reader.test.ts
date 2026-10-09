@@ -17,7 +17,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { REPO_ROOT } from "../dataset-paths.mjs";
+import { REPO_ROOT } from "../dataset-paths.ts";
 
 const GENERATE = resolve(REPO_ROOT, "packages/lab/src/training/generate-screenreader-dataset.mjs");
 const CHECK_SIGNALS = resolve(REPO_ROOT, "packages/lab/src/training/check-signals.mjs");

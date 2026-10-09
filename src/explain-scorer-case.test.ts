@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { REPO_ROOT } from "./dataset-paths.mjs";
+import { REPO_ROOT } from "./dataset-paths.ts";
 import { acceptanceDataPaths, caseIdsOf, caseReaderArgs, criterionDetail } from "../scripts/explain-scorer.mjs";
 
 const READER = fileURLToPath(new URL("../scripts/explain-case.py", import.meta.url));

@@ -20,9 +20,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
@@ -34,6 +34,17 @@ const DECLARATION = JSON.parse(readFileSync(
 
 const GATE = readFileSync(
   fileURLToPath(new URL("../../scripts/check-real-page-findings.ts", import.meta.url)), "utf8");
+
+/** True when a lab source file other than `notReaders` (REPO_ROOT-relative) spells `needle`. */
+function labSourceReaders(needle: string, notReaders: string[]): boolean {
+  const visit = (dir: string): boolean => readdirSync(resolve(REPO_ROOT, dir), { withFileTypes: true }).some((entry) => {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) return entry.name !== "node_modules" && visit(rel);
+    return /\.(mjs|ts)$/.test(entry.name) && !notReaders.includes(rel)
+      && readFileSync(resolve(REPO_ROOT, rel), "utf8").includes(needle);
+  });
+  return ["packages/lab/src", "packages/lab/scripts"].some(visit);
+}
 
 test("every declared page states a REASON and what REMOVES it", () => {
   const pages = Object.entries(DECLARATION.pages ?? {});
@@ -166,23 +177,38 @@ test("#1030 SWEEP: no path in lab-job.yml's operator-facing prose is one that no
     `the corpus must still contain single-segment paths; found ${singleSegment.length} of ${found.size}. `
     + "Zero here means the pattern narrowed even though the total stayed healthy");
 
-  const orphans = [...found].filter(([path]) => {
-    if (existsSync(resolve(REPO_ROOT, path))) return false;
+  /** True when something other than lab-job.yml spells `path`: the laid control layer, or the tracked tree. */
+  const spelledElsewhere = (path: string, notReaders: string[] = []): boolean => {
     // `git grep -F` over the tree MINUS this file: a path only ever spelled in this YAML is named by
     // nobody who could act on it. `--` with an exclude pathspec keeps lab-job.yml from vouching for itself.
     // The rest of the control layer is LAID, untracked since a11ign/a11ign#3506, so `git grep` cannot see the playbooks and tasks that spell these paths: they are read from the
     // laid layer (`laid-control.ts`, #3972), and the tracked tree is still asked through git.
     const laidReaders = laidControlFiles(REPO_ROOT.replace(/\/$/, ""))
-      .filter((file) => file !== "packages/control/ansible/lab-job.yml" && readFileSync(resolve(REPO_ROOT, file), "utf8").includes(path));
-    if (laidReaders.length > 0) return false;
+      .filter((file) => file !== "packages/control/ansible/lab-job.yml" && !notReaders.includes(file) && readFileSync(resolve(REPO_ROOT, file), "utf8").includes(path));
+    if (laidReaders.length > 0) return true;
     try {
       const readers = execFileSync("git",
-        ["grep", "-l", "-F", path, "--", ":!packages/control/ansible/lab-job.yml"],
+        ["grep", "-l", "-F", path, "--", ":!packages/control/ansible/lab-job.yml", ...notReaders.map((file) => `:!${file}`)],
         { cwd: REPO_ROOT, encoding: "utf8", env: sandboxGitEnv(), stdio: ["ignore", "pipe", "pipe"] });
-      return readers.split("\n").filter(Boolean).length === 0;
+      return readers.split("\n").filter(Boolean).length > 0;
     } catch {
-      return true; // git grep exits 1 on no match: nothing in the tree spells this path
+      return false; // git grep exits 1 on no match: nothing in the tree spells this path
     }
+  };
+
+  const orphans = [...found].filter(([path]) => {
+    if (existsSync(resolve(REPO_ROOT, path))) return false;
+    // A lab `.mjs` renamed to `.ts` (a11ign/a11ign#4277) is still READ: control's lab-job.yml spells the old
+    // name in prose until its own row moves it. The replacement must itself be read -- a `.ts` that merely
+    // exists beside a stale `.mjs` spelling would otherwise certify a path nothing reads.
+    const renamed = path.endsWith(".mjs") ? `${path.slice(0, -".mjs".length)}.ts` : undefined;
+    if (renamed !== undefined && existsSync(resolve(REPO_ROOT, renamed))) {
+      // Readership is an importer's spelling of the BASENAME (`./x.ts`); the file and its own test do not count.
+      // The lab is LAID inside the core (gitignored there), so `git grep` over REPO_ROOT cannot see it: read it.
+      const self = renamed.replace(/\.ts$/, "");
+      return !labSourceReaders(basename(renamed), [renamed, `${self}.test.ts`]);
+    }
+    return !spelledElsewhere(path);
   });
 
   assert.deepEqual(orphans.map(([path, line]) => `${path} (line ${line})`), [],

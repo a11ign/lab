@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CHANNEL_LOCATION, channelsPresent } from "@a11ign/judge/internal";
-import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 /**

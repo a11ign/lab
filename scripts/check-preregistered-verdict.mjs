@@ -41,8 +41,8 @@ import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT } from "../src/dataset-paths.mjs";
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { REPO_ROOT } from "../src/dataset-paths.ts";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
 
 // EXIT CODES COME FROM `gateVerdict`, not from a bespoke set, and the mapping is the honest one:
 //

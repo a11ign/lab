@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { CENSUS_KEY_FOR_SWEEP, populationVerdict, sweepAgainstCensus } from "./sweep-vs-census.mjs";
+import { CENSUS_KEY_FOR_SWEEP, populationVerdict, sweepAgainstCensus } from "./sweep-vs-census.ts";
 import fixture from "./fixtures-ikea-800.json" with { type: "json" };
 
 const ratiosFor = (type: string) => fixture.captures

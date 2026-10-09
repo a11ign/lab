@@ -26,7 +26,7 @@
  * was added.
  */
 
-/** @typedef {{ name: string, text: string }} Changeset */
+type Changeset = { name: string; text: string };
 
 /**
  * `changeset version` renders a consumed entry as a NESTED list item, so every line of the provenance block
@@ -39,7 +39,7 @@
  * @param {string} text
  * @returns {string}
  */
-const withoutLineIndent = (text) => text.replace(/^[ \t]+/gm, "");
+const withoutLineIndent = (text: string): string => text.replace(/^[ \t]+/gm, "");
 
 /**
  * @param {object} input
@@ -55,7 +55,7 @@ const withoutLineIndent = (text) => text.replace(/^[ \t]+/gm, "");
  *        cannot acquire its own copy of the format
  * @returns {string[]} one sentence per problem; empty means the release states where its weights came from
  */
-export function provenanceProblems({ shippedReport, changesets, changelog, renderProvenance }) {
+export function provenanceProblems({ shippedReport, changesets, changelog, renderProvenance }: { shippedReport: { representation?: { schema?: string; };[k: string]: unknown; } | null; changesets: Changeset[]; changelog: string | null; renderProvenance: (training: object) => string; }): string[] {
   if (!shippedReport) {
     return ["the shipped model directory carries no training-report.json, so what it IS cannot be "
       + "established — this is a refusal, not a pass"];

@@ -27,15 +27,15 @@ import { join, resolve } from "node:path";
 import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { CASES } from "../training/case-matrix.mjs";
 import { hashPageDir } from "../training/capture-cache.mjs";
-import { captureFilePath } from "../capture/evidence-diff.mjs";
-import { REPO_ROOT } from "../dataset-paths.mjs";
+import { captureFilePath } from "../capture/evidence-diff.ts";
+import { REPO_ROOT } from "../dataset-paths.ts";
 import {
   MEMBER_LAYOUT, countJson, drillVerdict, restoreDrill, targetRefusal,
-} from "./corpus-restore-drill.mjs";
+} from "./corpus-restore-drill.ts";
 
 const SNAPSHOT = resolve(REPO_ROOT, "packages/lab/scripts/corpus-snapshot.mjs");
 const GENERATE = resolve(REPO_ROOT, "packages/lab/src/training/generate-screenreader-dataset.mjs");
-const DRILL = resolve(REPO_ROOT, "packages/lab/src/packaging/corpus-restore-drill.mjs");
+const DRILL = resolve(REPO_ROOT, "packages/lab/src/packaging/corpus-restore-drill.ts");
 
 /** More than `MIN_EXAMINED` (25) in `check-signals.mjs`, so a healthy restore is a PASS and not INCONCLUSIVE. */
 const FIXTURE_CASES = 30;

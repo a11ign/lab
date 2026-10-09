@@ -15,7 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { scoredCoverage, scoredFurniture } from "./real-page-coverage.mjs";
+import { scoredCoverage, scoredFurniture } from "./real-page-coverage.ts";
 
 // READ AS TEXT, NEVER IMPORTED -- the gate script's closure reaches the corpus (see the header). The wiring test
 // below asks what the headline is fed, which only the script's source can answer.

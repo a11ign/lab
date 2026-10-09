@@ -41,7 +41,7 @@ import { readdirSync, statSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { runsRoot } from "../src/dataset-paths.mjs";
+import { runsRoot } from "../src/dataset-paths.ts";
 
 refuseUnknownFlags(["--dir=", "--json"], {
   entry: import.meta.url, command: "npm run fleet:hours",

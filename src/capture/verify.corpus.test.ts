@@ -18,9 +18,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CapturedAnnouncements } from "@a11ign/evidence/verify";
 import { captureHasSubstance, captureIsSelfConsistent, captureMentionsTitle, titleOf } from "@a11ign/evidence/verify";
-import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
-import { captureFilePath } from "./evidence-diff.mjs";
+import { captureFilePath } from "./evidence-diff.ts";
 
 const ROOT = datasetRoot();
 const MANIFEST = resolve(ROOT, "manifest.json");

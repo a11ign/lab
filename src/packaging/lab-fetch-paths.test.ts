@@ -30,8 +30,8 @@ import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { parse } from "yaml";
 import {
   REPO_ROOT, abstentionRoot, abstentionSweepPath, captureRoot, datasetExportPath, datasetRoot, realCorpusRoot, runsRoot,
-} from "../dataset-paths.mjs";
-import { captureFilePath } from "../capture/evidence-diff.mjs";
+} from "../dataset-paths.ts";
+import { captureFilePath } from "../capture/evidence-diff.ts";
 import { progressPath } from "../training/capture-progress.mjs";
 import { calibrationJudgmentsPath } from "../../scripts/calibrate-abstention.mjs";
 import { TRANSCRIPT } from "../../scripts/everything-pipeline.mjs";
