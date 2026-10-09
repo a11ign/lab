@@ -149,7 +149,7 @@ test("#939 THE READERS: each surviving one goes through the helper, and board-da
   const source = (path: string) => readFileSync(resolve(REPO, path), "utf8");
   for (const reader of ["scripts/ci-changed.ts", "packages/guards/src/changed-packages.ts",
     toolPath("src/board-data.mjs")]) {
-    assert.match(source(reader), /import \{ changedFiles \} from "[^"]*changed-files\.ts"/,
+    assert.match(source(reader), /import \{ changedFiles \} from "[^"]*changed-files\.(?:mjs|ts)"/,
       `${reader} does not import the shared helper`);
   }
   // The lane check that consumed /tmp/lane-changed.txt is retired, so there is no longer a workflow feed

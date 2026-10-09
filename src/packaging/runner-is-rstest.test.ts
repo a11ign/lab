@@ -259,7 +259,7 @@ test("#1319: the cache is restored and its HIT or MISS printed before both test 
   assert.equal(cache.length, 1, "exactly one actions/cache step persists rstest's build cache");
   const step = STEPS[cache[0]];
   assert.match(step.if ?? "", /inputs\.run-ts-tests/);
-  assert.match(step.with?.key ?? "", /hashFiles\('pnpm-lock\.yaml', 'scripts\/rstest\/rstest\.config\.mjs'\)/);
+  assert.match(step.with?.key ?? "", /hashFiles\('pnpm-lock\.yaml', 'scripts\/rstest\/rstest\.config\.ts'\)/);
   assert.ok(step.id, "the cache step has an id, so its cache-hit output can be read");
   const printed = STEPS.flatMap((s, index) => ((s.run ?? "").includes(`steps.${step.id}.outputs.cache-hit`) ? [index] : []));
   assert.equal(printed.length, 1, "one step prints HIT or MISS");

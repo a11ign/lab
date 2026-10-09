@@ -292,7 +292,7 @@ test("the ts step's test command is `rstest run --changed=<base>` over the share
   const noRecord = () => ({ name: null, files: [], dropped: [] });
   assert.equal(await runTs({ base: "origin/main" }, fakeRun(seen), reaches, noRecord), "pass");
   const last = seen.at(-1) ?? "";
-  assert.match(last, / rstest run --config scripts\/rstest\/rstest\.config\.mjs --include packages\/\*\/src\/\*\*\/\*\.test\.ts --changed=origin\/main$/);
+  assert.match(last, / rstest run --config scripts\/rstest\/rstest\.config\.ts --include packages\/\*\/src\/\*\*\/\*\.test\.ts --changed=origin\/main$/);
   assert.ok(last.includes(`--include ${AFFECTED_INCLUDE} `), "the include is not the constant the floor checks");
   assert.ok(!seen.some((command) => command.includes("test-changed")), "test-changed.mjs is still run");
 });

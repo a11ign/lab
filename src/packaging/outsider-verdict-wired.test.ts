@@ -41,7 +41,7 @@ const KEPT = ["release:provenance", "scorer:verify"];
 const CHAINS = ["release:gate:ci", "release:gate"];
 
 /** The npm scripts a shell chain runs, in order. */
-const stagesOf = (chain: string) => [...chain.matchAll(/pnpm(?:\.mjs)? run ([a-z0-9:_-]+)/g)].map((m) => m[1]);
+const stagesOf = (chain: string) => [...chain.matchAll(/pnpm(?:\.(?:mjs|ts))? run ([a-z0-9:_-]+)/g)].map((m) => m[1]);
 
 /** What is wrong with `scripts`'s two gate chains, as the swap leaves them. `[]` means nothing is wrong. */
 function chainProblems(scripts: Record<string, string>): string[] {

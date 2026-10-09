@@ -645,7 +645,8 @@ function unsyncedBindingsIn(code: string): string[] {
   for (const [module, names] of Object.entries(ESM_UNSYNCED as Record<string, Record<string, string>>)) {
     const from = String.raw`\s*from\s*["'](?:node:)?${escapeRegExp(module)}["']`;
     const opener = String.raw`\b(?:import\s+(?:[\w$]+\s*,\s*)?|export\s*)`;
-    const whole = new RegExp(String.raw`${opener}\*(?:\s*as\s+[\w$]+)?${from}|\bimport\s*\(\s*["'](?:node:)?${escapeRegExp(module)}["']\s*\)`);
+    // `typeof import("node:test")` is a TYPE query, which `.ts` allows and binds nothing: the core's walk-scope.ts has one (a11ign/a11ign#4569).
+    const whole = new RegExp(String.raw`${opener}\*(?:\s*as\s+[\w$]+)?${from}|(?<!\btypeof\s+)\bimport\s*\(\s*["'](?:node:)?${escapeRegExp(module)}["']\s*\)`);
     for (const name of Object.keys(names)) {
       const named = new RegExp(String.raw`${opener}\{[^}]*\b${escapeRegExp(name)}\b[^}]*\}${from}`);
       if (named.test(code) || whole.test(code)) found.push(`node:${module}'s ${name}`);
@@ -702,7 +703,7 @@ test("...and that refusal can fire: each unseen route is found, and a plain fs i
     `export { run } from "node:test";`, `export * from "node:test";`, `export * as t from "node:test";`]) {
     assert.deepEqual(unseenRoutesIn(spelling), viaTestBinding, spelling);
   }
-  for (const harmless of [`import { test, before } from "node:test";`, `import nodeTest from "node:test";`,
+  for (const harmless of [`const nodeTest: typeof import("node:test") = require("node:test");`, `import { test, before } from "node:test";`, `import nodeTest from "node:test";`,
     `export { test } from "node:test";`, `import { runner } from "./x.mjs";`]) {
     assert.deepEqual(unseenRoutesIn(harmless), [], `${harmless} binds nothing unsynced`);
   }
