@@ -1,9 +1,9 @@
-// no-token: gh -- reads ci.yml, scripts/verify.mjs and two markdown files and calls pure functions; no `gh` or network is reached
+// no-token: gh -- reads ci.yml, scripts/verify.ts and two markdown files and calls pure functions; no `gh` or network is reached
 /**
  * #3210: `pnpm run verify` IS CI'S GATE RUN LOCALLY, AND THIS PINS THAT IT STAYS SO.
  *
  * The chairman measured the first-run pass rate at 35% (#928) and read why: authors ran "the affected files" while
- * CI runs the changed files transitively, and every tree-wide guard. `scripts/verify.mjs`
+ * CI runs the changed files transitively, and every tree-wide guard. `scripts/verify.ts`
  * is the one command that runs what `gate` waits for. What it must not do is keep a SECOND list of CI's jobs, so the
  * population here is read off `ci.yml`, and every refusal below is over a pure function with the reader injected.
  *
@@ -20,13 +20,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CI_ONLY, agentOrgSource, STEPS, bodyHash, jobsGateNeeds, linkNodeModules, makeScratch, removeScratch, runTs, shAsync, stampVerdict, stepsToRun, unaccountedJobs,
-} from "../../../../scripts/verify.mjs";
+} from "../../../../scripts/verify.ts";
 import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
 
 const ROOT = new URL("../../../../", import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, ROOT), "utf8");
 const CI = read(".github/workflows/ci.yml");
-const VERIFY = read("scripts/verify.mjs");
+const VERIFY = read("scripts/verify.ts");
 
 // 1. EVERY JOB `gate` NEEDS IS ACCOUNTED FOR.
 test("the real ci.yml's gate needs a non-empty set that includes ts and guardSweep (the positive control)", () => {
@@ -145,7 +145,7 @@ test("verify imports ci-changed.mjs's classify, as ci.yml does, and no longer re
 
 test("verify defines none of the selection or classification logic it is meant to reuse", () => {
   for (const copied of ["classify", "selectTests", "selectionFor", "discoverTestFiles", "changedPackages", "testFilesToRun"]) {
-    assert.doesNotMatch(VERIFY, new RegExp(`function ${copied}\\b`), `verify.mjs defines its own ${copied}`);
+    assert.doesNotMatch(VERIFY, new RegExp(`function ${copied}\\b`), `verify.ts defines its own ${copied}`);
   }
 });
 

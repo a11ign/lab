@@ -6,7 +6,7 @@
  * checkout step, a broken build on the specified runner) reaches the gate the same way it reaches a
  * reader.
  *
- * See scripts/generate-consumer-gate.mjs's own header for the full derivation, including why the action
+ * See scripts/generate-consumer-gate.ts's own header for the full derivation, including why the action
  * reference is pinned as a literal sha (baked in at generation time) rather than an expression --
  * `uses:` steps do not accept `${{ }}` at all, verified with `actionlint` before relying on it.
  */
@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import {
   extractDocumentedJobsBlock, pinActionRef, substituteTarget, extractJobName, extractPinnedSha,
   buildConsumerGateWorkflow, generate, currentHeadSha, ACTION_DEFINITION, refuseDirtyGenerationInputs, README_PATH, OUT,
-} from "../../../../scripts/generate-consumer-gate.mjs";
+} from "../../../../scripts/generate-consumer-gate.ts";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -350,7 +350,7 @@ test("buildConsumerGateWorkflow: check-pin checks ANCESTRY, not exact equality a
   assert.match(workflow, /git merge-base --is-ancestor/,
     "check-pin must ask whether the pin is an ancestor of github.sha, which a regenerate-then-commit "
     + "sequence can actually satisfy");
-  assert.match(workflow, /node scripts\/generate-consumer-gate\.mjs --check/,
+  assert.match(workflow, /node --import tsx scripts\/generate-consumer-gate\.ts --check/,
     "check-pin must also confirm the committed file still matches what the generator produces now");
 });
 
@@ -369,7 +369,8 @@ test("#3788: check-pin asks whether the CONTENT is stale, not whether a path tha
 // --- #3828: `--check` imports repo-identity.mjs, which needs $AGENT_ORG_TOOL, and only the resolver sets it on a runner ---
 
 const CHECK_PIN_RESOLVER = /node scripts\/agent-org-newest-tag\.mjs --dest="\$RUNNER_TEMP\/agent-org"/;
-const CHECK_PIN_CHECK = /node scripts\/generate-consumer-gate\.mjs --check/;
+// #4274: the generator is `scripts/generate-consumer-gate.ts`, run under tsx; the resolver stays an `.mjs` (it runs before any install).
+const CHECK_PIN_CHECK = /node --import tsx scripts\/generate-consumer-gate\.ts --check/;
 
 function checkPinBlockOf(workflow: string): string {
   return workflow.slice(workflow.indexOf("  check-pin:"), workflow.indexOf("  a11y:"));
@@ -407,7 +408,7 @@ test("#3828 CONTROL: the ordering question answers NO for a job with the resolve
 
 test("#3828: `--check` is not wrapped in a message that claims a mismatch the run did not measure", () => {
   const block = checkPinBlockOf(buildConsumerGateWorkflow(GENERATED_JOBS));
-  assert.match(block, /^ {8}run: node scripts\/generate-consumer-gate\.mjs --check$/m,
+  assert.match(block, /^ {8}run: node --import tsx scripts\/generate-consumer-gate\.ts --check$/m,
     "the step is the bare command, so a crash reaches the log as itself and the step fails with its exit code");
   assert.doesNotMatch(block, /does not match what README/, "only `--check`'s own STALE line may say the file is stale");
 });
@@ -599,14 +600,14 @@ test("currentHeadSha: returns a real, full 40-character commit sha for this chec
 for (const [label, statusLine, offender] of [
   ["README.md, modified", " M README.md", "README.md"],
   ["README.md, staged", "M  README.md", "README.md"],
-  ["the generator, untracked", "?? scripts/generate-consumer-gate.mjs", "scripts/generate-consumer-gate.mjs"],
+  ["the generator, untracked", "?? scripts/generate-consumer-gate.ts", "scripts/generate-consumer-gate.ts"],
   // reviewer-2's not-convinced (#1838): a rename/copy porcelain record is "SRC -> DST", not a single
   // path -- `line.slice(3) === input` and `.endsWith(\`/${input}\`)` both miss it on EITHER side, so a
   // staged rename of a generation input slipped through silently. Both directions, both statuses.
   ["README.md, renamed AWAY (source side)", "R  README.md -> README-renamed.md", "README.md"],
   ["some other file renamed TO README.md (destination side)", "R  notes.md -> README.md", "README.md"],
   ["some other file copied TO the generator (destination side)",
-    "C  scripts/other.mjs -> scripts/generate-consumer-gate.mjs", "scripts/generate-consumer-gate.mjs"],
+    "C  scripts/other.mjs -> scripts/generate-consumer-gate.ts", "scripts/generate-consumer-gate.ts"],
 ] as const) {
   test(`refuseDirtyGenerationInputs: refuses when ${label} is dirty, naming the file`, () => {
     assert.throws(() => refuseDirtyGenerationInputs(`${statusLine}\n`), new RegExp(`${offender.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} has an uncommitted or staged change`));
@@ -623,7 +624,7 @@ test("refuseDirtyGenerationInputs CONTROL: a clean status, a status naming only 
 test("main(): the write path refuses when README.md has an uncommitted change at generation time -- "
   + "#1721's own shape, reproduced against the real checkout and restored immediately after. MUTATION "
   + "TARGET: skip refuseDirtyGenerationInputs before writeFileSync in main() and this refusal disappears", () => {
-  const script = fileURLToPath(new URL("../../../../scripts/generate-consumer-gate.mjs", import.meta.url));
+  const script = fileURLToPath(new URL("../../../../scripts/generate-consumer-gate.ts", import.meta.url));
   const readmePath = fileURLToPath(new URL("../../../../README.md", import.meta.url));
   const original = readFileSync(readmePath, "utf8");
   try {
@@ -659,7 +660,7 @@ test("the committed .github/workflows/consumer-gate.yml matches what README.md g
 // --- the CLI, guarded like every other argv-reading script here ---
 
 test("generate-consumer-gate.mjs refuses an unknown flag rather than silently ignoring it", () => {
-  const script = fileURLToPath(new URL("../../../../scripts/generate-consumer-gate.mjs", import.meta.url));
+  const script = fileURLToPath(new URL("../../../../scripts/generate-consumer-gate.ts", import.meta.url));
   let threw = false;
   try {
     execFileSync("node", [script, "--bogus"], { encoding: "utf8", stdio: "pipe" });

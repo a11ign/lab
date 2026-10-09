@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { promote, promotionLevel, publicPackageVersions } from "../../scripts/promote-model.mjs";
 
 /** Every public package before version one, as the tree reads during the first publish. */

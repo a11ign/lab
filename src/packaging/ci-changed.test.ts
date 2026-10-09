@@ -611,8 +611,17 @@ test("#690: every pull_request job is gated on the PR still being OPEN -- `edite
   // 'unknown'`. Three pushes today were red for exactly this: a verification that does not include the
   // one tool that checks the thing being got wrong.
   const jobs = doc.jobs as Record<string, { if?: string; needs?: unknown }>;
+  // #4413: `bodyEdit` is the one job that is DELIBERATELY ungated -- "it runs on EVERY event and always succeeds with an answer, because a job
+  // whose `needs` was skipped is skipped itself" (the job's own comment in ci.yml), and `acceptance`/`ownedPaths` need it. On a closed PR it
+  // reads a body diff and a run list and prints `proseOnly=...`; it checks out nothing and cannot go red on a merged head, which is the harm this
+  // test exists to refuse. Exempted by name, with its two defining properties pinned so the exemption cannot widen to a job that does real work.
+  const BODY_EDIT_CLASSIFIER = "bodyEdit";
+  assert.ok(jobs[BODY_EDIT_CLASSIFIER] && jobs[BODY_EDIT_CLASSIFIER].if === undefined && jobs[BODY_EDIT_CLASSIFIER].needs === undefined,
+    "POSITIVE CONTROL for the exemption: `bodyEdit` exists, and is ungated and needs nothing -- the shape the exemption is for");
+  assert.ok(!JSON.stringify(doc.jobs[BODY_EDIT_CLASSIFIER].steps).includes("actions/checkout"),
+    "and it checks nothing out: an ungated job that builds or runs the suite on a merged head would be the permanent red this test refuses");
   const reachableOnPullRequest = Object.entries(jobs)
-    .filter(([name]) => name !== "gate")
+    .filter(([name]) => name !== "gate" && name !== BODY_EDIT_CLASSIFIER)
     .filter(([, job]) => job.if === undefined || !String(job.if).includes("merge_group"));
 
   const unguarded = reachableOnPullRequest

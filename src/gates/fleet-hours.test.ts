@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { occupancyMs, scan, report, METHOD } from "../../scripts/fleet-hours.mjs";
 
 /** A capture is billed on the LAST cumulative `atMs`, so a fixture needs marks that climb. */

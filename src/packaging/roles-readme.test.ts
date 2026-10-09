@@ -40,7 +40,7 @@ import {
 } from "./prefix-pins.mjs";
 // #905: the roster parser and the per-file check live in the doc cross-reference check the nightly report
 // also runs -- one copy, which is what this file's own "exercise the exact same logic" comment asked for.
-import { README_PATH, checkRoster, roster } from "../../../../scripts/doc-checks/roles-readme.mjs";
+import { README_PATH, checkRoster, roster } from "../../../../scripts/doc-checks/roles-readme.ts";
 
 const readReadme = () => readFileSync(resolve(process.cwd(), README_PATH), "utf8");
 

@@ -1,4 +1,4 @@
-// no-token: gh -- reads the tree, scripts/verify.mjs and the rstest config and calls pure functions; one test spawns rstest and no `gh` or network is reached
+// no-token: gh -- reads the tree, scripts/verify.ts and the rstest config and calls pure functions; one test spawns rstest and no `gh` or network is reached
 /**
  * #3572: LOCAL `pnpm run verify` RUNS THE MODULE-GRAPH-AFFECTED SET, AND SAYS SO.
  *
@@ -31,7 +31,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, matchesGlob, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
 import { treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { underFloor } from "../../../guards/src/assert-glob-not-empty.mjs";
@@ -41,7 +41,7 @@ import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import {
   AFFECTED_INCLUDE, AFFECTED_MIN_FILES, CI_ONLY, STEPS, affectedVerdict, jobsGateNeeds, readRunSummary, runAffectedSet, runTs,
   stampWording, unaccountedJobs,
-} from "../../../../scripts/verify.mjs";
+} from "../../../../scripts/verify.ts";
 
 declareTreeWideGuard();
 
@@ -134,42 +134,17 @@ function uncovered(patterns: readonly string[], reads: Map<string, string[]>): s
  * be excused for good. Each entry is asserted to be STILL uncovered, so the lab pull request that moves the pin to a core which fixes it goes red
  * here until the entry is deleted.
  *
- * `layers.json` (a11ign/a11ign#3980) is covered now and left this table. At CORE_REF 8d59c95e5 (#4372) the core grew twenty-seven more, from
- * the Octo STS policies and their fixtures (`.github/chainguard/`, `scripts/fixtures/octo-sts-*`), the registry consumer gate's fixtures, the
- * outsider job and four docs a test reads by name. The fix is one set of patterns in the core's
- * `scripts/rstest/rstest.config.mjs`, outside the lab's Region, and it is NOT filed yet: the row carries the finding. The effect is bounded to
- * the local `--changed` run (CI runs the whole suite), which does not re-run a test when one of these files changes.
+ * `layers.json` (a11ign/a11ign#3980) is covered now and left this table. So did the twenty-seven that were here at CORE_REF 8d59c95e5 (#4372): the Octo STS policies
+ * and their fixtures, the registry consumer gate's fixtures, the outsider job and four docs, which a11ign/a11ign#4419 (3ba51bde8) added to the core's
+ * `forceRerunTriggers`. At CORE_REF e45068f59 the core grew three more (`scripts/outsider/`'s pin-write policy and repository file, and the stored-token workflow
+ * fixture), outside the lab's Region and not filed yet: the row carries the finding. The effect is bounded to the local `--changed` run (CI runs the whole suite),
+ * which does not re-run a test when one of these files changes.
  */
-const OWED_TO_THE_CORE = "a11ign/a11ign#4419 (the core's forceRerunTriggers owe a pattern; found by #4372)";
+const OWED_TO_THE_CORE = "the core's forceRerunTriggers owe a pattern (a11ign/a11ign#4419 covered the first twenty-seven; found moving CORE_REF to e45068f59)";
 const KNOWN_UNCOVERED_BY_THE_CORE: Record<string, string> = Object.fromEntries([
-  ".github/chainguard/auto-arm.sts.yaml",
-  ".github/chainguard/consumer-gate-pin-write.sts.yaml",
-  ".github/chainguard/dependency-pr-body.sts.yaml",
-  ".github/chainguard/nightly-board-read.sts.yaml",
-  ".github/chainguard/promote-action-tag.sts.yaml",
-  "docs/auth-attach-spike.md",
-  "docs/ci-targets.json",
-  "docs/evidence-pack.md",
-  "docs/licence-faq.md",
-  "scripts/fixtures/octo-sts-policy-names-auth-capture-check.sts.yaml",
-  "scripts/fixtures/octo-sts-policy-names-corpus-backups.sts.yaml",
-  "scripts/fixtures/octo-sts-policy-ordinary.sts.yaml",
-  "scripts/fixtures/octo-sts-policy-whole-organisation.sts.yaml",
-  "scripts/fixtures/octo-sts-trusted-issuers-absent.txt",
-  "scripts/fixtures/octo-sts-trusted-issuers-two-issuers.yaml",
-  "scripts/fixtures/registry-consumer-gate/clean.json",
-  "scripts/fixtures/registry-consumer-gate/cli-unrunnable.json",
-  "scripts/fixtures/registry-consumer-gate/current-release.json",
-  "scripts/fixtures/registry-consumer-gate/duplicate-evidence.json",
-  "scripts/fixtures/registry-consumer-gate/entry-point-import-not-defined.json",
-  "scripts/fixtures/registry-consumer-gate/entry-point-throws-where-it-must-work.json",
-  "scripts/fixtures/registry-consumer-gate/entry-point-unresolvable.json",
-  "scripts/fixtures/registry-consumer-gate/nothing-installed.json",
-  "scripts/fixtures/registry-consumer-gate/unsatisfied-range.json",
-  "scripts/fixtures/registry-consumer-gate/version-mismatch.json",
-  "scripts/fixtures/registry-consumer-gate/workspace-protocol.json",
-  "scripts/fixtures/registry-consumer-gate/zero-pin.json",
-  "scripts/outsider/outsider-job.yml",
+  "scripts/fixtures/workflow-reads-stored-github-token.yml",
+  "scripts/outsider/outsider-pin-write.sts.yaml",
+  "scripts/outsider/repository.json",
 ].map((file) => [file, OWED_TO_THE_CORE]));
 const unexempted = (files: readonly string[]) => files.filter((file) => !(file in KNOWN_UNCOVERED_BY_THE_CORE));
 
@@ -326,7 +301,8 @@ test("runAffectedSet passes a diff that reaches no test, and fails when the run 
 test("--base and A11Y_TEST_BASE are both still honoured: each names its ref in the diff verify takes", () => {
   const verify = (args: string[], env: Record<string, string>) => {
     try {
-      execFileSync("node", ["scripts/verify.mjs", ...args], { cwd: ROOT, env: sandboxGitEnv(env), stdio: "pipe", encoding: "utf8" });
+      // verify.mjs became verify.ts in #4273/#4274, which runs under tsx (`pnpm run verify` is `node --import tsx scripts/verify.ts`).
+      execFileSync("node", ["--import", "tsx", "scripts/verify.ts", ...args], { cwd: ROOT, env: sandboxGitEnv(env), stdio: "pipe", encoding: "utf8" });
       return "";
     } catch (cause) {
       return String((cause as { stderr?: string }).stderr ?? "");
@@ -354,7 +330,7 @@ test("the stamp says the affected set passed, names the base, and never says the
 });
 
 test("verify prints the wording in its GREEN line, and CONTRIBUTING.md and the engineer brief say it in the same words", () => {
-  assert.match(read("scripts/verify.mjs"), /GREEN for this head and body -- \$\{stampWording\(base\)\}/);
+  assert.match(read("scripts/verify.ts"), /GREEN for this head and body -- \$\{stampWording\(base\)\}/);
   for (const file of ["CONTRIBUTING.md", ".agent-org/roles/engineer.md"]) {
     assert.match(read(file), /the affected set passed at this head/, `${file} does not carry the stamp's sentence`);
     assert.match(read(file), /a partial local run is not "passing"/, `${file} dropped the sentence verify-matches-ci.test.ts pins`);

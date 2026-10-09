@@ -35,11 +35,15 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { migrationVerdict, MIGRATION_FILE } from "../../../../scripts/check-schema-migration.mjs";
+import { createRequire } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { migrationVerdict, MIGRATION_FILE } from "../../../../scripts/check-schema-migration.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const SCRIPT = join(REPO, "scripts/check-schema-migration.mjs");
+const SCRIPT = join(REPO, "scripts/check-schema-migration.ts");
+// a11ign/a11ign#4274: the script is TypeScript, and a bare `node` cannot run one (ADR 0043 Decision 8: `node --import tsx`). The copy lives in a temp tree with no `node_modules`, so tsx is named by the URL
+// this file resolves it to.
+const TSX = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
 
 const OPEN = {
   shippedSchema: "screenreader-structured-v7",
@@ -59,7 +63,7 @@ function treeWith(declaration: object | null): string {
   // clean run. It cost twenty minutes here and it will look like the gate working every time.
   const root = realpathSync(mkdtempSync(join(tmpdir(), "a11y-migration-")));
   mkdirSync(join(root, "scripts"), { recursive: true });
-  copyFileSync(SCRIPT, join(root, "scripts/check-schema-migration.mjs"));
+  copyFileSync(SCRIPT, join(root, "scripts/check-schema-migration.ts"));
   if (declaration) {
     mkdirSync(dirname(join(root, MIGRATION_FILE)), { recursive: true });
     writeFileSync(join(root, MIGRATION_FILE), JSON.stringify(declaration));
@@ -69,7 +73,7 @@ function treeWith(declaration: object | null): string {
 
 function run(root: string, args: string[] = []): { status: number; output: string } {
   try {
-    return { status: 0, output: execFileSync("node", [join(root, "scripts/check-schema-migration.mjs"),
+    return { status: 0, output: execFileSync(process.execPath, ["--import", TSX, join(root, "scripts/check-schema-migration.ts"),
       ...args], { encoding: "utf8" }) };
   } catch (error) {
     const failure = error as { status?: number; stdout?: string; stderr?: string };

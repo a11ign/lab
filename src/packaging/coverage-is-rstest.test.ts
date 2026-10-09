@@ -15,8 +15,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { classifyCoverageFailure, KIND } from "../../../../scripts/coverage-failure-classifier.mjs";
-import { coverageVerdict, takeProviderExitCode, thresholdMissLines } from "../../../../scripts/coverage.mjs";
+import { classifyCoverageFailure, KIND } from "../../../../scripts/coverage-failure-classifier.ts";
+import { coverageVerdict, takeProviderExitCode, thresholdMissLines } from "../../../../scripts/coverage.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPTS = (JSON.parse(readFileSync(`${REPO}package.json`, "utf8")) as { scripts: Record<string, string> }).scripts;

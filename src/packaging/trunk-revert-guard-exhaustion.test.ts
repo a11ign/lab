@@ -34,7 +34,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EXHAUSTION_MARKER, buildSandbox } from "../../../guards/src/sandbox-exhaustion.mjs";
+import { EXHAUSTION_MARKER, buildSandbox } from "../../../guards/src/sandbox-exhaustion.ts";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 /** git's exit status for a `fatal:` -- what the measured clone died with, and what a missing repository gives. */

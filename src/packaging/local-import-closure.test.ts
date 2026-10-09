@@ -33,7 +33,8 @@ import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments, localImports } from "../../../guards/src/local-import-closure.mjs";
-import { toolPath, toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolRoot } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -122,12 +123,16 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   //
   // THE SIXTH IS `lane-ownership.mjs` (agent-org v0.3.0, #3254): `authorshipVerdict`, which refuses to arm a PR
   // a lane owner's own login authored into a review-only lane. Moved here with the pin to v0.4.2 (#3151).
+  //
+  // THE SEVENTH IS THE RENAME (agent-org#435, a11ign/a11ign#4427): the tool's `src/*.mjs` are `src/*.ts` (`toolPath` returns `arm-pr.ts`), except `lib/cli-flags.mjs`, which the tool kept as `.mjs`. The `.ts`
+  // source also names `api-pool.ts` and `lane-ownership.ts` in TYPE positions (`import("./api-pool.ts").Pool`), which the walk reads as imports too, so the same file appears three times; the pin is
+  // WHICH files are seen, so the list is deduplicated and a legitimate extra type annotation does not falsify it.
   assert.deepEqual(
-    localImports(toolPath("src/arm-pr.mjs")).map((p: string) => p.replace(`${toolRoot()}/`, "")).sort(),
-    ["src/acceptance-commands.mjs", "src/api-pool.mjs",
-      "src/lane-ownership.mjs", "src/lib/cli-flags.mjs", "src/pr-armed-state.mjs",
-      "src/pr-hold-state.mjs", "src/project-roles.mjs",
-      "src/project-vocabulary.mjs", "src/trunk-red.mjs"],
+    [...new Set(localImports(toolPath("src/arm-pr.mjs")).map((p: string) => p.replace(`${toolRoot()}/`, "")))].sort(),
+    ["src/acceptance-commands.ts", "src/api-pool.ts",
+      "src/lane-ownership.ts", "src/lib/cli-flags.mjs", "src/pr-armed-state.ts",
+      "src/pr-hold-state.ts", "src/project-roles.ts",
+      "src/project-vocabulary.ts", "src/trunk-red.ts"],
     "arm-pr.mjs's local imports must all be visible to the walk");
 });
 

@@ -12,8 +12,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { decide } from "../../../../scripts/run.mjs";
-import { COMMANDS } from "../../../../scripts/commands.mjs";
+import { decide } from "../../../../scripts/run.ts";
+import { COMMANDS } from "../../../../scripts/commands.ts";
 
 const FIXTURE = { alpha: { argv: ["node", "scripts/alpha.mjs"] } };
 

@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const WORKFLOWS_DIR = join(REPO_ROOT, ".github", "workflows");

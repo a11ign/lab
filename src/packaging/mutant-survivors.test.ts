@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   OPERATORS, applyMutant, changedLines, chooseMutants, hunt, mutateRunner, renderSurvivors, survivorsFor,
-} from "../../../guards/src/mutant-survivors.mjs";
+} from "../../../guards/src/mutant-survivors.ts";
 
 /** The one mutated text an operator gives a line, by its id, or the list of them. */
 const mutantsOf = (id: string, line: string) => {

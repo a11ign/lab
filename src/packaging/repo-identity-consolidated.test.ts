@@ -43,7 +43,7 @@ import path from "node:path";
 import { REPO, REPO_URL, REPO_GIT_URL, PRODUCT_REPO, PRODUCT_REPO_URL, PRODUCT_GIT_URL }
   from "../../../../scripts/repo-identity.mjs";
 import { workerSource } from "./laid-worker.ts";
-import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolPath } from "../../scripts/tool-source.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
 
@@ -210,7 +210,9 @@ test("board-data.mjs and row-claim.mjs DERIVE the name rather than restating it 
     // #2658 (child 3g of #69): the tool no longer imports `scripts/repo-identity.mjs`, a product file. Its two consumers import the
     // tool's own `project-identity.mjs`, which answers with the SAME declaration `repo-identity.mjs` reads, so either name is the
     // name being DERIVED; a literal, or any other module, is not.
-    assert.match(text, /from ["'][^"']*(?:repo|project)-identity\.mjs["']/,
+    //
+    // The extension is `.mjs` or `.ts` (agent-org#435 renamed the tool's sources to `.ts`, so `./project-identity.ts` is what they import now).
+    assert.match(text, /from ["'][^"']*(?:repo|project)-identity\.(?:mjs|ts)["']/,
       `${file} must import REPO from repo-identity.mjs (or the tool's project-identity.mjs) rather than declaring its own copy`);
     assert.ok(!new RegExp(`["']${REPO.replace(/[/.]/g, "\\$&")}["']`).test(text),
       `${file} still declares the repository name as its own string literal`);

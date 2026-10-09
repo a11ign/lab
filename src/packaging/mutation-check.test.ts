@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
 
 /* THE MUTATION CHECKER'S OWN EXIT-CODE CONTRACT, exercised end to end.
  *

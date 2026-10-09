@@ -19,7 +19,7 @@ import { resolve } from "node:path";
 
 import { createServer } from "node:http";
 
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { holdersPath, joinHolders, leasePageServer, leaveHolders, readHolders } from "./page-server.mjs";
 
 /** A root whose `..` is a scratch dir, matching how the real caller passes `<dataset>/pages`. */

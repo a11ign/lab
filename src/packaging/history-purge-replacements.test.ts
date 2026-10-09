@@ -20,7 +20,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseReplacementRules, applyReplacementRules }
-  from "../../../../scripts/history-purge-rehearsal.mjs";
+  from "../../../../scripts/history-purge-rehearsal.ts";
 
 const SHIPPED = readFileSync(
   new URL("../../../../scripts/history-purge-replacements.txt", import.meta.url), "utf8");

@@ -23,7 +23,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { readdirSync, readFileSync, lstatSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { currentWorkspaceScope, staleWorkspaceScopes } from "../../../../scripts/prune-stale-workspace-scope.mjs";
+import { currentWorkspaceScope, staleWorkspaceScopes } from "../../../../scripts/prune-stale-workspace-scope.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 

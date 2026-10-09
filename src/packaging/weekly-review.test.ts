@@ -16,8 +16,8 @@ const { declaresRelease, fileRefusalReason, outOfReleaseArgv } = await toolModul
 import {
   TITLE_PREFIX, bodyReadFromSources, buildBody, eligible, extractQuestions, extractRequirements, filingPlan,
   ineligibleFromBody, ineligibleSessions, isoWeek, isoWeekLabel, recheckLastWeek, reviewTitle, reviewWindow, rowFileArgs,
-} from "../../../../scripts/weekly-review.mjs";
-import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
+} from "../../../../scripts/weekly-review.ts";
+import { toolModule } from "../../scripts/tool-source.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const read = (rel: string) => readFileSync(resolve(REPO, rel), "utf8");
@@ -111,7 +111,7 @@ test("neither the script nor docs/weekly-review.md quotes the documents' text (p
   const leading = (text: string) => text.replace(/[*`_]/g, "").split(/\s+/).slice(0, 6).join(" ");
   const plain = (text: string) => text.replace(/[*`_]/g, "").replace(/\s+/g, " ");
   for (const { text } of items) assert.ok(plain(`${RELEASE}\n${TRY_IT}`).includes(leading(text)), "control: the source holds it");
-  for (const file of ["scripts/weekly-review.mjs", "docs/weekly-review.md"]) {
+  for (const file of ["scripts/weekly-review.ts", "docs/weekly-review.md"]) {
     for (const { text } of items) assert.ok(!plain(read(file)).includes(leading(text)), `${file} copies "${leading(text)}"`);
   }
 });
@@ -188,12 +188,13 @@ test("the workflow is workflow_dispatch only, and permissions that write issues 
 test("the filing step carries row-file's printed launch override with a non-blank reason", () => {
   const stepEnv = (yaml: string) => {
     const workflow = parseYaml(yaml) as { jobs: { file: { steps: { run?: string; env?: Record<string, string> }[] } } };
-    return workflow.jobs.file.steps.find((step) => step.run === "node scripts/weekly-review.mjs")?.env ?? {};
+    // weekly-review.mjs became .ts in #4273/#4274; the workflow step runs it under tsx (ca9629934).
+    return workflow.jobs.file.steps.find((step) => step.run === "node --import tsx scripts/weekly-review.ts")?.env ?? {};
   };
   const reason = stepEnv(read(".github/workflows/weekly-review.yml")).A11Y_POLICY_LAUNCH_REASON;
   assert.ok(typeof reason === "string" && reason.trim() !== "", "the filing step has no A11Y_POLICY_LAUNCH_REASON");
   // POSITIVE CONTROL: a step without it, and one with a blank reason, are both seen as lacking it.
-  const bare = "jobs:\n  file:\n    steps:\n      - run: node scripts/weekly-review.mjs\n        env:\n          GH_TOKEN: x\n";
+  const bare = "jobs:\n  file:\n    steps:\n      - run: node --import tsx scripts/weekly-review.ts\n        env:\n          GH_TOKEN: x\n";
   assert.equal(stepEnv(bare).A11Y_POLICY_LAUNCH_REASON, undefined);
   assert.equal((stepEnv(bare.replace("GH_TOKEN: x", "A11Y_POLICY_LAUNCH_REASON: ' '")).A11Y_POLICY_LAUNCH_REASON ?? "").trim(), "");
 });

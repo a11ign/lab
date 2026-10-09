@@ -30,7 +30,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
 
 // #716/#704: this file's own population is computed from the tracked tree (`walkTree`), not a hand-typed
 // list, so it is declared here per ceo's ruling (2026-09-09) that population must come from a real import.
@@ -241,6 +241,16 @@ const NAMED_TSX_USES: Record<string, string> = {
   "verdict:stability": "an occurrence-verdict-stability harness",
   "auth:leak-check": "the authenticated-capture credential-leak check (needs a worker on this machine; imports the CLI's TypeScript directly, so a worker machine needs no build)",
   "auth:artifact-scan": "the credential scan of a real run's output, every text file under a path (imports the CLI's TypeScript directly, so a machine needs no build)",
+  // #4273/#4274 converted the core's scripts/ from .mjs to .ts, so a manifest script that ran one with bare
+  // `node` now runs it as `node --import tsx scripts/<name>.ts`: the same program-mode use, newly spelled with tsx.
+  coverage: "the rstest coverage runner entry point (scripts/coverage.ts)",
+  "docs:known-gaps-index": "the known-gaps index generator",
+  "npm-token:check": "the npm token liveness check",
+  "outsider:verdict": "the outsider job's verdict entry point",
+  prepare: "the install-time hook installer (scripts/install-git-hooks.ts), before the layers are laid",
+  "scorer:migration": "the scorer schema-migration check",
+  "scorer:retired-heads": "the retired-scorer-heads check",
+  verify: "the local verify entry point (scripts/verify.ts)",
 };
 
 test("every remaining manifest `tsx` use is named with its purpose, and none of them is `--test`", () => {

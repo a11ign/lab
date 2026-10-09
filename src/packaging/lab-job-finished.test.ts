@@ -20,7 +20,7 @@ const { decide, labJobRecordsOrSay, CAUSES, JUDGMENT_CAUSES, START_CAUSES } = aw
 const { JUDGMENT_TTL_MS } = await toolModule("src/wake.mjs");
 const { labJobFinishedOrders, readLabJobRecords, recordOf, RECORD_WAKE_WINDOW_MS } = await toolModule("src/work-gate/lab-job-orders.mjs");
 import { causeDeclarations } from "../../../../.agent-org/plugins/causes.mjs";
-import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule } from "../../scripts/tool-source.ts";
 
 const NOW = Date.parse("2026-09-30T12:00:00Z");
 const MINUTE = 60_000;

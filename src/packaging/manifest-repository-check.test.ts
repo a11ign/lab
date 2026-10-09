@@ -13,7 +13,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   manifestRepositoryMismatches, publishedManifests, repositorySlugOf,
-} from "../../../../scripts/manifest-repository-check.mjs";
+} from "../../../../scripts/manifest-repository-check.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOW = readFileSync(resolve(REPO, ".github/workflows/release.yml"), "utf8");
@@ -79,8 +79,9 @@ test("#1536 THE INCIDENT, on the real manifests: from run 34816466408's reposito
 });
 
 test("#1536 THE WORKFLOW CALLS IT: release.yml runs the check with no `if:`, so on a rehearsal too, in a job the publishing call NEEDS", () => {
-  const step = WORKFLOW.indexOf("run: node scripts/manifest-repository-check.mjs");
-  assert.notEqual(step, -1, "release.yml does not run scripts/manifest-repository-check.mjs");
+  // The script is `.ts` and run under tsx since a11ign/a11ign#4274 (ca9629934): bare `node` cannot run it.
+  const step = WORKFLOW.indexOf("run: node --import tsx scripts/manifest-repository-check.ts");
+  assert.notEqual(step, -1, "release.yml does not run scripts/manifest-repository-check.ts");
   const stepStart = WORKFLOW.lastIndexOf("- name:", step);
   assert.doesNotMatch(WORKFLOW.slice(stepStart, step), /\n\s+if:/,
     "the check carries an `if:`, so some path -- a rehearsal -- can skip it");

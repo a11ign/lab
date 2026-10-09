@@ -15,9 +15,9 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { removeTempDirs, tempDir } from "../../../guards/src/test-tmp.mjs";
+import { removeTempDirs, tempDir } from "../../../guards/src/test-tmp.ts";
 
-const HELPER = fileURLToPath(new URL("../../../guards/src/test-tmp.mjs", import.meta.url));
+const HELPER = fileURLToPath(new URL("../../../guards/src/test-tmp.ts", import.meta.url));
 
 /**
  * Paths the child printed. Importing the helper under plain `node` registers its after-hook with `node:test`, which prints a

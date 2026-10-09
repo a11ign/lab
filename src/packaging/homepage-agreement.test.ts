@@ -25,11 +25,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { productHome, PRODUCT_HOME_SOURCE } from "../../../../scripts/product-home.mjs";
+import { productHome, PRODUCT_HOME_SOURCE } from "../../../../scripts/product-home.ts";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 

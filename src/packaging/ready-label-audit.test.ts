@@ -37,7 +37,7 @@ const {
   guidanceDrift, statusLabelDisagreements, statusLabelRemedy, STATUS_LABEL_KINDS,
 } = await toolModule("src/ready-label-audit.mjs");
 import { stripComments } from "@a11ign/evidence/source-text";
-import { toolModule, toolPath, toolUrl } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolPath, toolUrl } from "../../scripts/tool-source.ts";
 const { ARM_LABELS_FROM } = await toolModule("src/claim-provenance.mjs");
 // #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate
 // test -- so this import is the proof the derivation actually happened, not a second, parallel check.
@@ -1150,11 +1150,15 @@ test("CHECKS names all twenty, so the partial-audit sentence states a true denom
   ]);
 });
 
-// --- #804: the four claim-label literals are declared in EXACTLY ONE place, agent-org/src/claim-labels.mjs ---
+// --- #804: the four claim-label literals are declared in EXACTLY ONE place, agent-org/src/claim-labels.ts ---
 
-// claim-labels.mjs and every consumer of it moved into @a11ign/agent-org, so the census walks there.
+// The tool's sources are `.ts` since agent-org#435 (`claim-labels.mjs` became `claim-labels.ts`), so the census reads both extensions: a scan of
+// `.mjs` alone would see the few files left as `.mjs` and report a clean run over a population that is not the tool's.
+// claim-labels and every consumer of it moved into @a11ign/agent-org, so the census walks there.
 // A scan still pointed at scripts/ would find none of the four literals and report a clean run.
 const SCRIPTS_DIR = toolPath("src");
+const CLAIM_LABELS_FILE = "claim-labels.ts";
+const isToolSource = (name: string) => /\.(?:mjs|ts)$/.test(name);
 const CLAIM_LABEL_NAMES = ["READY_LABEL", "WAS_READY_LABEL", "CLAIM_LABEL", "STARTED_LABEL"];
 /** A fresh declaration (`const X = "..."`), never an import or a re-export -- both of those name the
  * identifier too, and only a declaration is the drift risk this test exists to close off. */
@@ -1168,10 +1172,12 @@ test("#804 ACCEPTANCE, MUTATION TARGET: no scripts/*.mjs file other than claim-l
   + "anywhere else is the exact fact-stated-twice shape this file exists to prevent recurring", () => {
   const offenders = [];
   for (const entry of readdirSync(SCRIPTS_DIR, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".mjs") || entry.name === "claim-labels.mjs") continue;
+    if (!entry.isFile() || !isToolSource(entry.name) || entry.name === CLAIM_LABELS_FILE) continue;
     const source = readFileSync(join(SCRIPTS_DIR, entry.name), "utf8");
     if (DECLARES_A_CLAIM_LABEL.test(source)) offenders.push(entry.name);
   }
+  assert.match(readFileSync(join(SCRIPTS_DIR, CLAIM_LABELS_FILE), "utf8"), DECLARES_A_CLAIM_LABEL,
+    "POSITIVE CONTROL: the scan's pattern does find the one declaration it exempts, so an empty list is not a pattern that sees nothing");
   assert.deepEqual(offenders, [],
     `these scripts/*.mjs files declare a claim-label literal locally instead of importing it from `
     + `claim-labels.mjs: ${offenders.join(", ")}`);
@@ -1179,7 +1185,7 @@ test("#804 ACCEPTANCE, MUTATION TARGET: no scripts/*.mjs file other than claim-l
 
 test("#804: claim-labels.mjs itself is a real LEAF -- it imports nothing, so nothing depending on it "
   + "(directly or transitively) can form a cycle through it", () => {
-  const source = readFileSync(join(SCRIPTS_DIR, "claim-labels.mjs"), "utf8");
+  const source = readFileSync(join(SCRIPTS_DIR, CLAIM_LABELS_FILE), "utf8");
   assert.doesNotMatch(source, /^import\s/m,
     "claim-labels.mjs must stay import-free -- an import here would reintroduce exactly the cycle risk "
     + "the leaf-module design exists to remove");

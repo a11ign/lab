@@ -27,7 +27,7 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AFFECTED_INCLUDE, bodyHash, failuresFirstPlan, newestRunRecord, runFailuresFirst, runRecordDir, runTs, stampVerdict,
-} from "../../../../scripts/verify.mjs";
+} from "../../../../scripts/verify.ts";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKTREE = basename(ROOT);

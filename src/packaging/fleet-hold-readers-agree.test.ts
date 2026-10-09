@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fleetHoldUntil as controlUntil, fleetHoldWorkers as controlWorkers } from "../../../control/src/fleet-playbook.mjs";
-import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule } from "../../scripts/tool-source.ts";
 const { fleetHoldUntil: toolUntil, fleetHoldWorkers: toolWorkers } = await toolModule("src/waiting-condition.mjs");
 
 const BODIES: Array<[label: string, body: string | null | undefined]> = [

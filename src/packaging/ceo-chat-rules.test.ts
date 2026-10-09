@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { openSections, parseHeadings } from "../../../../scripts/known-gaps-index.mjs";
+import { openSections, parseHeadings } from "../../../../scripts/known-gaps-index.ts";
 import { RULES_FILES } from "./rules-files.ts";
 
 const ROOT = process.cwd();

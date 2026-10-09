@@ -16,11 +16,11 @@ import { fileURLToPath } from "node:url";
 import {
   OUT, OUTSIDER_TARGET, NOT_COVERED, generateOutsiderJob, refuseDriftFromReadme, forbiddenReferences,
   checkCommitted, substitutionList,
-} from "../../../../scripts/outsider/generate.mjs";
-import { outsiderVerdict, outsiderRunTitle, WINDOW_MS } from "../../../../scripts/outsider/verdict.mjs";
+} from "../../../../scripts/outsider/generate.ts";
+import { outsiderVerdict, outsiderRunTitle, WINDOW_MS } from "../../../../scripts/outsider/verdict.ts";
 import {
   README_PATH, extractDocumentedJobsBlock, extractPinnedSha, generate as generateConsumerGate,
-} from "../../../../scripts/generate-consumer-gate.mjs";
+} from "../../../../scripts/generate-consumer-gate.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -197,25 +197,17 @@ test("a version writes `# v<version>` after the pin, and the file without one ke
     "and no `# v<version>` is invented: a false one would name a release the sha is not");
 });
 
-test("the comment changes nothing a reader of the pin reads: the sha, the pin job and the committed file; the drift check is the known gap below", () => {
+// The gap this section used to pin as KNOWN (`--version` replaced README's pin comment, which `refuseDriftFromReadme` did not mask, so the file it
+// just wrote failed the drift check) is closed in the core (a11ign/a11ign#4421): the check masks the pin line's comment on both sides when the
+// workflow's carries a `# v<version>`. The drift check on `annotated` is now one of the readers that must agree; the test that went red the day it
+// closed was deleted, as it said to be.
+test("the comment changes nothing a reader of the pin reads: the sha, the pin job, the drift check and the committed file", () => {
   assert.equal(extractPinnedSha(annotated), SHA);
   refuseDriftFromReadme(readme, generated);
+  refuseDriftFromReadme(readme, annotated);
   assert.deepEqual(runPinJob({ workflow: annotated, tagSha: SHA, inputSha: SHA }).status, 0, "the pin job reads the bare sha, never the comment");
   assert.deepEqual(checkCommitted(readme, generated), { ok: true });
-  assert.deepEqual(checkCommitted(readme, annotated), { ok: true }, "and `--check` reads the annotated file as current: only the drift check below disagrees");
-});
-
-/**
- * KNOWN GAP IN THE CORE (a11ign/a11ign#4041; core row a11ign/a11ign#4421, found by lab row #4372): `generate.mjs --version` REPLACES README's own pin comment with `# v<version>`
- * (#4041), but `refuseDriftFromReadme` masks only a `# v<version>` comment, so README's fence (still carrying "the commit of the release tagged ...")
- * differs from the generated line and the file it just wrote fails the drift check (`checkCommitted` still reads it as current). The test reads that as it is, so it goes red the day the core
- * closes the gap, and says to delete it.
- */
-test("KNOWN GAP: a file generated WITH a version fails the drift check on README's replaced pin comment, until the core masks it", () => {
-  const readmesComment = READMES_PIN_COMMENT?.trim() ?? "";
-  assert.ok(readmesComment.length > 1, "positive control: README's pin line carries a comment that the version replaces");
-  assert.throws(() => refuseDriftFromReadme(readme, annotated), (error: Error) => error.message.includes(readmesComment) && error.message.includes("# v1.2.3"),
-    "the core now masks the replaced comment: delete this test and run the drift check on `annotated` above");
+  assert.deepEqual(checkCommitted(readme, annotated), { ok: true }, "and `--check` reads the annotated file as current");
 });
 
 test("a comment that is not a version is drift, and so is a pin line whose comment was dropped or changed", () => {
@@ -238,7 +230,7 @@ test("a version this generator cannot name a pin for, or a pin line that already
 });
 
 test("the pin job tells whoever regenerates it to pass the version too", () => {
-  assert.match(generated, /generate\.mjs --sha=\$\{tag_sha\} --version=\$\{version\}/);
+  assert.match(generated, /generate\.ts --sha=\$\{tag_sha\} --version=\$\{version\}/);
 });
 
 // --- 2. nothing a reader's own copy could not carry ---
@@ -315,7 +307,7 @@ test("the summary prints every substituted line by README line, and each README 
 // --- 4. --check ---
 
 test("--check passes on the committed file and exits 0", () => {
-  const run = spawnSync("node", ["scripts/outsider/generate.mjs", "--check"], { cwd: REPO, encoding: "utf8" });
+  const run = spawnSync("node", ["--import", "tsx", "scripts/outsider/generate.ts", "--check"], { cwd: REPO, encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stdout, /^OK /);
 });
@@ -329,7 +321,7 @@ test("--check fails when the committed file differs from what README generates, 
 
 test("--check fails on a missing committed file, and a command line it does not read is refused", () => {
   assert.equal(checkCommitted(readme, "").ok, false);
-  const run = spawnSync("node", ["scripts/outsider/generate.mjs", "--chek"], { cwd: REPO, encoding: "utf8" });
+  const run = spawnSync("node", ["--import", "tsx", "scripts/outsider/generate.ts", "--chek"], { cwd: REPO, encoding: "utf8" });
   assert.notEqual(run.status, 0);
 });
 

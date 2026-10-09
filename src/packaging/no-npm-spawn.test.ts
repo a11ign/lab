@@ -11,7 +11,7 @@
  *
  *   - `scripts/registry-consumer-gate.mjs`: `npm install a11ign` IS what a user runs, so a gate that installed with pnpm would
  *     test a different install than the one they get. `npm view` and `npx --no-install` are registry reads.
- *   - `scripts/release-publish-rehearsal.mjs`: trusted publishing is bound to npm's OIDC, and `pnpm publish` shells out to
+ *   - `scripts/release-publish-rehearsal.ts`: trusted publishing is bound to npm's OIDC, and `pnpm publish` shells out to
  *     `npm publish`, so the rehearsal reads the npm the publish would use.
  *   - `packages/guards/src/isolation-gate.mjs`: the CONSUMER half of the isolation gate installs the packed tarballs with npm
  *     into a directory that is not a workspace, for the registry gate's reason (its header, "Two package managers, on
@@ -37,7 +37,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
 
 declareTreeWideGuard();
 
@@ -46,7 +46,8 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 /** The named files that keep npm, and why. The reason is for a reader; the test pins the FILE NAMES. */
 const ALLOWED: Record<string, string> = {
   "scripts/registry-consumer-gate.mjs": "`npm install a11ign` is the consumer's experience; `npm view` reads the registry",
-  "scripts/release-publish-rehearsal.mjs": "trusted publishing is bound to npm's OIDC, and `pnpm publish` shells out to `npm publish`",
+  // `.ts` since a11ign/a11ign#4274 (d9ea0c438): the same two `npm` spawns, the same reason, a new extension.
+  "scripts/release-publish-rehearsal.ts": "trusted publishing is bound to npm's OIDC, and `pnpm publish` shells out to `npm publish`",
   "packages/guards/src/isolation-gate.mjs": "the consumer half installs the packed tarballs with npm, outside any workspace",
   "scripts/agent-org-newest-tag.mjs": "installs the tool's own dependencies in a clone of its repository, which declares them for npm (#3534)",
 };
@@ -169,7 +170,7 @@ test("the allowlist is EXACTLY these named files (the two registry gates, the is
     "packages/guards/src/isolation-gate.mjs",
     "scripts/agent-org-newest-tag.mjs",
     "scripts/registry-consumer-gate.mjs",
-    "scripts/release-publish-rehearsal.mjs",
+    "scripts/release-publish-rehearsal.ts",
   ]);
 });
 

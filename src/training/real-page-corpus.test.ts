@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // #2171: shared, because four private copies of this walk descended a directory symlink and threw ELOOP.
-import { filesUnder } from "../../../guards/src/files-under.mjs";
+import { filesUnder } from "../../../guards/src/files-under.ts";
 
 import {
   assertDisjoint, isFixture, pagesFor, realPageFor, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES, unreachableDeclarations,

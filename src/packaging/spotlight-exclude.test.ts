@@ -22,7 +22,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { worktreePaths, markerPlan } from "../../../../scripts/spotlight-exclude.mjs";
+import { worktreePaths, markerPlan } from "../../../../scripts/spotlight-exclude.ts";
 
 const GITIGNORE = fileURLToPath(new URL("../../../../.gitignore", import.meta.url));
 

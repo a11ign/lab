@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import {
   srcPathFor, staleDistNote, specifierFromFailure, diagnoseResolutionFailure,
-} from "../../../../scripts/stale-dist-diagnosis.mjs";
+} from "../../../../scripts/stale-dist-diagnosis.ts";
 
 function tempFixture(): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), "stale-dist-"));

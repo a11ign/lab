@@ -24,7 +24,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parse as parseYaml } from "yaml";
-import { toolModule } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule } from "../../scripts/tool-source.ts";
 const { checkBody } = await toolModule("src/pr-open.mjs");
 
 const REPO = resolve(import.meta.dirname, "../../../..");

@@ -14,7 +14,7 @@ import {
   AGGREGATE_JOB, ROLL_UP_ONLY, JOBS_NOT_READ, TARGETS_FILE, alreadyPosted, commentHeading, daySlices, failedJobBreakdown,
   firstRunPassRate, inWindow, mergeQueueFailureRate, parseInclude, pullRequestGroups, readRepository, renderComment,
   runsPerPullRequest, targetText, targetsFrom, verdictOf, weeklyWindow,
-} from "../../../../scripts/ci-health.mjs";
+} from "../../../../scripts/ci-health.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const TARGETS = targetsFrom(JSON.parse(readFileSync(TARGETS_FILE, "utf8")));
@@ -228,7 +228,8 @@ test("ci-health.yml: `schedule` and `workflow_dispatch` only, `issues: write` an
     assert.ok(!(trigger in workflow.on), `${trigger} would let a change trip this workflow`);
   }
   assert.ok(workflow.on.schedule.length >= 1, "POSITIVE CONTROL: the schedule is really there");
-  assert.match(JSON.stringify(workflow.jobs), /scripts\/ci-health\.mjs --post/, "and it runs the script, posting");
+  // `ci-health` is a `.ts` script run under tsx since #4274 (it was `node scripts/ci-health.mjs --post`).
+  assert.match(JSON.stringify(workflow.jobs), /node --import tsx scripts\/ci-health\.ts --post/, "and it runs the script, posting");
 });
 
 /** The 5-field cron's day-of-week and hour fields, which are the two this pin reads. */

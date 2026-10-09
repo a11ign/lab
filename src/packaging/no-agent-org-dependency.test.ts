@@ -25,7 +25,7 @@ import { readFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
 import { trackedAndLaidPaths } from "./laid-control.ts";
 import { stripComments } from "../../../guards/src/local-import-closure.mjs";
 import { main as resolverMain, newestStableTag } from "../../../../scripts/agent-org-newest-tag.mjs";
@@ -105,6 +105,13 @@ export function pinnedRuns(files: Record<string, string>): string[] {
     && text.split("\n").some((line) => !line.trim().startsWith("#") && PINNED_RUN.test(line))).map(([path]) => path);
 }
 
+/**
+ * Core files that hold `import("agent-org/...")` as a FIXTURE STRING, not as code: the core's guard against reaching into the tool's `src/` (a11ign/a11ign#4410) lists the imports that are NOT
+ * a reach (`import("agent-org/pr-open")`, through a declared export) as test data, and the stripper blanks comments, not string literals. Left out of the walk by name for the reason `SELF` is; the
+ * test below fails when one of them stops holding the pattern, so an exemption cannot outlive its reason.
+ */
+const FIXTURE_HOLDERS = ["packages/guards/src/agent-org-src-reach.test.ts"];
+
 const sourceFiles = () => Object.fromEntries(tracked()
   .filter((path) => [".mjs", ".ts", ".js", ".sh", ".yml", ".yaml"].includes(extname(path)) || /(^|\/)pre-push$|\/reference-transaction$/.test(path))
   .map((path) => [path, read(path)]));
@@ -113,7 +120,10 @@ test("(3) no tracked source file imports agent-org by package name, and no workf
   const files = sourceFiles();
   assert.ok(Object.keys(files).length > 1000, "POSITIVE CONTROL: the walk read the repository's sources, so an empty offender list is a reading");
   assert.ok(Object.values(files).some((text) => /toolModule\(/.test(text)), "and the importers it looks for were replaced by the path form, not by nothing");
-  assert.deepEqual(namedImporters(files), []);
+  const holders = Object.fromEntries(FIXTURE_HOLDERS.map((path) => [path, files[path] ?? ""]));
+  assert.deepEqual(namedImporters(holders), FIXTURE_HOLDERS, "POSITIVE CONTROL for the exemption: each fixture holder still holds the pattern, or it is exempt for nothing");
+  const code = Object.fromEntries(Object.entries(files).filter(([path]) => !FIXTURE_HOLDERS.includes(path)));
+  assert.deepEqual(namedImporters(code), []);
   assert.deepEqual(pinnedRuns(files), []);
 });
 

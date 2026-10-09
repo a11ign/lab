@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { untrackedChangesetReason } from "../../../../scripts/changeset-untracked-check.mjs";
+import { untrackedChangesetReason } from "../../../../scripts/changeset-untracked-check.ts";
 
 test("an untracked changeset produces a message naming the real state", () => {
   const porcelain = "M  packages/evidence/package.json\n?? .changeset/zz-probe.md\n";

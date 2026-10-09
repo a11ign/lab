@@ -18,7 +18,7 @@ import { join, resolve } from "node:path";
 
 import { changedFiles } from "../../../guards/src/changed-files.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 

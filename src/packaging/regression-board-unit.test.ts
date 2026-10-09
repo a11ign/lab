@@ -16,7 +16,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { toolPath } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolPath } from "../../scripts/tool-source.ts";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const UNITS = join(ROOT, ".agent-org/units");

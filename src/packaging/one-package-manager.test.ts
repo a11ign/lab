@@ -50,7 +50,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { tempDir } from "../../../guards/src/test-tmp.mjs";
+import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
 import { npmCliInvocation, pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import { refusalFor } from "../../../../scripts/refuse-other-installers.mjs";

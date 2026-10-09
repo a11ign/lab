@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ensureRegressionLabel, fileOnce, fileThroughRowFile, regressionTitle, regressionBody, rowFileArgs, FILING_SESSION, REGRESSION_LABEL,
-} from "../../../../scripts/outsider/verdict-job.mjs";
+} from "../../../../scripts/outsider/verdict-job.ts";
 
 /** A fake `gh` over one label list: records every call, and `createFails` makes the create throw as a lost race does. */
 function fakeGh({ labels, createFails = false, createdBeforeFail = false }: { labels: string[]; createFails?: boolean; createdBeforeFail?: boolean }) {

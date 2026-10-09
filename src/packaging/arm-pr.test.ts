@@ -26,7 +26,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { toolModule, toolPath, toolUrl } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolPath, toolUrl } from "../../scripts/tool-source.ts";
 // #2046: the armed predicate now lives beside the hold predicate, in its own leaf module.
 const { armedQueryArgs, armedReason } = await toolModule("src/pr-armed-state.mjs");
 const {
@@ -508,7 +508,8 @@ test("#2046 PURE: armedReason names the state `armedFromApi` decided, and answer
 test("#2046 ONE PREDICATE, ONE MODULE: arm-pr reads the armed rule from `pr-armed-state.mjs` and spells "
   + "no copy of it -- the shape this row is the third instance of", () => {
   const source = stripComments(readFileSync(toolPath("src/arm-pr.mjs"), "utf8"));
-  assert.match(source, /from "\.\/pr-armed-state\.mjs"/,
+  // agent-org imports its sources by their `.ts` name since agent-org#435 (they were `.mjs`).
+  assert.match(source, /from "\.\/pr-armed-state\.ts"/,
     "the predicate is IMPORTED, the way `pr-hold-state.mjs` already is on the line above it");
   // #2391 NARROWED, NOT DELETED. The two proxies this test used to use -- the strings `mergeQueueEntry` and
   // `pullRequest(number` anywhere in the file -- stood in for "the armed rule is not re-spelled here", and the

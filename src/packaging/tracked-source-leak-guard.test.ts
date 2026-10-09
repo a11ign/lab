@@ -103,8 +103,8 @@ import assert from "node:assert/strict";
 import { readFileSync, openSync, readSync, closeSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { LEAK_PATTERNS, allLeaksIn } from "../../../guards/src/leak-patterns.mjs";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
+import { LEAK_PATTERNS, allLeaksIn } from "../../../guards/src/leak-patterns.ts";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard

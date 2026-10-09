@@ -22,17 +22,17 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { outsiderVerdict, outsiderRunTitle } from "../../../../scripts/outsider/verdict.mjs";
+import { outsiderVerdict, outsiderRunTitle } from "../../../../scripts/outsider/verdict.ts";
 import {
   filingPlan, jobDecision, readOutsiderRepository, regressionBody, regressionTitle, REGRESSION_LABEL,
-} from "../../../../scripts/outsider/verdict-job.mjs";
+} from "../../../../scripts/outsider/verdict-job.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const read = (path: string) => readFileSync(resolve(REPO, path), "utf8");
 const SCRIPTS: Record<string, string> = JSON.parse(read("package.json")).scripts;
 const WORKFLOWS = ".github/workflows";
 const GATE_WORKFLOW = `${WORKFLOWS}/registry-consumer-gate.yml`;
-const DRIVER = "scripts/outsider/verdict-job.mjs";
+const DRIVER = "scripts/outsider/verdict-job.ts";
 
 // ---- 1. the chains ---------------------------------------------------------------------------------------
 
@@ -109,7 +109,7 @@ function jobProblems(doc: Doc): string[] {
   const job = doc.jobs.outsider;
   if (!job) return [...problems, "the workflow has no `outsider` job"];
   const runs = (job.steps ?? []).map((step) => step.run ?? "").join("\n");
-  if (!/outsider:verdict|scripts\/outsider\/verdict-job\.mjs/.test(runs)) problems.push("the `outsider` job never runs the verdict reader");
+  if (!/outsider:verdict|scripts\/outsider\/verdict-job\.ts/.test(runs)) problems.push("the `outsider` job never runs the verdict reader");
   const granted = (job.permissions ?? {}) as Record<string, string>;
   if (granted.issues !== "write") problems.push("the `outsider` job does not hold `issues: write`, which filing the row needs");
   for (const [scope, level] of Object.entries(granted)) {
@@ -206,13 +206,13 @@ test("the regression row says the version is already published, that no publish 
   assert.equal(REGRESSION_LABEL, "regression");
 });
 
-/** The command itself, driven from a fixture of the four facts: it never reaches the network and never files. */
+/** The command itself (`node --import tsx`, as `outsider:verdict` runs it since #4274), driven from a fixture of the four facts: it never reaches the network and never files. */
 function runDriver(fixture: object): { code: number; out: string } {
   const dir = mkdtempSync(join(tmpdir(), "outsider-verdict-wired-"));
   try {
     const file = join(dir, "facts.json");
     writeFileSync(file, JSON.stringify(fixture));
-    const out = execFileSync(process.execPath, [resolve(REPO, DRIVER)], { encoding: "utf8", env: { ...process.env, A11Y_OUTSIDER_FACTS: file } });
+    const out = execFileSync(process.execPath, ["--import", "tsx", resolve(REPO, DRIVER)], { encoding: "utf8", env: { ...process.env, A11Y_OUTSIDER_FACTS: file } });
     return { code: 0, out };
   } catch (error) {
     const failure = error as { status?: number; stdout?: string; stderr?: string };
@@ -241,6 +241,13 @@ test("the command's exit is 1 for a fact it cannot read, never 0: a malformed ve
 
 const REPOSITORY_FILE = "scripts/outsider/repository.json";
 
+/**
+ * `release.yml` names the outside repository twice since #4359 (`scope:` of the Octo STS mint and `OUTSIDE:` of its write): the job that writes the
+ * outside repository's pin must say where it writes, and a workflow cannot read `repository.json`. The core pins those two literals EQUAL to
+ * `repository.json` (`packages/guards/src/outsider-pin-refresh.test.ts`), which is what keeps this a second spelling and not a second declaration.
+ */
+const WRITES_THE_OUTSIDE_PIN = ["release.yml"];
+
 test("#3184: the outside repository is declared ONCE, in repository.json, and no workflow names it literally", () => {
   const declared = JSON.parse(read(REPOSITORY_FILE));
   assert.deepEqual(Object.keys(declared), ["repository"], "one key: a second field is a second place to drift");
@@ -252,8 +259,11 @@ test("#3184: the outside repository is declared ONCE, in repository.json, and no
   const workflows = readdirSync(resolve(REPO, WORKFLOWS)).filter((f) => /\.ya?ml$/.test(f));
   assert.ok(workflows.length > 0, "the scan found workflows to read");
   assert.ok(workflows.includes("registry-consumer-gate.yml"), "the scan reaches the workflow that runs the job");
-  const offenders = workflows.filter((f) => read(`${WORKFLOWS}/${f}`).includes(declared.repository));
+  const offenders = workflows.filter((f) => !WRITES_THE_OUTSIDE_PIN.includes(f) && read(`${WORKFLOWS}/${f}`).includes(declared.repository));
   assert.deepEqual(offenders, []);
+  for (const f of WRITES_THE_OUTSIDE_PIN) {
+    assert.ok(read(`${WORKFLOWS}/${f}`).includes(declared.repository), `${f} must still name it, or the exemption outlived its reason`);
+  }
 });
 
 test("a name that is not an owner/name is REFUSED rather than read as some other repository", () => {
@@ -288,7 +298,7 @@ test("#3184: RELEASE.md's rehearsal section no longer frames the rehearsal as a 
   assert.doesNotMatch(section, /the release waits on the reading/);
   assert.match(section, /docs\/adr\/0042-the-v1-rehearsal-splits-into-an-automated-outsider-job-and-a-weekly-review\.md/);
   const links = [...section.matchAll(/\]\((docs\/[^)#]+|scripts\/[^)#]+)\)/g)].map((m) => m[1]);
-  for (const target of ["docs/weekly-review.md", "scripts/weekly-review.mjs"]) {
+  for (const target of ["docs/weekly-review.md", "scripts/weekly-review.ts"]) {
     assert.ok(links.includes(target), `the section links ${target}`);
   }
   for (const link of links) assert.ok(existsSync(resolve(REPO, link)), `${link} is a file that exists`);

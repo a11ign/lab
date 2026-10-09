@@ -29,7 +29,7 @@ const { refusalCause } = await toolModule("src/settle-closed-status.mjs");
 const { moveProjectStatus } = await toolModule("src/row-claim.mjs");
 const { scopedStatus } = await toolModule("src/board-snapshot.mjs");
 import { stripComments } from "@a11ign/evidence/source-text";
-import { toolModule, toolPath, toolUrl } from "../../../../scripts/agent-org-newest-tag.mjs";
+import { toolModule, toolPath, toolUrl } from "../../scripts/tool-source.ts";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
 // finding again the moment it has not. Proving that with a re-implemented predicate would prove nothing
@@ -584,9 +584,10 @@ test("#1360 BOTH defaults settle with LIVE_SETTLE_DEPS: the per-merge effects an
   // Read from CODE with comments stripped, anchored to the call shape only code can have. Measured before this test:
   // the sweep's own inline default could drop currentStatus and every close-rows test stayed green.
   const code = (rel: string) => stripComments(readFileSync(toolPath(rel), "utf8"));
-  assert.match(code("src/close-rows-for-merged-pr.mjs"), /settle:\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
+  // `(n: number)`: agent-org's sources are typed `.ts` since agent-org#435, so the parameter carries an annotation the `.mjs` did not.
+  assert.match(code("src/close-rows-for-merged-pr.mjs"), /settle:\s*\(\s*n(?::\s*number)?\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
     "liveClosureEffects' settle must use the one definition");
-  assert.match(code("src/close-rows-sweep.mjs"), /settle\s*=\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
+  assert.match(code("src/close-rows-sweep.mjs"), /settle\s*=\s*\(\s*n(?::\s*number)?\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
     "closeOnePr's default settle must use the one definition");
   for (const rel of ["src/close-rows-for-merged-pr.mjs", "src/close-rows-sweep.mjs"]) {
     assert.doesNotMatch(code(rel), /settleClosedStatus\(n,\s*\{/, `${rel} builds its own settle deps inline again`);

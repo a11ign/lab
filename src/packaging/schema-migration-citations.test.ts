@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 // report also runs. The specific-key rule below is #908's and stays here.
 import {
   HISTORY_DOC, sourceFiles,
-} from "../../../../scripts/doc-checks/schema-migration-citations.mjs";
+} from "../../../../scripts/doc-checks/schema-migration-citations.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 

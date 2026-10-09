@@ -1,4 +1,4 @@
-// no-token: gh -- spawns `scripts/verify.mjs` against a STUB tool checkout in a temp directory; the diff is empty, so no step, no `gh` and no network is reached
+// no-token: gh -- spawns `scripts/verify.ts` against a STUB tool checkout in a temp directory; the diff is empty, so no step, no `gh` and no network is reached
 /**
  * #3536 (done-when 1 and 4): `pnpm run verify` TAKES ONE OF THE HOST'S SUITE SLOTS BEFORE ITS FIRST STEP, FROM THE TOOL'S ONE IMPLEMENTATION.
  *
@@ -25,14 +25,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const VERIFY = join(REPO, "scripts/verify.mjs");
+// verify.mjs became verify.ts in #4273/#4274 and runs under tsx, so it is spawned with `--import tsx` and the re-run it hands the module carries that flag too.
+const VERIFY = join(REPO, "scripts/verify.ts");
 const SLOTTED_EXIT = 41;
 
 // <scratch-dirs>
 /**
  * THE TREES THIS FILE MAKES GO ON EVERY EXIT A PROCESS CAN CHOOSE, A KILL BY SIGTERM OR SIGINT INCLUDED (#3856, incident #3846, 1a). A `finally` does not run
  * when a signal ends the process, so a run killed mid-test left its tool checkout in `/tmp`. SIGKILL reaches no handler: what survives it is the janitor's.
- * It is made here, not taken from `scripts/verify.mjs`'s `makeScratch`, because an import of that file is a new lab-to-core edge for the layer-edges baseline.
+ * It is made here, not taken from `scripts/verify.ts`'s `makeScratch`, because an import of that file is a new lab-to-core edge for the layer-edges baseline.
  */
 const scratch = new Set<string>();
 const removeScratch = (dir: string) => { rmSync(dir, { recursive: true, force: true }); scratch.delete(dir); };
@@ -71,7 +72,7 @@ function toolCheckout(withModule: boolean) {
 }
 
 function verify(args: string[], env: Record<string, string | undefined>) {
-  const result = spawnSync(process.execPath, [VERIFY, ...args], { cwd: REPO, encoding: "utf8", env: { ...process.env, CI: undefined, STUB_SLOT: undefined, ...env } });
+  const result = spawnSync(process.execPath, ["--import", "tsx", VERIFY, ...args], { cwd: REPO, encoding: "utf8", env: { ...process.env, CI: undefined, STUB_SLOT: undefined, ...env } });
   return { status: result.status, out: `${result.stdout}${result.stderr}` };
 }
 
@@ -96,7 +97,7 @@ test("CONTROL: the same verify, given the slot, runs itself inside it and reache
     const [call, ...rest] = calls();
     assert.deepEqual(rest, [], "the re-run verify is INSIDE the slot and does not queue behind itself");
     assert.equal(call.argv.at(-1), "--base=HEAD", "it re-runs ITSELF with its own arguments");
-    assert.match(call.argv.join(" "), /scripts\/verify\.mjs/);
+    assert.match(call.argv.join(" "), /scripts\/verify\.ts/);
     assert.match(call.label, /pnpm run verify/);
   } finally {
     done();
@@ -125,12 +126,13 @@ test("a slot refusal (a missing flock, ionice or nice) is verify's refusal, with
   }
 });
 
-test("a tool checkout WITHOUT `suite-slots.mjs` is a refusal that names the file: never a silent run without the limit", () => {
+test("a tool checkout WITHOUT `suite-slots.mjs` or `.ts` is a refusal that names the file: never a silent run without the limit", () => {
   const { tool, calls, done } = toolCheckout(false);
   try {
     const run = verify(["--base=HEAD"], { A11Y_AGENT_ORG_REPO: tool });
     assert.equal(run.status, 2);
-    assert.match(run.out, /suite-slots\.mjs is missing, so verify is NOT run/);
+    // #4404 (d221b906d): verify accepts the module as `.mjs` or `.ts`, so the refusal names both spellings.
+    assert.match(run.out, /suite-slots\.\{mjs,ts\} is missing, so verify is NOT run/);
     assert.deepEqual(calls(), []);
   } finally {
     done();
