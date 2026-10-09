@@ -11,12 +11,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { assertOneBrowserAcross, EXIT_FLEET_INCONSISTENT } from "./capture-fleet-guard.mjs";
 import {
-  appendRunRecord, buildRunRecord, captureRunsFile, CAPTURE_RUNS_FILE, EXCLUSION_REASONS,
+  absentFrom, appendRunRecord, buildRunRecord, captureRunsFile, CAPTURE_RUNS_FILE, EXCLUSION_REASONS,
 } from "./capture-run-record.mjs";
 
 /** Built from octets, as `capture-fleet-guard.test.ts` does: a written-out private address is refused by the leak guard. */
@@ -156,4 +157,27 @@ test("appendRunRecord writes one JSON line per run to runs/capture-runs.jsonl an
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("absentFrom: a box that returned nothing is asleep, one that answered or refused is down, and a participant is neither", async () => {
+  const outcomes: Record<string, string> = { [A]: "ready", [B]: "no-answer", [C]: "refused" };
+  const probed: string[] = [];
+  const probe = async (url: string) => { probed.push(url); return { outcome: outcomes[url]! }; };
+  assert.deepEqual(await absentFrom({ named: [A, B, C], participants: [A], probe }),
+    [{ worker: B, reason: "asleep" }, { worker: C, reason: "down" }]);
+  assert.deepEqual(probed, [B, C], "the participant is not probed again");
+  // CONTROL: the same fleet with everyone taking part names nobody, so the list above is not always non-empty.
+  assert.deepEqual(await absentFrom({ named: [A, B, C], participants: [A, B, C], probe }), []);
+  // And `ready` for an absent box is `down` (it came up after the wake gave up on it), never `asleep`.
+  assert.deepEqual(await absentFrom({ named: [A], participants: [], probe }), [{ worker: A, reason: "down" }]);
+});
+
+// THE CAPTURE SCRIPT CANNOT BE IMPORTED HERE (its closure reaches the corpus), so its wiring is read as TEXT. That is
+// a weak instrument and it is used only for the one thing it can say: the record goes to the check BEFORE the run
+// and not to the one after it, which would count one run twice. Its positive control is the first assertion, and
+// both directions were run by hand: dropping the argument, and adding it to the END check, each fail one assertion.
+test("capture-real-pages hands the record to the check before the run, and not to the one after it", () => {
+  const source = readFileSync(fileURLToPath(new URL("./capture-real-pages.mjs", import.meta.url)), "utf8");
+  assert.match(source, /assertOneBrowserAcross\(workers, "before the run", runRecord\)/);
+  assert.match(source, /assertOneBrowserAcross\(workers, "by the END of the run"\)/);
 });

@@ -49,6 +49,25 @@ export function buildRunRecord({ startedAt, readyCount, participants, excluded }
   return { startedAt, readyCount, participants: [...participants], excluded: excluded.map(({ worker, reason }) => ({ worker, reason })) };
 }
 
+/**
+ * Why each named worker that is not in `participants` is not, for the ones that never reached the guard.
+ *
+ * Told apart by what ONE `/health` probe says, with `fleet-wake`'s own words: a box that returned NOTHING
+ * (`no-answer`: off, asleep, or the path dropped it) is `asleep`; one that answered, or refused the connection,
+ * is up and not usable, which is `down`. The probe is PASSED IN (`fleet-wake`'s `probeWorker`), so this file
+ * keeps no dependency on `@a11ign/control` and stays importable by the acceptance job.
+ *
+ * @param {{ named: string[], participants: string[], probe: (url: string) => Promise<{ outcome: string }> }} fleet
+ * @returns {Promise<Exclusion[]>}
+ */
+export async function absentFrom({ named, participants, probe }) {
+  const absent = named.filter((worker) => !participants.includes(worker));
+  return Promise.all(absent.map(async (worker) => ({
+    worker,
+    reason: /** @type {ExclusionReason} */ ((await probe(worker)).outcome === "no-answer" ? "asleep" : "down"),
+  })));
+}
+
 /** @param {string} dir */
 function makeDirectory(dir) {
   mkdirSync(dir, { recursive: true });
