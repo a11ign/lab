@@ -84,7 +84,7 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
 
 /** The one module that may know the directory's name. */
-const SOURCE_OF_TRUTH = "packages/control/src/control-plane-checkout.mjs";
+const SOURCE_OF_TRUTH = "packages/control/src/control-plane-checkout.ts";
 
 /**
  * Entering a directory, in the two forms this tree uses: a `cd` inside a command string, and
@@ -809,7 +809,7 @@ test("an unclassified home-root name fails with a one-line remedy naming the map
 
 test("both consumers reach the checkout through the source of truth, and neither holds its own literal "
   + "-- the two files that held two shapes of one fact, with only one of them restored", () => {
-  for (const consumer of ["packages/control/src/fleet-playbook.mjs", "packages/control/src/lab-pipeline.mjs"]) {
+  for (const consumer of ["packages/control/src/fleet-playbook.ts", "packages/control/src/lab-pipeline.ts"]) {
     const source = read(consumer);
     assert.match(source, /from "\.\/control-plane-checkout\.mjs"/,
       `${consumer} no longer imports the source of truth. If it stopped entering the checkout, remove `

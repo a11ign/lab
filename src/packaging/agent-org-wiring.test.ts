@@ -844,7 +844,7 @@ test("[44] #2901: the chairman-messaging units are listed exactly when a11ign's 
 
 // --- a11ign's own units -------------------------------------------------------------------------------------------------------------
 
-const WATCHERS = { lab: "packages/control/src/lab-watch.mjs", fleet: "packages/control/src/fleet-watch.mjs" };
+const WATCHERS = { lab: "packages/control/src/lab-watch.ts", fleet: "packages/control/src/fleet-watch.ts" };
 const ownServices = () => projectDeclaration().units.own.filter((name) => name.endsWith(".service"));
 const ownTimers = () => projectDeclaration().units.own.filter((name) => name.endsWith(".timer"));
 const scriptsOfRoot = () => packageScripts(ROOT);

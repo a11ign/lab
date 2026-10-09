@@ -3064,7 +3064,7 @@ test("#2027: a future `Not-before:` takes the row out -- and today's date puts i
 
 test("#2027: a live `Fleet-hold-until:` takes the row out -- and a lapsed one puts it back", () => {
   // THE FOURTH CONDITION, and the only one this population has. It was declared in
-  // `packages/control/src/fleet-playbook.mjs` and therefore unreadable by `waiting-condition.mjs`, which
+  // `packages/control/src/fleet-playbook.ts` and therefore unreadable by `waiting-condition.mjs`, which
   // is #2005's defect one field over -- the same reason the fleet batch could not honour its own order.
   const live = gatedRow(1768, { body: "Fleet-hold-until: 2026-09-23T18:00:00Z" });
   assert.deepEqual(fleetBatchRows([live], CLOCK), [],

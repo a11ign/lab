@@ -99,7 +99,7 @@ const GUARDED_2155 = [
   "packages/lab/src/training/README.md",
   "packages/lab/src/training/capture-cache.mjs",
   "packages/cli/src/cli.ts",
-  "packages/control/src/fleet-status.mjs",
+  "packages/control/src/fleet-status.ts",
 ];
 
 /**

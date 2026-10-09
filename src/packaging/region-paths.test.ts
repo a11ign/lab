@@ -767,7 +767,7 @@ packages/lab/src/training/README.md
 packages/lab/src/training/capture-cache.mjs
 packages/nvda-worker/CLAUDE.md
 packages/cli/src/cli.ts
-packages/control/src/fleet-status.mjs
+packages/control/src/fleet-status.ts
 packages/lab/src/gates/corpus-size-figures.test.ts
 ~~~
 
@@ -809,7 +809,7 @@ test("#2233 REGRESSION: #2230's real Region stops declaring the workflow that ma
 test("#2233 CONTROL: #2155's real Region keeps exactly its six fenced paths -- the trim is not too wide", () => {
   assert.deepEqual(declaredRegionFiles(ISSUE_2155_REGION), [
     "packages/lab/src/training/README.md", "packages/lab/src/training/capture-cache.mjs",
-    "packages/nvda-worker/CLAUDE.md", "packages/cli/src/cli.ts", "packages/control/src/fleet-status.mjs",
+    "packages/nvda-worker/CLAUDE.md", "packages/cli/src/cli.ts", "packages/control/src/fleet-status.ts",
     "packages/lab/src/gates/corpus-size-figures.test.ts",
   ]);
 });

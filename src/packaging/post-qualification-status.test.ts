@@ -23,7 +23,7 @@ import { gateVerdict } from "../gates/verdict.ts";
 import { QUALIFICATION_CONTEXT as READ_CONTEXT } from "../../../../scripts/release-reads-qualification.ts";
 import {
   EXIT, parseArgs, postQualificationStatus, renderResult, requireFullSha,
-} from "../../../control/src/post-qualification-status.mjs";
+} from "../../../control/src/post-qualification-status.ts";
 
 const SHA = "308b2de5bbd8a1f0c4e7d9b3a6f2e1d0c9b8a7f6";
 const GITHUB_DESCRIPTION_LIMIT = 140;

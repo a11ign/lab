@@ -15,7 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   EXIT, KIND, VERDICT, checkoutSource, controlUnitDrift, deriveShippedUnits, exitCodeFor, parseHostListing,
-} from "../../../control/src/control-unit-drift.mjs";
+} from "../../../control/src/control-unit-drift.ts";
 
 const TIMER = "a11y-fleet-auto-off.timer";
 const SERVICE = "a11y-fleet-auto-off.service";

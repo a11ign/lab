@@ -17,7 +17,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { advanceCaptures, captureTimes } from "../../../control/src/fleet-watch.mjs";
+import { advanceCaptures, captureTimes } from "../../../control/src/fleet-watch.ts";
 import { toolModule } from "../../scripts/tool-source.ts";
 const { orgHealthNow, readFleetCaptures, fleetWaitingFacts, stalledPrFacts, stallReasonOf } = await toolModule("src/work-gate.mjs");
 const { overdueReading } = await toolModule("src/org-health.mjs");
