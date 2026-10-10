@@ -339,6 +339,10 @@ test("buildConsumerGateWorkflow: check-pin's ancestor check names the SAME sha p
   assert.match(workflow, new RegExp(`merge-base --is-ancestor ${pinnedInStep} "\\$\\{\\{ github\\.sha \\}\\}"`));
 });
 
+// The generator is `scripts/generate-consumer-gate.ts`. The core's generated workflow ran it under `--import tsx` after #4274 and runs it as bare `node` since Node 24
+// strips types; the flag is not the contract, the `--check` of THIS script is, so both spellings are the step.
+const CHECK_PIN_CHECK = /node (?:--import tsx )?scripts\/generate-consumer-gate\.ts --check/;
+
 test("buildConsumerGateWorkflow: check-pin checks ANCESTRY, not exact equality against github.sha -- "
   + "exact equality has the identical unsatisfiable shape --check's old sha comparison did (regenerate "
   + "at commit A, commit that regeneration as B, and github.sha is always B while the pin always names "
@@ -350,7 +354,7 @@ test("buildConsumerGateWorkflow: check-pin checks ANCESTRY, not exact equality a
   assert.match(workflow, /git merge-base --is-ancestor/,
     "check-pin must ask whether the pin is an ancestor of github.sha, which a regenerate-then-commit "
     + "sequence can actually satisfy");
-  assert.match(workflow, /node --import tsx scripts\/generate-consumer-gate\.ts --check/,
+  assert.match(workflow, CHECK_PIN_CHECK,
     "check-pin must also confirm the committed file still matches what the generator produces now");
 });
 
@@ -369,8 +373,6 @@ test("#3788: check-pin asks whether the CONTENT is stale, not whether a path tha
 // --- #3828: `--check` imports repo-identity.mjs, which needs $AGENT_ORG_TOOL, and only the resolver sets it on a runner ---
 
 const CHECK_PIN_RESOLVER = /node scripts\/agent-org-newest-tag\.ts --dest="\$RUNNER_TEMP\/agent-org"/;
-// #4274: the generator is `scripts/generate-consumer-gate.ts`, run under tsx; the resolver stays an `.mjs` (it runs before any install).
-const CHECK_PIN_CHECK = /node --import tsx scripts\/generate-consumer-gate\.ts --check/;
 
 function checkPinBlockOf(workflow: string): string {
   return workflow.slice(workflow.indexOf("  check-pin:"), workflow.indexOf("  a11y:"));
@@ -408,7 +410,7 @@ test("#3828 CONTROL: the ordering question answers NO for a job with the resolve
 
 test("#3828: `--check` is not wrapped in a message that claims a mismatch the run did not measure", () => {
   const block = checkPinBlockOf(buildConsumerGateWorkflow(GENERATED_JOBS));
-  assert.match(block, /^ {8}run: node --import tsx scripts\/generate-consumer-gate\.ts --check$/m,
+  assert.match(block, new RegExp(`^ {8}run: ${CHECK_PIN_CHECK.source}$`, "m"),
     "the step is the bare command, so a crash reaches the log as itself and the step fails with its exit code");
   assert.doesNotMatch(block, /does not match what README/, "only `--check`'s own STALE line may say the file is stale");
 });

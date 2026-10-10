@@ -216,6 +216,7 @@ test("the choke point: `assert-glob-not-empty.ts --run` prints which cap path it
 test("the pre-push hook starts its test runner through the cap module, and the scan that says so finds the line it looks for", () => {
   const runners = readFileSync(PRE_PUSH, "utf8").split("\n").filter((line) => !line.trimStart().startsWith("#") && /\btsx --test\b/.test(line));
   assert.ok(runners.length >= 1, "POSITIVE CONTROL: the hook does start a runner, so an empty list here would be the scan finding nothing");
-  const bare = runners.filter((line) => !line.includes("test-memory-cap.ts"));
+  // The cap module is the toolchain's `dist/lib/test-memory-cap.mjs` since the core's #4590 (it was a `test-memory-cap.ts`): either spelling is the cap.
+  const bare = runners.filter((line) => !/\btest-memory-cap\.(?:ts|mjs)\b/.test(line));
   assert.deepEqual(bare, [], "a runner started without the cap");
 });

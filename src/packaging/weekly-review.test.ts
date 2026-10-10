@@ -188,8 +188,8 @@ test("the workflow is workflow_dispatch only, and permissions that write issues 
 test("the filing step carries row-file's printed launch override with a non-blank reason", () => {
   const stepEnv = (yaml: string) => {
     const workflow = parseYaml(yaml) as { jobs: { file: { steps: { run?: string; env?: Record<string, string> }[] } } };
-    // weekly-review.mjs became .ts in #4273/#4274; the workflow step runs it under tsx (ca9629934).
-    return workflow.jobs.file.steps.find((step) => step.run === "node --import tsx scripts/weekly-review.ts")?.env ?? {};
+    // weekly-review.mjs became .ts in #4273/#4274; the step ran it under tsx (ca9629934) and runs it as bare `node` since the core's Node 24 strips types.
+    return workflow.jobs.file.steps.find((step) => /^node (?:--import tsx )?scripts\/weekly-review\.ts$/.test(step.run ?? ""))?.env ?? {};
   };
   const reason = stepEnv(read(".github/workflows/weekly-review.yml")).A11Y_POLICY_LAUNCH_REASON;
   assert.ok(typeof reason === "string" && reason.trim() !== "", "the filing step has no A11Y_POLICY_LAUNCH_REASON");

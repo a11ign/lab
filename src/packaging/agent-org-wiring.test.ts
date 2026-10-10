@@ -729,7 +729,8 @@ test("[47] #2230: each service runs its watcher WITH `--post`, and the command r
     const service = unitText(`a11ign-${name}-watch.service`);
     assert.match(service, new RegExp(`^ExecStart=%h/\\.local/bin/pnpm run ${name}:watch -- --post$`, "m"),
       "without --post the unit is installed, enabled, active, exits 0 or 1 every hour and writes to the journal alone");
-    const command = execCommands(service).find((candidate: string) => candidate.includes("watch")) as string;
+    // By the npm script, not by "watch": a unit that imports the watcher first (`ExecStartPre=`, #4693) has two commands naming it, and the first is not the one that runs it.
+    const command = execCommands(service).find((candidate: string) => candidate.includes(`${name}:watch`)) as string;
     assert.deepEqual(entriesFromCommand(command, { repoRoot: ROOT, scripts: scriptsOfRoot() }), [join(ROOT, script)],
       "a renamed or missing npm script leaves the unit syntactically perfect and starting nothing");
     // THE EXIT CONTRACT (docs/gate-exit-codes.md): ATTENTION (1) is a posted finding, not a failed unit; CANNOT_ASK (2) must stay a failed one.
