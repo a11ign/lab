@@ -441,3 +441,112 @@ test("#2063: no REPORTED_ONLY field is also a MUST_MATCH field, or the exemption
   // than an artefact of one list having gone missing.
   assert.ok(MUST_MATCH.length > 0 && REPORTED_ONLY.length > 0);
 });
+
+// ---------------------------------------------------------------------------------------------------
+// #4448: THE GUARD CONVERGES THE ODD BOXES BEFORE IT REFUSES, THEN RE-READS.
+//
+// Each case drives the real guard with a probe whose answer CHANGES after the converge fake ran, so a
+// guard that "converged" without re-reading would still see the split and these would catch it.
+// ---------------------------------------------------------------------------------------------------
+import { fleetConvergeCommands } from "./capture-fleet-guard.mjs";
+
+const BUILD_NEW = "Microsoft Windows 11 Pro 10.0.22621.4317";
+const BUILD_OLD = "Microsoft Windows 11 Pro 10.0.22621.3880";
+const BUILD_AHEAD = "Microsoft Windows 11 Pro 10.0.22621.5000";
+
+type Box = { windowsVersion?: string, displayMode?: string, busy?: boolean };
+const boxHealth = ({ windowsVersion = BUILD_NEW, displayMode = "1024x768", busy = false }: Box) => ({
+  ...health(EDGE_151, { with: { windowsVersion, displayMode } }), busy,
+});
+
+/** A fleet whose boxes are repaired by the fake: `fix` says what the action does to that box's state. */
+async function runConverging(boxes: Record<number, Box>, { repairs = true } = {}) {
+  const state = { ...boxes };
+  const calls: string[] = [];
+  const reported: string[] = [];
+  const exits: number[] = [];
+  await assertOneBrowserAcross(Object.keys(state).map((o) => workerUrl(Number(o))), "before the run", {
+    probe: async (url: string) => boxHealth(state[Number(url.split(".")[3].split(":")[0])]),
+    report: (text: string) => void reported.push(text),
+    exit: (code: number) => void exits.push(code),
+    converge: {
+      reassertDisplay: async (worker, mode) => {
+        calls.push(`display ${worker} ${mode}`);
+        if (repairs) state[Number(worker.split(".")[3].split(":")[0])].displayMode = mode;
+      },
+      patch: async (worker) => {
+        calls.push(`patch ${worker}`);
+        if (repairs) state[Number(worker.split(".")[3].split(":")[0])].windowsVersion = BUILD_NEW;
+      },
+    },
+  });
+  return { calls, exits, reported: reported.join("") };
+}
+
+test("a displayMode mismatch re-asserts the display and, once the re-read agrees, the guard passes", async () => {
+  const { calls, exits } = await runConverging({ 4: {}, 5: {}, 6: { displayMode: "640x480" } });
+  assert.deepEqual(calls, [`display ${workerUrl(6)} 1024x768`]);
+  assert.deepEqual(exits, [], "converged, so the run goes on");
+});
+
+test("a matched fleet runs no convergence at all (negative control)", async () => {
+  const { calls, exits } = await runConverging({ 4: {}, 5: {} });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(exits, []);
+});
+
+test("a build-behind idle box is patched, naming only that box", async () => {
+  const { calls, exits } = await runConverging({ 4: {}, 5: {}, 6: { windowsVersion: BUILD_OLD } });
+  assert.deepEqual(calls, [`patch ${workerUrl(6)}`]);
+  assert.deepEqual(exits, []);
+});
+
+test("a build-behind box that is busy is not patched, and the run stops with 3", async () => {
+  const { calls, exits, reported } = await runConverging({ 4: {}, 5: {}, 6: { windowsVersion: BUILD_OLD, busy: true } });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(exits, [3]);
+  assert.match(reported, /FLEET INCONSISTENT/);
+});
+
+test("a box AHEAD of the fleet's build is never patched, is named, and still exits 3", async () => {
+  const { calls, exits, reported } = await runConverging({ 4: {}, 5: {}, 6: { windowsVersion: BUILD_AHEAD } });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(exits, [3]);
+  assert.match(reported, /AHEAD of the fleet's build/);
+});
+
+test("a re-read that still disagrees exits 3 and names each box, field, value, fleet value and the attempt", async () => {
+  const { calls, exits, reported } = await runConverging(
+    { 4: {}, 5: {}, 6: { displayMode: "640x480" }, 7: { windowsVersion: BUILD_OLD } }, { repairs: false });
+  assert.deepEqual([...calls].sort(), [`display ${workerUrl(6)} 1024x768`, `patch ${workerUrl(7)}`]);
+  assert.deepEqual(exits, [3]);
+  assert.match(reported, new RegExp(`${workerUrl(6)} displayMode=640x480 \\(fleet 1024x768\\): ran reassertDisplay`));
+  assert.match(reported, new RegExp(`${workerUrl(7)} windowsVersion=${BUILD_OLD} \\(fleet ${BUILD_NEW}\\): ran patch`));
+});
+
+test("a browser split is not something the guard repairs: nothing is run and it exits 3", async () => {
+  const exits: number[] = [];
+  const calls: string[] = [];
+  const byWorker = { [workerUrl(4)]: health(EDGE_151), [workerUrl(5)]: health(EDGE_150) };
+  await assertOneBrowserAcross(Object.keys(byWorker), "before the run", {
+    probe: async (url: string) => byWorker[url], report: () => {}, exit: (c: number) => void exits.push(c),
+    converge: { reassertDisplay: async () => void calls.push("display"), patch: async () => void calls.push("patch") },
+  });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(exits, [3]);
+});
+
+test("the production binding's argv: fleet:patch --apply --limit=<name>, and the display pin on one box", async () => {
+  const ran: string[][] = [];
+  const binding = fleetConvergeCommands({
+    cwd: "/core", nameOf: (url) => (url === workerUrl(6) ? "a11y-worker-6" : null),
+    run: async (argv, cwd) => void ran.push([cwd, ...argv]),
+  });
+  await binding.patch(workerUrl(6));
+  await binding.reassertDisplay(workerUrl(6), "1024x768");
+  assert.deepEqual(ran, [
+    ["/core", "npm", "run", "fleet:patch", "--", "--apply", "--limit=a11y-worker-6"],
+    ["/core", "npm", "run", "fleet:provision", "--", "--display-mode=1024x768", "--limit=a11y-worker-6"],
+  ]);
+  await assert.rejects(binding.patch(workerUrl(9)), /no inventory name known/);
+});
