@@ -82,15 +82,21 @@ const FULL_SHA = /^[0-9a-f]{40}$/;
 const runsOnPush = (step: Step): boolean =>
   step.if === undefined || /github\.event_name == 'push'/.test(step.if) || !/workflow_dispatch|^\s*(\$\{\{\s*)?false\b/.test(step.if);
 
+/**
+ * `node` runs a `.ts` script itself on Node 24, and the core dropped the `--import tsx` loader from its workflows' `node` calls (#4597): a predicate that
+ * names only the old spelling found none of the three guards below once the core moved, and 18 tests read red for it. Both spellings are the same guard.
+ */
+const NODE = String.raw`node (?:--import tsx )?`;
+
 /** Each guard that must be a step of the `guards` job, as a predicate over one step, found by what it DOES. */
 const GUARDS: Record<string, (step: Step) => boolean> = {
   "access-check": (step) => /config\.json/.test(step.run ?? "") && /\.access/.test(step.run ?? "") && /!=\s*"public"/.test(step.run ?? ""),
-  "manifest-repository-check": (step) => /node --import tsx scripts\/manifest-repository-check\.ts/.test(step.run ?? ""),
+  "manifest-repository-check": (step) => new RegExp(`${NODE}scripts/manifest-repository-check\\.ts`).test(step.run ?? ""),
   "packed-install-check": (step) => /pnpm run gate:isolation/.test(step.run ?? ""),
   "provenance-request": (step) => step.env?.NPM_CONFIG_PROVENANCE === "true" && /release-publish-rehearsal\.ts/.test(step.run ?? ""),
   "release-gate-ci": (step) => /pnpm run release:gate:ci/.test(step.run ?? ""),
-  "gate-scope-statement": (step) => /node --import tsx scripts\/release-gate-scope\.ts/.test(step.run ?? ""),
-  "consumer-gate-current": (step) => /node --import tsx scripts\/generate-consumer-gate\.ts --check/.test(step.run ?? ""),
+  "gate-scope-statement": (step) => new RegExp(`${NODE}scripts/release-gate-scope\\.ts`).test(step.run ?? ""),
+  "consumer-gate-current": (step) => new RegExp(`${NODE}scripts/generate-consumer-gate\\.ts --check`).test(step.run ?? ""),
   "hold-3126": (step) => step.env?.A11Y_CHECK_RELEASE_HOLD === "1",
   "never-older-than-the-registry": (step) =>
     /steps\.readings\.outputs\.readings/.test(JSON.stringify(step.env ?? {})) && /process\.exit\(1\)/.test(step.run ?? "") && /behind/.test(step.run ?? ""),
@@ -524,6 +530,28 @@ test("POSITIVE CONTROL: each guard step deleted from the guards job is refused, 
     const found = names(refusals(withoutGuard(name))).filter((property) => property.startsWith("guard-"));
     assert.deepEqual(found, [`guard-${name}`], `deleting ${name} must be refused as that guard`);
   }
+});
+
+test("POSITIVE CONTROL (#4597): a guard run with `node` and one run with `node --import tsx` are the same guard, and a step that runs a different script is not it", () => {
+  const spelled = (loader: boolean): Workflow => {
+    const workflow = clone();
+    for (const step of workflow.jobs[GUARDS_JOB].steps!) {
+      if (step.run === undefined) continue;
+      const bare = step.run.replaceAll("node --import tsx ", "node ");
+      step.run = loader ? bare.replaceAll("node scripts/", "node --import tsx scripts/") : bare;
+    }
+    return workflow;
+  };
+  const scripts = ["manifest-repository-check", "release-gate-scope", "generate-consumer-gate"];
+  for (const loader of [false, true]) {
+    const workflow = spelled(loader);
+    const runs = workflow.jobs[GUARDS_JOB].steps!.map((step) => step.run ?? "").join("\n");
+    for (const script of scripts) assert.ok(runs.includes(`${loader ? "node --import tsx " : "node "}scripts/${script}.ts`), `the control rewrote the ${script} call (loader: ${loader})`);
+    assert.deepEqual(refusals(workflow), [], `both spellings of the node call keep the guards (loader: ${loader})`);
+  }
+  const swapped = clone();
+  for (const step of swapped.jobs[GUARDS_JOB].steps!) step.run = step.run?.replaceAll("scripts/release-gate-scope.ts", "scripts/something-else.ts");
+  assert.deepEqual(names(refusals(swapped)), ["guard-gate-scope-statement"]);
 });
 
 test("POSITIVE CONTROL: a guard step moved to a dispatch-only `if` is refused as keeping it off the publishing event", () => {
