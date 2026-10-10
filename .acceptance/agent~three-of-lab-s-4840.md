@@ -2,6 +2,8 @@ Closes a11ign/a11ign#4840
 
 Acceptance: `bash -c 'L=$(gh run list -R a11ign/lab --workflow ci --branch main --limit 1 --json databaseId --jq ".[0].databaseId"); T=$(gh run view $L -R a11ign/lab --log 2>/dev/null); echo "$T" | grep -q "Test Files" && ! echo "$T" | grep -E " FAIL .*(ansible-yaml-parses|roles-readme|rstest-report-is-not-the-verdict)\.test\.ts"'` (the row's command, verbatim; hand-run after merge because it reads the newest `main` run).
 
+Hand-run: it reads the newest `main` run's log, which this pull request's own CI cannot yet show; run after the merge.
+
 ## How each file ended
 - `ansible-yaml-parses.test.ts`: FIXED FORWARD. The equality `EXPECTED_FILES = 59` mirrored the control layer's file count (61 at the pin), so it becomes a floor `MINIMUM_FILES = 59`; the every-file-parses assertion, the malformed-document control and the lab-job.yml reachability control are unchanged. Not retired because the parse guarantee has no other home (a11ign/control has no yml-parse test; measured by grep).
 - `roles-readme.test.ts`: the byte ceiling test is RETIRED (engineer.md 20,738 vs 20,500). The file is the core's and its size the core's to bound; the clause tests that read the brief stay. Open: I found no core test pinning engineer.md's size (grep over core `scripts`, `.github`, `packages/guards/src`), so the bound is now unguarded; that is a row for `product-manager`, not a reason to keep lab chasing the number.
