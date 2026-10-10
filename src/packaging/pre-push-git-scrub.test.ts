@@ -1,5 +1,5 @@
 /**
- * The pre-push hook's BELT-AND-BRACES defence, independent of `scripts/test-support/git-sandbox.ts`: git
+ * The pre-push hook's BELT-AND-BRACES defence, independent of `@a11ign/toolchain/lib/git-sandbox`: git
  * exports `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` into the hook's own environment, and `npm test`
  * inherits it -- exactly how a test spawning git with `cwd` alone and an inherited `env` forged 15
  * commits into the real repo on 2026-09-06 (docs/backlog.md, "a closed row created the exposure"). This

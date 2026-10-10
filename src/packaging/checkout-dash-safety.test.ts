@@ -62,7 +62,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
+import { declareTreeWideGuard, walkTree } from "@a11ign/toolchain/lib/tree-wide-guard";
 import { laidControlFiles } from "./laid-control.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
@@ -225,7 +225,7 @@ test("CONTROL: `.md` files are never walked at all — prose is exempt by extens
 /**
  * Direction 1: a script reaching `git checkout --` really can destroy an uncommitted change, demonstrated
  * against a real throwaway repository rather than argued — the same discipline #633's own mutation used.
- * `sandboxGitEnv()` scrubs `GIT_*`, the discipline `test-support/git-sandbox.ts` documents at length:
+ * `sandboxGitEnv()` scrubs `GIT_*`, the discipline `@a11ign/toolchain/lib/git-sandbox` documents at length:
  * `cwd` is not isolation for a spawned git process, `GIT_DIR` is.
  */
 function destroysUncommittedWork(): { before: string; after: string } {

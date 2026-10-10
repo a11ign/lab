@@ -21,7 +21,7 @@
  * checkout's own `node_modules` and take minutes), so this extracts exactly the `#721` block and drives
  * it, verbatim, inside a disposable git sandbox.
  *
- * GIT-SANDBOXED throughout (`scripts/test-support/git-sandbox.ts`) -- never the real checkout.
+ * GIT-SANDBOXED throughout (`@a11ign/toolchain/lib/git-sandbox`) -- never the real checkout.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -29,8 +29,8 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
-import type { GitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
+import { withGitSandbox, sandboxGitEnv } from "@a11ign/toolchain/lib/git-sandbox";
+import type { GitSandbox } from "@a11ign/toolchain/lib/git-sandbox";
 
 const HOOK_PATH = fileURLToPath(new URL("../../../../scripts/git-hooks/pre-push", import.meta.url));
 

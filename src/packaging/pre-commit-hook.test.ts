@@ -26,7 +26,7 @@
  *
  * GIT-SANDBOXED: this is precisely the shape that forged 15 commits into the real repo on 2026-09-06 —
  * a throwaway repo, `cwd` alone, and (in the pre-fix version of this file) `git config user.name` plus an
- * inherited `env`. `withGitSandbox` (`scripts/test-support/git-sandbox.ts`) replaces all of it: no identity
+ * inherited `env`. `withGitSandbox` (`@a11ign/toolchain/lib/git-sandbox`) replaces all of it: no identity
  * is configured at all (the hook only ever reads `git diff --cached`, never commits, so none was ever
  * needed — the two `git config` calls this file used to make were pure incidental risk), and every spawn
  * scrubs GIT_*.
@@ -38,8 +38,8 @@ import { writeFileSync, mkdtempSync, mkdirSync, copyFileSync, rmSync, realpathSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
-import type { GitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
+import { withGitSandbox, sandboxGitEnv } from "@a11ign/toolchain/lib/git-sandbox";
+import type { GitSandbox } from "@a11ign/toolchain/lib/git-sandbox";
 
 const HOOK = fileURLToPath(new URL("../../../../scripts/git-hooks/pre-commit", import.meta.url));
 const GUARD_SCRIPT = fileURLToPath(new URL("../../../guards/src/piped-exit-status-guard.ts", import.meta.url));

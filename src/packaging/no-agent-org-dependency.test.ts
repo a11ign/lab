@@ -25,9 +25,9 @@ import { readFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
+import { declareTreeWideGuard } from "@a11ign/toolchain/lib/tree-wide-guard";
 import { trackedAndLaidPaths } from "./laid-control.ts";
-import { stripComments } from "../../../guards/src/local-import-closure.ts";
+import { stripComments } from "@a11ign/toolchain/lib/local-import-closure";
 import { main as resolverMain, newestStableTag } from "../../../../scripts/agent-org-newest-tag.ts";
 
 declareTreeWideGuard();

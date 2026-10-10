@@ -32,7 +32,7 @@ import { execFileSync } from "node:child_process";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { stripComments, localImports } from "../../../guards/src/local-import-closure.ts";
+import { stripComments, localImports } from "@a11ign/toolchain/lib/local-import-closure";
 import { toolRoot } from "../../../../scripts/agent-org-newest-tag.ts";
 import { toolPath } from "../../scripts/tool-source.ts";
 

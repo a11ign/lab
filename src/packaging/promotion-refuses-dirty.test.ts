@@ -71,7 +71,7 @@ test("the refusal NAMES the files and says where the originals are", () => {
  * `docs/proving-a-gate.md` step 1 is to disbelieve "this needs the lab". It needs `git init` and four
  * small files.
  *
- * GIT-SANDBOXED via `withGitSandbox` (`scripts/test-support/git-sandbox.ts`): a throwaway repo, identity
+ * GIT-SANDBOXED via `withGitSandbox` (`@a11ign/toolchain/lib/git-sandbox`): a throwaway repo, identity
  * set PER COMMAND rather than via `git config user.name` (which writes to whatever GIT_DIR names), and
  * every spawn -- including the REAL `promote-model.ts` process this test launches -- with GIT_* scrubbed.
  */
@@ -79,8 +79,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
-import type { GitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
+import { withGitSandbox, sandboxGitEnv } from "@a11ign/toolchain/lib/git-sandbox";
+import type { GitSandbox } from "@a11ign/toolchain/lib/git-sandbox";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 

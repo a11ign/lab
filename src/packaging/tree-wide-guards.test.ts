@@ -21,13 +21,17 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { treeWideGuardFiles, MARKER_MODULE, MARKER_MODULES } from "../../../guards/src/tree-wide-guards.ts";
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
+import { treeWideGuardFiles, MARKER_MODULES } from "../../../guards/src/tree-wide-guards.ts";
+import { declareTreeWideGuard } from "@a11ign/toolchain/lib/tree-wide-guard";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here rather
 // than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard population must
 // be derived from a real import, never from scanning source text.
 declareTreeWideGuard();
+
+// Since #4718 the discoverer reads the marker's import off the comment-stripped SOURCE: `@a11ign/toolchain/lib/tree-wide-guard` is a bare specifier, which
+// `localImports` does not resolve. A fixture therefore spells the import in its text, and `imports` (the resolved graph) answers nothing for it.
+const MARKER_IMPORT = 'import { declareTreeWideGuard } from "@a11ign/toolchain/lib/tree-wide-guard";\n';
 
 test("finds a realistic, non-trivial population -- vacuity guard for the walk itself", () => {
   const files = treeWideGuardFiles();
@@ -63,11 +67,10 @@ test("MUTATION TARGET: a file that imports the marker but never CALLS it is NOT 
   + "is not 'used', the same distinction git-spawn-classification.test.ts's own usesCanonicalHelper draws", () => {
   const files = treeWideGuardFiles({
     lsFiles: () => "fake/import-only.test.ts\nfake/import-and-call.test.ts\n",
-    imports: (path) => (path === "fake/import-only.test.ts" || path === "fake/import-and-call.test.ts"
-      ? [MARKER_MODULE] : []),
+    imports: () => [],
     readFile: (path) => (path === "fake/import-and-call.test.ts"
-      ? 'import { declareTreeWideGuard } from "../packages/guards/src/tree-wide-guard.mjs";\ndeclareTreeWideGuard();\n'
-      : 'import { declareTreeWideGuard } from "../packages/guards/src/tree-wide-guard.mjs";\n// never called\n'),
+      ? `${MARKER_IMPORT}declareTreeWideGuard();\n`
+      : `${MARKER_IMPORT}// never called\n`),
   });
   assert.deepEqual(files, ["fake/import-and-call.test.ts"],
     "an import with no call must never be classified as a real declaration");
@@ -77,8 +80,8 @@ test("MUTATION TARGET: a file that imports AND calls the marker IS discovered, h
   + "tree walk -- the population no longer depends on any particular git idiom", () => {
   const files = treeWideGuardFiles({
     lsFiles: () => "fake/real-guard.test.ts\n",
-    imports: () => [MARKER_MODULE],
-    readFile: () => "declareTreeWideGuard();\n// this guard could walk the tree any way it likes now\n",
+    imports: () => [],
+    readFile: () => `${MARKER_IMPORT}declareTreeWideGuard();\n// this guard could walk the tree any way it likes now\n`,
   });
   assert.deepEqual(files, ["fake/real-guard.test.ts"]);
 });
@@ -93,7 +96,7 @@ test("CONTROL: a file that neither imports nor calls the marker is simply absent
 });
 
 test("CONTROL: a file that CALLS something with the same name but never imported it from the marker "
-  + "module is not discovered -- the import target must actually resolve to tree-wide-guard.mjs", () => {
+  + "module is not discovered -- the import target must actually be the toolchain's tree-wide-guard", () => {
   const files = treeWideGuardFiles({
     lsFiles: () => "fake/false-friend.test.ts\n",
     imports: () => ["/some/other/module.mjs"],
@@ -102,22 +105,30 @@ test("CONTROL: a file that CALLS something with the same name but never imported
   assert.deepEqual(files, [], "a same-named function from a DIFFERENT module must not satisfy membership");
 });
 
-// #2623 (child 5 of #69): `agent-org`'s own copy of `tree-wide-guard.mjs` is a second accepted resolved path,
-// so a travelling guard repointed at the copy (as `carry-branch.test.ts` now is) stays discovered.
-
-test("#2623: MARKER_MODULES names exactly two paths, and MARKER_MODULE is the first of them -- nothing "
-  + "reading the old single-path export silently loses the original", () => {
-  assert.equal(MARKER_MODULES.length, 2);
-  assert.equal(MARKER_MODULES[0], MARKER_MODULE);
-  assert.ok(MARKER_MODULES[1].endsWith("src/lib/tree-wide-guard.ts"),
-    `the second accepted path must be the agent-org copy, got ${MARKER_MODULES[1]}`);
+// A comment or a string that SPELLS the specifier is not a declaration: `stripComments` runs before the specifier is looked for (#4718).
+test("a file whose only mention of the marker's specifier is in a comment is NOT discovered", () => {
+  const files = treeWideGuardFiles({
+    lsFiles: () => "fake/mentions-only.test.ts\n",
+    imports: () => [],
+    readFile: () => `// ${MARKER_IMPORT}declareTreeWideGuard();\n`,
+  });
+  assert.deepEqual(files, [], "a specifier in a comment is a description of a guard, not a guard");
 });
 
-test("#2623: a file importing the AGENT-ORG COPY's resolved path (not the original) and calling it IS "
+// #2623 (child 5 of #69): `agent-org`'s own copy of the marker is accepted by its declared export (#4407), so a travelling guard repointed at the
+// copy (as `carry-branch.test.ts` was) stays discovered. Since #4718 the toolchain's specifier is the only OTHER spelling, and it is read from source.
+
+test("#2623: MARKER_MODULES names exactly one resolved path, the agent-org copy's -- the toolchain's is a specifier, read from source", () => {
+  assert.equal(MARKER_MODULES.length, 1);
+  assert.ok(MARKER_MODULES[0].endsWith("src/lib/tree-wide-guard.ts"),
+    `the accepted resolved path must be the agent-org copy, got ${MARKER_MODULES[0]}`);
+});
+
+test("#2623: a file importing the AGENT-ORG COPY's resolved path and calling it IS "
   + "discovered -- the widening this row's split requires", () => {
   const files = treeWideGuardFiles({
     lsFiles: () => "fake/repointed-guard.test.ts\n",
-    imports: () => [MARKER_MODULES[1]],
+    imports: () => [MARKER_MODULES[0]],
     readFile: () => "declareTreeWideGuard();\n",
   });
   assert.deepEqual(files, ["fake/repointed-guard.test.ts"]);

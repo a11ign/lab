@@ -39,7 +39,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
+import { declareTreeWideGuard, walkTree } from "@a11ign/toolchain/lib/tree-wide-guard";
 
 declareTreeWideGuard();
 

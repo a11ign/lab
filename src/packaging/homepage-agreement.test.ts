@@ -25,7 +25,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
-import { productHome, PRODUCT_HOME_SOURCE } from "../../../../scripts/product-home.ts";
+import { productHome, PRODUCT_HOME_SOURCE } from "@a11ign/toolchain/lib/product-home";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -96,7 +96,7 @@ function readmeProjectLink(): { file: string; homepage: string | null } {
  * and after. Same extraction and the same reason as `region-paths.mjs` (#462, B4).
  */
 function boardDocumentHome(): { file: string; homepage: string | null } {
-  return { file: `agent-org/src/board-document.mjs (via ${PRODUCT_HOME_SOURCE})`, homepage: productHome() };
+  return { file: `agent-org/src/board-document.mjs (via ${PRODUCT_HOME_SOURCE})`, homepage: productHome(REPO) };
 }
 
 /**
@@ -136,7 +136,7 @@ test("#1113: the board document RENDERS the derived home — it does not state o
   // DOMAIN, mid-sentence, with no scheme — so neither pattern would ever have caught it, and any pattern
   // loose enough to catch it flags ordinary prose. A canary that cannot express the fault proves nothing,
   // and the control is what said so rather than a green run.
-  const home = productHome();
+  const home = productHome(REPO);
   assert.ok(home, `${PRODUCT_HOME_SOURCE} states no homepage, so there is no value to look for`);
   const bare = home.replace(/^https?:\/\//, "");
   const asLiteral = new RegExp(bare.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));

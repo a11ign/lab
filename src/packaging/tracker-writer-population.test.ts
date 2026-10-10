@@ -30,7 +30,7 @@ import { toolExportPath } from "../../../../scripts/agent-org-newest-tag.ts";
 
 import { TRACKER_WRITERS, TRACKER_WRITER_DIRS, sendsABody, bodyFromArgv, assertNoLeakInArgv }
   from "../../../guards/src/leak-patterns.ts";
-import { localImports, stripComments } from "../../../guards/src/local-import-closure.ts";
+import { localImports, stripComments } from "@a11ign/toolchain/lib/local-import-closure";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");

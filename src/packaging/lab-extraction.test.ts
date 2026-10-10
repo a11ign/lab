@@ -31,7 +31,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
-import { MARKER_MODULE, treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.ts";
+import { treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.ts";
 import { applyReplacementRules, parseReplacementRules } from "../../../../scripts/history-purge-rehearsal.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -176,7 +176,8 @@ test("the baseline gives no edge to #2703: every edge out of lab is decided", ()
 
 test("every checkout-path edge out of lab names a path the core has, so laying the core beside lab resolves it", () => {
   const baseline = outOfLab(baselineOf(REPO_ROOT));
-  assert.ok(baseline.filter((e) => e.disposition === "checkout-path").length > 500, "too few checkout-path edges: this row's decision was not read");
+  // Was 513 of 592: the 56 edges to the eight modules the core deleted and the toolchain publishes (`@a11ign/toolchain/lib/*`) left the baseline with the swap (a11ign/a11ign#4822), which leaves 457, so the floor is 400.
+  assert.ok(baseline.filter((e) => e.disposition === "checkout-path").length > 400, "too few checkout-path edges: this row's decision was not read");
   assert.deepEqual(unresolvable(baseline, coreHas), []);
 });
 
@@ -207,13 +208,15 @@ test("the tree-wide guards outside lab are found without lab present, and the on
 });
 
 test("control: a guard inside lab is counted as leaving, one outside as staying, and a file that never calls the marker as neither", () => {
+  // The discoverer reads the marker's import off the comment-stripped source since #4718, so each fixture spells it; `imports` resolves nothing here.
+  const marker = 'import { declareTreeWideGuard } from "@a11ign/toolchain/lib/tree-wide-guard";\n';
   const files: Record<string, string> = {
-    [`${LAB}/src/a.test.ts`]: "declareTreeWideGuard();\n",
-    "packages/judge/src/b.test.ts": "declareTreeWideGuard();\n",
-    [`${LAB}/src/c.test.ts`]: "// declareTreeWideGuard();\n",
+    [`${LAB}/src/a.test.ts`]: `${marker}declareTreeWideGuard();\n`,
+    "packages/judge/src/b.test.ts": `${marker}declareTreeWideGuard();\n`,
+    [`${LAB}/src/c.test.ts`]: `${marker}// declareTreeWideGuard();\n`,
   };
   const found = (tracked: string[]) => treeWideGuardFiles({
-    lsFiles: () => tracked.join("\n"), readFile: (path) => files[path], imports: () => [MARKER_MODULE],
+    lsFiles: () => tracked.join("\n"), readFile: (path) => files[path], imports: () => [],
   });
   const tracked = Object.keys(files);
   assert.deepEqual(found(tracked.filter(inLab)), [`${LAB}/src/a.test.ts`]);

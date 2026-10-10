@@ -28,7 +28,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
+import { sandboxGitEnv } from "@a11ign/toolchain/lib/git-sandbox";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const EXECUTABLE = 0o755;

@@ -34,7 +34,7 @@ import { dirname, join } from "node:path";
 // `withSandbox` keeps the failure RED and replaces its message with one that names the root, the
 // filesystem's free space, and the host as the cause. It is this file's first adoption (#2158's Region);
 // the other 103 exposed suites are explicitly a later decision.
-import { EXHAUSTION_MARKER, withSandbox } from "../../../guards/src/sandbox-exhaustion.ts";
+import { EXHAUSTION_MARKER, withSandbox } from "@a11ign/toolchain/lib/sandbox-exhaustion";
 const {
   claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, moveProjectStatus,
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
@@ -1229,7 +1229,7 @@ test("declineRow does NOT move Status when the decline itself is refused (not th
 // --- #665: worktreeStatus / removeClaimedWorktree, driven against REAL git worktrees -- the questions
 // these functions answer ("is this directory safe to delete") cannot be honestly proven against a fake
 // `run`, the same reasoning #656's carry-branch.test.ts already applies to its own detached-worktree
-// mechanism. `sandboxGitEnv()` scrubs `GIT_*`, the discipline `test-support/git-sandbox.ts` documents at
+// mechanism. `sandboxGitEnv()` scrubs `GIT_*`, the discipline `@a11ign/toolchain/lib/git-sandbox` documents at
 // length: `cwd` is not isolation for a spawned git process, `GIT_DIR` is. ---
 
 function git(cwd: string, args: string[]): string {

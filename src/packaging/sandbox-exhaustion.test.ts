@@ -31,14 +31,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statfsSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   EXHAUSTION_CODES, EXHAUSTION_MARKER, describeSandboxExhaustion, exhaustionCause, sandboxExhaustionError,
   withSandbox,
-} from "../../../guards/src/sandbox-exhaustion.ts";
-import { localImports, stripComments } from "../../../guards/src/local-import-closure.ts";
+} from "@a11ign/toolchain/lib/sandbox-exhaustion";
+import { localImports, stripComments } from "@a11ign/toolchain/lib/local-import-closure";
 import { readsDuring } from "../../../guards/src/walk-scope.ts";
 
 const READ_AND_EXECUTE_ONLY = 0o500;
@@ -47,7 +48,8 @@ const BYTES_PER_GIB = 1024 ** 3;
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const FLOOR = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.ts", import.meta.url));
-const MODULE = fileURLToPath(new URL("../../../guards/src/sandbox-exhaustion.ts", import.meta.url));
+// The installed toolchain's file: the fixture suite below imports it by absolute path from outside any package, and the import list is read off its text.
+const MODULE = createRequire(import.meta.url).resolve("@a11ign/toolchain/lib/sandbox-exhaustion");
 
 /** A directory the process owns and cannot write to -- the one way to get a REAL EACCES without root. */
 function withLockedBase<T>(fn: (locked: string) => T): T {

@@ -6,7 +6,7 @@
  * (`ansible-yaml-parses`, `powershell-parses`, `checkout-dash-safety`, ...) still apply, because the files are what a worker is played; their population is the laid tree.
  *
  * Staging it in CI the way `packages/lab` is staged was tried and does not work: a tracked directory under `packages/` with no manifest crashes the core's own
- * `packageIndex` (`packages/guards/src/walk-scope-discovery.ts`, which reads `packages/<dir>/package.json` for every directory `knownPackages` finds), and that is seven
+ * `packageIndex` (`@a11ign/toolchain/lib/walk-scope-discovery`, which reads `packages/<dir>/package.json` for every directory `knownPackages` finds), and that is seven
  * of `declared-walk-scope`'s tests. So the population is read from DISK, with the one distinction `ansible-yaml-parses` records as the reason it ever used git: what an operator keeps
  * beside the layer (`layers.json`'s `keeps`: `ansible/inventory.yml`, `ansible/*.local.yml`) is untracked state of one machine, absent from CI and present on a host, and is not
  * the subject of any guard here.
@@ -14,7 +14,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { walkTree } from "../../../guards/src/tree-wide-guard.ts";
+import { walkTree } from "@a11ign/toolchain/lib/tree-wide-guard";
 
 const LAYER = "packages/control";
 const NOT_THE_LAYER_S = /(^|\/)node_modules(\/|$)|(^|\/)\.layer-ref$|^packages\/control\/ansible\/(inventory\.yml|[^/]*\.local\.yml)$/;

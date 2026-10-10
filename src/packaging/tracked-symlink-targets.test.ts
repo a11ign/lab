@@ -27,8 +27,8 @@ import { symlinkSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { sandboxGitEnv, withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
-import type { GitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
+import { sandboxGitEnv, withGitSandbox } from "@a11ign/toolchain/lib/git-sandbox";
+import type { GitSandbox } from "@a11ign/toolchain/lib/git-sandbox";
 
 const SYMLINK_MODE = "120000";
 

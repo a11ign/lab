@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { workerControlFix, nextCommand, isRunnableCommand, readyFrom, gatingChecks, addCheck, allChecks,
-  doctorRun, errorDocument } from "../../../worker-fleet/src/doctor.mjs";
+  doctorRun, errorDocument } from "../../../worker-fleet/src/doctor.ts";
 
 /** The refusal `worker-ctl.sh` actually prints, quoted from the #915 rehearsal. */
 const DEPRECATION_REFUSAL = "could not query the local pool (DEPRECATED: worker-ctl.sh manages a local "
@@ -138,7 +138,7 @@ test("#1073: the non-gating check is still REPORTED with its fix", () => {
   // "Not blocking" and "not shown" are different, and the second loses the lab path its diagnostic. The
   // printer keys on `!c.ok`, never on whether the check gates — asserted on the source, because the print
   // path writes to stdout from `main()` and has no seam.
-  const source = readFileSync(fileURLToPath(new URL("../../../worker-fleet/src/doctor.mjs", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("../../../worker-fleet/src/doctor.ts", import.meta.url)), "utf8");
   assert.match(source, /if \(\(!c\.ok \|\| c\.advisory\) && c\.fix\)/,
     "the fix line is printed for any failing check, gating or not");
   assert.doesNotMatch(source, /GATES\[[^\]]*\][^\n]*console\.log/,
@@ -154,7 +154,7 @@ test("#1077: EVERY check the source adds is declared — the table is complete, 
   // dropped every multi-word one** -- `fleet reach`, `host memory`, `primary checkout`. **A population
   // built from a character class that could not express three of its members.** `[^"]+` finds all
   // thirteen, and this asserts the two sets are equal rather than that the table is non-empty.
-  const source = readFileSync(fileURLToPath(new URL("../../../worker-fleet/src/doctor.mjs", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("../../../worker-fleet/src/doctor.ts", import.meta.url)), "utf8");
   const added = [...new Set([...source.matchAll(/\badd\("([^"]+)"/g)].map((m) => m[1]))].sort();
   assert.deepEqual(added, allChecks().sort(),
     `these differ: the source adds ${added.length} distinct checks and GATES declares ${allChecks().length}. `
@@ -242,7 +242,7 @@ test("#1082: driven as a real process -- real stdout, real exit code, not a capt
   // #1077's lesson, applied before the fact: the synthetic name was the only name I ever gave that check,
   // and the real command threw. The assertions above share one injected `out`; this one shares nothing with
   // them -- it spawns node, reads the bytes on fd 1, and reads the status the shell would read.
-  const doctorUrl = new URL("../../../worker-fleet/src/doctor.mjs", import.meta.url).href;
+  const doctorUrl = new URL("../../../worker-fleet/src/doctor.ts", import.meta.url).href;
   const script = `import { doctorRun } from ${JSON.stringify(doctorUrl)};\n`
     + `process.exit(await doctorRun({ steps: [() => { throw new Error(${JSON.stringify(CHECK_FAILURE)}); }], json: true }));\n`;
   const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });

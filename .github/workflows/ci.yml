@@ -47,7 +47,8 @@ env:
   # a11ign/a11ign#4305: MOVED to `8d59c95e5` (core #4227), the first core commit that pins control at `v0.1.14` (`layers.json`, measured with `git show 8d59c95e5:layers.json`). At `d8d9a02fc` the laid control (`v0.1.12`) has no `calibration-judgments` entry in `packages/control/ansible/lab-fetch.yml`, so `lab-fetch-paths.test.ts`, which now names it, failed 2 of 9 ('names entries lab-fetch.yml no longer has'); `v0.1.14` is the first control tag containing control#22. The comment above describes the previous pin and its reasoning, which this bump supersedes.
   # a11ign/a11ign#4427: MOVED to `a7d6a4158` (past core #4503, #4509 and #4511, the fixes for #4499, #4501 and #4502 that the move to `e45068f59` (core #4491, the merge that closes #4408) exposed), past all three migrations that took the core off agent-org's `src/` paths (#4408 scripts, #4409 packages and guards, #4411 workflows). The core at `8d59c95e5` read `src/*.mjs` names the newest agent-org tag no longer ships, which is why the tool was pinned to `v0.87.9` (#4372) until now. The comment above describes older pins and their reasoning, which this bump supersedes.
   # a11ign/a11ign#4569: MOVED to `989c2bcc3c6a3d350cb5d0eb7e612771dfb8589a` (core #4599, the merge that adds the `// STAYS npm` marker to `scripts/release-tags-complete.ts` (a11ign/a11ign#4594), which `no-npm-spawn.test.ts` requires of every allowlisted npm spawn). The oldest core at or after `f3b5c5f59` (the last rename commit of core #4393's first push) that the lab's CI measures green apart from agent-org-wiring [36]/[37], which wait for agent-org#505 and a new tag. It carries the path-name edits agent-org's synced copies now carry (a11ign/a11ign#4557), so `a7d6a4158`, not an ancestor, read them as drifted. The comment above describes the previous pin, which this bump supersedes.
-  CORE_REF: 989c2bcc3c6a3d350cb5d0eb7e612771dfb8589a
+  # a11ign/a11ign#4822: MOVED to `c18c2dab76b795b1c3fec79d43ab3d653879bc9e` (core #4815, which pins control v0.3.5), in the SAME pull request that swaps this repository's tests onto `@a11ign/toolchain/lib/*`: neither is green without the other (measured 2026-10-10). The core's detectors learned the toolchain specifier in the commits that deleted the copies (`c6560f915`, `25f0e9b3e`), so no core commit is both before the deletions and after the detectors: the swapped tests at `989c2bcc3` are 14 `local/git-spawn-scrubbed` errors and 2 required tests red, the old tests at `c18c2dab7` are 58 TS2307. The comment above describes the previous pin, which this bump supersedes.
+  CORE_REF: c18c2dab76b795b1c3fec79d43ab3d653879bc9e
 
 jobs:
   # A releasable change needs a changeset or a `no-release:` line (a11ign/a11ign#4127, the class fix of #4084: screenreader-worker#25 and #26 changed shipped code with no changeset and released
@@ -90,7 +91,10 @@ jobs:
         run: |
           version=$(jq -r '.devDependencies["@a11ign/toolchain"]' lab/package.json)
           coverage=$(jq -r '.devDependencies["@rstest/coverage-v8"]' lab/package.json)
-          npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$RUNNER_TEMP/toolchain" "@a11ign/toolchain@$version" "@rstest/coverage-v8@$coverage"
+          # `typescript` is an OPTIONAL peer the toolchain's `walkTree` requires from ITS OWN directory (`createRequire(import.meta.url)`), which the symlink below does not change: unset, every guard that walks `ts` or `both` fails
+          # with "Cannot find module 'typescript'" (measured, a11ign/a11ign#4822). The CORE's version, not this manifest's `^7`: `typescript@7` has no JS entry point, so no `ScriptKind`. The core is checked out above.
+          typescript=$(jq -r '.devDependencies.typescript' core/package.json)
+          npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$RUNNER_TEMP/toolchain" "@a11ign/toolchain@$version" "@rstest/coverage-v8@$coverage" "typescript@$typescript"
           node "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain/dist/layout-check.mjs" lab
       # pnpm/action-setup reads the version out of `packageManager`, and comes before setup-node because `cache: pnpm` shells out to it.
       - uses: pnpm/action-setup@v6

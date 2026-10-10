@@ -15,10 +15,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
-import { walkTree, declareTreeWideGuard, _lsFilesSpawnCountForTests } from "../../../guards/src/tree-wide-guard.ts";
+import { walkTree, declareTreeWideGuard, _lsFilesSpawnCountForTests } from "@a11ign/toolchain/lib/tree-wide-guard";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file.
 declareTreeWideGuard();
@@ -70,7 +71,7 @@ test("#795: kind \"all\" never computes a ScriptKind -- a text-only guard has no
 test("#795 ISOLATED: a FRESH process calling ONLY kind \"all\" never loads typescript at all -- proof, "
   + "not just an undefined field, checked in a real subprocess since this file's OWN earlier tests "
   + "(kind \"ts\"/\"mjs\"/\"both\") have already loaded it by the time this test runs in-process", () => {
-  const helperPath = fileURLToPath(new URL("../../../guards/src/tree-wide-guard.ts", import.meta.url));
+  const helperPath = createRequire(import.meta.url).resolve("@a11ign/toolchain/lib/tree-wide-guard");
   const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
   const script = `
     import { walkTree, _typescriptLoadedForTests } from ${JSON.stringify(helperPath)};

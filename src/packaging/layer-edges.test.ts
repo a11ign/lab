@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
+import { declareTreeWideGuard } from "@a11ign/toolchain/lib/tree-wide-guard";
 import {
   BASELINE_PATH, LAYER_PACKAGES, countByDisposition, describeVerdict, findEdges, isScanned, judgeEdges, packageOf,
   trackedFiles,

@@ -12,6 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,12 +26,12 @@ import {
   runUnderCap,
   supervise,
   verdictLine,
-} from "../../../guards/src/test-memory-cap.ts";
+} from "@a11ign/toolchain/lib/test-memory-cap";
 
-const CAP_MODULE = fileURLToPath(new URL("../../../guards/src/test-memory-cap.ts", import.meta.url));
+const CAP_MODULE = createRequire(import.meta.url).resolve("@a11ign/toolchain/lib/test-memory-cap");
 const ASSERT_GLOB = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.ts", import.meta.url));
 const PRE_PUSH = fileURLToPath(new URL("../../../../scripts/git-hooks/pre-push", import.meta.url));
-const REPO = path.resolve(path.dirname(CAP_MODULE), "../../..");
+const REPO = path.resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
 /** Allocates until something stops it: the shape of the three kills, at a size a 64M cap reaches in well under a second. */
 const ALLOCATE_FOREVER = "const kept = []; for (;;) kept.push(Buffer.alloc(16 << 20, 1));";
