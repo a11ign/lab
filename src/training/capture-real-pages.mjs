@@ -613,7 +613,7 @@ async function main() {
   process.exit(failed.length ? 1 : 0);
 }
 
-// Guarded for the same reason as `build-realism-tier.mjs`: CLAUDE.md makes
+// Guarded for the same reason as `build-realism-tier.ts`: CLAUDE.md makes
 // `node -e "import('./this.mjs')"` the only real check that an .mjs file still loads, and unguarded that
 // check STARTS A CAPTURE RUN against the fleet. A verification you cannot safely run is not a verification.
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

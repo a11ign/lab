@@ -3,7 +3,7 @@
 /**
  * Do the weights about to ship have a changelog entry that says where they came from?
  *
- * ADR 0007 makes the weights the scorer package's API, and `promote-model.mjs` writes the provenance —
+ * ADR 0007 makes the weights the scorer package's API, and `promote-model.ts` writes the provenance —
  * corpus size, encoder hash, feature schema, per-subtype thresholds — into a changeset because *"which
  * model produced this finding"* is a question somebody will ask about a disputed WCAG assertion. That
  * entry is the ONLY place the answer is recorded.
@@ -21,7 +21,7 @@
  * A gate that does not exercise what ships is not a gate, for the fifth time in this repo.
  *
  * The expected text is DERIVED, never spelled a second time. `provenanceLines` is the function
- * `promote-model.mjs` writes with, so a change to the format moves both sides together; a copy of the
+ * `promote-model.ts` writes with, so a change to the format moves both sides together; a copy of the
  * format here is this project's most expensive recurring shape, and it would drift the first time a row
  * was added.
  */

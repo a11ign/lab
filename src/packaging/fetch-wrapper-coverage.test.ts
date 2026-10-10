@@ -78,13 +78,13 @@ const EXEMPT: { file: string; count: number; reason: string }[] = [
       + "worker-http-client-owner.test.ts.",
   },
   {
-    file: "packages/lab/scripts/audit-corpus-urls.mjs", count: 1,
+    file: "packages/lab/scripts/audit-corpus-urls.ts", count: 1,
     reason: "92 real third-party government websites, following redirects with a spoofed browser "
       + "user-agent -- the opposite shape from requestJson, which is built around a worker's own JSON "
       + "contract and refuses to guess at a wire format.",
   },
   {
-    file: "packages/lab/scripts/evidence-check.mjs", count: 1,
+    file: "packages/lab/scripts/evidence-check.ts", count: 1,
     reason: "the dataset PAGE SERVER's raw HTML, read for a title check -- the same shape as "
       + "capture-screenreader-dataset.mjs's exemption below, independently arrived at.",
   },

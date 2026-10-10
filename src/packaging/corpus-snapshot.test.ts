@@ -2,7 +2,7 @@
 // The line above is the acceptance job's declaration, and it is narrower than it reads: this file NAMES `RUNS_ROOT`/`DATASET_ROOT`
 // only to point the real script at a throwaway temp directory, so the `captures/` it writes is that fixture's and never the corpus's.
 /**
- * #1936 — `corpus-snapshot.mjs` summed tar's TIME column, so `archivedBytes` was `NaN` on every run and
+ * #1936 — `corpus-snapshot.ts` summed tar's TIME column, so `archivedBytes` was `NaN` on every run and
  * the hollow-archive refusal it feeds could never fire.
  *
  * The lab's scheduled snapshot printed `... and NaN MB uncompressed against 159.6 MB on disk.` at
@@ -30,10 +30,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { archiveRefusal, archiveTotals } from "../../scripts/corpus-snapshot.mjs";
+import { archiveRefusal, archiveTotals } from "../../scripts/corpus-snapshot.ts";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
-const SNAPSHOT_SCRIPT = resolve(REPO, "packages/lab/scripts/corpus-snapshot.mjs");
+const SNAPSHOT_SCRIPT = resolve(REPO, "packages/lab/scripts/corpus-snapshot.ts");
 
 /**
  * VERBATIM `tar -tzvf` OUTPUT, not a hand-typed approximation of it — captured from a real archive of

@@ -12,7 +12,7 @@
  * Two rules, both read from the REAL `.changeset/` and the REAL manifests:
  *
  *   1. While a public package's version is 0.x, no pending changeset may declare `major` for it. Under
- *      semver a breaking change before 1.0 is a minor; `promote-model.mjs` now writes that level itself.
+ *      semver a breaking change before 1.0 is a minor; `promote-model.ts` now writes that level itself.
  *   2. A public package at 0.0.0 has never been published, so its highest pending bump must be exactly
  *      `minor`: `patch` would publish 0.0.1, nothing pending would publish nothing, `major` 1.0.0.
  *

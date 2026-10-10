@@ -149,7 +149,7 @@ test("ABSENT and MOVING are different skips, with different words", () => {
 });
 
 test("a runs/ holding one emitted report is NOT a corpus — the stub the suite writes itself", () => {
-  // `emit-unclosable-vetoes.mjs` writes one file into `runs/`, so running the suite where no corpus exists
+  // `emit-unclosable-vetoes.ts` writes one file into `runs/`, so running the suite where no corpus exists
   // CREATES a directory that `existsSync` reports as a corpus. Counting captures is what keeps the stub
   // indistinguishable from absent, which is what it is.
   const stub = tempDir("corpus-stub-");

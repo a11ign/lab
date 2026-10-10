@@ -66,7 +66,7 @@ const BASELINE = resolve(REPO, "packages/lab/baselines/real-page-findings.json")
 /**
  * WHEN each scored capture was taken, and under which role — collected while loading, reported once via
  * `captureAgeLines` (`../src/training/real-page-freshness.mjs`, moved there so a `node`-run reader like
- * `lab-inventory.mjs`, `calibrate-abstention.mjs` or `build-realism-tier.mjs` can import it too — see
+ * `lab-inventory.ts`, `calibrate-abstention.ts` or `build-realism-tier.ts` can import it too — see
  * that module's own header for why, and for the "39 of the 85" number it used to hardcode here going
  * stale the moment a third role was added).
  *

@@ -6,8 +6,8 @@
  * on a page the corpus did not have. The role's whole contract is what it must NOT reach:
  *
  *   - the CONFORMANCE LINE (`rules:real-pages`), which scores pages whose publisher declares them conformant;
- *   - the ASSERTED-WRONGLY and REFERRED figures (`calibrate-abstention.mjs`), fitted on `calibration`;
- *   - TRAINING (`build-realism-tier.mjs`), built from `training`;
+ *   - the ASSERTED-WRONGLY and REFERRED figures (`calibrate-abstention.ts`), fitted on `calibration`;
+ *   - TRAINING (`build-realism-tier.ts`), built from `training`;
  *   - RULE COVERAGE's real evidence (`audit-rule-coverage.ts`), where a rule firing on a real page grades it
  *     "validated" -- the fourth reader, found by worker-capture's review of #970.
  *
@@ -84,19 +84,19 @@ test("THE CONFORMANCE LINE admits no field page -- through `rules:real-pages`' o
     "rules:real-pages must select through the function this test drives");
 });
 
-test("THE FIGURES admit no field page -- through `calibrate-abstention.mjs`' own selection", () => {
+test("THE FIGURES admit no field page -- through `calibrate-abstention.ts`' own selection", () => {
   const admitted = urlsOf(calibrationEntries(asEntries(REAL_PAGES)));
   assert.deepEqual(admitted.filter((url) => RULED.includes(url)), []);
   assert.equal(admitted.length, pagesFor("calibration").length, "the control: every calibration page is admitted");
-  assert.match(read("packages/lab/scripts/calibrate-abstention.mjs"),
+  assert.match(read("packages/lab/scripts/calibrate-abstention.ts"),
     /import \{[^}]*\bcalibrationEntries\b[^}]*\} from "\.\.\/src\/training\/real-page-selection\.mjs"/);
 });
 
-test("TRAINING admits no field page -- through `build-realism-tier.mjs`, the reader that builds the training set", () => {
+test("TRAINING admits no field page -- through `build-realism-tier.ts`, the reader that builds the training set", () => {
   const admitted = urlsOf(trainingEntries(asEntries(REAL_PAGES)));
   assert.deepEqual(admitted.filter((url) => RULED.includes(url)), []);
   assert.equal(admitted.length, pagesFor("training").length, "the control: every training page is admitted");
-  assert.match(read("packages/lab/scripts/build-realism-tier.mjs"),
+  assert.match(read("packages/lab/scripts/build-realism-tier.ts"),
     /import \{[^}]*\btrainingEntries\b[^}]*\} from "\.\.\/src\/training\/real-page-selection\.mjs"/);
 });
 

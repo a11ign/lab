@@ -5,10 +5,10 @@
  * directory. It is right when the cwd happens to be the repo root and wrong everywhere else — and it goes
  * silently wrong the moment the file moves, because nothing type-checks a string.
  *
- * The package split found three of these, and the worst one mattered: `stability-gate.mjs` spawned
+ * The package split found three of these, and the worst one mattered: `stability-gate.ts` spawned
  * `src/training/repeat-capture.mjs`, so `gate:stability` — the check that must pass before any corpus run —
  * would have died with "Command failed" and nothing to read. It passed during M5 only because M8 had not moved
- * the pipeline yet. The other two were `normalise-fleet.mjs` (`scripts/guest-run.mjs`) and `compare-layers.mjs`
+ * the pipeline yet. The other two were `normalise-fleet.mjs` (`scripts/guest-run.mjs`) and `compare-layers.ts`
  * (`src/cli.ts`).
  *
  * The rule is simple enough to check mechanically: a program path is resolved from `import.meta.url`, or it is
@@ -37,8 +37,8 @@ const COMPOSED = /\b(?:join|resolve|readFileSync|existsSync|statSync|new URL|too
  * `globSync` walk, as two spawn sites. Nothing in that file executes anything. Same shape as #1185:
  * a rule named for a call, implemented as a match on a name.
  *
- * All three offenders this guard was written for (`stability-gate.mjs`, `normalise-fleet.mjs`,
- * `compare-layers.mjs`) are spawn sites by definition, so the narrowing costs none of them. The control
+ * All three offenders this guard was written for (`stability-gate.ts`, `normalise-fleet.mjs`,
+ * `compare-layers.ts`) are spawn sites by definition, so the narrowing costs none of them. The control
  * test below drives the SAME predicate over a source that spawns a repo-relative literal and one that
  * merely names it, because a narrowing whose only measured effect is to exempt the file that prompted it
  * is a rule fitted to its instance until something shows it still refuses.
@@ -109,7 +109,7 @@ test("#1149: a repo-relative literal is still refused when the file DOES spawn",
   ].join("\n");
   assert.deepEqual(offendersInSource(spawns, "fixture.mjs"),
     ['fixture.mjs: "src/training/repeat-capture.mjs"'],
-    "the case this guard was written for -- `stability-gate.mjs` spawning the stability gate's own "
+    "the case this guard was written for -- `stability-gate.ts` spawning the stability gate's own "
     + "program by a cwd guess -- must still be caught after the narrowing");
 });
 

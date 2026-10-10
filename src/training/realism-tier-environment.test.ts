@@ -1,11 +1,11 @@
 /**
  * #1926: `with-realism.jsonl` HAS TWO WRITERS, AND ONLY ONE OF THEM WAS GIVEN THE PROTOCOL STAMP.
  *
- * `build-realism-tier.mjs` writes the corpus export's records through verbatim and appends the realism
+ * `build-realism-tier.ts` writes the corpus export's records through verbatim and appends the realism
  * tier from its own `recordFor`. #1989 measured that every exported record carried no `captureProtocol`,
  * and #2064 fixed `export-screenreader-dataset.mjs` — the first writer. The second was never in that
  * diff, so its `provenance` literal carried no `environment` key at all and
- * `grep -c environment build-realism-tier.mjs` returned `0`.
+ * `grep -c environment build-realism-tier.ts` returned `0`.
  *
  * What that cost is not abstract. #1926's clause 3 — "every record in `with-realism.jsonl` carries
  * `captureProtocol: 21`" — would have read `null` on up to 41 records (`REAL_PAGES` `role: training`)
@@ -23,7 +23,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { recordFor } from "../../scripts/build-realism-tier.mjs";
+import { recordFor } from "../../scripts/build-realism-tier.ts";
 import { record as exportRecord } from "./export-screenreader-dataset.mjs";
 
 /** A real-page corpus entry, in the six-key shape `capture-real-pages.mjs` actually writes. */

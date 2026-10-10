@@ -260,7 +260,7 @@ async function captureWithRetry(attempts = 3) {
  *
  * Two separate things ran at module scope: the usage guards, which called `process.exit(2)` on the
  * IMPORTING process, and the capture run itself -- `mkdirSync`, then `waitForReady`, then five real
- * captures against a worker. `stability-gate.mjs` SPAWNS this script per canary, so importing it to check
+ * captures against a worker. `stability-gate.ts` SPAWNS this script per canary, so importing it to check
  * it still loads meant driving the fleet.
  *
  * The usage guards move in here with the run, deliberately: a missing `--url` is a mistake made by a

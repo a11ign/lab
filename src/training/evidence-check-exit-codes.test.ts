@@ -27,7 +27,7 @@ import { CASES } from "./case-matrix.mjs";
 import { EXIT, exitCodeFor } from "./evidence-check-exit.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const SCRIPT = join(REPO, "packages/lab/scripts/evidence-check.mjs");
+const SCRIPT = join(REPO, "packages/lab/scripts/evidence-check.ts");
 const FLEET_TIMEOUT_MS = 120_000;
 
 /** Run a `.mjs` file under the repo's TypeScript loader, which the script needs for `@a11ign/evidence`. */

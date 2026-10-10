@@ -1,7 +1,7 @@
 /**
  * A publisher's declared exceptions, and the two places they have to survive.
  *
- * These exist because the mask they feed was INERT for its whole life. `build-realism-tier.mjs` read
+ * These exist because the mask they feed was INERT for its whole life. `build-realism-tier.ts` read
  * `claimExcludes` off the CAPTURED file, which carries six keys and not that one, so every page got `[]` and
  * every masked head trained the page as conformant. Nothing reported it, because a failed join and a
  * publisher with nothing to disclose produce identical output. Hence: test the join, and test the rule.
@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { unevaluableFor } from "../../scripts/build-realism-tier.mjs";
-import { contradictedFindings } from "../../scripts/calibrate-abstention.mjs";
+import { unevaluableFor } from "../../scripts/build-realism-tier.ts";
+import { contradictedFindings } from "../../scripts/calibrate-abstention.ts";
 import { REAL_PAGES, normaliseUrl, realPageFor } from "./real-page-corpus.mjs";
 
 /** The criteria the shipped model actually has heads for. Read, never hardcoded — a retrain can move them. */
@@ -37,7 +37,7 @@ test("every declared exception names a criterion the model actually scores", () 
 
 test("a partially-claimed calibration page declares what it claims, so the rate stays comparable", () => {
   // This used to require `role: "training"` for any page with exceptions, because
-  // `calibrate-abstention.mjs` counted false positives PER PAGE: a publisher disclosing six of our eight
+  // `calibrate-abstention.ts` counted false positives PER PAGE: a publisher disclosing six of our eight
   // criteria has a quarter of the chances to be counted wrong that a fully-claiming one has, so mixing them
   // made the headline mean two things at once. Correct, and it cost the calibration set its diversity —
   // 19 pages from 5 publishers, 12 of them one design system, and that was the sample EVERY real-page

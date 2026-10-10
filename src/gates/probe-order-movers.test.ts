@@ -15,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { classifyMovers } from "../../scripts/gate-probe-order.mjs";
+import { classifyMovers } from "../../scripts/gate-probe-order.ts";
 
 const DECLARED = { url: "https://moves.test/", movesUnderItsOwnProbes: "its search panel opens" };
 const PLAIN = { path: "steady-page/good" };

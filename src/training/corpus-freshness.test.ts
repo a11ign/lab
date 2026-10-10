@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const AUDIT = readFileSync(
-  fileURLToPath(new URL("../../scripts/audit-corpus-starvation.mjs", import.meta.url)), "utf8");
+  fileURLToPath(new URL("../../scripts/audit-corpus-starvation.ts", import.meta.url)), "utf8");
 
 test("the starvation audit counts cases with NO record, not only records with no case", () => {
   // Both directions must exist. Either alone is a check that reports clean on the fault it cannot see.

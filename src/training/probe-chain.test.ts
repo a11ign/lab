@@ -164,7 +164,7 @@ test("evidence:check forwards every probe flag, and gates on all of them", () =>
   // Its own `optionsUnchanged` guard exists to stop exactly that ("a comparison must not be between two
   // things that differ for a reason unrelated to the change under test") and named the two flags that
   // existed when it was written, so it was blind to the two added since.
-  const source = readFileSync(resolve(process.cwd(), "packages/lab/scripts/evidence-check.mjs"), "utf8");
+  const source = readFileSync(resolve(process.cwd(), "packages/lab/scripts/evidence-check.ts"), "utf8");
   assert.match(source, /key\.startsWith\("probe"\)/,
     "the capture request must forward probe flags by prefix, not by name");
   assert.match(source, /k\.startsWith\("probe"\)/,

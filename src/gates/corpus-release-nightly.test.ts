@@ -3,10 +3,10 @@
  *
  * `lab:fetch -e artifact=corpus-archive` flattens every corpus snapshot to the same local path
  * (`runs/fetched/candidate.corpus-archive.<ext>`), because that is the right behaviour for every OTHER
- * artifact it knows. `corpus-release-nightly.mjs` reads the fetch's own "from ... on the lab" line back to
- * recover the real `corpus-<timestamp>.tar.gz` name before handing anything to `corpus-release.mjs`, whose
+ * artifact it knows. `corpus-release-nightly.ts` reads the fetch's own "from ... on the lab" line back to
+ * recover the real `corpus-<timestamp>.tar.gz` name before handing anything to `corpus-release.ts`, whose
  * `tagFor` depends on that exact filename. Both halves of that recovery are split out from the I/O for the
- * same reason `corpus-release.mjs`'s own `releaseVerdict`/`tagFor` are: the decision is the part worth
+ * same reason `corpus-release.ts`'s own `releaseVerdict`/`tagFor` are: the decision is the part worth
  * pinning.
  */
 import test from "node:test";
@@ -22,7 +22,7 @@ import {
   flattenedFetchPath,
   missingFleetEnvRefusal,
   fetchFailureRefusal,
-} from "../../scripts/corpus-release-nightly.mjs";
+} from "../../scripts/corpus-release-nightly.ts";
 
 test("recovers the real snapshot name from lab-fetch.yml's own debug line", () => {
   const output = [
@@ -70,7 +70,7 @@ test("an unusual source extension is carried through rather than hardcoded to .g
  * is" naming task -- `{{ out | default('candidate') }}.{{ artifact }}{{ (lab_fetch_src | splitext)[1] |
  * default('.json', true) }}` -- read as a filesystem path instead of as a Jinja template. Nothing
  * compared the two before this: `lab-fetch-paths.test.ts` classifies `corpus-archive` as UNREACHED, but
- * that test is about the SOURCE side (where `corpus-snapshot.mjs` writes on the lab), not this
+ * that test is about the SOURCE side (where `corpus-snapshot.ts` writes on the lab), not this
  * DESTINATION-naming formula -- a playbook edit to `lab_fetch_dest` could silently break the nightly
  * release while every existing test here stayed green (reviewer-2's #1869 finding).
  *
@@ -112,7 +112,7 @@ test("#1911: the real script exits 2 naming fleet.env when A11Y_PVE_KEY is absen
     const env = { ...process.env };
     delete env.A11Y_PVE_KEY;
     const result = spawnSync(process.execPath,
-      [resolve(REPO_ROOT, "packages/lab/scripts/corpus-release-nightly.mjs")], { cwd, env, encoding: "utf8" });
+      [resolve(REPO_ROOT, "packages/lab/scripts/corpus-release-nightly.ts")], { cwd, env, encoding: "utf8" });
     assert.equal(result.status, 2, `expected the refusal's exit 2; stderr was:\n${result.stderr}`);
     assert.match(result.stderr, /A11Y_PVE_KEY is not set/);
     assert.match(result.stderr, /~\/\.config\/a11ign\/fleet\.env/, "it names the file the unit reads");

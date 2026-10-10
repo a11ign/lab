@@ -5,7 +5,7 @@ import { corpusReadable } from "../training/corpus-settled.mjs";
 import { join } from "node:path";
 
 const REPO = join(import.meta.dirname, "../../../..");
-const SCRIPT = join(REPO, "packages/lab/scripts/corpus-snapshot.mjs");
+const SCRIPT = join(REPO, "packages/lab/scripts/corpus-snapshot.ts");
 const source = () => readFileSync(SCRIPT, "utf8");
 
 /**
@@ -105,7 +105,7 @@ test("the snapshot archives the roots that cannot be recaptured at any price", (
   const src = source();
   for (const name of MUST_ARCHIVE) {
     assert.match(src, new RegExp(`"${name}"`),
-      `corpus-snapshot.mjs does not archive ${name}, which cannot be reproduced by recapturing. `
+      `corpus-snapshot.ts does not archive ${name}, which cannot be reproduced by recapturing. `
       + "The dataset it does archive can be.");
   }
 });

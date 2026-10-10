@@ -77,7 +77,7 @@ const READERS: Record<string, string> = {
   "export-screenreader-dataset.mjs": "packages/lab/src/training/export-screenreader-dataset.mjs",
   "check-signals.mjs": "packages/lab/src/training/check-signals.mjs",
   "capture-screenreader-dataset.mjs": "packages/lab/src/training/capture-screenreader-dataset.mjs",
-  "evidence-check.mjs": "packages/lab/scripts/evidence-check.mjs",
+  "evidence-check.ts": "packages/lab/scripts/evidence-check.ts",
 };
 
 test("EVERY verdict reader asks the one check, over the WHOLE manifest, and keeps no partial copy", () => {

@@ -1,17 +1,17 @@
 /**
- * #1042 — `corpus-backup.mjs`'s refusal (and `lab-job.yml`'s `exitMeanings` for the same job) must NAME
+ * #1042 — `corpus-backup.ts`'s refusal (and `lab-job.yml`'s `exitMeanings` for the same job) must NAME
  * the route that already works, so a reader arriving at "no A11Y_CORPUS_REMOTE set" does not conclude the
  * corpus has no backup at all.
  *
  * The row this closes: the interim `corpus:backup` (scp/mount, gated on `A11Y_CORPUS_REMOTE`, never
  * configured) is one of TWO backup mechanisms, and `corpus:release` (GitHub Releases on the private
  * `a11ign/corpus-backups`, verified by download) has been the corpus's real off-machine copy since
- * 2026-09-06 -- but neither `corpus-backup.mjs`'s own refusal text nor `lab-job.yml`'s exit-code gloss for
+ * 2026-09-06 -- but neither `corpus-backup.ts`'s own refusal text nor `lab-job.yml`'s exit-code gloss for
  * the same job ever named it, so the refusal read as "nowhere durable exists" rather than "this one
  * destination isn't configured". That read produced a chairman escalation nine days later (#1042 itself).
  *
  * #2050 adds the THIRD file with the same defect, and the one a reader is most likely to meet:
- * `corpus-snapshot.mjs`'s closing advisory, printed at the end of every snapshot including the lab's
+ * `corpus-snapshot.ts`'s closing advisory, printed at the end of every snapshot including the lab's
  * unattended 03:00Z firing, named only the unconfigured scp/mount route. Same assertion, same
  * process-spawn approach, and the same warning kept intact -- at the instant it prints, the archive
  * really is on one disk, because the release nightly does not fire until 04:00Z.
@@ -19,16 +19,16 @@
  * The YAML check reads `lab-job.yml`'s parsed source, which needs no destination, lab, or fleet.
  *
  * THE SCRIPT CHECK RUNS THE REAL SCRIPT AND READS ITS ACTUAL STDERR, rather than scanning
- * `corpus-backup.mjs`'s source text. Three prior rounds each scanned source instead (reviewer-2 on #1860:
+ * `corpus-backup.ts`'s source text. Three prior rounds each scanned source instead (reviewer-2 on #1860:
  * `0ece3e54` a whole-file substring scan, passed when the route names sat in an unrelated comment;
  * `1f91f0fc` scoped to the `refuse(...)` call's span, still passed with the names moved into a comment
  * INSIDE that span; `104f0b99` scoped further to quoted string literals inside the span, still passed with
  * the names in a QUOTED comment inside the span) -- each fix narrowed the span without changing the
  * approach, and each still proved a claim about the SOURCE TEXT, never about the message a reader actually
  * sees. No comment placement, string-fragment shape, or literal-vs-comment distinction can fool a check
- * that reads what the script itself writes to stderr when run: `corpus-backup.mjs` guards its `main()`
+ * that reads what the script itself writes to stderr when run: `corpus-backup.ts` guards its `main()`
  * behind `if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href)`, so spawning it as
- * `node corpus-backup.mjs` (never merely importing it) runs the refusal for real, and `refuse()` writes to
+ * `node corpus-backup.ts` (never merely importing it) runs the refusal for real, and `refuse()` writes to
  * stderr and exits 1 before touching the filesystem, a destination, the lab, or the fleet -- so this is as
  * cheap as the source-scan it replaces, while proving the runtime message instead of a textual proxy for
  * it.
@@ -43,9 +43,9 @@ import { pathToFileURL } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
-const BACKUP_SCRIPT = resolve(REPO, "packages/lab/scripts/corpus-backup.mjs");
+const BACKUP_SCRIPT = resolve(REPO, "packages/lab/scripts/corpus-backup.ts");
 const LAB_JOB_YML = resolve(REPO, "packages/control/ansible/lab-job.yml");
-const SNAPSHOT_SCRIPT = resolve(REPO, "packages/lab/scripts/corpus-snapshot.mjs");
+const SNAPSHOT_SCRIPT = resolve(REPO, "packages/lab/scripts/corpus-snapshot.ts");
 const DATASET_PATHS = resolve(REPO, "packages/lab/src/dataset-paths.ts");
 
 /** Both files must name the working route by name, not just gesture at "another way". */
@@ -53,7 +53,7 @@ const NAMES_THE_ROUTE = (text: string) =>
   text.includes("corpus:release") && text.includes("a11ign/corpus-backups");
 
 /**
- * Runs a `corpus-backup.mjs`-shaped script with no `A11Y_CORPUS_REMOTE`, which is exactly the state that
+ * Runs a `corpus-backup.ts`-shaped script with no `A11Y_CORPUS_REMOTE`, which is exactly the state that
  * hits the refusal this test targets. `A11Y_CORPUS_REMOTE` is dropped from the inherited environment
  * rather than merely left unset in this process, so the check does not depend on nothing in the ambient
  * environment setting it.
@@ -70,11 +70,11 @@ function runWithNoRemote(scriptPath: string): { code: number; stderr: string } {
   }
 }
 
-test("#1042: corpus-backup.mjs's no-A11Y_CORPUS_REMOTE refusal names corpus:release", () => {
+test("#1042: corpus-backup.ts's no-A11Y_CORPUS_REMOTE refusal names corpus:release", () => {
   const { code, stderr } = runWithNoRemote(BACKUP_SCRIPT);
   assert.equal(code, 1, `expected the no-A11Y_CORPUS_REMOTE refusal to exit 1; got ${code}: ${stderr}`);
   assert.ok(NAMES_THE_ROUTE(stderr),
-    "corpus-backup.mjs's refusal, on stderr, must name `corpus:release` and `a11ign/corpus-backups` as the "
+    "corpus-backup.ts's refusal, on stderr, must name `corpus:release` and `a11ign/corpus-backups` as the "
     + "existing, already-working route -- otherwise a reader who hits this refusal concludes the corpus "
     + "has no backup destination at all, which is exactly what produced #1042's chairman escalation");
 });
@@ -137,7 +137,7 @@ test("#1042 REGRESSION (reviewer-2 on #1860, three verdicts: `0ece3e54`, `1f91f0
     + '      // see corpus:release / a11ign/corpus-backups for the working route\n'
     + '      "" +');
 
-  // Written BESIDE the real script, not under `os.tmpdir()`: `corpus-backup.mjs` imports
+  // Written BESIDE the real script, not under `os.tmpdir()`: `corpus-backup.ts` imports
   // `@a11ign/screenreader-fleet/cli-flags` by bare specifier, and Node resolves that by walking up from the
   // running file to find `node_modules` -- a copy outside this repo's tree has nothing to walk up to and
   // fails with `ERR_MODULE_NOT_FOUND` before the refusal this test wants ever runs. At the package ROOT,
@@ -150,7 +150,7 @@ test("#1042 REGRESSION (reviewer-2 on #1860, three verdicts: `0ece3e54`, `1f91f0
   // (#3337). `source-walk.test.ts` pins that skip; rename the prefix and that pin no longer covers this.
   const dir = mkdtempSync(join(REPO, "packages/lab/.corpus-backup-mutation-"));
   try {
-    const mutatedScript = join(dir, "corpus-backup.mjs");
+    const mutatedScript = join(dir, "corpus-backup.ts");
     writeFileSync(mutatedScript, mutated);
     const { code, stderr } = runWithNoRemote(mutatedScript);
     assert.equal(code, 1, `expected the mutated script's refusal to still exit 1; got ${code}: ${stderr}`);
@@ -167,7 +167,7 @@ test("#1042 REGRESSION (reviewer-2 on #1860, three verdicts: `0ece3e54`, `1f91f0
 });
 
 /**
- * Builds a one-file corpus in a temp tree and runs the REAL `corpus-snapshot.mjs` against it, returning
+ * Builds a one-file corpus in a temp tree and runs the REAL `corpus-snapshot.ts` against it, returning
  * what a reader actually sees. `RUNS_ROOT`/`DATASET_ROOT` are what `dataset-paths.mjs` reads, and `--out`
  * keeps the archive out of the repo's own `backups/`, so this touches no corpus, lab or fleet and costs
  * about a second — the same price as the source scan it replaces.
@@ -210,7 +210,7 @@ function runSnapshot(scriptPath: string, { withCaptures }: { withCaptures: boole
   }
 }
 
-test("#2050: corpus-snapshot.mjs's closing advisory names corpus:release, on real stdout", () => {
+test("#2050: corpus-snapshot.ts's closing advisory names corpus:release, on real stdout", () => {
   // THE SAME DEFECT AS #1042'S TWO MESSAGES, IN THE FILE A READER IS MOST LIKELY TO MEET IT IN: this
   // advisory is printed at the end of EVERY snapshot, including the lab's unattended 03:00Z firing, and
   // the only route it named was `corpus:backup`'s scp/mount one, which has never been configured on any
@@ -220,7 +220,7 @@ test("#2050: corpus-snapshot.mjs's closing advisory names corpus:release, on rea
   assert.match(stdout, /not yet a backup/,
     `the snapshot ran without reaching its closing advisory: ${stdout}`);
   assert.ok(NAMES_THE_ROUTE(stdout),
-    "corpus-snapshot.mjs's closing advisory, on stdout, must name `corpus:release` and "
+    "corpus-snapshot.ts's closing advisory, on stdout, must name `corpus:release` and "
     + "`a11ign/corpus-backups` as the route that already works -- otherwise the one message the lab "
     + "prints every night sends its reader to the unconfigured destination and nowhere else, which is "
     + "the reading that produced #1042's chairman escalation");
@@ -231,7 +231,7 @@ test("#2050: corpus-snapshot.mjs's closing advisory names corpus:release, on rea
     + "silence #2050 was filed about");
 });
 
-test("#2050 POSITIVE CONTROL: corpus-snapshot.mjs's nothing-to-snapshot refusal does NOT name "
+test("#2050 POSITIVE CONTROL: corpus-snapshot.ts's nothing-to-snapshot refusal does NOT name "
   + "corpus:release", () => {
   // Without this, an assertion that matched anywhere in anything the process printed -- rather than in
   // the advisory a reader lands on -- would pass on a script that named the route in some unrelated line.
@@ -241,13 +241,13 @@ test("#2050 POSITIVE CONTROL: corpus-snapshot.mjs's nothing-to-snapshot refusal 
   assert.equal(code, 2, `expected the empty-corpus refusal to exit 2; got ${code}: ${stderr}`);
   assert.match(stderr, /nothing to snapshot/, `not the refusal this control targets: ${stderr}`);
   assert.ok(!NAMES_THE_ROUTE(stdout + stderr),
-    "corpus-snapshot.mjs's nothing-to-snapshot refusal unexpectedly names corpus:release -- the positive "
+    "corpus-snapshot.ts's nothing-to-snapshot refusal unexpectedly names corpus:release -- the positive "
     + "control no longer distinguishes 'the closing advisory' from 'anything this script prints'");
 });
 
 test("#2050 REGRESSION: moving the route names out of the advisory and into a comment beside it must "
   + "NOT pass", () => {
-  // The shape three rounds of source-scanning missed on `corpus-backup.mjs` (see the regression above),
+  // The shape three rounds of source-scanning missed on `corpus-backup.ts` (see the regression above),
   // asserted here for the new case rather than assumed to be inherited: both route tokens removed from
   // the strings `process.stdout.write` is given and left only in a comment sitting beside the call. Run
   // for real, the advisory a reader sees genuinely lacks both names and the check above fails it.
@@ -268,7 +268,7 @@ test("#2050 REGRESSION: moving the route names out of the advisory and into a co
   // so a copy deleted between their listing and their read fails them with ENOENT (#1919).
   const dir = mkdtempSync(join(REPO, "packages/lab/.corpus-snapshot-mutation-"));
   try {
-    const mutatedScript = join(dir, "corpus-snapshot.mjs");
+    const mutatedScript = join(dir, "corpus-snapshot.ts");
     writeFileSync(mutatedScript, mutated);
     const { code, stdout, stderr } = runSnapshot(mutatedScript, { withCaptures: true });
     assert.equal(code, 0, `expected the mutated script to still exit 0; got ${code}: ${stderr}`);

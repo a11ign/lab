@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 
 import { captureOf, reachedThePage, reachedTheContent, wasAnythingInTheWay, heldStill,
   sweepAgreesWithTheTree, whichProbesRan, INTERACTION_PROBES }
-  from "../../scripts/explain-capture.mjs";
+  from "../../scripts/explain-capture.ts";
 import { readdirSync, readFileSync } from "node:fs";
 import { datasetRoot, captureRoot, realCorpusRoot } from "../dataset-paths.ts";
 import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";

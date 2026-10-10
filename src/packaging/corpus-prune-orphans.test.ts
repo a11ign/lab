@@ -24,7 +24,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { classifyOrphan } from "../../scripts/corpus-prune-orphans.mjs";
+import { classifyOrphan } from "../../scripts/corpus-prune-orphans.ts";
 import { pathOf, REAL_PAGES } from "../training/real-page-corpus.mjs";
 
 // 192.0.2.0/24 is TEST-NET-1 (RFC 5737), reserved for documentation and routable nowhere. The real fleet
@@ -147,7 +147,7 @@ test("#940: a REAL page's path match is still RETIRED -- the role widens nothing
     "RETIRED");
 });
 
-const PRUNE = fileURLToPath(new URL("../../scripts/corpus-prune-orphans.mjs", import.meta.url));
+const PRUNE = fileURLToPath(new URL("../../scripts/corpus-prune-orphans.ts", import.meta.url));
 /** Every fixture's path, from the declarations themselves -- never a second, hand-typed list of ten. */
 const FIXTURE_PATHS = REAL_PAGES.filter((page) => page.role === "fixture").map((page) => pathOf(page.url));
 /** A documentation-range base standing in for "the lab's page server, configured by DATASET_BASE_URL". */

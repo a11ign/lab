@@ -715,7 +715,7 @@ def ood_reference_indices(total: int, torch: Any) -> Any:
 def assert_dataset_is_current(data: Path) -> None:
     """Refuse a DERIVED dataset whose source has moved on since it was built.
 
-    `with-realism.jsonl` is produced by `build-realism-tier.mjs` from the export. On 2026-08-24 a retrain
+    `with-realism.jsonl` is produced by `build-realism-tier.ts` from the export. On 2026-08-24 a retrain
     consumed one built before 44 new cases existed -- the export held 2,366 records, training reported
     2,349 -- so a full capture/export/train cycle produced a model that had never seen the corpus change
     it was run to measure. Every step succeeded. The missing one simply left an older file in place, and a
@@ -1022,12 +1022,12 @@ def main() -> None:
         # model fitted to that must not be promotable however good its numbers look.
         #
         # Set at INITIALISATION, before any gate can set it True: an eligibility that starts True and is
-        # cleared later is one a later branch can quietly restore. `promote-model.mjs` refuses a model
+        # cleared later is one a later branch can quietly restore. `promote-model.ts` refuses a model
         # that is not release-eligible, so this is the first of three independent gates and the only one
         # that cannot be argued with.
         #
         # AN EXCLUSION IS THE SAME KIND OF FACT. A model missing heads the release model has must not pass
-        # for it: `promote-model.mjs` and `refuse_to_destroy_release_weights` both read this flag, so
+        # for it: `promote-model.ts` and `refuse_to_destroy_release_weights` both read this flag, so
         # clearing it here is what makes an isolating retrain unable to overwrite or become the candidate.
         "releaseEligible": dataset_grade(records) != "test" and not excluded_subtypes,
         "modelReleaseEligible": dataset_grade(records) != "test" and not excluded_subtypes,

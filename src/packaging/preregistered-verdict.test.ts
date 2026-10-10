@@ -19,7 +19,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { verdictStatisticState }
-  from "../../../lab/scripts/check-preregistered-verdict.mjs";
+  from "../../../lab/scripts/check-preregistered-verdict.ts";
 
 const withMedian = "arm A: median 27.4s IQR 3.0 · arm B: median 35.1s IQR 17.9";
 const proxyOnly = "arm A: 13,541s wall clock over 2,122 captures · arm B: 9,004s over 1,400";

@@ -126,8 +126,8 @@ const EXEMPT: Record<string, string> = {
     "@a11ign/evidence is the zero-dependency package everything else (including lab) depends on; "
     + "it cannot import dataset-paths.mjs without inverting the whole dependency graph.",
   "packages/lab/src/packaging/promotion-refuses-dirty.test.ts":
-    "Tests promote-model.mjs's A11Y_PROMOTE_ROOT override directly; the runs/model-candidate literal is "
-    + "a fixture path under a temp root this test plants, not a read of the real corpus. (promote-model.mjs "
+    "Tests promote-model.ts's A11Y_PROMOTE_ROOT override directly; the runs/model-candidate literal is "
+    + "a fixture path under a temp root this test plants, not a read of the real corpus. (promote-model.ts "
     + "itself is not in this list: it uses A11Y_PROMOTE_ROOT, which this scan does not look for, and its "
     + "one bare \"runs\" has no trailing slash, so it never matches the signature in the first place.)",
   "packages/lab/src/packaging/row-claim.test.ts":
@@ -136,10 +136,10 @@ const EXEMPT: Record<string, string> = {
   "packages/lab/src/gates/veto-audit-corpus.test.ts":
     "Checks that an ansible command string does NOT contain a stale export path -- comparing against "
     + "another file's output, not resolving its own.",
-  "packages/lab/scripts/lab-inventory.mjs":
+  "packages/lab/scripts/lab-inventory.ts":
     "The runs/ literal is inside a human-readable report line (\"no runs/model-* to speak of\") describing "
     + "what was NOT found, not a path this file resolves -- RUNS itself already comes from runsRoot().",
-  "packages/lab/scripts/explain-capture.mjs":
+  "packages/lab/scripts/explain-capture.ts":
     "The runs/ literal is inside a human-readable error message naming where the search already looked "
     + "(findCaptures, a few lines above, builds those same roots through realCorpusRoot()/captureRoot()/ "
     + "repeatCapturesRoot() from dataset-paths.mjs) -- the message just cannot print realCorpusRoot()'s "

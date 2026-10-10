@@ -141,17 +141,17 @@ test("a single named worker, itself the one down: still refuses (one worker IS t
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * Closed ELSEWHERE, not silently dropped: `capture-check.ts`, `stability-gate.mjs` and
- * `gate-probe-order.mjs` also take `--worker=`, and `evidence-check.mjs` also takes one positionally --
+ * Closed ELSEWHERE, not silently dropped: `capture-check.ts`, `stability-gate.ts` and
+ * `gate-probe-order.ts` also take `--worker=`, and `evidence-check.ts` also takes one positionally --
  * but all four are catalogued `lab-job.yml` jobs (`capture-check`, `stability`/`gate-stability`,
  * `gate-probe-order`, `evidence-check`), so they wake THROUGH `lab:job` already (#2655's table, rows 4, 5,
  * 10). A census that also flagged them would ask this row to fix a defect closed by a different one.
  */
 const CLOSED_ELSEWHERE = new Set([
   "packages/lab/src/harnesses/capture-check.ts",
-  "packages/lab/scripts/stability-gate.mjs",
-  "packages/lab/scripts/gate-probe-order.mjs",
-  "packages/lab/scripts/evidence-check.mjs",
+  "packages/lab/scripts/stability-gate.ts",
+  "packages/lab/scripts/gate-probe-order.ts",
+  "packages/lab/scripts/evidence-check.ts",
 ]);
 
 /** The module itself, and its own test: a wake call cannot call itself, and prose mentioning the two

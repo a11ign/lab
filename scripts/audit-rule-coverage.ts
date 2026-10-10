@@ -57,7 +57,7 @@ import { ruleCoverageAdmits } from "../src/training/real-page-selection.mjs";
 
 const REPO = REPO_ROOT;
 // `CAPTURE_ROOT` was a second env-var name for the same thing `DATASET_CAPTURE_ROOT`/`DATASET_ROOT`
-// already cover -- see `audit-size-sensitivity.mjs`, which read the identical line.
+// already cover -- see `audit-size-sensitivity.ts`, which read the identical line.
 const CORPUS = captureRoot(datasetRoot());
 const REAL = realCorpusRoot();
 /**

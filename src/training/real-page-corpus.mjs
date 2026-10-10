@@ -599,7 +599,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", source: TUTORIAL_CLAIM, demonstrates: "page regions and landmarks" },
 
   // --- CALIBRATION, publishers whose claim covers EVERY criterion we score. -------------------------
-  // Only an unqualified claim can be a calibration page: `calibrate-abstention.mjs` counts ANY finding
+  // Only an unqualified claim can be a calibration page: `calibrate-abstention.ts` counts ANY finding
   // on a `conformant` page as a false positive, so a partially-compliant page would be scored as a
   // false accusation for correctly finding a criterion its publisher disclaims. Everything else goes
   // to TRAINING, where the per-head mask handles the exceptions properly.
@@ -1147,7 +1147,7 @@ export function normaliseUrl(url) {
 /**
  * A page-server origin: loopback, which is where every fixture is DECLARED (`FIXTURE_BASE`) and the one case
  * where a capture's origin differs from its declaration's by design (#146). Moved here from
- * `corpus-prune-orphans.mjs` (#881) so the matcher, the gate and the prune tool read one definition.
+ * `corpus-prune-orphans.ts` (#881) so the matcher, the gate and the prune tool read one definition.
  *
  * @param {unknown} url
  */
@@ -1181,7 +1181,7 @@ export function isFixture(page) {
 
 /**
  * A url with its origin removed, normalised -- what a relocated capture still has in common with its
- * declaration. Moved here from `corpus-prune-orphans.mjs` with `servedByThePageServer`, unchanged.
+ * declaration. Moved here from `corpus-prune-orphans.ts` with `servedByThePageServer`, unchanged.
  *
  * @param {unknown} url
  */
@@ -1234,7 +1234,7 @@ function relocatedFixtureFor(url) {
  * The page-server fixture declared at this url's PATH, whatever its origin -- for a capture `realPageFor`
  * still MISSED. That is a declared fixture reached some way `relocatedFixtureFor` does not undo (a named host
  * rather than an address, another port), and it must not be reported as an undeclared page: the two take
- * opposite fixes, and the fix for an undeclared page is to delete it. `corpus-prune-orphans.mjs` calls the
+ * opposite fixes, and the fix for an undeclared page is to delete it. `corpus-prune-orphans.ts` calls the
  * same set RELOCATED and refuses to delete it.
  *
  * ANY fixture at the path, whatever else is declared there -- and the prune tool asks through THIS function

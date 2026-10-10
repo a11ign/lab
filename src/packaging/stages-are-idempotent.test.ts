@@ -35,7 +35,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { STEPS } from "../../scripts/everything-pipeline.mjs";
+import { STEPS } from "../../scripts/everything-pipeline.ts";
 
 // #2171: shared, because four private copies of this walk descended a directory symlink and threw ELOOP.
 // It reads nothing of its own -- the roots below are this guard's, so WALK_SCOPE above still holds.
@@ -59,14 +59,14 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
  * the second test below asserts. An append with no truncation is the corpus-doubling failure above.
  */
 const MAY_APPEND = new Map([
-  ["packages/lab/scripts/everything-pipeline.mjs",
+  ["packages/lab/scripts/everything-pipeline.ts",
     "the run transcript, truncated by rmSync at the start of each run so it cannot accumulate across runs"],
   // `keepingTranscript` MOVED here on 2026-09-01, to sit beside the `run` whose six-line tail it exists to
   // compensate for. It had been solving that for everything-pipeline's nine stages only, while `retrain`
   // — one of those stages — is itself a pipeline tailing its own five before the parent sees them.
   // Same truncation, and now a second one: RETRAIN_TRANSCRIPT is rmSync'd at the start of a standalone
   // retrain, and a DRY RUN bypasses the wrapper entirely rather than appending to the last real record.
-  ["packages/lab/scripts/retrain-pipeline.mjs",
+  ["packages/lab/scripts/retrain-pipeline.ts",
     "the run transcript, truncated by rmSync at the start of each run so it cannot accumulate across runs"],
   // NOT a stage's output: a LOG OF RUNS (#4459), one line per capture run, and appending is its point. A re-run is a
   // new run and earns its own line, so nothing here is DOUBLED; there is no truncation because truncating it would
@@ -102,7 +102,7 @@ test("the one file that MAY append is truncated at the start of every run", () =
   // The exception's guard. Without this, MAY_APPEND is just a hole with a comment in it — and the
   // transcript accumulating across runs is exactly how "the fixture capture keeps failing" came to be
   // read off a later, unrelated job.
-  const runner = readFileSync(join(REPO, "packages/lab/scripts/everything-pipeline.mjs"), "utf8");
+  const runner = readFileSync(join(REPO, "packages/lab/scripts/everything-pipeline.ts"), "utf8");
   assert.match(runner, /rmSync\(TRANSCRIPT,\s*\{\s*force:\s*true\s*\}\)/,
     "the transcript must be removed before a run, or it accumulates across runs and a later job's output "
     + "is read as this one's");
@@ -125,7 +125,7 @@ test("running the chain does not MUTATE its own stage list", () => {
   // make "re-run this pipeline" mean something different the second time, which is the claim failing in
   // the least visible way possible: the pipeline succeeds, having done less.
   const before = STEPS.map((s: { name: string }) => s.name);
-  const runner = readFileSync(join(REPO, "packages/lab/scripts/everything-pipeline.mjs"), "utf8");
+  const runner = readFileSync(join(REPO, "packages/lab/scripts/everything-pipeline.ts"), "utf8");
   for (const mutator of [".shift(", ".pop(", ".splice(", ".sort(", ".reverse("]) {
     assert.ok(!runner.includes(`STEPS${mutator}`),
       `the runner calls STEPS${mutator}, so a second run would not see the same stages as the first`);

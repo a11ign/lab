@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
+import { isTransitionalShim } from "../transitional-shims.ts";
 
 /**
  * WHAT THIS GUARD READS, declared so a diff outside it does not run it -- #929. It walks `packages/lab/scripts` for gates adopting the verdict helpers, and reads their sources there and in `packages/lab/src`.
@@ -64,37 +65,37 @@ const ROOT = resolve(import.meta.dirname, "../../../..");
  * `owed` is a WORK LIST. `not-a-gate` is a decision, and each says what makes it one.
  */
 const EXEMPT: Record<string, { category: "owed" | "not-a-gate" | "deliberate"; why: string }> = {
-  "audit-corpus-starvation.mjs": { category: "not-a-gate",
+  "audit-corpus-starvation.ts": { category: "not-a-gate",
     why: "emits a work list, and `IMPOSSIBLE_BY_DEFINITION` items mean a shorter list is not a better "
       + "score. There is no pass/fail here to condition on coverage" },
-  "audit-corpus-urls.mjs": { category: "not-a-gate",
+  "audit-corpus-urls.ts": { category: "not-a-gate",
     why: "audits whatever URLs the corpus declares; its population IS the corpus and cannot be short" },
-  "audit-size-sensitivity.mjs": { category: "not-a-gate",
+  "audit-size-sensitivity.ts": { category: "not-a-gate",
     why: "a measurement: it reports a curve across sample sizes rather than a verdict" },
-  "audit-observation-ambiguity.mjs": { category: "not-a-gate",
+  "audit-observation-ambiguity.ts": { category: "not-a-gate",
     why: "reports what fraction of a channel's zeros are capture artefacts. A high number is a fact about "
       + "the capture path rather than a defect a commit introduced, and it DOES exit 2 on an empty corpus, "
       + "which is the coverage half this shape exists for" },
   "audit-rule-coverage.ts": { category: "not-a-gate",
     why: "audits which criteria have never fired. Its population is every rule there is and cannot be "
       + "short — `fired 0x` is its finding, not a coverage gap" },
-  "audit-route-change-identity.mjs": { category: "not-a-gate",
+  "audit-route-change-identity.ts": { category: "not-a-gate",
     why: "#1790: measures how often a document-identity signal would classify a routeChange result "
       + "differently from the heading-change proxy. Its own header says so -- it reports and never "
       + "blocks, read-only against the real-page corpus on disk by design. There is no commit for a "
       + "disagreement rate to condition pass/fail on; it exits 2 only when the corpus it read was empty, "
       + "which is the coverage half this shape exists for" },
-  "audit-focus-log-first-event.mjs": { category: "not-a-gate",
+  "audit-focus-log-first-event.ts": { category: "not-a-gate",
     why: "#2550: counts the first event of every focus log per capture protocol, read-only against the "
       + "real-page corpus and the dataset captures. It reports and never blocks and sets no exit code: an "
       + "empty root prints EXAMINED NOTHING, and there is no commit for a count to condition pass/fail on" },
-  "emit-unclosable-vetoes.mjs": { category: "not-a-gate",
+  "emit-unclosable-vetoes.ts": { category: "not-a-gate",
     why: "emits data for another program to read; it has no verdict" },
-  "emit-grants-map.mjs": { category: "not-a-gate",
+  "emit-grants-map.ts": { category: "not-a-gate",
     why: "emits the JS-side `grants` declarations for the Python audit, which REFUSES without it rather "
       + "than examining an empty set — that file's version of this same rule" },
 
-  "evidence-check.mjs": { category: "deliberate",
+  "evidence-check.ts": { category: "deliberate",
     why: "CONSIDERED AND DECIDED AGAINST, 2026-08-28. Its coverage rule is already correct — `compared === "
       + "0 || compared < attempted` — so migrating buys nothing behavioural, and it would FLIP a decision "
       + "someone made on purpose: this gate ranks INCONCLUSIVE above CHANGED (`inconclusive ? 2 : changed ? "
@@ -108,6 +109,8 @@ function discoverGates(): string[] {
   const out = walkTree({ kind: "both", roots: ["packages/lab/scripts"] }).map((f) => f.path);
   return out
     .filter((f) => !f.includes(".test."))
+    // A one-release `.mjs` shim is the name another repository still spells; its verdict is read from its `.ts` (a11ign/a11ign#4551).
+    .filter((f) => !isTransitionalShim(resolve(ROOT, f)))
     .map((f) => f.split("/").pop()!)
     .filter((name) => /^(gate|check|audit|score|evidence|stability|emit)/.test(name))
     .sort();
@@ -118,7 +121,7 @@ const gates = discoverGates();
 test("the gates are DISCOVERED, not trusted from a list", () => {
   // Guards the discovery. A rename would otherwise leave every assertion below iterating an empty array.
   assert.ok(gates.length >= 10, `discovered only ${gates.length}: ${gates.join(", ")}`);
-  assert.ok(gates.includes("gate-probe-order.mjs"));
+  assert.ok(gates.includes("gate-probe-order.ts"));
 });
 
 for (const name of gates) {
@@ -128,7 +131,7 @@ for (const name of gates) {
     if (exempt) {
       assert.ok(exempt.why.length > 40, `${name}'s exemption needs a real reason, not a word`);
       // BOTH DIRECTIONS. An exemption outliving its migration is a work list claiming work that is done —
-      // `stability-gate.mjs` sat here for one commit after being migrated, and the test kept announcing it
+      // `stability-gate.ts` sat here for one commit after being migrated, and the test kept announcing it
       // as owed. A list only stays honest if being ON it wrongly fails too.
       assert.doesNotMatch(source, DERIVED_VERDICT,
         `${name} already derives its verdict — delete its EXEMPT entry`);

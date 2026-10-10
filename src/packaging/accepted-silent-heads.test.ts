@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { releasability } from "./releasability.ts";
 import { readAcceptedSilentHeads } from "./accepted-silent-heads.ts";
-import { promote } from "../../scripts/promote-model.mjs";
+import { promote } from "../../scripts/promote-model.ts";
 
 const WAITING = "4.1.3:status-waiting";
 const silentHead = (positive = 29) => ({
@@ -121,9 +121,9 @@ test("the loader is loud: an unruled head, a stray key or a duplicate is refused
 
 test("every caller of releasability() passes the ruled list, so promote and retrain cannot disagree", () => {
   const scripts = fileURLToPath(new URL("../../scripts/", import.meta.url));
-  const callers = readdirSync(scripts).filter((f) => f.endsWith(".mjs"))
+  const callers = readdirSync(scripts).filter((f) => f.endsWith(".ts"))
     .filter((f) => /releasability\(\{/.test(readFileSync(join(scripts, f), "utf8")));
-  assert.deepEqual(callers.sort(), ["promote-model.mjs", "retrain-pipeline.mjs"],
+  assert.deepEqual(callers.sort(), ["promote-model.ts", "retrain-pipeline.ts"],
     "the positive control: discovery must find both real callers, or an empty scan would pass");
   for (const file of callers) {
     assert.match(readFileSync(join(scripts, file), "utf8"), /acceptedSilentHeads:\s*readAcceptedSilentHeads\(\)/, file);

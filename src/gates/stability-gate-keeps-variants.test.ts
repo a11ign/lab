@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "./stability-canary.ts";
 
-const SCRIPT = resolve(import.meta.dirname, "../../scripts/stability-gate.mjs");
+const SCRIPT = resolve(import.meta.dirname, "../../scripts/stability-gate.ts");
 
 // Shaped like `repeat-capture`'s report (compareFields): a STABLE line, then a VARIES line with its variants.
 const VARYING_REPORT = [
@@ -105,7 +105,7 @@ function wiringFaults(source: string): string[] {
   return faults;
 }
 
-test("#3273 wiring: stability-gate.mjs uses the tested functions, and the check can fail", () => {
+test("#3273 wiring: stability-gate.ts uses the tested functions, and the check can fail", () => {
   const source = readFileSync(SCRIPT, "utf8");
   assert.deepEqual(wiringFaults(source), []);
   // Positive controls: break each thing the check looks for and it notices.

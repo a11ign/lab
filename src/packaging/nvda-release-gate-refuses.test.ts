@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { captureFilePath } from "../capture/evidence-diff.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const SCRIPT = join(REPO, "packages/lab/scripts/nvda-release-gate.mjs");
+const SCRIPT = join(REPO, "packages/lab/scripts/nvda-release-gate.ts");
 
 /** A minimal usable NVDA capture -- the same shape `evidence-diff.test.ts` builds. */
 function capture(over: Record<string, unknown> = {}) {

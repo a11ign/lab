@@ -87,7 +87,7 @@ test("§17's landmark-feature removal and schema advance both still hold", () =>
   // AN ABSENT MIGRATION FILE IS THE CLAIM SATISFIED, NOT AN ERROR — corrected 2026-09-06.
   //
   // This read the file unconditionally, so it could only pass while a migration was OPEN: the file
-  // exists for the duration of one and is deleted when it closes (`lab-inventory.mjs` states the close
+  // exists for the duration of one and is deleted when it closes (`lab-inventory.ts` states the close
   // as "promoting weights stamped <schema> and DELETING schema-migration.json"). So closing a migration
   // broke a test that asserts a migration has closed. It had never run in the state the project is
   // trying to reach, and it failed for the first time on the night the v18 -> v19 close landed.

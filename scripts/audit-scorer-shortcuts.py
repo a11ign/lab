@@ -36,7 +36,7 @@ UNCLOSABLE_MAP = REPO_ROOT / "runs/unclosable-vetoes.json"
 def unclosable_vetoes() -> dict[str, dict[str, set[str]]]:
     """Which (subtype, feature) pairs no corpus work can close, and WHY — read, never restated here.
 
-    `audit-corpus-starvation.mjs` has carried `IMPOSSIBLE_BY_DEFINITION` for months with the cost written
+    `audit-corpus-starvation.ts` has carried `IMPOSSIBLE_BY_DEFINITION` for months with the cost written
     beside it: *"Reporting those put items on a work list that nobody can complete, and inflated the two
     features at the top of the ranking."* This audit never learned it, so it reported 57 veto pairs with
     no way to say which were worth corpus work. A fact learned at one layer and not carried to the next.

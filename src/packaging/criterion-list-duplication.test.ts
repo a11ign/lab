@@ -151,7 +151,7 @@ test("a tracked stale duplicate names the issue that will close it", () => {
 /**
  * #1509: THE ABSTENTION CALIBRATION'S DENOMINATOR IS THE EXPORTED LIST, and the stale copy #136 tracked is gone.
  *
- * `calibrate-abstention.mjs` held `const SCORED_CRITERIA = [...]` -- eight criteria, under a comment reading
+ * `calibrate-abstention.ts` held `const SCORED_CRITERIA = [...]` -- eight criteria, under a comment reading
  * "Read from the report, never hardcoded" -- while the export had moved on (3.3.2 out; 2.1.1, 2.4.7 and
  * eight more in). Its only consumer is `testedCells()`, the per-cell false-assertion rate's denominator. The
  * script now imports the export, so the two cannot differ. This test holds that: the import is present and
@@ -161,7 +161,7 @@ test("a tracked stale duplicate names the issue that will close it", () => {
  * suite with the corpus.
  */
 test("#1509: calibrate-abstention reads SCORED_CRITERIA from @a11ign/judge/coverage and types no copy", () => {
-  const file = "packages/lab/scripts/calibrate-abstention.mjs";
+  const file = "packages/lab/scripts/calibrate-abstention.ts";
   const src = read(file);
   assert.match(src, /import\s*\{[^}]*\bSCORED_CRITERIA\b[^}]*\}\s*from\s*"@a11ign\/judge\/coverage"/,
     "the positive control: the script imports the canonical list by name");

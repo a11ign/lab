@@ -46,7 +46,7 @@ test("it reports a NUMBER of newer captures, not a word", () => {
     "nothing counts how many captures are newer than the export");
   assert.match(SCORE_RULES, /capture\(s\) are NEWER than this export/,
     "the count exists and is never said out loud — which is how the first direction of the staleness "
-    + "check in audit-corpus-starvation.mjs failed");
+    + "check in audit-corpus-starvation.ts failed");
   assert.match(SCORE_RULES, /job=export/,
     "it must name the command that settles it, like check-signals and the starvation audit do");
 });

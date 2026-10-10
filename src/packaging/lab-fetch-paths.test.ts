@@ -3,7 +3,7 @@
  *
  * `lab-fetch.yml` is the only way an artefact leaves the lab, and every path in its map is a SECOND
  * statement of where some producer writes. Nothing compared the two. `cbea0d3b` (2026-09-05) moved
- * `calibrate-abstention.mjs`'s output to `runs/abstention/` and left `abstention-sweep` pointing at
+ * `calibrate-abstention.ts`'s output to `runs/abstention/` and left `abstention-sweep` pointing at
  * `runs/real-page-corpus/`, so from then on the file PLAN.md's floor decisions rest on could not be fetched.
  * It was found only when #951's gate 3 asked for it. No test failed, because no test read the map.
  *
@@ -33,14 +33,14 @@ import {
 } from "../dataset-paths.ts";
 import { captureFilePath } from "../capture/evidence-diff.ts";
 import { progressPath } from "../training/capture-progress.mjs";
-import { calibrationJudgmentsPath } from "../../scripts/calibrate-abstention.mjs";
-import { TRANSCRIPT } from "../../scripts/everything-pipeline.mjs";
-import { RETRAIN_TRANSCRIPT } from "../../scripts/retrain-pipeline.mjs";
+import { calibrationJudgmentsPath } from "../../scripts/calibrate-abstention.ts";
+import { TRANSCRIPT } from "../../scripts/everything-pipeline.ts";
+import { RETRAIN_TRANSCRIPT } from "../../scripts/retrain-pipeline.ts";
 // #968: importing a PRODUCER runs nothing -- both guard `main()` on `import.meta.url`, and their
 // `refuseUnknownFlags` calls take the same guard as `entry`. Driven rather than assumed: imported under a
 // bare argv and under an argv carrying flags neither script declares, both load clean with exitCode 0.
-import { OUT as UNCLOSABLE_VETOES } from "../../scripts/emit-unclosable-vetoes.mjs";
-import { REPORT as EVIDENCE_CHECK_REPORT, RUN_REPORTS } from "../../scripts/evidence-check.mjs";
+import { OUT as UNCLOSABLE_VETOES } from "../../scripts/emit-unclosable-vetoes.ts";
+import { REPORT as EVIDENCE_CHECK_REPORT, RUN_REPORTS } from "../../scripts/evidence-check.ts";
 
 /** The env overrides `dataset-paths.mjs` reads at call time. The lab runs with none, so neither does this. */
 const PATH_OVERRIDES = ["DATASET_ROOT", "DATASET_CAPTURE_ROOT", "DATASET_EXPORT", "REAL_CORPUS_ROOT"];
@@ -149,10 +149,10 @@ const UNREACHED: Record<string, { producer: string; why: string }> = {
   "grants-audit": { producer: "packages/scorer/python/audit_grants.py", why: "built with pathlib in Python" },
   "shortcuts": { producer: "packages/lab/scripts/audit-scorer-shortcuts.py", why: "built with pathlib in Python" },
   "corpus-archive": {
-    producer: "packages/lab/scripts/corpus-snapshot.mjs", why: "outside `runs/`: a `--out` flag defaulting to `backups`, against cwd",
+    producer: "packages/lab/scripts/corpus-snapshot.ts", why: "outside `runs/`: a `--out` flag defaulting to `backups`, against cwd",
   },
   "promoted-changeset": {
-    producer: "packages/lab/scripts/promote-model.mjs", why: "a name hashed from the release, unguessable by design; the fetch globs",
+    producer: "packages/lab/scripts/promote-model.ts", why: "a name hashed from the release, unguessable by design; the fetch globs",
   },
 };
 

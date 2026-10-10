@@ -119,7 +119,7 @@ export function corpusState({ datasetRoots = [], evidenceDirs = [], now = Date.n
  * How many CAPTURES are in these directories — the presence test, and it must not be `existsSync(runs/)`.
  *
  * **A `runs/` THAT EXISTS IS NOT A CORPUS, and the test suite creates exactly that.**
- * `emit-unclosable-vetoes.mjs` writes `resolve(runsRoot(), "unclosable-vetoes.json")`, so running the suite
+ * `emit-unclosable-vetoes.ts` writes `resolve(runsRoot(), "unclosable-vetoes.json")`, so running the suite
  * on a machine with no corpus MAKES a `runs/` containing one report. Every check testing presence with
  * `existsSync` then sees a corpus, its honest absent-skip never fires, and it measures an empty one.
  *

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tempDir } from "../../../guards/src/test-tmp.ts";
-import { occupancyMs, scan, report, METHOD } from "../../scripts/fleet-hours.mjs";
+import { occupancyMs, scan, report, METHOD } from "../../scripts/fleet-hours.ts";
 
 /** A capture is billed on the LAST cumulative `atMs`, so a fixture needs marks that climb. */
 const marks = (...ms: number[]) => ms.map((atMs, i) => ({ event: `mark${i}`, atMs }));

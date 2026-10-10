@@ -22,10 +22,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { REPO_ROOT } from "./dataset-paths.ts";
-import { acceptanceDataPaths, caseIdsOf, caseReaderArgs, criterionDetail } from "../scripts/explain-scorer.mjs";
+import { acceptanceDataPaths, caseIdsOf, caseReaderArgs, criterionDetail } from "../scripts/explain-scorer.ts";
 
 const READER = fileURLToPath(new URL("../scripts/explain-case.py", import.meta.url));
-const EXPLAIN = fileURLToPath(new URL("../scripts/explain-scorer.mjs", import.meta.url));
+const EXPLAIN = fileURLToPath(new URL("../scripts/explain-scorer.ts", import.meta.url));
 // The featurizer is standard library, so any python3 reads a record; the venv is preferred where it exists.
 const VENV_PYTHON = join(REPO_ROOT, ".venv/bin/python");
 const PYTHON = existsSync(VENV_PYTHON) ? VENV_PYTHON : "python3";

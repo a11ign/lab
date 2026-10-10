@@ -17,7 +17,7 @@ import { writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { tempDir } from "../../../guards/src/test-tmp.ts";
-import { promote, promotionLevel, publicPackageVersions } from "../../scripts/promote-model.mjs";
+import { promote, promotionLevel, publicPackageVersions } from "../../scripts/promote-model.ts";
 
 /** Every public package before version one, as the tree reads during the first publish. */
 const ALL_ZERO = { "a11ign": "0.0.0", "@a11ign/evidence": "0.0.0", "@a11ign/judge": "0.0.0",

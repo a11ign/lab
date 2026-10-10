@@ -26,7 +26,7 @@ import { isUsableCapture, captureFilePath } from "../capture/evidence-diff.ts";
  *
  * **A test-grade dataset must never be promotable**, and that is enforced rather than promised: the
  * export stamps `grade: "test"`, the trainer refuses to mark such a model release-eligible, and
- * `promote-model.mjs` already refuses a model that is not eligible. Three independent gates, none of
+ * `promote-model.ts` already refuses a model that is not eligible. Three independent gates, none of
  * which is this comment.
  */
 export const TEST_GRADE = process.env.A11Y_DATASET_GRADE === "test";

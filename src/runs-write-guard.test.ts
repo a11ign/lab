@@ -4,12 +4,12 @@
  *
  * MEASURED for this unit: of the files matching `dataset-paths.mjs`'s own `runs/`-resolution signature
  * (see `dataset-paths.test.ts`), 18 also call a filesystem write function. 16 of those genuinely write
- * INTO `runs/` and now call the guard; the other 2 (`collect-promotion.mjs`, which copies FROM runs/
+ * INTO `runs/` and now call the guard; the other 2 (`collect-promotion.ts`, which copies FROM runs/
  * into tracked `packages/scorer/models/`, and `check-real-page-findings.ts`, whose only write targets
  * tracked `packages/lab/baselines/`) are EXEMPT with a reason. Nothing distinguished the 16 real writers
  * from the read-only files by NAME —
  * `npm run corpus:grants-map` writes, `npm run lab:inventory` does not, and a peer cannot tell which
- * without opening the file. This is what `build-realism-tier.mjs` cost when it was run directly to test
+ * without opening the file. This is what `build-realism-tier.ts` cost when it was run directly to test
  * an unrelated change: it silently wrote `runs/screenreader-dataset/with-realism.jsonl`, twice.
  *
  * `refuseIfRunsReadonly` (`dataset-paths.mjs`) is the guard; this is the DISCOVERY that keeps every
@@ -83,8 +83,8 @@ function resolvesRunsPath(source: string): boolean {
 }
 
 /** A write call. `rmSync` is included -- deleting a real file under runs/ is a write for this guard's
- *  purposes, and retrain-pipeline.mjs's transcript is removed before being appended to. `copyFileSync`
- *  is included so a script that copies FROM runs/ (collect-promotion.mjs, into packages/scorer/models/)
+ *  purposes, and retrain-pipeline.ts's transcript is removed before being appended to. `copyFileSync`
+ *  is included so a script that copies FROM runs/ (collect-promotion.ts, into packages/scorer/models/)
  *  is caught by the scan and has to argue its exemption rather than never being asked. */
 const WRITE_CALL = /\b(writeFileSync|appendFileSync|writeJsonAtomic|rmSync|copyFileSync)\s*\(/;
 
@@ -100,12 +100,12 @@ const EXEMPT: Record<string, string> = {
     "It is the implementation of refuseIfRunsReadonly itself -- the guard cannot call itself, and its own "
     + "writeJsonAtomic-shaped text is inside a doc comment describing OTHER files, not a write this file "
     + "performs.",
-  "packages/lab/scripts/collect-promotion.mjs":
+  "packages/lab/scripts/collect-promotion.ts":
     "Copies files INTO packages/scorer/models/ (tracked source, the promotion path) and reads runs/ "
     + "artefacts as its SOURCE for those copies -- it never writes into runs/ itself. "
     + "test_no_writes_into_source_tree.py already guards the tracked-source half of this script's write; "
     + "this guard is scoped to runs/ specifically, a different destination.",
-  "packages/lab/scripts/corpus-snapshot.mjs":
+  "packages/lab/scripts/corpus-snapshot.ts":
     "Reads runs/ (datasetRoot()) to build a backup archive but writes the .tar.gz to `backups/` under the "
     + "invoker's CWD by default (or wherever --out= points), never into runs/ itself -- it is a snapshot "
     + "tool precisely because its output is NOT the corpus.",

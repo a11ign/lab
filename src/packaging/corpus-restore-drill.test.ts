@@ -4,7 +4,7 @@
 /**
  * #2051 — a release is verified by REBUILDING a lab from it and running a real gate, not by counting a tarball.
  *
- * EVERY ARCHIVE HERE IS MADE BY THE REAL `corpus-snapshot.mjs`, run against a fixture `runs/` tree, and never
+ * EVERY ARCHIVE HERE IS MADE BY THE REAL `corpus-snapshot.ts`, run against a fixture `runs/` tree, and never
  * by hand. A hand-built archive would agree with the drill's idea of the layout by construction; the real
  * writer is the only thing that can disagree with it. The gate is the real `check-signals` over pages the real
  * generator wrote, so nothing here reads `runs/`, downloads a release or touches the fleet.
@@ -33,7 +33,7 @@ import {
   MEMBER_LAYOUT, countJson, drillVerdict, restoreDrill, targetRefusal,
 } from "./corpus-restore-drill.ts";
 
-const SNAPSHOT = resolve(REPO_ROOT, "packages/lab/scripts/corpus-snapshot.mjs");
+const SNAPSHOT = resolve(REPO_ROOT, "packages/lab/scripts/corpus-snapshot.ts");
 const GENERATE = resolve(REPO_ROOT, "packages/lab/src/training/generate-screenreader-dataset.mjs");
 const DRILL = resolve(REPO_ROOT, "packages/lab/src/packaging/corpus-restore-drill.ts");
 
@@ -105,7 +105,7 @@ function fixtureRuns(options: { hollow?: boolean } = {}): string {
   return runs;
 }
 
-/** An archive of `runs`, made by the real `corpus-snapshot.mjs`. */
+/** An archive of `runs`, made by the real `corpus-snapshot.ts`. */
 function snapshotOf(runs: string): string {
   const out = tmp("archive");
   execFileSync(process.execPath, [SNAPSHOT, `--out=${out}`], { cwd: REPO_ROOT, env: cleanEnv({ RUNS_ROOT: runs }) });
@@ -242,11 +242,11 @@ test("an archive holding a member the drill has no place for is refused, not hal
     scratch: join(tmp("target"), "restore"), liveRuns: runs }), /does not know where to put: newly-archived/);
 });
 
-test("MEMBER_LAYOUT names exactly the members corpus-snapshot.mjs archives", () => {
+test("MEMBER_LAYOUT names exactly the members corpus-snapshot.ts archives", () => {
   const source = readFileSync(SNAPSHOT, "utf8");
   const listOf = (name: string) => {
     const literal = source.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`))?.[1];
-    assert.ok(literal, `${name} is no longer a literal array in corpus-snapshot.mjs; this pin must follow it`);
+    assert.ok(literal, `${name} is no longer a literal array in corpus-snapshot.ts; this pin must follow it`);
     return [...literal.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   };
   const archived = [...listOf("WANTED"), ...listOf("WANTED_SIBLINGS")];

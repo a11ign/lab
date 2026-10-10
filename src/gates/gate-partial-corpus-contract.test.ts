@@ -52,6 +52,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import { isTransitionalShim } from "../transitional-shims.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
@@ -72,7 +73,8 @@ const DERIVED_VERDICT = /\b(gateVerdict|fleetVerdict)\(/;
 function resolvedScriptFile(argv: unknown): string | undefined {
   const tokens = Array.isArray(argv) ? argv.map(String) : typeof argv === "string" ? argv.split(/\s+/) : [];
   const direct = tokens.find((t) => t.endsWith(".mjs") || t.endsWith(".ts"));
-  if (direct) return direct;
+  // Control's `lab-job.yml` still spells the renamed programs by their `.mjs`, which is a one-release shim: the program is the `.ts` (a11ign/a11ign#4551).
+  if (direct) return isTransitionalShim(`${REPO}${direct}`) ? direct.replace(/\.mjs$/, ".ts") : direct;
   const runIndex = tokens.indexOf("run");
   if (!/npm|corepack/.test(tokens[0] ?? "") || runIndex < 0) return undefined; // `/usr/bin/corepack pnpm run` (#2893) or npm
   const scriptName = tokens[runIndex + 1] === "--silent" ? tokens[runIndex + 2] : tokens[runIndex + 1];
@@ -95,7 +97,7 @@ function adoptsVerdict(scriptFile: string | undefined): boolean {
  * they are derived, immediately below, so the two cannot silently disagree about a seventh adopter.
  */
 const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
-  "packages/lab/scripts/fleet-hours.mjs":
+  "packages/lab/scripts/fleet-hours.ts":
     "DOCUMENTED exit 2: it billed no capture and REFUSES to report a total it did not measure, and its "
     + "two silences are told apart — 'no JSON found' versus 'walked N and billed none' need opposite "
     + "fixes. That refusal covers ZERO and not PARTIAL, which would be the gap this file exists to name "
@@ -110,12 +112,12 @@ const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
   "packages/lab/src/training/check-signals.mjs":
     "DOCUMENTED: \"2 ... OR signalVerdict()'s own INCONCLUSIVE below MIN_EXAMINED\" — its own bespoke, "
     + "threshold-based population check, not derived from verdict.mjs but real and named in its own code",
-  "packages/lab/scripts/evidence-check.mjs":
+  "packages/lab/scripts/evidence-check.ts":
     "DOCUMENTED: \"2 means THREE things ... ('0 safe to ship, 1 evidence changed, 2 could not answer')\" "
     + "— this is the FOUNDING incident this whole file generalises: it once exited 0 on 2 of 48 captures "
     + "compared, and `docs/gate-exit-codes.md`/`verdict.mjs`'s own header both name it explicitly. Reaches "
     + "the wire via `evidence-diff.mjs`'s `inconclusive = compared === 0 || compared < attempted`.",
-  "packages/lab/scripts/corpus-snapshot.mjs":
+  "packages/lab/scripts/corpus-snapshot.ts":
     "DOCUMENTED: \"2 the archive holds fewer JSON files than were on disk\" — a real population check, and "
     + "the one place in this repo where a partial population is the WHOLE risk rather than a caveat. It "
     + "counts `.json` under every archived root, lists the archive back with `tar -tzf`, and refuses on a "
@@ -131,13 +133,13 @@ const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
  * either always-true-by-construction or not-the-right-question for that script.
  */
 const NO_PARTIAL_POPULATION: Record<string, string> = {
-  "packages/lab/scripts/explain-scorer.mjs":
+  "packages/lab/scripts/explain-scorer.ts":
     "NO POPULATION OF EVIDENCE, AND IT REFUSES THE ONE WAY IT COULD FALL SHORT: the `explain-case` job reads "
     + "the cases the caller NAMED, so 'did it see everything' means 'did every named id have a record', and "
     + "the reader answers that itself -- an id no acceptance record holds is refused by name (exit 2) and "
     + "NOTHING is printed, so a half-answer to a two-case question cannot read as the whole answer. It is "
     + "read-only and reports, never gates: no verdict reads its exit code (#2334).",
-  "packages/lab/scripts/full-page-claims.mjs":
+  "packages/lab/scripts/full-page-claims.ts":
     "REPORT-ONLY, AND IT STATES ITS OWN POPULATION: it makes no pass/fail judgement — it counts how many "
     + "real-page captures lose Requirement 2's full-page claim and names the sweep that withheld each. "
     + "'Did it see everything' is answered IN THE OUTPUT rather than by an exit code: every run prints "
@@ -145,11 +147,11 @@ const NO_PARTIAL_POPULATION: Record<string, string> = {
     + "`trips` and therefore cannot answer at all. A partial corpus therefore reports itself as partial. "
     + "It also refuses below a floor of five captures, because a zero over an empty directory would read "
     + "as 'nothing was found' rather than 'nothing was examined' — mutation-checked, see #900.",
-  "packages/lab/scripts/corpus-backup.mjs":
+  "packages/lab/scripts/corpus-backup.ts":
     "NO POPULATION OF EVIDENCE: it copies ONE archive — the newest file `corpus-snapshot` wrote — to a "
     + "destination and reads its size back. Its population is a single artifact, so 'did it see "
     + "everything' is not the right question; 'did the one thing arrive intact' is, and that is what it "
-    + "asks. The corpus-completeness question belongs one step earlier, to `corpus-snapshot.mjs` above, "
+    + "asks. The corpus-completeness question belongs one step earlier, to `corpus-snapshot.ts` above, "
     + "which is where it is now guarded. Both `corpus-backup` and `corpus-backup-verify` run this file.",
   "packages/lab/src/harnesses/capture-check.ts":
     "NO EXTERNAL POPULATION: `CHECKS` is a fixed literal list in `capture-check.ts` and the run iterates "
@@ -158,48 +160,48 @@ const NO_PARTIAL_POPULATION: Record<string, string> = {
     + "at all exits 2 — so the two states a partial-corpus gate exists to separate are already separate "
     + "here. Same reasoning as `isolation-gate.ts` above: a gate that enumerates its own targets has no "
     + "denominator to fall short of.",
-  "packages/lab/scripts/axe-calibration.mjs":
+  "packages/lab/scripts/axe-calibration.ts":
     "ITERATES ITS WHOLE DECLARED POPULATION: `conformantCalibrationPages()` names all 46 conformant "
     + "calibration pages up front and the run's `for` loop visits every one -- a page axe cannot examine "
     + "is recorded `failed: true` IN ITS OWN RECORD (exit 1 names this: 'the other pages' results are "
     + "still written'), never silently dropped from the output, so there is no path where fewer than 46 "
     + "records land in the file. Exit 2 is a REFUSAL before any page is attempted (no browser installed) -- "
     + "a precondition, not a partial-coverage measurement of the population itself (#1626).",
-  "packages/lab/scripts/build-realism-tier.mjs":
+  "packages/lab/scripts/build-realism-tier.ts":
     "DOCUMENTED: \"0 success, including the legitimate 'no training captures, base dataset only' state\" "
     + "— zero training captures is an accepted PASS by design, not flagged as a coverage shortfall; "
     + "\"2 every training capture truncated\" is a content defect, not a population count",
-  "packages/lab/scripts/calibrate-abstention.mjs":
+  "packages/lab/scripts/calibrate-abstention.ts":
     "DOCUMENTED: \"2 no calibration captures found\" — detects only total absence, never partial coverage; "
     + "no declared expected population to fall short of quantitatively",
-  "packages/lab/scripts/audit-corpus-starvation.mjs":
+  "packages/lab/scripts/audit-corpus-starvation.ts":
     "DOCUMENTED: \"2 a stale export\" — examines case DEFINITIONS for a data-currency problem, not a "
     + "corpus with an expected size the run could fall short of",
-  "packages/lab/scripts/audit-observation-ambiguity.mjs":
+  "packages/lab/scripts/audit-observation-ambiguity.ts":
     "confirmed by direct read: its own header states it REPORTS AND NEVER BLOCKS. DOCUMENTED's \"2 no "
     + "captures found\" is total-absence only, and it renders no pass/fail verdict a caller could misread",
-  "packages/lab/scripts/corpus-prune-orphans.mjs":
+  "packages/lab/scripts/corpus-prune-orphans.ts":
     "ITERATES ITS WHOLE POPULATION AND RENDERS NO VERDICT: `readdirSync` over the real-page corpus, every "
     + "`.json` walked, and a file that will not parse is REPORTED as UNCLASSIFIED rather than skipped — so "
     + "there is no path on which it examines fewer captures than are there and says nothing. It has no "
     + "pass/fail exit at all; it lists what no declared page claims. The partial-corpus question it COULD "
     + "get wrong is 'which corpus is this?', and it answers that directly by printing `captureAgeLines` "
     + "above the list, because its output is a set of files somebody may be about to delete.",
-  "packages/lab/scripts/lab-inventory.mjs":
+  "packages/lab/scripts/lab-inventory.ts":
     "DOCUMENTED: \"this script has NO exit-1 path at all, it never reports a hard FAIL\" — a status "
     + "reporter; its \"2\" is a schema/data-shape refusal about the artifact, not a coverage shortfall",
-  "packages/lab/scripts/verify-safetensors.mjs":
+  "packages/lab/scripts/verify-safetensors.ts":
     "DOCUMENTED: examines ONE shipped model directory (a fixed artifact), never a population that could "
     + "be partially covered",
   "packages/lab/src/eval/run.ts":
     "DOCUMENTED: \"by default this CANNOT fail on judge quality at all, only on a crash\" — evaluates a "
     + "fixed, small labelled-fixture set (34 fixtures, CLAUDE.md); no INCONCLUSIVE concept is exposed",
-  "packages/lab/scripts/retrain-pipeline.mjs":
+  "packages/lab/scripts/retrain-pipeline.ts":
     "DOCUMENTED: sequences other stages via its own pipeline() helper, not verdict.mjs — any coverage "
     + "concept belongs to the stage script, already classified independently",
-  "packages/lab/scripts/everything-pipeline.mjs":
+  "packages/lab/scripts/everything-pipeline.ts":
     "DOCUMENTED: \"0 every stage succeeded; 1 any stage failed\" — a sequencer; same reasoning as "
-    + "retrain-pipeline.mjs immediately above",
+    + "retrain-pipeline.ts immediately above",
   "packages/lab/src/training/generate-screenreader-dataset.mjs":
     "generates pages; not a verdict over an existing population of evidence",
   "packages/lab/src/training/generate-screenreader-acceptance.mjs":
@@ -248,7 +250,7 @@ const COMPOSITE_JOBS: Record<string, string> = {
  * Jinja list-building expression (`{{ [lab_tsx, '...'] + ... }}`), not a plain array or `npm run` call.
  */
 const JOB_SCRIPT_OVERRIDE: Record<string, string> = {
-  "evidence-check": "packages/lab/scripts/evidence-check.mjs",
+  "evidence-check": "packages/lab/scripts/evidence-check.ts",
   // Its argv resolves the worker address through `hostvars[]`, so the whole thing is one multi-line Jinja
   // expression rather than a list of literals and `resolvedScriptFile` cannot read a path out of it. The
   // override is the designed answer to exactly that, and naming it here keeps "cannot be resolved" and
@@ -258,10 +260,10 @@ const JOB_SCRIPT_OVERRIDE: Record<string, string> = {
   // rather than a list of literals. The flag is built that way deliberately -- passing an empty
   // placeholder instead would be refused by `refuseUnknownFlags`, and a job whose no-op form is refused
   // is one nobody runs.
-  "prune-orphan-captures": "packages/lab/scripts/corpus-prune-orphans.mjs",
+  "prune-orphan-captures": "packages/lab/scripts/corpus-prune-orphans.ts",
   // Same shape again (#2386): `--criterion=` is appended only when the caller named one, so the argv is a
   // templated list. Its classification is the `NO_PARTIAL_POPULATION` line for the reader below, unchanged.
-  "explain-case": "packages/lab/scripts/explain-scorer.mjs",
+  "explain-case": "packages/lab/scripts/explain-scorer.ts",
 };
 
 /**

@@ -189,13 +189,13 @@ test("THE POSITIVE CONTROL: #1939's Acceptance as filed is REFUSED, and its corr
     "this test reads the real tree with repo-relative paths, so it must run from the repository root — "
     + "if it does not, every path reads as absent and the refusal below is vacuous");
 
-  const reason = fileRefusalReason(rowWithRegion("packages/agent-org/src/evidence-check.mjs", AS_FILED_1939));
+  const reason = fileRefusalReason(rowWithRegion("packages/agent-org/src/evidence-check.ts", AS_FILED_1939));
   assert.ok(reason, "#1939 reached an engineer with two paths that do not exist; it must not file again");
   assert.match(reason, /packages\/lab\/rstest\.config\.ts/, "the refusal must quote the path, not describe it");
   assert.match(reason, /packages\/lab\/src\/packaging\/lab-job-params\.test\.ts/,
     "and BOTH of them — reporting the first alone sends the filer back for a second refusal");
 
-  assert.equal(fileRefusalReason(rowWithRegion("packages/agent-org/src/evidence-check.mjs", CORRECTED_1939)), null,
+  assert.equal(fileRefusalReason(rowWithRegion("packages/agent-org/src/evidence-check.ts", CORRECTED_1939)), null,
     "the corrected form names two files that are both on disk, and the check must not refuse the shape "
     + "it is asking for");
 });

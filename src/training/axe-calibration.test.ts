@@ -1,5 +1,5 @@
 /**
- * #1626: `axe-calibration.mjs` is tested WITHOUT a browser -- the population it selects, the shape it
+ * #1626: `axe-calibration.ts` is tested WITHOUT a browser -- the population it selects, the shape it
  * writes, its refusal without an install, and that a per-page failure is RECORDED rather than skipped.
  *
  * Nothing here launches Chromium: `scanCalibrationPages` takes an injectable `launch`, the same seam
@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 
 import {
   conformantCalibrationPages, installRefusal, scanCalibrationPages, axeVersion,
-} from "../../scripts/axe-calibration.mjs";
+} from "../../scripts/axe-calibration.ts";
 
 // --- Selection: derived from role + publishedClaim, never a URL list ---
 

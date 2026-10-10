@@ -711,7 +711,7 @@ const scriptsOfRoot = () => packageScripts(ROOT);
 const declaredAccount = (name: string) => /^Environment=GH_CONFIG_DIR=(.*)$/m.exec(unitText(name))?.[1] ?? null;
 
 test("[45] #1911: the corpus-release unit reads fleet.env, the only place a unit can get A11Y_PVE_KEY", () => {
-  // The `-` leaves a missing file to corpus-release-nightly.mjs's own refusal, which names it.
+  // The `-` leaves a missing file to corpus-release-nightly.ts's own refusal, which names it.
   assert.match(unitText("a11ign-corpus-release-nightly.service"), /^EnvironmentFile=-%h\/\.config\/a11ign\/fleet\.env$/m);
 });
 

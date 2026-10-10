@@ -1,9 +1,9 @@
 // @ts-check
 // WHAT DID THIS CAPTURE ASK? -- one section of `capture:explain`, in a module that reaches no corpus (#343).
 //
-// Split out of `packages/lab/scripts/explain-capture.mjs` so a test of it runs anywhere, CI's acceptance
+// Split out of `packages/lab/scripts/explain-capture.ts` so a test of it runs anywhere, CI's acceptance
 // job included: that file reaches `dataset-paths.mjs`, so anything importing it is classed as needing a
-// corpus and the row's own acceptance command was refused. `explain-capture.mjs` imports and re-exports it,
+// corpus and the row's own acceptance command was refused. `explain-capture.ts` imports and re-exports it,
 // so no reader of the report changes. Its one import is `@a11ign/evidence/verify`, for #951's verdict.
 import { SWEEP_OF, sweptElsewhere, whatHeldTheSweep } from "@a11ign/evidence/verify";
 import type { Loose } from "./loose.ts";

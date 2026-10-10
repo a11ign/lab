@@ -13,7 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { differencesNotExplainedBy } from "../../scripts/gate-probe-order.mjs";
+import { differencesNotExplainedBy } from "../../scripts/gate-probe-order.ts";
 
 const diff = (...fields: string[]) => ({ changes: fields.map((field) => ({ field })) });
 
