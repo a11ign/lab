@@ -10,7 +10,7 @@ Measured, in a scratch copy of the core's layout (core `36c354839`, which holds 
 - origin/main's file: 11 of 13 pass, the two named tests fail.
 - this file: 13 of 13 pass.
 
-Mutation, restored `cmp`-identical each time: `DEPENDABOT_AUTHOR` emptied (the author never reaches the step) turns exactly the two tests red and nothing else (11 of 13). Not run in the opposite direction: handing the author to a body with no `Acceptance:` line makes the step wait its 90 s loop rather than fail an assertion, and that was measured once on the row, not repeated.
+Mutation: restored `cmp`-identical each time, `DEPENDABOT_AUTHOR` emptied (the author never reaches the step) turns exactly the two tests red and nothing else (11 of 13). Not run in the opposite direction: handing the author to a body with no `Acceptance:` line makes the step wait its 90 s loop rather than fail an assertion, and that was measured once on the row, not repeated.
 
 Not checked: lint and typecheck of the lab package (the worktree has no `node_modules`); the cross-repo leg runs both. The next `main` run's `checks (cross-repo)` log is the real reading for Done-when 2.
 
