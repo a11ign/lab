@@ -80,7 +80,7 @@ function runSites(source: string): { label: string; command: string; runner: str
 
 /**
  * #2507: A CHECK MAY START UNDER THE MEMORY CAP, and the site is judged by what the cap STARTS. The one prefix is
- * `node node_modules/@a11ign/toolchain/dist/lib/test-memory-cap.mjs run <name> --` (the toolchain's, since core #4590; it was `node packages/guards/src/test-memory-cap.ts`); strip it and the runner is `npx` again, so `... -- echo
+ * `node node_modules/@a11ign/toolchain/dist/lib/test-memory-cap.mjs run <name> --` (the toolchain's cap, since core #4590, which deleted the core's copy); strip it and the runner is `npx` again, so `... -- echo
  * skipped` still reads as `echo` and is refused below. Stripping only this exact prefix is the point: a `node` runner in
  * general would let a gutted site through.
  */
