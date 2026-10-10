@@ -103,12 +103,22 @@ const GUARDED_2155 = [
 ];
 
 /**
- * #2155's Region as it stood at `d9521699e`: the four above plus `packages/nvda-worker/CLAUDE.md`, which left this
- * repository with the worker (#3447) and so cannot be GUARDED any more. `CONTROL ON REAL HISTORY` reads the old text out of
- * git, where that file still exists, so the control keeps its ten figures and its 9-of-10 reading rather than being quietly
- * weakened to nine. A population the guard no longer owns is still the population the control was measured on.
+ * #2155's Region as it stood at `d9521699e`, as PATHS THAT COMMIT HOLDS: written out rather than derived from `GUARDED_2155`, because two
+ * of the five are not at that commit under the name they carry today. `packages/nvda-worker/CLAUDE.md` left this repository with the
+ * worker (#3447) and so cannot be GUARDED any more, and `packages/control/src/fleet-status.ts` was `fleet-status.mjs` at that commit
+ * (#4832: `git show d9521699e:packages/control/src/fleet-status.ts` fails, so the control was red in every checkout holding the commit
+ * and green only where the commit was absent). `CONTROL ON REAL HISTORY` reads the old text out of git, where those files still
+ * exist under those names, so the control keeps its ten figures and its 9-of-10 reading rather than being quietly weakened.
+ * A population the guard no longer owns is still the population the control was measured on, and a path is never assumed to
+ * have kept its name (the same shape as `REGION_AT_BASE_2244`, which is also a literal list).
  */
-const REGION_AT_BASE_2155 = [...GUARDED_2155, "packages/nvda-worker/CLAUDE.md"];
+const REGION_AT_BASE_2155 = [
+  "packages/lab/src/training/README.md",
+  "packages/lab/src/training/capture-cache.mjs",
+  "packages/cli/src/cli.ts",
+  "packages/control/src/fleet-status.mjs",
+  "packages/nvda-worker/CLAUDE.md",
+];
 
 /**
  * #2244: THE DEPLOY GUARDS AND THEIR NEIGHBOURS -- what #2155's five files did not reach. Eight files, each
