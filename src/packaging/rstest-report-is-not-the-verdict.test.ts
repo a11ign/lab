@@ -64,8 +64,12 @@ const PACKAGING = "packages/lab/src/packaging";
  * Form D's control, named rather than discovered. A control picked by walking the directory would run whatever
  * happened to sort first -- several files here spend the GitHub API budget -- so the file is named, and
  * `existsSync` below turns a rename into one legible failure instead of a run that quietly proves nothing.
+ *
+ * It must read NOTHING outside lab's tree (a11ign/lab#4840): the control was `workflow-filters.test.ts`, which reads the
+ * core's workflows, so when the core moved the control failed and took form D's four readings with it. `auto-arm-filter`
+ * reads one jq file inside lab and spawns `jq`.
  */
-const CONTROL_TEST = `${PACKAGING}/workflow-filters.test.ts`;
+const CONTROL_TEST = `${PACKAGING}/auto-arm-filter.test.ts`;
 
 /** A glob over a directory that DOES exist, narrowed past its last match. Row A of #2165's table. */
 const EMPTY_GLOB = `${PACKAGING}/*.no-such-suffix-2165.test.ts`;

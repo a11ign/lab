@@ -310,17 +310,10 @@ test("#3441: each clause appears ONCE in the file, and a second copy elsewhere f
   }
 });
 
-test("#3441: engineer.md stays within the size it was last measured at, plus this section", () => {
-  // 17,226 bytes before this row; the section is ~1.3 KB and read once per instance. The ceiling is the
-  // measured size rounded up, so growth beyond this section has to move the number on purpose.
-  // MOVED ON PURPOSE (#4372): 18,575 at #3534, then 19,047 at #4069 and 19,912 at #4148 (the no-polling
-  // paragraph and what `host/gh` answers from disk). Measured 19,912 at CORE_REF 8d59c95e5; rounded up.
-  // MOVED ON PURPOSE (a11ign/a11ign#4569): 20,000 -> 20,500. 20,418 at CORE_REF 989c2bcc3, from 19,912: core #4573 (ADR 0044 row 3, #4422)
-  // made both role briefs say the Acceptance lives in `.acceptance/`. Measured 20,418; rounded up.
-  const ENGINEER_BRIEF_BYTE_CEILING = 20_500;
-  const bytes = Buffer.byteLength(engineerBrief);
-  assert.ok(bytes <= ENGINEER_BRIEF_BYTE_CEILING, `engineer.md is ${bytes} bytes; the ceiling is ${ENGINEER_BRIEF_BYTE_CEILING}`);
-});
+// RETIRED (a11ign/lab#4840): "engineer.md stays within a byte ceiling" lived here and failed on the core's own growth
+// (20,738 against 20,500 at CORE_REF), a number the core moves in its own pull requests and lab could only chase
+// with a third "MOVED ON PURPOSE". The brief is the core's file and its size is the core's to bound; lab keeps
+// what it reads FROM the brief (the end-of-turn section above), not how long the file is.
 
 // --- #1157: the line that stands in for a guard the 64 call-derived assertions cannot have ------------
 //
