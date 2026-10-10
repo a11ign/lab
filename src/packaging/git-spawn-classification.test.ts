@@ -56,7 +56,7 @@
  * function names that a new wrapper could slip past.
  *
  * CLASSIFICATION, not a bare pass/fail: a discovered file is SAFE only if it imports one of the three
- * canonical scrubbing helpers (`packages/guards/src/git-env.ts`, `scripts/test-support/git-sandbox.ts`, or
+ * canonical scrubbing helpers (`packages/guards/src/git-env.ts`, `@a11ign/toolchain/lib/git-sandbox`, or
  * `packages/worker-fleet/src/git-safe-env.mjs` -- the last one a DELIBERATE, disclosed duplicate forced
  * by worker-fleet's publish boundary, see that file's own header) AND actually calls it, not merely
  * imports it unused. A twelfth git-shelling file that imports nothing fails this test by name until
@@ -71,7 +71,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
+import { declareTreeWideGuard, walkTree } from "@a11ign/toolchain/lib/tree-wide-guard";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -87,10 +87,9 @@ const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
  * `../../../packages/guards/src/git-env.ts`, etc.), so matching the full canonical path would miss every real import.
  * Adding a fourth canonical helper means adding its basename here.
  */
-const CANONICAL_HELPER_BASENAMES = ["git-env.ts", "git-safe-env.mjs", "git-sandbox.ts"];
+const CANONICAL_HELPER_BASENAMES = ["git-env.ts", "git-safe-env.mjs", "git-sandbox.ts", "@a11ign/toolchain/lib/git-sandbox"];
 const CANONICAL_HELPERS = [
   "packages/guards/src/git-env.ts",
-  "scripts/test-support/git-sandbox.ts",
   "packages/worker-fleet/src/git-safe-env.mjs",
 ];
 
@@ -100,7 +99,7 @@ function trackedSourceFiles(): string[] {
     .filter((f) => !f.includes("/dist/") && !f.includes("/node_modules/"))
     // The three canonical helpers and their OWN tests are exempt from needing to import themselves --
     // they either ARE the sanitizer or exist to prove it, and are read separately below.
-    .filter((f) => !CANONICAL_HELPERS.includes(f) && !f.endsWith("git-safe-env.test.ts") && !f.endsWith("git-sandbox.test.ts"));
+    .filter((f) => !CANONICAL_HELPERS.includes(f) && !f.endsWith("/git-sandbox.ts") && !f.endsWith("git-safe-env.test.ts") && !f.endsWith("git-sandbox.test.ts"));
 }
 
 /**
@@ -334,7 +333,7 @@ test("MUTATION: a file using withGitSandbox with no literal git call is still di
   // took after migrating: the literal "git" string disappears behind `sandbox.run`/`sandbox.commit`, and a
   // discovery anchored ONLY to a literal git call would silently shrink the population by these three --
   // the exact "reader examining less than it believes" failure this file's header names.
-  const fixture = 'import { withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";\n'
+  const fixture = 'import { withGitSandbox } from "@a11ign/toolchain/lib/git-sandbox";\n'
     + 'withGitSandbox((sandbox) => { sandbox.run(["status"]); });\n';
   assert.ok(spawnsGit(stripComments(fixture)),
     "a file that spawns git only through withGitSandbox, with no literal git call of its own, must still "

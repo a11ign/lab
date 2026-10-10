@@ -31,12 +31,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, matchesGlob, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
-import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
+import { declareTreeWideGuard, walkTree } from "@a11ign/toolchain/lib/tree-wide-guard";
 import { treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.ts";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { underFloor } from "../../../guards/src/assert-glob-not-empty.ts";
 import { knownPackages } from "../../../../scripts/ci-changed.ts";
-import { packageIndex, sourceClosure } from "../../../guards/src/walk-scope-discovery.ts";
+import { packageIndex, sourceClosure } from "@a11ign/toolchain/lib/walk-scope-discovery";
 import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 import {
   AFFECTED_INCLUDE, AFFECTED_MIN_FILES, CI_ONLY, STEPS, affectedVerdict, jobsGateNeeds, readRunSummary, runAffectedSet, runTs,

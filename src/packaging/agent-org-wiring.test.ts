@@ -33,7 +33,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
-import { localImports, stripComments } from "../../../guards/src/local-import-closure.ts";
+import { localImports, stripComments } from "@a11ign/toolchain/lib/local-import-closure";
 import { toolExportPath, toolRoot } from "../../../../scripts/agent-org-newest-tag.ts";
 import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 const { SPAWNS_GH, SUITE_SCRIPTS } = await toolModule("src/acceptance-commands.mjs");

@@ -37,7 +37,7 @@ import {
   DECLARER_BUILTINS, ESM_UNSYNCED, NOT_WRAPPED, WHOLE_REPOSITORY, inScope, isObserved, parseWalkScope, readsDuring,
 } from "../../../guards/src/walk-scope.ts";
 import { classify, knownPackages } from "../../../../scripts/ci-changed.ts";
-import { packageIndex, sourceClosure } from "../../../guards/src/walk-scope-discovery.ts";
+import { packageIndex, sourceClosure } from "@a11ign/toolchain/lib/walk-scope-discovery";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 

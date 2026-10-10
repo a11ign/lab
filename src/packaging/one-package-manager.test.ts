@@ -51,7 +51,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { tempDir } from "../../../guards/src/test-tmp.ts";
-import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
+import { withGitSandbox, sandboxGitEnv } from "@a11ign/toolchain/lib/git-sandbox";
 import { npmCliInvocation, pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
 import { refusalFor } from "../../../../scripts/refuse-other-installers.ts";
 

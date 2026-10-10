@@ -1,5 +1,5 @@
 /**
- * `scripts/test-support/git-sandbox.ts` is the shared helper that ended the GIT_DIR-leak incident
+ * `@a11ign/toolchain/lib/git-sandbox` is the shared helper that ended the GIT_DIR-leak incident
  * (docs/backlog.md, `pre-commit-hook.test.ts:42`'s `git config user.name` writing into the real repo
  * through an inherited `GIT_DIR`). This proves the helper itself, at the two claims that matter:
  *
@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   sandboxGitEnv, withGitSandbox, repoFingerprint, RepoIdentityMovedError, KNOWN_GIT_REDIRECT_VARS,
-} from "../../../../scripts/test-support/git-sandbox.ts";
+} from "@a11ign/toolchain/lib/git-sandbox";
 
 /** A throwaway "real repo" stand-in, with one commit already on it -- never this checkout. */
 function decoyRepo(): string {

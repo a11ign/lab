@@ -34,7 +34,7 @@ import assert from "node:assert/strict";
 import { globSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { walkTree, declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
+import { walkTree, declareTreeWideGuard } from "@a11ign/toolchain/lib/tree-wide-guard";
 import { underFloor } from "../../../guards/src/assert-glob-not-empty.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file.

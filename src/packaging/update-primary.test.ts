@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 const { updatePrimary, lockfileMoved, readPrimaryDrift } = await toolModule("src/update-primary.mjs");
 const { changedFiles } = await toolModule("src/lib/changed-files.mjs");
-import { withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
+import { withGitSandbox } from "@a11ign/toolchain/lib/git-sandbox";
 import { UPDATE_PRIMARY_VERBS } from "./update-primary-argv.ts";
 import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 

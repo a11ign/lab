@@ -61,7 +61,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.ts";
+import { declareTreeWideGuard } from "@a11ign/toolchain/lib/tree-wide-guard";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -738,7 +738,7 @@ test("#633 CONTROL: `diff` is discovered -- the extension this row exists to pro
  * ref are made to point at the identical commit, exactly the `runAgainst(head, head)` shape
  * `pre-push-resolve-toward-main.test.ts`'s positive control used before #633.
  *
- * `sandboxGitEnv()` scrubs `GIT_*`, the identical discipline `test-support/git-sandbox.ts` documents at
+ * `sandboxGitEnv()` scrubs `GIT_*`, the identical discipline `@a11ign/toolchain/lib/git-sandbox` documents at
  * length: `cwd` is not isolation for a spawned git process, `GIT_DIR` is.
  */
 function selfDiffFixture(): string {
