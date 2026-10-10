@@ -80,12 +80,12 @@ function runSites(source: string): { label: string; command: string; runner: str
 
 /**
  * #2507: A CHECK MAY START UNDER THE MEMORY CAP, and the site is judged by what the cap STARTS. The one prefix is
- * `node packages/guards/src/test-memory-cap.ts run <name> --`; strip it and the runner is `npx` again, so `... -- echo
+ * `node node_modules/@a11ign/toolchain/dist/lib/test-memory-cap.mjs run <name> --` (the toolchain's, since core #4590; it was `node packages/guards/src/test-memory-cap.ts`); strip it and the runner is `npx` again, so `... -- echo
  * skipped` still reads as `echo` and is refused below. Stripping only this exact prefix is the point: a `node` runner in
  * general would let a gutted site through.
  */
 function withoutCap(command: string): string {
-  return command.replace(/^node packages\/guards\/src\/test-memory-cap\.ts run \S+ -- /, "");
+  return command.replace(/^node node_modules\/@a11ign\/toolchain\/dist\/lib\/test-memory-cap\.mjs run \S+ -- /, "");
 }
 
 /** What a check may be executed BY. Anything else is a check turned off while still reading like one. */
@@ -113,7 +113,7 @@ const NOT_A_CHECK: Record<string, string> = {
     "the #386 armed-PR lookup: refusing to race a merge that can complete underneath the push. It fails "
     + "OPEN and loudly on anything that stops it asking, and never refuses for an unrelated reason",
   // The hook runs it under tsx since #4274 renamed the script to `.ts`; the key is the invocation the hook now writes.
-  "node --import tsx scripts/changeset-untracked-check.ts":
+  "node scripts/changeset-untracked-check.ts":
     "the #1127 untracked-changeset guard: catches a state CI cannot see BY CONSTRUCTION (`actions/"
     + "checkout` clones the pushed tree, and an untracked file never survives a push), never runs "
     + "`npm ci`-dependent code, and refuses only for the exact state `changeset status` itself would "

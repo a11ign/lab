@@ -174,6 +174,10 @@ const EXEMPT: Record<string, string> = {
     + "@a11ign/control cannot import @a11ign/lab, and runs/fleet-auto-off-state.json is a tiny local "
     + "ledger of idle-since/shutdown-requested-at timestamps between one auto-off tick and the next, not "
     + "a dataset root this module owns at all.",
+  "packages/control/src/fleet-playbook.ts":
+    "#4446: the identical shape fleet-watch.ts and fleet-auto-off.ts are exempted for -- ADR 0012's @a11ign/control cannot "
+    + "import @a11ign/lab, and `PATCH_RUN_RECORD` (runs/fleet-patch-last-run.json) is a one-field ledger of when the last "
+    + "`fleet:patch --apply` COMPLETED, which `fleet-watch`'s patch-window-missed reads back; not a dataset root this module owns.",
   "packages/lab/src/packaging/acceptance-check-at-filing.test.ts":
     "#1973: the same literals, as the expected VALUES the refusal above must name -- a test that read "
     + "them from dataset-paths.mjs would be asserting the checker against its own source and could not "
