@@ -1,7 +1,7 @@
 /**
  * WHAT DID THIS CAPTURE ASK? -- `whatItAsked`, tested apart from the rest of `capture:explain` (#343).
  *
- * Its own file because `explain-capture.test.ts` imports `explain-capture.mjs`, which reaches
+ * Its own file because `explain-capture.test.ts` imports `explain-capture.ts`, which reaches
  * `dataset-paths.mjs`, and CI's acceptance job refuses anything that does. These tests read in-memory
  * captures only, so they run there.
  */

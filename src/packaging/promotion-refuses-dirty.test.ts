@@ -6,7 +6,7 @@
  * was not covered, and it was right.
  *
  * Two documents said it already did. `lab-job.yml`: "it stops at an uncommitted working tree, exactly as
- * `promote-model.mjs` does". CLAUDE.md's command table: "Stops at an uncommitted tree". Measured
+ * `promote-model.ts` does". CLAUDE.md's command table: "Stops at an uncommitted tree". Measured
  * 2026-08-27 — that file did not import `node:child_process`, so it could never have looked at git. A
  * fact asserted in two places and true in neither, about a guard.
  *
@@ -73,7 +73,7 @@ test("the refusal NAMES the files and says where the originals are", () => {
  *
  * GIT-SANDBOXED via `withGitSandbox` (`scripts/test-support/git-sandbox.ts`): a throwaway repo, identity
  * set PER COMMAND rather than via `git config user.name` (which writes to whatever GIT_DIR names), and
- * every spawn -- including the REAL `promote-model.mjs` process this test launches -- with GIT_* scrubbed.
+ * every spawn -- including the REAL `promote-model.ts` process this test launches -- with GIT_* scrubbed.
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -133,7 +133,7 @@ function plantRepo(sandbox: GitSandbox): void {
   sandbox.commit("base");
 }
 
-const SCRIPT = join(REPO, "packages/lab/scripts/promote-model.mjs");
+const SCRIPT = join(REPO, "packages/lab/scripts/promote-model.ts");
 
 /** @returns the command's exit code and its combined output. */
 const runPromote = (root: string) => {

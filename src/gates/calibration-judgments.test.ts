@@ -1,7 +1,7 @@
 /**
  * THE CALIBRATION SWEEP KEEPS THE EVIDENCE IT SCORED FROM (#4293, for #4241).
  *
- * `calibrate-abstention.mjs` built each page's findings -- `wcag`, the quoted `evidence`, `mapping` -- to
+ * `calibrate-abstention.ts` built each page's findings -- `wcag`, the quoted `evidence`, `mapping` -- to
  * derive its outcomes, and stored only the criteria, so the 395 referrals could not be re-read per page.
  * `calibration-judgments.json` is the same findings, written beside the sweep.
  *
@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { calibrationJudgmentsPath, scoredPage, writeCalibrationJudgments } from "../../scripts/calibrate-abstention.mjs";
+import { calibrationJudgmentsPath, scoredPage, writeCalibrationJudgments } from "../../scripts/calibrate-abstention.ts";
 
 const SCORED_AT = "2026-10-08T22:00:00.000Z";
 

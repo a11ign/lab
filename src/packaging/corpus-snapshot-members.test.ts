@@ -33,7 +33,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { presentMissing, noteMissing } from "../../scripts/corpus-snapshot.mjs";
+import { presentMissing, noteMissing } from "../../scripts/corpus-snapshot.ts";
 
 const SIBLINGS = ["real-page-corpus", "screenreader-acceptance", "board-snapshots"];
 

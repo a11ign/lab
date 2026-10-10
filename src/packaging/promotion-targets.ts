@@ -3,9 +3,9 @@
 /**
  * Is a previous promotion still sitting uncommitted where this one is about to write?
  *
- * `lab-job.yml` says "it stops at an uncommitted working tree, exactly as `promote-model.mjs` does", and
+ * `lab-job.yml` says "it stops at an uncommitted working tree, exactly as `promote-model.ts` does", and
  * CLAUDE.md's command table says `promote:model` "stops at an uncommitted tree". Measured 2026-08-27:
- * `promote-model.mjs` does not import `node:child_process` at all, so it could never have looked at git.
+ * `promote-model.ts` does not import `node:child_process` at all, so it could never have looked at git.
  * A fact asserted in two places and true in neither — this repo's most-named defect, about a guard.
  *
  * ## What it cost, today

@@ -93,7 +93,7 @@ test("the npm chain and the Ansible job train into the same scratch directory", 
   // `--from=candidate` moved out of the npm string into the pipeline's step list when `lab:everything`
   // became a staged runner; `everything-chain.test.ts` owns that assertion now. Asserting it here too
   // would be a second copy of the same claim, which is the defect this file is about.
-  assert.match(scripts["lab:everything"], /everything-pipeline\.mjs/,
+  assert.match(scripts["lab:everything"], /everything-pipeline\.(mjs|ts)/,
     "the whole chain must run through the staged pipeline, which names the stage that fails");
   const playbook = readFileSync(
     join(REPO, "packages/control/ansible/lab-job.yml"), "utf8");

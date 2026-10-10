@@ -1,13 +1,13 @@
 /**
  * The changeset is the only record of WHY a set of weights shipped. Its provenance must survive.
  *
- * `promote-model.mjs`'s own docstring gives the reason it exists: "training-report provenance (corpus,
+ * `promote-model.ts`'s own docstring gives the reason it exists: "training-report provenance (corpus,
  * encoder hash, thresholds) in the changelog entry, because 'which model produced this finding' is a
  * question somebody will ask". Two of those rows were not surviving, in every changeset ever written.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeValue, provenanceLines } from "../../scripts/promote-model.mjs";
+import { describeValue, provenanceLines } from "../../scripts/promote-model.ts";
 
 test("an object is rendered by what identifies it, never as [object Object]", () => {
   // Measured on the real promoted report: `representation.encoder` is null, so it falls through to the

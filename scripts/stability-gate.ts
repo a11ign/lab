@@ -1,0 +1,450 @@
+// @ts-check
+// Refuse to start a corpus run if the pipeline does not produce the same evidence twice.
+//
+//   pnpm run gate:stability                       # before any recapture
+//   pnpm run gate:stability -- --times=6
+//
+// ## Why this is a gate and not a tool
+//
+// The corpus carried a non-deterministic artefact for weeks and nothing caught it. Edge's autofill
+// drew a suggestion icon inside recognised inputs, NVDA announced it as an embedded object appended to
+// the field, and because `probeForms` submits forms the profile learned more as a run progressed --
+// so the rate climbed from 3% to 31% and 26 good/bad pairs ended up disagreeing about it.
+//
+// Every existing check stayed green throughout, because they count. The counts never moved: one form
+// field before, one form field after. Only comparing CONTENT across repeated captures of the same
+// unchanged page could have seen it, and that was an ad-hoc tool nobody was required to run.
+//
+// ## Why these pages
+//
+// A canary that cannot express the fault is worthless, and choosing one that could not is a mistake
+// made three times in a single day here -- each time producing a clean result that was read as
+// confirmation. Every page below is present because of a specific mechanism it can exercise, and that
+// reason is recorded next to it. Add pages the same way.
+//
+// This delegates to `training:repeat` rather than reimplementing its comparison, which is the same
+// point in miniature: the tool already existed and hand-rolled substitutes were worse.
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { resolve } from "node:path";
+
+// Resolved from THIS module. It was the cwd-relative `"src/training/repeat-capture.mjs"`, which stopped
+// existing when M8 moved the corpus pipeline into this package — and `gate:stability` is the check that must
+// pass before any corpus run, so it failing with "Command failed" is exactly the confusing symptom the comment
+// below warns about.
+const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs", import.meta.url));
+
+import { guestReachableUrl } from "@a11ign/screenreader-fleet";
+import { leasePageServer } from "../src/training/page-server.mjs";
+import { renderVerdict, exitCodeFor, crashVerdict } from "../src/gates/verdict.ts";
+import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
+  from "../src/gates/fleet.ts";
+import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.ts";
+import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "../src/gates/stability-canary.ts";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
+import { assertWorkerUrl } from "@a11ign/screenreader-fleet/worker-http";
+import { datasetRoot, repeatCapturesRoot } from "../src/dataset-paths.ts";
+import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.ts";
+import type { Loose } from "../src/capture/loose.ts";
+
+/**
+ * the canaries that must pass before a corpus run. `--probe-forms`, `--task` and `--url` appear in
+ * this file because it PASSES them to repeat-capture; they are not its own.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--base=", "--times=", "--worker=", LOCAL_FLAG], { entry: import.meta.url, command: "pnpm run gate:stability" });
+
+const run = promisify(execFile);
+
+
+const arg = (name: Loose, fallback: Loose) =>
+  process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
+
+const TIMES = Number(arg("times", "5"));
+
+// One id per gate RUN, so two runs dispatched at once (as #3132's rounds were) cannot share a capture directory.
+const RUN_ID = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
+
+/**
+ * This gate LEASES what it needs, rather than requiring you to have set it up.
+ *
+ * It could not run at all before: `repeat-capture.mjs` refuses without a worker, and the canary URLs
+ * pointed at a page server nobody started — so with neither `A11Y_WORKER` nor a hand-run `pnpm exec serve`,
+ * all five canaries reported "harness did not start" and the gate exited 2. A gate that a corpus run is
+ * forbidden to start without, and that cannot start itself, is a gate that gets skipped; `release:gate`
+ * was broken from the day it was written for the same reason, and `capture:check` went unrun for months
+ * because it "cost a ceremony". This project's own rule: automate a check or lose it.
+ *
+ * Both leases put things back as they found them — a worker somebody had already started is left
+ * running, and a page server somebody else is serving is left alone.
+ */
+const DATASET_ROOT = datasetRoot();
+const PAGES_PORT = Number(process.env.DATASET_PAGES_PORT || 5050);
+
+/**
+ * Canaries, each with the mechanism it exists to catch.
+ *
+ * `reason` is not documentation. It is the thing to check before trusting a PASS: if a page cannot
+ * express the fault you care about, its stability tells you nothing about that fault.
+ */
+const CANARIES = [
+  {
+    path: "form-unlabelled/good",
+    reason: "auto-focuses its input, which is what surfaces Edge's autofill affordance — the exact " +
+      "page that still produced U+FFFC after a fix verified on a page that does not auto-focus",
+  },
+  {
+    path: "form-error-silent/bad",
+    reason: "submits a form, which is how the profile LEARNS the values that later become suggestions",
+  },
+  // THE SAME CASE, ACTUALLY SUBMITTING — added 2026-09-06, and the pair is the point.
+  //
+  // The canary above has no `task` and no `probeForms`, so nothing is activated and `postSubmitNames` is
+  // EMPTY on all five repeats. Comparing an empty field five times and reporting it stable is the trap
+  // this file's own header names, and it is why `form-error-silent` could be a canary while the channel it
+  // is named for went unwatched.
+  //
+  // WHAT THIS IS FOR, measured 2026-09-06 and unexplained: two consecutive `evidence:check` runs disagreed
+  // about whether long post-submit announcements are FRAGMENTED. Run 1 had `form-error-silent` joined
+  // (63->59) and `icon-button-unnamed` unchanged; run 2, one commit later, had `form-error-silent` back to
+  // split and `icon-button-unnamed` joined (53->49) — the same shape moving between cases:
+  //
+  //     split   "...retained for records and reviewed each"  +  "year by the site team."
+  //     joined  "...retained for records and reviewed each year by the site team."
+  //
+  // Either the fragmentation is intermittent, or a change between those runs caused it. One run each way
+  // cannot tell them apart, and `postSubmitFields`/`postSubmitNames` is the evidence 3.3.1 and 4.1.3 are
+  // decided from — so a recapture would bake whichever way each case landed into the corpus that ships.
+  // Content comparison across five repeats is the only thing that can answer it, which is this gate's
+  // whole reason for existing: the corpus once carried a nondeterministic artefact for weeks with every
+  // count-based check green, because the counts never moved.
+  {
+    path: "form-error-silent/good",
+    task: "Submit the request without entering a reference number and understand what needs fixing.",
+    probeForms: true,
+    reason: "the ONLY canary whose post-submit read produces the long announcements that were seen "
+      + "fragmenting; `--task` is mandatory here, since `--probe-forms` alone activates nothing and would "
+      + "compare an empty `postSubmitNames` five times over",
+  },
+  {
+    path: "table-unassociated-headers/bad",
+    reason: "the table walk returned 4, 2, 4, 4, 1, 4, 4 cells across 18 captures once; tables are " +
+      "the other field with a history of non-determinism",
+  },
+  {
+    path: "disclosure-state-silent/good",
+    reason: "state changes depend on an interaction landing, which is timing-sensitive in a way a " +
+      "static read is not",
+  },
+  {
+    path: "image-missing-alt/good",
+    reason: "the simplest page there is — if this one varies, the fault is in the pipeline rather " +
+      "than in anything the page does",
+  },
+  {
+    // The page that proved this gate had a blind spot. An intermittent late document announcement was
+    // credited to the activation here — `after: "Energy results, document"` on a page whose entire
+    // finding is that activating the filter announces NOTHING — and it reached the corpus while every
+    // canary reported stable, because no canary drove a task-button probe and `formChanges` was not even
+    // among the compared fields.
+    path: "filter-status-silent-solar/bad",
+    task: "Show solar tours and notice the result count.",
+    probeForms: true,
+    reason: "the only canary that activates a control and measures what the page says back; the " +
+      "interaction criteria (3.3.1, 4.1.3) are unreachable without it, and a contaminant lived here",
+  },
+  {
+    // determinism-plan D5. Every canary above is a single-state page, and this gate exists to prove the
+    // tool is deterministic — so until 2026-08-28 it could not observe the non-determinism that actually
+    // cost this project four withdrawn 2.1.2 rules and a 2.1.1 false positive. That is this gate's own rule
+    // pointed at itself: "a canary that cannot express the fault is worthless".
+    //
+    // A CONFORMANT page behind a focus-confining consent banner. The sweep walks the page behind it while
+    // Tab is held in a ring of link-and-buttons, which is the state disagreement everything else missed;
+    // `probeFocus` is what makes the two channels both present, and without it this is just another static
+    // page.
+    path: "image-missing-alt-behind-consent/good",
+    probeFocus: true,
+    reason: "the only canary whose page has TWO STATES — an overlay confining Tab while the sweep walks " +
+      "behind it. `gate:probe-order` measured headings 5->0, links 6->1 and graphics 1->0 on this page " +
+      "when the probes were permuted; nothing in this list could have seen that",
+  },
+  {
+    // REPLACES the National Library of Scotland's join page (nls.uk, #3905), which was the plan's own
+    // success measure:
+    //
+    //     nls.uk join    one run: 7 distinct stops of 7 tabbable, SILENT
+    //                    another run, same commit: ACCUSED
+    //
+    // That page cannot be a canary, because it is first-visit-only BY CONSTRUCTION: it loads Civic Cookie
+    // Control through Google Tag Manager with `initialState: notify, notifyOnce: true`, so the consent panel
+    // opens on a profile's FIRST visit and never again. On a cold profile capture 1 was a different page
+    // from captures 2-5 (no "English" in the transcript, 24 events, first focus event "Close Cookie Control")
+    // and the gate read UNSTABLE for a reason that is the page's, not the pipeline's. The gate is NOT taught
+    // to throw that first capture away (ceo, #3130): the first visit IS a reader's visit, and the panel is the
+    // first thing a screen-reader user meets. That difference is recorded in docs/known-gaps.md instead.
+    //
+    // THIS ONE IS CHOSEN FOR HAVING NO FIRST-VISIT-ONLY STATE. Read 2026-10-07 off the page's own served
+    // files: the HTML and its six scripts (examples.js, app.js, disclosureMenu.js, skipto.js,
+    // details4everybody.js, svg4everybody.js) contain no `localStorage`, `sessionStorage`, `document.cookie`
+    // or `indexedDB`, and no consent, banner or onboarding markup. The only cookie the server sets is
+    // Cloudflare's `__cf_bm`, HttpOnly and never read by the page, so it cannot change what a reader meets.
+    //
+    // It is a LIVE page, as the old entry was: the determinism plan's headline claim is a real site repeating
+    // identically, and the other canaries are localhost fixtures. Its disclosure menus are what `probeFocus`
+    // exists for (the sweep opens panels and the focus walk then sees a different page, the mechanism that made
+    // nls.uk move). It does NOT reproduce nls.uk's consent state, which is the point of replacing it.
+    //
+    // A live site can also change on its own, and that would read as instability. The repeats run back to
+    // back, and `repeat-capture` reports WHICH FIELD varies — a page edit moves content, our fault empties
+    // a channel. A confounder to read for, not a reason to test only pages that cannot surprise us.
+    url: "https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-navigation/",
+    probeFocus: true,
+    reason: "the live page with no first-visit-only state (no consent panel, banner or onboarding; no " +
+      "client storage in any script it serves) that replaced the nls.uk join page, whose Civic `notifyOnce` panel " +
+      "made a cold profile's first capture a different page; its disclosure menus are what `probeFocus` " +
+      "exercises, and a real site repeating identically is the determinism plan's headline claim",
+  },
+];
+
+/**
+ * One canary, captured `TIMES` times and judged.
+ *
+ * Extracted so the leases can be held in a `try/finally` around the loop without pushing the loop body
+ * to four levels of nesting -- the lint gate's limit is three, and the honest fix for depth is a named
+ * function rather than a suppression.
+ */
+/**
+ * EVERY CANARY NAMES EXACTLY ONE SOURCE, checked at load rather than trusted.
+ *
+ * A canary carrying `url` while `judgeCanary` destructured only `path` produced `=== undefined (5x) ===`
+ * and reported STABLE: the URL became `<base>/undefined`, Edge served its own error page, and an error page
+ * repeats identically five times. On a gate whose entire question is "does this repeat identically", that is
+ * the worst possible false pass.
+ *
+ * The comment describing that exact trap was already in this file, above code that did not implement it —
+ * an edit that failed halfway and was not noticed. So this is an assertion rather than a note: a canary with
+ * neither field, or with both, stops the gate before it captures anything.
+ */
+for (const canary of CANARIES) {
+  const named = [canary.path, canary.url].filter(Boolean).length;
+  if (named !== 1) {
+    throw new Error(`canary ${JSON.stringify(canary.reason?.slice(0, 40) ?? "?")} must name exactly one of `
+      + `\`path\` (served from the corpus) or \`url\` (a live page); it names ${named}`);
+  }
+}
+
+async function judgeCanary({ path, url: absolute, reason, task, probeForms, probeFocus }: Loose,
+  { base, worker, results }: Loose) {
+  // A corpus canary is served from the leased page server; a REAL page is fetched from the live web and
+  // takes no base. Explicit fields, never sniffed from the string.
+  const name = absolute ?? path;
+  const url = absolute ?? `${base}/${path}`;
+  process.stdout.write(`\n=== ${name} (${TIMES}x) ===\n    why: ${reason}\n`);
+  // Its OWN directory, per canary and per run: the shared one was overwritten by the next canary, so the
+  // captures of a failed run were gone before anyone could read why it failed (#3273).
+  const outDir = canaryOutDir({ root: repeatCapturesRoot(), runId: RUN_ID, name });
+  const args = repeatCaptureArgs({ script: REPEAT_CAPTURE, url, times: TIMES, worker, outDir,
+    probeForms, task, probeFocus });
+  try {
+    // tsx, not node: repeat-capture imports isTransient from capture-decisions.mjs, which imports the
+    // TypeScript verify.js. Under plain node that is ERR_MODULE_NOT_FOUND before a single line of output
+    // -- which is precisely how five canaries came back "Command failed" with nothing to read. The repo
+    // has hit this before with evidence-check.ts; the fix there was the same.
+    const pnpm = pnpmCliInvocation(["exec", "tsx", ...args]);
+    const { stdout } = await run(pnpm.command, pnpm.args, { maxBuffer: 1 << 24 });
+    const varies = varianceLines(stdout);
+    const usable = /(\d+)\/\d+ usable/.exec(stdout)?.[1];
+    // SURFACED, not swallowed, and ABSENCE IS NOT ZERO. This read `?? 0`, so a run where the line stopped
+    // being printed was indistinguishable from a clean one -- the "unchecked is not clean" defect, in the
+    // instrumentation written to prevent it, one day later.
+    for (const [label, what] of [["sockets recovered", "a response the worker had already completed"],
+      ["polls survived", "a transport failure the async path absorbed"]]) {
+      const found = new RegExp(`${label}: (\\d+)`).exec(stdout);
+      if (!found) {
+        process.stdout.write(`    "${label}" was NOT REPORTED by this capture — the metric is missing, `
+          + "which is not the same as zero\n");
+      } else if (Number(found[1]) > 0) {
+        process.stdout.write(`    ${found[1]} ${label} — ${what}\n`);
+      }
+    }
+    if (varies.length) {
+      results.push({ path: name, ok: false, detail: unstableDetail({ lines: varies, outDir }) });
+      process.stdout.write(varies.map((v) => `  ${v}\n`).join("") + `  captures kept in ${outDir}\n`);
+    } else if (Number(usable ?? 0) < 2) {
+      // Too few usable captures is not a PASS. A gate that passes when it could not measure is worse
+      // than no gate, because it launders "unknown" into "fine".
+      results.push({ path: name, ok: false, detail: `only ${usable ?? 0} usable capture(s) — could not judge` });
+      process.stdout.write(`  INCONCLUSIVE — only ${usable ?? 0} usable\n`);
+    } else {
+      results.push({ path: name, ok: true, detail: `${usable} usable, all fields identical` });
+      process.stdout.write(`  STABLE — ${usable} usable, all fields identical\n`);
+    }
+  } catch (error) {
+    interpretFailure(error, name, results, outDir);
+  }
+}
+
+/**
+ * What a non-zero exit from repeat-capture actually MEANS.
+ *
+ * Three different outcomes come back the same way -- a field varies, a capture errored, a capture heard
+ * nothing -- and only the first is evidence that the pipeline is nondeterministic. Collapsing them into
+ * "Command failed" once made a transient capture error read exactly like genuine instability and cost a
+ * re-run to discover the page was fine. repeat-capture puts its report on stdout even when it exits 1.
+ */
+function interpretFailure(error: Loose, path: Loose, results: Loose,
+  outDir: string) {
+  const out = String(error.stdout ?? "");
+  const varies = varianceLines(out);
+  const empty = /(\d+) capture\(s\) heard nothing/.exec(out)?.[1];
+  const failedRuns = out.split("\n").filter((l) => l.trim().startsWith("FAILED")).map((l) => l.trim());
+  // An empty stdout means the child never started -- a module resolution error, a missing file -- and
+  // that is a broken harness, not an inconclusive measurement. Say so rather than advising a re-run that
+  // will fail identically. This is exactly what five "harness did not start" canaries looked like when
+  // the gate had no worker to give them.
+  if (!out.trim()) {
+    const firstError = String(error.stderr ?? error.message).split("\n").find((l) => l.includes("Error"));
+    const detail = `harness did not start: ${firstError ?? error.message.split("\n")[0]}`;
+    results.push({ path, ok: false, unstable: false, detail });
+    process.stdout.write(`  BROKEN — ${detail}\n`);
+    return;
+  }
+  const detail = varies.length ? `UNSTABLE: ${unstableDetail({ lines: varies, outDir })}`
+    : empty ? `${empty} empty capture(s) — the foreground flake, not instability`
+    : failedRuns.length ? `${failedRuns.length} capture(s) errored: ${failedRuns[0]}`
+    : error.message.split("\n")[0];
+  // Only a VARIES is evidence of nondeterminism. An errored or empty capture is a flake in the run, so it
+  // is reported and retried rather than treated as a verdict.
+  results.push({ path, ok: false, unstable: varies.length > 0, detail });
+  process.stdout.write(`  ${varies.length ? "UNSTABLE" : "INCONCLUSIVE"} — ${detail}\n`);
+}
+
+/**
+ * The gate. Everything with an effect lives in here, and NOTHING is leased at module scope.
+ *
+ * That distinction is not stylistic, and it is the reason this function exists. `leaseWorker` sat at
+ * module scope, so merely IMPORTING this file leased a worker -- and with no `A11Y_WORKER` set the lease
+ * path "finds every local worker VM, starts what is stopped". A `node -e "import('./stability-gate.ts')"`
+ * therefore BOOTED a Windows VM on the developer's Mac, took ~15% of its RAM, and never released it,
+ * because the import returned before the `finally` that does the releasing could ever be reached.
+ *
+ * That import is not hypothetical: CLAUDE.md makes it the only real check that an .mjs file still loads,
+ * since neither lint nor tsc can see a ReferenceError at import. So the file most expensive to import was
+ * the one the rules said to import.
+ */
+async function main() {
+  // THE CONTROL PLANE IS THE DEFAULT. This returns only when `--local` was asked for; otherwise it
+  // dispatches to the lab and exits with that job's status. See gates/dispatch.mjs for why a gate in
+  // particular must not be able to produce an unattributable verdict.
+  const { controlPlane } = await dispatchUnlessLocal({ job: "gate-stability", argv: process.argv.slice(2) });
+  // Leased before the first canary and released in the `finally` below, so a gate that throws half way
+  // through still leaves the host as it found it. ONE page server serves every worker -- the lease is
+  // refcounted, and five boxes fetching the same corpus is exactly what it is for.
+  const pages = await leasePageServer({
+    root: resolve(DATASET_ROOT, "pages"),
+    port: PAGES_PORT,
+    probePath: `${CANARIES[0].path}.html`,
+  });
+  // VALIDATED, not merely truthy. `http://:8765` is a truthy string that `new URL` rejects, and a client
+  // that took it on trust spent five minutes per page in readiness timeouts recorded as a failure of the
+  // PAGE. This read `--worker` through the `arg()` helper, so the discovery test that requires exactly
+  // this could not see it until the flag was named literally in the file -- the second time that has
+  // happened today, which is the argument for naming flags literally rather than only through a helper.
+  const named = arg("worker", process.env.A11Y_WORKER);
+  if (named) assertWorkerUrl(named);
+  // EVERY WORKER BY DEFAULT. Naming one is the escape hatch, exactly as it is for a capture run.
+  const { workers, scope } = gateWorkers(named);
+  process.stdout.write(`pages ${pages.url} · ${scope}\n`);
+
+  // ONE CANARY PER MACHINE, handed to whichever box is FREE. Eight canaries over five boxes is two rounds,
+  // not eight, and over twenty boxes it is one -- and a slow box simply takes fewer. The repeats of a
+  // single canary stay on its own box; see `gates/fleet.mjs` for why that boundary is where it is.
+  try {
+    const outcomes = await acrossFleet(CANARIES, workers, (canary, worker) => judgeOne(canary, worker, pages));
+    process.stdout.write(`\nWHERE THE WORK LANDED\n${renderShards(outcomes)}\n`);
+    reportFleet(outcomes, workers.length, controlPlane);
+  } finally {
+    await pages.release().catch((e) => process.stderr.write(`page server release failed: ${e.message}\n`));
+  }
+}
+
+/**
+ * ONE canary, on the box it was dealt to -- all `TIMES` of its captures.
+ *
+ * The repeats stay together deliberately: this gate compares a page against ITSELF, so splitting its
+ * captures across machines would answer a different question (are the boxes interchangeable?) while
+ * looking like an answer to this one. `fleet-consistency` owns that question.
+ */
+async function judgeOne(canary: Loose, worker: string, pages: Loose) {
+  // The GUEST fetches these pages, and the guest's localhost is not ours. `guestReachableUrl` rewrites the
+  // host -- skipping it is how every capture came to fetch the guest's own localhost, showing Edge
+  // "localhost refused to connect" and burning three attempts per page.
+  //
+  // A lease-shaped object with no lifecycle: these are bare-metal boxes that are always on, so there is
+  // nothing to start and nothing to restore. `guestReachableUrl` reads `hostAddress ?? derive(worker)`, and
+  // the derivation is what a NAMED worker has always taken -- hence `source: "explicit"`.
+  const base = arg("base", guestReachableUrl(pages.url,
+    { worker, source: "explicit", release: async () => undefined }));
+  const results: Loose[] = [];
+  await judgeCanary(canary, { base, worker, results });
+  const result = results[0];
+  // UNJUDGEABLE THROWS, so it reduces coverage rather than counting as a clean page. "Two captures errored"
+  // and "the page was stable" must never reach the verdict as the same thing.
+  if (result && !result.ok && !result.unstable) throw new Error(result.detail);
+  return result;
+}
+
+/**
+ * The fleet's verdict over the CANARIES.
+ *
+ * The boxes are how the work was spread, not what was examined, so the denominator stays the canary list
+ * exactly as it was when this ran on one machine. An unstable canary is a FAILURE; one that could not be
+ * judged reduces COVERAGE -- "we could not measure" and "it varied" need opposite responses, and a gate
+ * that passes when it could not measure launders unknown into fine.
+ */
+function reportFleet(outcomes: Loose[], workerCount: number,
+  controlPlane: string) {
+  const judged = outcomes.filter((o) => o.result);
+  const unstable = judged.filter((o) => o.result.unstable);
+  const unjudgeable = outcomes.filter((o) => !o.result);
+
+  for (const o of unstable) process.stdout.write(`  UNSTABLE ${o.item.path ?? o.item.url} on ${o.worker}: ${o.result.detail}\n`);
+  for (const o of unjudgeable) process.stdout.write(`  UNJUDGEABLE ${o.item.path ?? o.item.url} on ${o.worker}: ${o.error}\n`);
+
+  if (unjudgeable.length) {
+    process.stdout.write(`\n${unjudgeable.length} canary(s) could not be judged — errored or too few `
+      + "usable captures. If the same one keeps failing, that is a worker problem rather than a "
+      + "determinism one, and the box is named above.\n");
+  }
+  if (unstable.length) {
+    process.stdout.write("\nDo NOT start a corpus run. Evidence that varies for the same unchanged page "
+      + "is indistinguishable from evidence that differs because the page differs, which is the one defect "
+      + "this project cannot tolerate.\n");
+  }
+  const verdict = fleetVerdict(outcomes, {
+    of: CANARIES.length,
+    what: `${CANARIES.length} canaries x ${TIMES} captures compared by CONTENT`,
+    workers: workerCount,
+    failed: unstable.length,
+    controlPlane,
+  });
+  process.stdout.write(`\n${renderVerdict(verdict)}\n`);
+  process.exit(exitCodeFor(verdict));
+}
+
+/**
+ * A throw out of `main` is a crash of the HARNESS, not a reading of a canary, and Node would exit 1 for it -- the code that
+ * means "a canary was found UNSTABLE" (a11ign/a11ign#3977). The error is printed in full first: the code says THAT no verdict
+ * was read, the stack says why.
+ */
+function exitOnCrash(error: unknown) {
+  console.error(error);
+  const verdict = crashVerdict("gate:stability", error);
+  process.stdout.write(`\n${renderVerdict(verdict)}\n`);
+  process.exit(exitCodeFor(verdict));
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main().catch(exitOnCrash);

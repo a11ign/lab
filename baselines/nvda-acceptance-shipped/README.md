@@ -1,6 +1,6 @@
 # The shipped NVDA reading of the held-out acceptance set
 
-`gate:nvda-release` (`packages/lab/scripts/nvda-release-gate.mjs`) compares a release candidate's captures
+`gate:nvda-release` (`packages/lab/scripts/nvda-release-gate.ts`) compares a release candidate's captures
 of the held-out acceptance corpus against the readings stored here, field by field
 (`compareCapture`/`nvda-release-regression.mjs`), and blocks a release whose evidence CHANGED against a
 case captured here.
@@ -23,6 +23,6 @@ point on, every later release is compared against a real reading rather than aga
 ## Keeping it current
 
 After a release the gate has PASSED against, replace this snapshot with the candidate's own captures (the
-ones the release just qualified), the same way `promote-model.mjs` copies the candidate's
+ones the release just qualified), the same way `promote-model.ts` copies the candidate's
 `acceptance-report.json` into `packages/scorer/models/screenreader-scorer/` at promotion time. A snapshot
 that is never refreshed stops being "shipped" and starts being "whatever we happened to capture once".

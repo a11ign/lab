@@ -20,7 +20,7 @@
 //
 // ## Restoring is not rebuilding: `pages/` is not in the archive
 //
-// `corpus-snapshot.mjs` archives "only what cannot be regenerated cheaply", and pages are generated from
+// `corpus-snapshot.ts` archives "only what cannot be regenerated cheaply", and pages are generated from
 // `case-matrix.mjs`. But `check-signals` calls `hasUsableCaptureFiles`, which hashes `pages/<id>` and
 // compares it to each capture's `provenance.pageHash` -- so a tree restored from the archive alone reads
 // EVERY case as `STALE CAPTURES` and the gate answers INCONCLUSIVE. Rebuilding a lab is therefore
@@ -61,7 +61,7 @@ import { promisify } from "node:util";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../dataset-paths.ts";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../gates/verdict.ts";
-import { DEFAULT_REPO } from "../../scripts/corpus-release.mjs";
+import { DEFAULT_REPO } from "../../scripts/corpus-release.ts";
 import type { Loose } from "../capture/loose.ts";
 
 const run = promisify(execFile);
@@ -74,7 +74,7 @@ const DATASET_DIR = "screenreader-dataset";
 /**
  * Where each top-level member of a snapshot lives in a `runs/` tree. The archive is flat and this is the
  * only place that says where its members go back to, so `corpus-restore-drill.test.ts` pins its keys to
- * `WANTED` and `WANTED_SIBLINGS` in `corpus-snapshot.mjs` -- a member added there and not here would be
+ * `WANTED` and `WANTED_SIBLINGS` in `corpus-snapshot.ts` -- a member added there and not here would be
  * archived and never restored.
  */
 export const MEMBER_LAYOUT = Object.freeze({
@@ -274,7 +274,7 @@ function compareToLive({ restored, live }: { restored: Record<string, number>; l
  * A member wholly ABSENT from the restore while the live tree holds files for it is the failure a total
  * cannot see. A restore that holds MORE than the live tree is reported, not failed: files pruned since the
  * snapshot were real when it was taken. What this cannot decide is a member restored PARTLY -- that was
- * checked against the disk at snapshot time by `corpus-snapshot.mjs`; here it is shown, per member.
+ * checked against the disk at snapshot time by `corpus-snapshot.ts`; here it is shown, per member.
  *
  * @param {{ listed: number, restored: Record<string, number>, live: Record<string, number> | null,
  *           gate: { status: number, summary: string } | null }} measured

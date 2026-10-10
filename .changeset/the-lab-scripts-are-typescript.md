@@ -1,0 +1,5 @@
+---
+"@a11ign/lab": patch
+---
+
+The 35 `.mjs` programs of `scripts/` are TypeScript (a11ign/a11ign#4551, step 1 of 5 of the landing order on that row): `audit-*`, `check-*`, `corpus-*`, `evidence-check`, `explain-*`, `promote-model`, `retrain-pipeline`, `stability-gate` and the rest, run as `node scripts/<name>.ts`. Each old `.mjs` name stays for ONE release as a shim, because the core's `package.json` and nightly unit and control's `lab-job.yml` still name it and a bare rename reds lab's required `own` leg. The shim re-exports the `.ts` for an importer and, as the entry file, runs the `.ts` with the same arguments and exits with its status (a bare re-export would exit 0 having measured nothing). A shim cannot run under the distro `/usr/bin/node` (v22.22.1 does not load `.ts`), so a caller that names it must move to Node 24 or `tsx` with the pin. The shims go in the release after the core and control name the `.ts`. One output changed: the header row of `explain:scorer`'s model comparison printed the literal text `$/** @type {any} */ {reports.map(...)}` where the model names belong.

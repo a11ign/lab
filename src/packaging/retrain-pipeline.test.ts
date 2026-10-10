@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { pipeline, STEPS } from "../../scripts/retrain-pipeline.mjs";
+import { pipeline, STEPS } from "../../scripts/retrain-pipeline.ts";
 
 const record = (failAt?: string) => {
   const ran: string[] = [];

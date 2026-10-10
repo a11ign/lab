@@ -49,7 +49,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { STEPS } from "../../scripts/everything-pipeline.mjs";
+import { STEPS } from "../../scripts/everything-pipeline.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPTS = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).scripts;

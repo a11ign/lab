@@ -162,7 +162,7 @@ test("#1019 THE VACUITY FLOOR: no tracked file loses a local import to the strip
   assert.ok(files.length > 500, `only ${files.length} files discovered; the sweep is broken, not the tree`);
   // AN IMPORT STATEMENT, not any mention of a specifier. The first version of this sweep counted every
   // quoted relative path and reported nine false positives — files whose only match is inside a real block
-  // comment (`* `node -e "import('./corpus-backup.mjs')"``), which the stripper is SUPPOSED to blank.
+  // comment (`* `node -e "import('./corpus-backup.ts')"``), which the stripper is SUPPOSED to blank.
   // Measuring "did anything disappear" cannot tell correct blanking from the defect; measuring "did a LINE
   // THAT IS AN IMPORT STATEMENT disappear" can, because a comment mentioning one never begins with `import`.
   const count = (src: string) =>

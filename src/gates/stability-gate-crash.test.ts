@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const SCRIPT = resolve(import.meta.dirname, "../../scripts/stability-gate.mjs");
+const SCRIPT = resolve(import.meta.dirname, "../../scripts/stability-gate.ts");
 const PAGE_SERVER = resolve(import.meta.dirname, "../training/page-server.mjs");
 
 /** The entry line: `main` runs only when the file is the entry point, and a rejection from it must reach `exitOnCrash`. */

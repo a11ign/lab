@@ -1,7 +1,7 @@
 /**
  * THE FLOOR GUARDS WHAT WAS EXAMINED, NOT WHAT WAS ON DISK — #930, found by worker-capture on #900.
  *
- * `full-page-claims.mjs` first checked `MIN_CAPTURES` against `files.length`, before the loop that sets
+ * `full-page-claims.ts` first checked `MIN_CAPTURES` against `files.length`, before the loop that sets
  * aside unparseable, no-census and pre-#887 captures. So thirty captures with no usable census passed the
  * floor, examined nothing, and printed "none — every examined capture's sweeps made at least as many trips
  * as its census" with exit 0 — the examined-nothing clean result the floor exists to prevent, and this
@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SCRIPT = fileURLToPath(new URL("../../scripts/full-page-claims.mjs", import.meta.url));
+const SCRIPT = fileURLToPath(new URL("../../scripts/full-page-claims.ts", import.meta.url));
 
 /** A capture the script can examine: a census, and a sweep that recorded its trips. */
 const EXAMINABLE = JSON.stringify({ capture: { diagnostics: [

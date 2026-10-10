@@ -1,58 +1,15 @@
-// @ts-check
-/**
- * Emit the accompanying-defect `grants` map, so the Python audit can read a JavaScript declaration.
- *
- *   npm run corpus:grants-map
- *
- * `ACCOMPANYING_DEFECTS` lives in `case-matrix.mjs` and the features it names are computed in Python.
- * Neither language can import the other, so the map is emitted rather than duplicated by hand, and
- * `audit_grants.py` REFUSES to run without it rather than examining an empty set.
- *
- * Written into `runs/`, which is gitignored, because it is derived: a checked-in copy would be a second
- * source of truth and would drift the first time somebody added a defect.
- */
-import { mkdirSync, writeFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { pathToFileURL } from "node:url";
-
-import { ACCOMPANYING_DEFECTS } from "../src/training/case-matrix.mjs";
-import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
-
-/**
- * takes no flags: it emits the JS-side declarations for the Python audit to read.
- *
- * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
- */
-refuseUnknownFlags([], { entry: import.meta.url, command: "npm run corpus:grants-map" });
-
-const OUT = resolve(runsRoot(), "accompanying-grants.json");
-
-/** `grants` is a string on most defects and an array on three; the audit wants one feature per defect. */
-/**
- * @param {Record<string, {grants?: string | string[]}> | undefined} defects
- * @returns {Record<string, string>}
- */
-export function grantsMap(defects) {
-  /** @type {Record<string, string>} */
-  const map = {};
-  for (const [name, defect] of Object.entries(defects ?? {})) {
-    const grants = defect?.grants;
-    if (typeof grants === "string") map[name] = grants;
-    // An array means the markup grants several features. Only the FIRST is taken, and deliberately: the
-    // audit asks "did this defect's evidence arrive at all", and one feature answers that. Requiring all
-    // of them would fail on a defect whose secondary feature is legitimately absent on some pages.
-    else if (Array.isArray(grants) && grants.length) map[name] = grants[0];
-  }
-  return map;
+// TRANSITIONAL (a11ign/a11ign#4551): this program is `emit-grants-map.ts`. The name stays for ONE release because the core's `package.json` and nightly unit and control's `lab-job.yml` still name it, and a bare
+// rename reds the required `own` leg (`referenced-scripts.test.ts` reads the core's `package.json` at `CORE_REF`). Imported, it re-exports the `.ts`. Run as the entry file it RUNS the `.ts` with the
+// same arguments, node flags and stdio and exits with its status: the `.ts` is a program only when it is itself the entry file, so a bare re-export would exit 0 having measured nothing. It needs a
+// runtime that loads `.ts` (Node 24, upstream Node >= 22.18, tsx): the distro `/usr/bin/node` 22.22.1 does not and stops on the `.ts` import, so a caller that names it must move with the pin.
+// Deleted by a11ign/a11ign#4798.
+import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+export * from "./emit-grants-map.ts";
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+  process.stderr.write("emit-grants-map.mjs is now emit-grants-map.ts (a11ign/a11ign#4551): this name is deleted at the next lab release; running the .ts\n");
+  const run = spawnSync(process.execPath, [...process.execArgv, fileURLToPath(new URL("./emit-grants-map.ts", import.meta.url)), ...process.argv.slice(2)], { stdio: "inherit" });
+  if (run.error) throw run.error;
+  process.exit(run.status ?? 1);
 }
-
-function main() {
-  refuseIfRunsReadonly(OUT);
-  const map = grantsMap(ACCOMPANYING_DEFECTS);
-  mkdirSync(dirname(OUT), { recursive: true });
-  writeFileSync(OUT, `${JSON.stringify(map, null, 2)}\n`);
-  process.stdout.write(`wrote ${Object.keys(map).length} grant(s) to ${OUT}\n`);
-}
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();

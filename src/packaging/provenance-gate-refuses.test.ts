@@ -19,9 +19,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const SCRIPT = join(REPO, "packages/lab/scripts/check-shipped-provenance.mjs");
+const SCRIPT = join(REPO, "packages/lab/scripts/check-shipped-provenance.ts");
 
-/** The provenance rows `promote-model.mjs` renders, for a report with this many records. */
+/** The provenance rows `promote-model.ts` renders, for a report with this many records. */
 const provenanceBody = (records: number) => `Retrained scorer weights (\`candidate\`).
 
 Provenance, so a disputed finding can be traced to the model that produced it:

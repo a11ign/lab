@@ -11,7 +11,7 @@ const read = (p: string) => readFileSync(resolve(REPO, p), "utf8");
 /**
  * BOTH pipelines keep a full transcript, from ONE definition.
  *
- * `keepingTranscript` was written in `everything-pipeline.mjs` and its comment states the problem exactly:
+ * `keepingTranscript` was written in `everything-pipeline.ts` and its comment states the problem exactly:
  * the runner prints a six-line tail per stage and captures the child's stdout to do it, so the detail
  * "no longer reaches the journal AT ALL". It then solved that for the nine top-level stages only — while
  * `retrain` is one of those stages AND is itself a pipeline, running the same `run` in a child process
@@ -27,25 +27,25 @@ const read = (p: string) => readFileSync(resolve(REPO, p), "utf8");
  * rather than on a second copy being present and correct.
  */
 test("keepingTranscript has one home, and everything-pipeline imports it", () => {
-  const retrain = read("packages/lab/scripts/retrain-pipeline.mjs");
-  const everything = read("packages/lab/scripts/everything-pipeline.mjs");
+  const retrain = read("packages/lab/scripts/retrain-pipeline.ts");
+  const everything = read("packages/lab/scripts/everything-pipeline.ts");
 
   assert.match(retrain, /export function keepingTranscript\(/,
     "it belongs beside `run`, because the tail it compensates for is there");
   assert.doesNotMatch(everything, /function keepingTranscript\(/,
     "a second copy is how two pipelines come to disagree about what a record is");
-  assert.match(everything, /import \{[^}]*keepingTranscript[^}]*\} from "\.\/retrain-pipeline\.mjs"/,
+  assert.match(everything, /import \{[^}]*keepingTranscript[^}]*\} from "\.\/retrain-pipeline\.ts"/,
     "everything-pipeline must import it, not redefine it");
 });
 
 test("each pipeline writes its OWN transcript, so a nested run cannot interleave", () => {
-  const retrain = read("packages/lab/scripts/retrain-pipeline.mjs");
-  const everything = read("packages/lab/scripts/everything-pipeline.mjs");
+  const retrain = read("packages/lab/scripts/retrain-pipeline.ts");
+  const everything = read("packages/lab/scripts/everything-pipeline.ts");
   assert.match(retrain, /RETRAIN_TRANSCRIPT = resolve\(runsRoot\(\), "retrain-transcript\.log"\)/);
   assert.match(everything, /TRANSCRIPT = resolve\(runsRoot\(\), "everything-transcript\.log"\)/);
   // The path is required rather than defaulted, so neither can silently inherit the other's file while
   // `everything` has `retrain` running inside it.
-  assert.match(retrain, /keepingTranscript\(runStep, \{ transcript \}\)/,
+  assert.match(retrain, /function keepingTranscript\(runStep: [^]*?, \{ transcript \}: \{ transcript: string;? \}\)/,
     "the transcript path must be REQUIRED — a default is how two concurrent pipelines share one file");
 });
 
@@ -53,7 +53,7 @@ test("a dry run keeps no transcript at all", () => {
   // The `rmSync` that starts a fresh record is skipped on a dry run — correctly — but the APPEND was not,
   // so `--dry-run` added stages to the last real run's record. That is the exact failure the comment on
   // that rmSync describes, reintroduced by the guard written to prevent it.
-  for (const file of ["packages/lab/scripts/retrain-pipeline.mjs", "packages/lab/scripts/everything-pipeline.mjs"]) {
+  for (const file of ["packages/lab/scripts/retrain-pipeline.ts", "packages/lab/scripts/everything-pipeline.ts"]) {
     assert.match(read(file), /runStep: dryRun \? run : keepingTranscript\(/,
       `${file}: a dry run must bypass the transcript, not append "(dry run)" to the last real one`);
   }

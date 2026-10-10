@@ -20,7 +20,7 @@ import { CASES } from "./case-matrix.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import {
   narrowTo, stratify, resultRow, caseComparer, countUncomparedAgainstCoverage, writeReports,
-} from "../../scripts/evidence-check.mjs";
+} from "../../scripts/evidence-check.ts";
 
 /** #1908's family, and the string its seven cases embed. */
 const FAMILY = "media-autoplay-audio";
@@ -170,7 +170,7 @@ test("the reconciliation site writes that null too, and does not reach for worke
 
 test("every capture path records the worker the pool HANDED it, on all three of its verdicts", async () => {
   // THE PRODUCTION CALL SITES, executed. The three `resultRow` pushes inside the pool's handler
-  // (`evidence-check.mjs` SKIPPED / REJECTED / compared) are the whole of done-when 2, and until this test
+  // (`evidence-check.ts` SKIPPED / REJECTED / compared) are the whole of done-when 2, and until this test
   // they were guarded only by a source scan that could not reach their arguments: `worker: null` on the
   // compared site left the focused suite green while a real run printed `Captured by 0 of the 3 worker(s)
   // named: none`. Worse than a stale row — `capturedBy` drops a box that did the work, and #1908's ten
@@ -216,7 +216,7 @@ test("every report row is built by resultRow, so no path can record one without 
   // reconciliation, is the one site that passes `null` correctly, so what guards it is the builder test
   // two above rather than a rule over the pushes — a "no site passes null" scan would turn it red and
   // delete the honest answer.
-  const source = readFileSync(resolve(process.cwd(), "packages/lab/scripts/evidence-check.mjs"), "utf8");
+  const source = readFileSync(resolve(process.cwd(), "packages/lab/scripts/evidence-check.ts"), "utf8");
   const pushes = [...source.matchAll(/results\.push\(([\s\S]{0,12})/g)].map(([, tail]) => tail.trim());
   assert.ok(pushes.length >= 4, `only ${pushes.length} results.push( call(s) found; this scan has broken`);
   for (const tail of pushes) {

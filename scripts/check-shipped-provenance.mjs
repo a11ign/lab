@@ -1,118 +1,15 @@
-#!/usr/bin/env node
-// @ts-check
-
-/**
- * REFUSE a release whose weights no changelog entry accounts for.
- *
- * The reasoning is in `shipped-provenance.mjs`. This file is the wiring: read the shipped training
- * report, the pending `promote-*.md` changesets and the package CHANGELOG, and report what the pure
- * function finds.
- *
- * It runs in `release:gate` rather than in `npm test` because it is a property of a RELEASE, not of the
- * source: a tree with no pending promotion and a published changelog is correct, and the same tree
- * mid-promotion is not. Putting it in the unit suite would make it fail for everyone the moment somebody
- * started a promotion, which is how a check gets deleted.
- */
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
-import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+// TRANSITIONAL (a11ign/a11ign#4551): this program is `check-shipped-provenance.ts`. The name stays for ONE release because the core's `package.json` and nightly unit and control's `lab-job.yml` still name it, and a bare
+// rename reds the required `own` leg (`referenced-scripts.test.ts` reads the core's `package.json` at `CORE_REF`). Imported, it re-exports the `.ts`. Run as the entry file it RUNS the `.ts` with the
+// same arguments, node flags and stdio and exits with its status: the `.ts` is a program only when it is itself the entry file, so a bare re-export would exit 0 having measured nothing. It needs a
+// runtime that loads `.ts` (Node 24, upstream Node >= 22.18, tsx): the distro `/usr/bin/node` 22.22.1 does not and stops on the `.ts` import, so a caller that names it must move with the pin.
+// Deleted by a11ign/a11ign#4798.
+import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-
-import { provenanceLines } from "./promote-model.mjs";
-import { provenanceProblems } from "../src/packaging/shipped-provenance.ts";
-import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-
-refuseUnknownFlags([], { entry: import.meta.url, command: "npm run release:provenance" });
-
-/**
- * The tree to examine. Overridable so this gate can be PROVEN.
- *
- * `docs/proving-a-gate.md` step 2: separate the DECISION from the DATA, or the only way to watch a gate
- * refuse is to break the repo. Every path below derives from one root, so a test plants a three-file tree
- * in a temp directory and gets the real command, the real exit code and the real message -- which is the
- * tier that matters here, since this repo's recurring defect is a correct decision some path never
- * reaches. Same convention as `audit-rule-coverage.ts`'s `CAPTURE_ROOT`.
- */
-const REPO = process.env.A11Y_PROVENANCE_ROOT || fileURLToPath(new URL("../../../", import.meta.url));
-const SHIPPED = resolve(REPO, "packages/scorer/models/screenreader-scorer/training-report.json");
-const CHANGESETS = resolve(REPO, ".changeset");
-const CHANGELOG = resolve(REPO, "packages/scorer/CHANGELOG.md");
-
-/** @returns {number} process exit code */
-function main() {
-  const shippedReport = existsSync(SHIPPED)
-    ? JSON.parse(readFileSync(SHIPPED, "utf8"))
-    : null;
-  const changesets = existsSync(CHANGESETS)
-    ? readdirSync(CHANGESETS)
-      .filter((name) => name.startsWith("promote-") && name.endsWith(".md"))
-      .map((name) => ({ name, text: readFileSync(join(CHANGESETS, name), "utf8") }))
-    : [];
-  const changelog = existsSync(CHANGELOG) ? readFileSync(CHANGELOG, "utf8") : null;
-
-  const problems = provenanceProblems({ shippedReport, changesets, changelog, renderProvenance: provenanceLines });
-
-  // WHAT IT EXAMINED, always. A pass that does not say how many entries it read is indistinguishable from
-  // a pass over an empty directory, which is this repo's definition of a check that reports success
-  // having examined nothing.
-  //
-  // AND `existsSync` IS THE WHOLE OF WHAT THIS LINE MAY CLAIM (#2162). It answers whether THIS CHECKOUT
-  // holds the file; it cannot answer whether anything was ever published. The gloss here used to read
-  // `absent (never published)` -- a measured fact and an unmeasured conclusion joined by a bracket, with
-  // no way for a reader to tell which half was checked. A publish that does not commit its CHANGELOG back
-  // leaves exactly this state, and that is a real event here rather than a hypothetical: #1824 records the
-  // 2026-09-19 release running `release:version` inside the job with nothing committing the result. Only
-  // the registry can answer the publication question, and this gate deliberately runs where there is no
-  // npm token -- so the honest move is to say less, not to reach further.
-  const changelogState = changelog ? "present" : "absent, so nothing to examine";
-  process.stdout.write(`  ${changesets.length} pending promotion changeset(s); `
-    + `CHANGELOG ${changelogState}\n`);
-  for (const problem of problems) process.stdout.write(`\n  ${problem}\n`);
-  if (problems.length) {
-    process.stdout.write("\n  The weights ARE the API (ADR 0007), so a release that cannot say which model "
-      + "it ships is one nobody can trace a finding back to.\n");
-  }
-
-  // THE SOURCE NAMES WHAT WAS READ, and `renderVerdict` appends the word `examined` to it (#2162).
-  // Naming "the CHANGELOG" unconditionally made the PASS line read "... and the CHANGELOG examined and
-  // clean" over a `changelog` of `null` -- which is exactly what the summary line's own comment above
-  // calls a check reporting success having examined nothing: the principle stated and violated in one
-  // output. An absent CHANGELOG is NAMED as absent rather than silently dropped, so a reader can tell a
-  // file left out of the population from one that was never asked about.
-  const source = changelog
-    ? `the shipped weights, ${changesets.length} pending changeset(s) and the CHANGELOG`
-    : `the shipped weights and ${changesets.length} pending changeset(s) (no CHANGELOG to read)`;
-  // examined:1, of:1 IS THE ANSWER, not a placeholder — and INCONCLUSIVE (exit 2) is UNREACHABLE from
-  // this call site as a result. That is a design decision, verified in
-  // `provenance-gate-refuses.test.ts`'s "INCONCLUSIVE is unreachable" test, not an oversight to fix.
-  //
-  // `verdict.mjs`'s INCONCLUSIVE exists to catch PARTIAL COVERAGE of a POPULATION -- the 2-of-48 defect,
-  // where a gate examined fewer records than it claimed to. This gate has no such population: its subject
-  // is one shipped artefact and one question ("does an entry account for it"), which is either true or
-  // false every time this runs. There is no state where the gate examined "some but not all" of one
-  // artefact's provenance -- `examined` can never fall short of `of` because there is nothing partial to
-  // fall short OF. A missing shipped report or an absent changeset is a PROBLEM `provenanceProblems` names
-  // (and this gate FAILS on), never a coverage gap.
-  //
-  // `failures` is deliberately uncoupled from `examined`/`of` for the reason `gateVerdict`'s own header
-  // comment names THIS gate for: it can find several problems (a stale entry AND a duplicate) about the
-  // one artefact it examined, so "N problem(s) across 1 of 1" is correct where "N of 1 examined failed"
-  // would misreport the shape. Adopting a shared verdict type does not obligate a gate to exercise every
-  // state that type can express -- see `docs/gate-exit-codes.md`.
-  //
-  // The value of using the shape at all, despite the unreachable state, is consistency and the SOURCE
-  // string: every gate in this repo now reports the same way, so a reader does not have to learn each
-  // one's dialect to know what was examined — determinism-plan D6.
-  const verdict = gateVerdict({
-    examined: 1,
-    of: 1,
-    source,
-    failures: problems.length,
-  });
-  process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
-  return exitCodeFor(verdict);
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exit(main());
+export * from "./check-shipped-provenance.ts";
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+  process.stderr.write("check-shipped-provenance.mjs is now check-shipped-provenance.ts (a11ign/a11ign#4551): this name is deleted at the next lab release; running the .ts\n");
+  const run = spawnSync(process.execPath, [...process.execArgv, fileURLToPath(new URL("./check-shipped-provenance.ts", import.meta.url)), ...process.argv.slice(2)], { stdio: "inherit" });
+  if (run.error) throw run.error;
+  process.exit(run.status ?? 1);
 }

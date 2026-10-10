@@ -5,8 +5,8 @@
 //
 //   the conformance line   `rules:real-pages` (check-real-page-findings.ts)  a page whose publisher declares
 //                                                                            it conformant
-//   the figures            `calibrate-abstention.mjs`                       the `calibration` role
-//   the training set       `build-realism-tier.mjs`                         the `training` role
+//   the figures            `calibrate-abstention.ts`                       the `calibration` role
+//   the training set       `build-realism-tier.ts`                         the `training` role
 //
 // `field` (#955) -- pages a stranger is likely to point this tool at, with no conformance claim -- must reach
 // none of them. It already reaches none, because each rule admits only its own role or claim. What this
@@ -38,7 +38,7 @@ export function conformanceLineAnswer(url) {
 
 /**
  * THE FIGURES' SELECTION -- asserted-wrongly and referred: captures whose CORPUS role is `calibration`,
- * joined by url, never by the role the capture was stamped with (see `calibrate-abstention.mjs` for what
+ * joined by url, never by the role the capture was stamped with (see `calibrate-abstention.ts` for what
  * the stamp cost).
  * @template {{ capture?: { url?: string } }} E @param {readonly E[]} entries @returns {E[]}
  */

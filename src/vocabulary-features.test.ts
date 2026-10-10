@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { VOCABULARY_FEATURES } from "../scripts/audit-corpus-starvation.mjs";
+import { VOCABULARY_FEATURES } from "../scripts/audit-corpus-starvation.ts";
 
 const FEATURES_PY = fileURLToPath(
   new URL("../../scorer/python/screenreader_features.py", import.meta.url));

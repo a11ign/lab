@@ -94,7 +94,7 @@ function buildIn(dir: string, entries: ReturnType<typeof corpusEntry>[]) {
   const base = join(dir, "base.jsonl");
   writeFileSync(base, JSON.stringify({ id: "generated-1" }) + "\n");
   const out = join(dir, "with-realism.jsonl");
-  const run = spawnSync(process.execPath, ["packages/lab/scripts/build-realism-tier.mjs", `--out=${out}`], {
+  const run = spawnSync(process.execPath, ["packages/lab/scripts/build-realism-tier.ts", `--out=${out}`], {
     cwd: REPO_ROOT,
     encoding: "utf8",
     env: { ...process.env, REAL_CORPUS_ROOT: corpus, DATASET_EXPORT: base, A11Y_RUNS_READONLY: "" },

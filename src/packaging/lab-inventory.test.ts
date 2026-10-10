@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import {
   environmentSpread, splitFields, migrationVerdict, fetchedArtifacts,
-} from "../../scripts/lab-inventory.mjs";
+} from "../../scripts/lab-inventory.ts";
 
 const capture = (env: Record<string, unknown>, prov: Record<string, unknown> = {}) =>
   ({ environment: env, provenance: prov });

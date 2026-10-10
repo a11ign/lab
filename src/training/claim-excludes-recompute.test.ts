@@ -2,7 +2,7 @@
  * #1628: the per-floor table has ONE definition, and the recompute over a stored sweep refuses unless that
  * definition reproduces the stored table first.
  *
- * `floorRows` was a loop inline in `calibrate-abstention.mjs`'s `main()`. `claim-excludes-recompute.ts`
+ * `floorRows` was a loop inline in `calibrate-abstention.ts`'s `main()`. `claim-excludes-recompute.ts`
  * recomputes the same table from a stored `abstention-sweep.json` when the corpus's `claimExcludes` change, and
  * the public claim (#1579) quotes what it prints -- so a second copy of the loop there would be a second
  * definition of "asserted wrongly" free to drift from the one the sweep prints. Both call `floorRows`, pinned
@@ -23,12 +23,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { SCORED_CRITERIA } from "@a11ign/judge/coverage";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
-import { floorRows } from "../../scripts/calibrate-abstention.mjs";
+import { floorRows } from "../../scripts/calibrate-abstention.ts";
 import { recompute, render } from "../../scripts/claim-excludes-recompute.ts";
 import { REAL_PAGES } from "./real-page-corpus.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const ABSTENTION = resolve(REPO, "packages/lab/scripts/calibrate-abstention.mjs");
+const ABSTENTION = resolve(REPO, "packages/lab/scripts/calibrate-abstention.ts");
 const RECOMPUTE = resolve(REPO, "packages/lab/scripts/claim-excludes-recompute.ts");
 // The script is TypeScript now, and the host's plain node has no type stripping (ADR 0043), so it is spawned through tsx like the other .ts scripts.
 const TSX = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
@@ -143,7 +143,7 @@ test("ONE COPY: the per-floor loop exists only in floorRows, and both callers us
   assert.equal(abstention.match(LOOP)?.length ?? 0, 1, "calibrate-abstention holds exactly one copy of the loop");
   assert.equal(recomputeSource.match(LOOP)?.length ?? 0, 0, "the recompute must call floorRows, not copy the loop");
   assert.match(abstention, /const rows = floorRows\(scored, CANDIDATE_FLOORS\);/, "main() prints the table floorRows returns");
-  assert.match(recomputeSource, /import \{ floorRows \} from "\.\/calibrate-abstention\.mjs";/);
+  assert.match(recomputeSource, /import \{ floorRows \} from "\.\/calibrate-abstention\.ts";/);
   assert.match(recomputeSource, /floorRows\(sweep\.scored, floors\)/, "the control runs through floorRows");
 });
 

@@ -7,15 +7,15 @@
  * minority of the pages -- and a reader that treats every file it finds as equally current is comparing a
  * MIXED population without knowing it. `check-real-page-findings.ts` measured the cost directly (a
  * confident wrong conclusion from reading an older capture as if it were current); this unit found the
- * same exposure, unaddressed, in `lab-inventory.mjs`, `calibrate-abstention.mjs` and
- * `build-realism-tier.mjs`.
+ * same exposure, unaddressed, in `lab-inventory.ts`, `calibrate-abstention.ts` and
+ * `build-realism-tier.ts`.
  *
  * DISCOVERED, not hand-listed, for the reason this repo's other population guards exist
  * (`dataset-paths.test.ts`, `commands-documented.test.ts`, and the `env-doc-coverage` check the nightly
  * report runs since #954): a hand-written
  * list of "the files that matter" is exactly the kind of list a new file slips past. The signature is a
  * file that both resolves `realCorpusRoot()` and calls `readdirSync` -- resolving the path alone (like
- * `audit-corpus-urls.mjs`, which only imports the DECLARED page list to make live HTTP requests and never
+ * `audit-corpus-urls.ts`, which only imports the DECLARED page list to make live HTTP requests and never
  * reads a captured file) is not enough to be in scope.
  */
 // FIRST, so it observes every read below it -- #929. See `packages/guards/src/walk-scope.ts`.
@@ -68,7 +68,7 @@ function readSource(file: string): string {
 }
 
 /** A file is IN SCOPE when it both resolves the real-page corpus root and reads a directory -- resolving
- *  the path alone is not a read (see `audit-corpus-urls.mjs`, exempt below for exactly that reason). */
+ *  the path alone is not a read (see `audit-corpus-urls.ts`, exempt below for exactly that reason). */
 function scansRealPageCorpus(source: string): boolean {
   return /\brealCorpusRoot\b/.test(source) && /\breaddirSync\b/.test(source);
 }
@@ -89,10 +89,10 @@ const EXEMPT: Record<string, string> = {
   "packages/lab/scripts/audit-rule-coverage.ts":
     "Answers a cumulative question -- has this rule EVER fired on a real page -- for which an old finding "
     + "is still valid evidence; age-mixing across roles does not invalidate a positive the way it does for "
-    + "check-real-page-findings.ts's baseline diff or calibrate-abstention.mjs's threshold. Already guards "
+    + "check-real-page-findings.ts's baseline diff or calibrate-abstention.ts's threshold. Already guards "
     + "the risk that actually applies to it: minutesSinceLastWrite refuses to measure a corpus still being "
     + "written (corpus-settled.mjs), which is a different failure from the one this file is about.",
-  "packages/lab/scripts/explain-capture.mjs":
+  "packages/lab/scripts/explain-capture.ts":
     "A single-capture, human-driven diagnostic (`npm run capture:explain -- <id>`) -- a person reading one "
     + "capture's own outcome, not a corpus-wide judgement a mixed population could poison. It does not "
     + "compute anything ACROSS captures the way the other readers do.",

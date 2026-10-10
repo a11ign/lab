@@ -1,5 +1,5 @@
 // @ts-check
-// What `stability-gate.mjs` needs to turn a repeat-capture report into evidence it can KEEP (#3273).
+// What `stability-gate.ts` needs to turn a repeat-capture report into evidence it can KEEP (#3273).
 //
 // PURE, AND IT HAS TO BE. The gate script reaches the corpus (`dataset-paths.mjs`), so a test importing it
 // is refused in the token-less acceptance job. Everything the test needs lives here and imports nothing but

@@ -38,7 +38,7 @@ import { parse } from "yaml";
 import {
   RUN_REPORTS, REPORT, OUT, checkoutCommit, latestReportPath, resultRow, runReportName, writeReports,
   writeRunReport,
-} from "../../scripts/evidence-check.mjs";
+} from "../../scripts/evidence-check.ts";
 import { REPO_ROOT } from "../dataset-paths.ts";
 
 /** The env overrides `dataset-paths.mjs` reads at call time. The lab runs with none, so neither does this. */

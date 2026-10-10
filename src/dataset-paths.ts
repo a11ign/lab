@@ -55,7 +55,7 @@
  * by `control-has-no-dependencies.test.ts`), and its own `REPO` in `lab-job.mjs`/`lab-pipeline.mjs` is
  * used only as a `cwd` for spawning Ansible — it never reads or writes anything under `runs/`.
  *
- * `promote-model.mjs` and `check-shipped-provenance.mjs` are exempt too, but for a reason to keep rather
+ * `promote-model.ts` and `check-shipped-provenance.ts` are exempt too, but for a reason to keep rather
  * than a boundary to fix: each takes its OWN override (`A11Y_PROMOTE_ROOT`, `A11Y_PROVENANCE_ROOT`) that
  * repoints the entire script at a fixture tree so its refusal can be proven without copying the
  * repository. That override has to live on the constant those two files compute themselves — a shared
@@ -82,7 +82,7 @@ import { resolve, relative } from "node:path";
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 /**
- * `RUNS_ROOT` (read by `explain-scorer.mjs`) and `A11Y_RUNS_ROOT` (read by `lab-inventory.mjs`) were
+ * `RUNS_ROOT` (read by `explain-scorer.ts`) and `A11Y_RUNS_ROOT` (read by `lab-inventory.ts`) were
  * BOTH live and neither tool read the other's name, so exporting one silently did nothing for the other
  * command. Both are honoured here rather than one being silently dropped — picking a single canonical
  * name is a follow-up, not this change, because dropping a spelling someone's shell profile already
@@ -120,7 +120,7 @@ export function datasetRoot(defaultSubdir: string = DEFAULT_DATASET_SUBDIR): str
  * The captures subdirectory under a dataset root. `DATASET_CAPTURE_ROOT` was the identical line in
  * three files (`check-signals.mjs`, `capture-screenreader-dataset.mjs`, `export-screenreader-dataset.mjs`).
  *
- * A fourth spelling, `CAPTURE_ROOT`, existed in two more (`audit-size-sensitivity.mjs`,
+ * A fourth spelling, `CAPTURE_ROOT`, existed in two more (`audit-size-sensitivity.ts`,
  * `audit-rule-coverage.ts`) as a second env-var name for the same concept, always pointed at
  * `runs/screenreader-dataset/captures` — the "three env names for one root" defect at a smaller scale.
  * Both of those now call `captureRoot(datasetRoot())`, which drops `CAPTURE_ROOT` recognition in favour
@@ -137,8 +137,8 @@ export function captureRoot(root: string): string {
 
 /**
  * The exported training records file. `DATASET_EXPORT`, when set, replaces the whole path — the same
- * override two scripts (`audit-corpus-starvation.mjs`, `check-dataset-distribution.mjs`) already
- * supported, spelled out identically both times. `build-realism-tier.mjs` hardcoded the same default
+ * override two scripts (`audit-corpus-starvation.ts`, `check-dataset-distribution.ts`) already
+ * supported, spelled out identically both times. `build-realism-tier.ts` hardcoded the same default
  * path without reading the override at all; it now goes through this function so an operator who points
  * `DATASET_EXPORT` elsewhere gets a consistent answer from every reader rather than three of four.
  *
@@ -151,7 +151,7 @@ export function datasetExportPath(): string {
 
 /**
  * The real-page corpus root. `REAL_CORPUS_ROOT` was the identical line in four files
- * (`calibrate-abstention.mjs`, `build-realism-tier.mjs`, `audit-rule-coverage.ts`,
+ * (`calibrate-abstention.ts`, `build-realism-tier.ts`, `audit-rule-coverage.ts`,
  * `check-real-page-findings.ts`) — the one env name here was never the problem; only the repo-root
  * anchor underneath it was duplicated.
  *
@@ -165,7 +165,7 @@ export function realCorpusRoot(): string {
   // it — and `capture-real-pages.mjs` WRITES through it, so on a machine with `runs/` mounted elsewhere
   // captures landed in the wrong tree rather than merely being read from one.
   //
-  // Found by #930's own mutation rather than by reading: `RUNS_ROOT=<empty dir> full-page-claims.mjs`
+  // Found by #930's own mutation rather than by reading: `RUNS_ROOT=<empty dir> full-page-claims.ts`
   // reported 28 captures from the real corpus instead of examined 0. The header above says "the one env
   // name here was never the problem; only the repo-root anchor underneath it was duplicated" — the anchor
   // was consolidated and the `runs/` segment was left hardcoded, which is a fix reaching the instance and
@@ -179,7 +179,7 @@ export function realCorpusRoot(): string {
 }
 
 /**
- * Where `repeat-capture.mjs` writes by default, and one of the three roots `explain-capture.mjs` and
+ * Where `repeat-capture.mjs` writes by default, and one of the three roots `explain-capture.ts` and
  * its test search — all three spelled `runs/repeat-captures` independently.
  *
  * @returns {string}
@@ -189,8 +189,8 @@ export function repeatCapturesRoot(): string {
 }
 
 /**
- * Where `calibrate-abstention.mjs` writes its sweep -- `runs/abstention/`, OUTSIDE the real-page corpus it
- * reads, where `build-realism-tier.mjs` once had to blacklist the file by name.
+ * Where `calibrate-abstention.ts` writes its sweep -- `runs/abstention/`, OUTSIDE the real-page corpus it
+ * reads, where `build-realism-tier.ts` once had to blacklist the file by name.
  *
  * Owned HERE, not in the script, because the path is stated twice: by the producer that writes it and by
  * `lab-fetch.yml`'s `abstention-sweep` entry, the only way the file leaves the lab. `cbea0d3b` moved the
@@ -219,7 +219,7 @@ export function abstentionSweepPath(outDir: string = abstentionRoot()): string {
  * reading its source: a genuine writer refuses and NAMES the exact path it would have written, a
  * read-only audit is unaffected, and with the flag unset every writer works exactly as before.
  *
- * Added after `build-realism-tier.mjs` was run directly to test an unrelated change and wrote
+ * Added after `build-realism-tier.ts` was run directly to test an unrelated change and wrote
  * `runs/screenreader-dataset/with-realism.jsonl` twice -- disclosed, and low-risk, because `runs/` in a
  * worktree is a local copy rather than the authoritative corpus (see this repo's own memory of that
  * correction). But nothing in a script's NAME says whether it writes, so a peer reading `npm run

@@ -1,72 +1,15 @@
-#!/usr/bin/env node
-// @ts-check
-/**
- * Does the exported dataset have the shape a model can learn from?
- *
- *   npm run corpus:distribution
- *
- * The check itself is `dataset-distribution.mjs` and is pure; this is the part that finds the file, says
- * what it examined, and decides the exit code.
- *
- * ## Why the count of what it examined is printed even on success
- *
- * "No problems" over an export that turned out to be a stale local copy is the same sentence as "no
- * problems" over the real thing, and this repo has read the first as the second more than once. So the
- * record count and the path are printed on every run, pass or fail — `rules:coverage` earns its keep the
- * same way.
- */
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { distributionProblems } from "../src/training/dataset-distribution.mjs";
-import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.ts";
-
-const REPO = REPO_ROOT;
-
-/** @param {string[]} argv */
-export function dataPathFrom(argv) {
-  const named = argv.find((a) => a.startsWith("--data="));
-  return named ? resolve(REPO, named.slice("--data=".length)) : datasetExportPath();
+// TRANSITIONAL (a11ign/a11ign#4551): this program is `check-dataset-distribution.ts`. The name stays for ONE release because the core's `package.json` and nightly unit and control's `lab-job.yml` still name it, and a bare
+// rename reds the required `own` leg (`referenced-scripts.test.ts` reads the core's `package.json` at `CORE_REF`). Imported, it re-exports the `.ts`. Run as the entry file it RUNS the `.ts` with the
+// same arguments, node flags and stdio and exits with its status: the `.ts` is a program only when it is itself the entry file, so a bare re-export would exit 0 having measured nothing. It needs a
+// runtime that loads `.ts` (Node 24, upstream Node >= 22.18, tsx): the distro `/usr/bin/node` 22.22.1 does not and stops on the `.ts` import, so a caller that names it must move with the pin.
+// Deleted by a11ign/a11ign#4798.
+import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+export * from "./check-dataset-distribution.ts";
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+  process.stderr.write("check-dataset-distribution.mjs is now check-dataset-distribution.ts (a11ign/a11ign#4551): this name is deleted at the next lab release; running the .ts\n");
+  const run = spawnSync(process.execPath, [...process.execArgv, fileURLToPath(new URL("./check-dataset-distribution.ts", import.meta.url)), ...process.argv.slice(2)], { stdio: "inherit" });
+  if (run.error) throw run.error;
+  process.exit(run.status ?? 1);
 }
-
-function main() {
-  refuseUnknownFlags(["--data", "--json"], {
-    entry: import.meta.url,
-    command: "npm run corpus:distribution",
-  });
-  const path = dataPathFrom(process.argv.slice(2));
-  if (!existsSync(path)) {
-    // A REFUSAL, not a pass. `runs/` is gitignored, so a missing export is the normal state of a fresh
-    // checkout — and reporting that as clean is how a check comes to mean nothing.
-    process.stdout.write(`\n  NO EXPORT at ${path.replace(REPO, "")}\n`
-      + "  This is a refusal, not a pass: there is nothing here to have an opinion about.\n"
-      + "  Run `npm run training:export`, or ask the box that owns the corpus:\n"
-      + "    npm run lab:job -- -e job=export\n");
-    process.exitCode = 2;
-    return;
-  }
-  const records = readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  const problems = distributionProblems(records);
-  for (const problem of problems) process.stdout.write(`\n  PROBLEM  ${problem}\n`);
-  if (problems.length) {
-    process.stdout.write("\n  A model fitted to this export would train, score, and mean nothing — the "
-      + "failure mode that distinguishes an\n  ML pipeline from ordinary software: the data stays the "
-      + "right shape all the way through.\n");
-  }
-  // THROUGH `gateVerdict`, so "no problems" cannot be reported without what was examined — see the header,
-  // and determinism-plan D6. This question IS a coverage question ("is any field empty on EVERY record"),
-  // so every record read is a record examined and the two numbers are the same. Stating them anyway is the
-  // point: a distribution check over an export of 3 records and one over 2,484 look identical otherwise.
-  const verdict = gateVerdict({
-    examined: records.length,
-    of: records.length,
-    source: path.replace(REPO, ""),
-    failures: problems.length,
-  });
-  process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
-  process.exitCode = exitCodeFor(verdict);
-}
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();

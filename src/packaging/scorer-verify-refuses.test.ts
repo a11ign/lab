@@ -32,10 +32,10 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { problems, classify } from "../../scripts/verify-safetensors.mjs";
+import { problems, classify } from "../../scripts/verify-safetensors.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const SCRIPT = join(REPO, "packages/lab/scripts/verify-safetensors.mjs");
+const SCRIPT = join(REPO, "packages/lab/scripts/verify-safetensors.ts");
 
 /** Every format that executes on load. Named here so the test fails if the script's set shrinks. */
 const EXECUTABLE_ON_LOAD = [".pt", ".pkl", ".ckpt", ".bin", ".pth", ".h5"];

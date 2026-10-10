@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * WHICH captures `build-realism-tier.mjs` rejected as truncated, shaped for `with-realism.jsonl.source.json`.
+ * WHICH captures `build-realism-tier.ts` rejected as truncated, shaped for `with-realism.jsonl.source.json`.
  *
  * The build recorded HOW MANY (`rejected as truncated: 4 of 41`) and printed the urls to stdout only, so when
  * the count moved between two builds (#2215: 2 rejected, then 4) nothing could say which captures changed

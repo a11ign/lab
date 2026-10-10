@@ -52,6 +52,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
+import { isTransitionalShim } from "../transitional-shims.ts";
 
 /**
  * THE REPOSITORY ROOT, NOT A CORPUS ROOT — and the distinction is load-bearing enough to state.
@@ -68,7 +69,7 @@ const DOC = "docs/gate-exit-codes.md";
 /**
  * The six scripts that import `gateVerdict`/`exitCodeFor` (or `fleetVerdict`, which wraps them) from
  * `verdict.mjs`, so their non-zero codes follow the shared 1=FAIL/2=INCONCLUSIVE contract rather than a
- * bespoke one. `check-shipped-provenance.mjs` is here AND flagged in the doc: it hardcodes
+ * bespoke one. `check-shipped-provenance.ts` is here AND flagged in the doc: it hardcodes
  * `examined: 1, of: 1`, so `examined < of` can never be true and it can never actually return 2 — adopting
  * the type does not guarantee exercising every state it defines.
  */
@@ -125,7 +126,7 @@ const INFRASTRUCTURE: Record<string, string> = {
     + "'gave up observing' section",
   "packages/lab/src/training/evidence-check-exit.mjs":
     "`EXIT` names evidence-check's four codes and `runToExit` exits 3 (THREW) on a throw — no `main` of its "
-    + "own, inherited by `evidence-check.mjs`, whose entry below documents all four. Split out so a test can "
+    + "own, inherited by `evidence-check.ts`, whose entry below documents all four. Split out so a test can "
     + "read the codes without importing the script and its corpus paths (#2197)",
   "packages/lab/src/training/capture-fleet-guard.mjs":
     "`assertOneBrowserAcross` exits 3 on a fleet split across two browser builds and has no `main` of its "
@@ -155,7 +156,7 @@ const DOCUMENTED: Record<string, string> = {
     + "a SECOND, different meaning for 3 from promote-model's; 1 wrong commit OR a passed-through unit "
     + "status; 4 `followUnit` gave up watching a still-running unit — the clearest confirmed instance of "
     + "'stopped observing' read as 'failed' in this repo",
-  "packages/lab/scripts/fleet-hours.mjs":
+  "packages/lab/scripts/fleet-hours.ts":
     "2 it billed no capture and REFUSES to report a total it did not measure — deliberately not 1, "
     + "because 1 would read as 'the fleet cost nothing', and a cost report that examined nothing "
     + "prints the same reassuring small number as a cheap run. 0 is a real total. It does not adopt "
@@ -209,25 +210,25 @@ const DOCUMENTED: Record<string, string> = {
     + "the control-plane playbooks ship is installed as shipped; 1 ATTENTION at least one differs, is "
     + "missing on the host, or is installed and shipped by nobody (each named); 2 CANNOT_ASK — the host "
     + "could not be read or answered empty, or the playbooks derived no units, which is never read as clean",
-  "packages/lab/scripts/audit-corpus-starvation.mjs":
+  "packages/lab/scripts/audit-corpus-starvation.ts":
     "2 a stale export — the featurizer can't read a pre-`parsed`-block record; 0 otherwise",
-  "packages/lab/scripts/audit-corpus-urls.mjs":
+  "packages/lab/scripts/audit-corpus-urls.ts":
     "1 a corpus URL moved; 0 none moved — deliberately does not fail on an unreachable host, a check that "
     + "goes red for somebody else's outage teaches people to ignore it",
-  "packages/lab/scripts/audit-observation-ambiguity.mjs":
+  "packages/lab/scripts/audit-observation-ambiguity.ts":
     "0 in --json mode regardless of findings; 2 no captures found under the given root",
-  "packages/lab/scripts/audit-route-change-identity.mjs":
+  "packages/lab/scripts/audit-route-change-identity.ts":
     "0 every capture examined, including zero disagreements; 2 no captures found under root — the same "
-      + "EXAMINED NOTHING shape as audit-observation-ambiguity.mjs. Not a gate: it reports a disagreement "
+      + "EXAMINED NOTHING shape as audit-observation-ambiguity.ts. Not a gate: it reports a disagreement "
       + "rate between two identity signals, and there is no commit for that rate to condition a pass/fail "
       + "on (#1790)",
   "packages/lab/scripts/audit-rule-coverage.ts":
     "0 no captures to examine (an honest skip) or every rule-owned criterion validated; 1 a rule-owned "
     + "criterion has never fired on a real page anywhere; 2 the corpus is mid-run — a refusal to measure a "
     + "moving target",
-  "packages/lab/scripts/audit-size-sensitivity.mjs":
+  "packages/lab/scripts/audit-size-sensitivity.ts":
     "2 corpus too small for either of two size checks; 1 a size-dependent accusation found; 0 otherwise",
-  "packages/lab/scripts/axe-calibration.mjs":
+  "packages/lab/scripts/axe-calibration.ts":
     "0 every one of the 46 conformant calibration pages examined cleanly; 1 at least one page could not "
     + "be examined (navigation failure, or axe itself throwing) — its own record in the written JSON says "
     + "which and why, and the other pages' results are still written, so this is a per-item outcome, never "
@@ -237,35 +238,35 @@ const DOCUMENTED: Record<string, string> = {
   "packages/lab/scripts/bench-capture.ts":
     "1 no worker/page given OR every live capture from --from-disk was lost — two causes share one code; "
     + "2 every live capture lost its socket",
-  "packages/lab/scripts/build-realism-tier.mjs":
+  "packages/lab/scripts/build-realism-tier.ts":
     "0 success, including the legitimate 'no training captures, base dataset only' state; 2 every training "
     + "capture truncated on a channel the model reads",
-  "packages/lab/scripts/calibrate-abstention.mjs":
+  "packages/lab/scripts/calibrate-abstention.ts":
     "0 success; 2 no calibration captures found",
   "packages/lab/scripts/claim-excludes-recompute.ts":
     "0 the table printed; 2 a refusal with nothing on stdout — the stored rows do not reproduce through "
     + "`floorRows`, the sweep file is missing or unreadable, a scored page is absent from the corpus, the "
     + "corpus commit cannot be read, or an `--urls` list names no scored page (#1628)",
-  "packages/lab/scripts/corpus-backup.mjs":
+  "packages/lab/scripts/corpus-backup.ts":
     "1 any of several precondition refusals, collapsed to one code",
-  "packages/lab/scripts/corpus-snapshot.mjs":
+  "packages/lab/scripts/corpus-snapshot.ts":
     "0 success; 2 nothing to snapshot OR the archive holds fewer JSON files than were on disk — it lists "
     + "the archive back with `tar -tzf`, because `tar` exits 0 on a short one",
-  "packages/lab/scripts/corpus-release.mjs":
+  "packages/lab/scripts/corpus-release.ts":
     "0 the asset uploaded AND downloaded back with a matching JSON count; 1 the ROUND TRIP failed (fewer "
     + "files = truncated, MORE = the tag names a different snapshot, which restores cleanly as the wrong "
     + "corpus); 2 a USAGE refusal before anything is uploaded. 1 and 2 are deliberately apart: 2 means "
     + "nothing was attempted, 1 means a backup exists and cannot be trusted",
-  "packages/lab/scripts/corpus-release-nightly.mjs":
-    "#1042 item 3: 2 a refusal in THIS script's own fetch/naming step, before corpus-release.mjs ever runs "
+  "packages/lab/scripts/corpus-release-nightly.ts":
+    "#1042 item 3: 2 a refusal in THIS script's own fetch/naming step, before corpus-release.ts ever runs "
     + "— the fetch itself failed, or its output did not name a source file this script could restore the "
-    + "snapshot's identity from; once corpus-release.mjs is invoked, its own exit code (0 uploaded and "
+    + "snapshot's identity from; once corpus-release.ts is invoked, its own exit code (0 uploaded and "
     + "verified, 1 the round trip failed, 2 its own usage refusal) is passed through UNMODIFIED, the same "
     + "passthrough shape lab-job.mjs uses for Ansible's own codes",
-  "packages/lab/scripts/everything-pipeline.mjs":
+  "packages/lab/scripts/everything-pipeline.ts":
     "0 every stage succeeded; 1 any stage failed OR crashed for an unrelated reason — two causes share one "
     + "code via its own pipeline() helper, not verdict.mjs",
-  "packages/lab/scripts/evidence-check.mjs":
+  "packages/lab/scripts/evidence-check.ts":
     "0 safe to ship; 1 the evidence CHANGED (the designed verdict — but Node's own `1` for a failure BEFORE "
     + "runToExit can catch it, a module that will not load or an unknown flag, also lands here, so `1` is "
     + "read against the output and never on the code alone); 2 means THREE things — no --worker given, no "
@@ -273,21 +274,21 @@ const DOCUMENTED: Record<string, string> = {
     + "coverage verdict; 3 the script THREW (EXIT.THREW, #2197) — deliberately not 2, which is already "
     + "overloaded, and not 1, which a crash used to share with CHANGED and which sent an operator to "
     + "recapture the fleet over a stale manifest",
-  "packages/lab/scripts/explain-capture.mjs":
+  "packages/lab/scripts/explain-capture.ts":
     "2 no search term given OR no capture file matched — usage and not-found share one code",
-  "packages/lab/scripts/explain-scorer.mjs":
+  "packages/lab/scripts/explain-scorer.ts":
     "2 no --model= given outside --compare mode, OR --case with no id; --case passes the case reader's own "
     + "exit status through (0 printed, 2 a named case no acceptance record holds)",
-  "packages/lab/scripts/lab-inventory.mjs":
+  "packages/lab/scripts/lab-inventory.ts":
     "0 in --json mode, on EPIPE, and on one specific benign refusal; 2 the other refusal branch (schema/data "
     + "problem) — this script has NO exit-1 path at all, it never reports a hard FAIL",
-  "packages/lab/scripts/promote-model.mjs":
+  "packages/lab/scripts/promote-model.ts":
     "2 no --from= given; 1 any thrown promotion error including a detected regression; 3 an uncommitted/"
     + "dirty git tree blocking promotion — a THIRD distinct meaning for 3",
-  "packages/lab/scripts/retrain-pipeline.mjs":
-    "1 a pipeline stage failed (same pipeline() helper as everything-pipeline.mjs) OR a named --candidate= "
+  "packages/lab/scripts/retrain-pipeline.ts":
+    "1 a pipeline stage failed (same pipeline() helper as everything-pipeline.ts) OR a named --candidate= "
     + "is not releasable; 0 otherwise",
-  "packages/lab/scripts/verify-safetensors.mjs":
+  "packages/lab/scripts/verify-safetensors.ts":
     "2 no model dir given, or one starting with '-'; 1 can't read the model dir OR the model has a real "
     + "problem — two causes share one code",
   "packages/lab/src/eval/rules-check.ts":
@@ -397,6 +398,8 @@ const DOCUMENTED: Record<string, string> = {
 function hasExitContract(rel: string): boolean {
   if (!(rel.endsWith(".mjs") || rel.endsWith(".ts"))) return false;
   if (rel.endsWith(".test.ts") || rel.endsWith(".test.mjs")) return false;
+  // A one-release shim is a name, not a script: its program is classified under its `.ts` (a11ign/a11ign#4551).
+  if (isTransitionalShim(join(REPO, rel))) return false;
   const source = stripComments(readFileSync(join(REPO, rel), "utf8"));
   return source.includes("process.exit(") || source.includes("process.exitCode");
 }
@@ -732,5 +735,5 @@ test("docs/gate-exit-codes.md exists and names the dangerous shape", () => {
   assert.match(doc, /gave up watching/i,
     "the doc must record fleet-playbook.mjs's followUnit as a confirmed 'gave up observing' instance");
   assert.match(doc, /examined: 1, of: 1/,
-    "the doc must record that check-shipped-provenance.mjs can never produce its own INCONCLUSIVE state");
+    "the doc must record that check-shipped-provenance.ts can never produce its own INCONCLUSIVE state");
 });

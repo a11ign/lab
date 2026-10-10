@@ -1,0 +1,254 @@
+// @ts-check
+/**
+ * Why did the scorer decide that? — the question this project asks after every surprising result.
+ *
+ * Written after a day in which it was answered five times by hand, with five throwaway scripts that each
+ * re-derived the same joins: report -> criterion -> subtype -> head -> weights -> features -> the
+ * announcements underneath. Every one of those scripts was deleted, so the sixth investigation started
+ * from nothing again. The commands:
+ *
+ *   npm run scorer:explain -- --compare a,b              two models, criterion by criterion
+ *   npm run scorer:explain -- --model=m --criterion=2.4.4  which cases failed, and their scores
+ *   npm run scorer:explain -- --model=m --case=<id>       one case: label, head scores, every feature value
+ *   npm run scorer:explain -- --model=m --weights=3.3.2:unnamed-form-field
+ *
+ * Read-only. It runs no training, writes nothing, and touches no shipped artefact — so it can be pointed
+ * at a release candidate mid-investigation without changing what is being investigated.
+ */
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
+import { REPO_ROOT, runsRoot } from "../src/dataset-paths.ts";
+import type { Loose } from "../src/capture/loose.ts";
+
+/**
+ * `--name` and `--weights` appear in this file's prose, not in its argv.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success. `--case` was one
+ * of the three until #2334: documented above and refused here, so the question that needed it -- what did
+ * a held-out case's features read? -- had no instrument.
+ */
+refuseUnknownFlags(["--model=", "--criterion=", "--compare=", "--case="], { entry: import.meta.url, command: "npm run scorer:explain" });
+
+// A FUNCTION, NOT A CONSTANT: `RUNS = runsRoot()` at the top level made importing this module for its pure
+// helpers (`caseIdsOf`, `caseReaderArgs`) count as reading the corpus, so the row's own Acceptance -- a test of
+// those helpers -- was refused by the acceptance job, which has none. A DECLARATION rather than a `const`
+// arrow, because the closure keeps a top-level initializer's text but only the bodies of functions something reaches
+// -- and reaches BY NAME, so this is not called `modelDir`, which `caseReaderArgs` takes as a parameter.
+function modelRunsDir(model: string) {
+  return resolve(runsRoot(), `model-${model}`);
+}
+/**
+ * `--name=value` or `--name value`, because both are what people type.
+ *
+ * It accepted only the first, while this file's own usage line showed the second — so the first real use
+ * printed usage instead of an answer. A tool whose help contradicts its parser is worse than one with no
+ * help: the reader trusts it and is wrong.
+ */
+const arg = (name: Loose) => {
+  const argv = process.argv;
+  const joined = argv.find((a) => a.startsWith(`--${name}=`));
+  if (joined) return joined.slice(name.length + 3);
+  const at = argv.indexOf(`--${name}`);
+  return at >= 0 && argv[at + 1] && !argv[at + 1].startsWith("--") ? argv[at + 1] : undefined;
+};
+const listArg = (name: Loose) => (arg(name) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
+const readJson = (path: Loose) => JSON.parse(readFileSync(path, "utf8"));
+
+/** A model's acceptance report, or a clear explanation of what is missing. */
+function acceptance(model: Loose) {
+  const path = resolve(modelRunsDir(model), "acceptance-report.json");
+  if (!existsSync(path)) {
+    const runs = runsRoot();
+    const have = existsSync(runs) ? readdirSync(runs).filter((d) => d.startsWith("model-")) : [];
+    throw new Error(`no acceptance report for '${model}' at ${path}\n`
+      + `models with a runs/ directory here: ${have.join(", ") || "(none)"}\n`
+      + "Score one first:  npm run lab:job -- -e job=acceptance -e out=<name>");
+  }
+  return readJson(path);
+}
+
+/** Per-criterion counts, for the models named. The table this project keeps rebuilding. */
+export function compareTable(reports: Loose) {
+  const criteria = [...new Set<string>(reports.flatMap(([, r]: [string, Loose]) =>
+    Object.entries(r.criteria as Record<string, Loose>).filter(([, c]) => c.modelEvaluated).map(([n]) => n)))].sort();
+  const lines = [`${"criterion".padEnd(10)}${reports.map(([n]: [string, Loose]) => n.padEnd(24)).join("")}`];
+  for (const name of criteria) {
+    let row = name.padEnd(10);
+    for (const [, report] of reports) {
+      const c = report.criteria[name];
+      // A criterion one model scores and the other does not is the interesting case, not an edge case: it
+      // is what a subtype moving to the rules LOOKS like. Printing `TPundefined` there hid the most
+      // important cell in the table the first time this ran.
+      const cell = !c ? "-"
+        : !c.modelEvaluated ? `(${c.decisionOwner ?? "not model-decided"})`
+          : `TP${c.truePositive} FP${c.falsePositive} FN${c.falseNegative}`;
+      row += cell.padEnd(24);
+    }
+    lines.push(row);
+  }
+  lines.push("");
+  for (const [name, report] of reports) {
+    const totals = Object.values(report.criteria as Record<string, Loose>).filter((c) => c.modelEvaluated
+      && Number.isFinite(c.falsePositive) && Number.isFinite(c.falseNegative));
+    const fp = totals.reduce((n, c) => n + c.falsePositive, 0);
+    const fn = totals.reduce((n, c) => n + c.falseNegative, 0);
+    // FALSE ALARMS FIRST, deliberately. A false positive is an accusation someone may budget against or be
+    // challenged over; a miss is a gap. Ranking models on total errors alone once made 8 false accusations
+    // look like an improvement on 12 misses.
+    lines.push(`${name.padEnd(24)} false alarms=${fp}  misses=${fn}   `
+      + (fp === 0 ? "no false accusations" : "NOT SHIPPABLE: it accuses conformant pages"));
+  }
+  return lines;
+}
+
+/**
+ * A miss whose head cleared its own Neyman-Pearson floor and lost to the raise above it, named as such.
+ *
+ * Without this the list reads `MISS <id>` and every miss looks like the same thing. It is not: a head the
+ * evaluator found WOULD HAVE FIRED at its own Neyman-Pearson floor already satisfied the bound the cut is
+ * derived from, so the work that would recover it is on the threshold and not on the features. That
+ * question is the evaluator's and is asked there, gate and all — this reads the answer and never a band.
+ * Measured 2026-09-23 (#2152) on
+ * 4.1.3, where 0.9608 was called threshold variance and 0.9442 "not a threshold-variance candidate at
+ * all" — both were in that band, and nothing printed here could have said so.
+ *
+ * Empty for a report written before the evaluator recorded the floors, which reads as an unannotated
+ * miss rather than as a claim that the head lost it.
+ */
+function aboveFloor(criterion: Loose, id: Loose) {
+  const subtypes = criterion.falseNegativesAboveFloor?.[id];
+  return subtypes?.length ? `   (above the NP floor of ${subtypes.join(", ")} — the raise refused it)` : "";
+}
+
+/** Which cases a criterion got wrong, named, with the cut that decided them. */
+export function criterionDetail(report: Loose, criterion: Loose) {
+  const c = report.criteria?.[criterion];
+  if (!c) return [`no criterion '${criterion}' in this report`];
+  if (!c.modelEvaluated) return [`${criterion} is not model-evaluated here (decisionOwner: ${c.decisionOwner})`];
+  const lines = [`${criterion}  owner=${c.decisionOwner}  thresholds=${JSON.stringify(c.subtypeThresholds)}`,
+    `  records=${c.records} positive=${c.positive} clean=${c.clean}`,
+    `  TP=${c.truePositive} FP=${c.falsePositive} FN=${c.falseNegative}`];
+  for (const [key, label] of [["falsePositiveCases", "FALSE ALARM"], ["falseNegativeCases", "MISS"]]) {
+    // The annotation belongs to MISSES only: a false alarm fired, so no cut refused it and the floor
+    // says nothing about it. Keyed off the list being walked rather than trusting the two lists never
+    // to share an id.
+    const annotate = key === "falseNegativeCases" ? aboveFloor : () => "";
+    for (const id of [...new Set(c[key] ?? [])]) lines.push(`  ${label.padEnd(12)} ${id}${annotate(c, id)}`);
+    if (c[`${key}Truncated`]) lines.push(`  ...and ${c[`${key}Truncated`]} more not listed`);
+  }
+  if (!c.falsePositive && !c.falseNegative) lines.push("  (nothing wrong on this criterion)");
+  else lines.push(...caseHint(c));
+  return lines;
+}
+
+/**
+ * The case ids of EVERY miss and false alarm on a criterion, from the report's untruncated fields.
+ *
+ * `falseNegativeCases` and `falsePositiveCases` are cut at twelve, and #2258 asks about sixteen misses and six
+ * false alarms, so reading the ids off the printed lines would drop four of the sixteen without saying so.
+ * `falseNegativeSubtypeScores` and `falsePositiveSubtypeScores` are keyed by every case that missed or fired,
+ * with no cap; the two named lists are unioned in for a report written before those fields existed.
+ * `caseId` alone, not `caseId/variant`: the `explain-case` job's `case` is contained by a shape with no `/`,
+ * and the reader prints every variant of a case, which is what a miss needs (the repeats disagree).
+ */
+export function caseIdsOf(criterion: Loose) {
+  const identities = [...(criterion.falseNegativeCases ?? []), ...(criterion.falsePositiveCases ?? []),
+    ...Object.keys(criterion.falseNegativeSubtypeScores ?? {}), ...Object.keys(criterion.falsePositiveSubtypeScores ?? {})];
+  return [...new Set(identities.map((identity) => String(identity).split("/")[0]))].sort();
+}
+
+/** What to type to read the cases just listed, pasteable into the `explain-case` job as well. */
+function caseHint(criterion: Loose) {
+  const ids = caseIdsOf(criterion);
+  return ids.length
+    ? ["", `  read their features and head scores (${ids.length} case(s)):`, `    --case=${ids.join(",")}`,
+      "    or on the lab:  -e job=explain-case -e out=<model> -e case=<the same list>"]
+    : [];
+}
+
+/**
+ * The acceptance records a model was evaluated on, named by the report itself rather than assumed.
+ *
+ * A path the evaluator was given is a path it recorded, so a reader that re-derived `repeat-1` and `repeat-2`
+ * would answer about files the report never read the day a third repeat is added.
+ */
+export function acceptanceDataPaths(report: Loose) {
+  const paths = (report.data ?? []).map((entry: Loose) => resolve(REPO_ROOT, entry.path));
+  if (!paths.length) throw new Error("this acceptance report records no --data files, so there are no records to read a case from");
+  return paths;
+}
+
+/** The argv for the case reader: which records, which model, which case -- and nothing the caller typed as a path. */
+export function caseReaderArgs({ report, modelDir, cases, criterion }: { report: Loose; modelDir: string; cases: string; criterion?: string; }) {
+  return [resolve(REPO_ROOT, "packages/lab/scripts/explain-case.py"),
+    ...acceptanceDataPaths(report).flatMap((path: string) => ["--data", path]),
+    "--case", cases, "--model", modelDir, ...(criterion ? ["--criterion", criterion] : [])];
+}
+
+/**
+ * Run the case reader. It is Python because the features are: `screenreader_features.py` is the featurizer the
+ * evaluator scores with, and a JavaScript port of it would be a second implementation that could disagree
+ * with what the model saw.
+ */
+function readCase(model: string, cases: string, criterion: string | undefined) {
+  const report = acceptance(model);
+  const python = resolve(REPO_ROOT, ".venv/bin/python");
+  const run = spawnSync(python, caseReaderArgs({ report, modelDir: modelRunsDir(model), cases, criterion }),
+    { stdio: "inherit", cwd: REPO_ROOT });
+  if (run.error) throw new Error(`could not run ${python}: ${run.error.message}`);
+  process.exit(run.status ?? 1);
+}
+
+/** A head's document-feature weights, largest magnitude first — where a decision actually comes from. */
+export function weightTable(report: Loose, subtype: Loose, weights: Loose, featureNames: Loose) {
+  for (const criterion of Object.values((report.criteria ?? {}) as Record<string, Loose>)) {
+    for (const [name, sub] of Object.entries((criterion.subtypes ?? {}) as Record<string, Loose>)) {
+      if (name !== subtype) continue;
+      const vec = weights[`${sub.head}.weight`];
+      const doc = vec.slice(vec.length - featureNames.length);
+      const ranked = featureNames.map((n: Loose, i: Loose) => [n, doc[i]]).sort((a: Loose, b: Loose) => Math.abs(b[1]) - Math.abs(a[1]));
+      return [`${subtype}  head=${sub.head}  pooling=${sub.pooling ?? "document-mean"}  threshold=${sub.threshold}`,
+        ...ranked.slice(0, 10).map(([n, v]: [string, number]) => `  ${n.padEnd(34)} ${v >= 0 ? "+" : ""}${v.toFixed(3)}`)];
+    }
+  }
+  return [`no subtype '${subtype}' in this training report`];
+}
+
+function main() {
+  const compare = listArg("compare");
+  if (compare.length) {
+    process.stdout.write(`${compareTable(compare.map((m) => [m, acceptance(m)])).join("\n")}\n`);
+    return;
+  }
+  const model = arg("model");
+  if (!model) {
+    process.stderr.write("usage: --compare a,b | --model=<name> [--criterion=X | --case=<id>]\n");
+    process.exit(2);
+  }
+  const criterion = arg("criterion");
+  const cases = arg("case");
+  // `--case` with no value would otherwise fall through to the whole-report listing and answer a question
+  // nobody asked, in the shape of an answer to the one they did.
+  if (!cases && process.argv.some((a) => a === "--case" || a.startsWith("--case="))) {
+    process.stderr.write("--case needs one or more case ids, comma-separated: --case=acceptance-b3-status-taxi\n");
+    process.exit(2);
+  }
+  if (cases) return readCase(model, cases, criterion);
+  if (criterion) {
+    process.stdout.write(`${criterionDetail(acceptance(model), criterion).join("\n")}\n`);
+    return;
+  }
+  const report = acceptance(model);
+  const worst = Object.entries(report.criteria as Record<string, Loose>)
+    .filter(([, c]) => c.modelEvaluated && (c.falsePositive || c.falseNegative))
+    .sort((a, b) => b[1].falsePositive - a[1].falsePositive);
+  process.stdout.write(worst.length
+    ? `${worst.flatMap(([n]) => criterionDetail(report, n)).join("\n")}\n`
+    : "every model-evaluated criterion is clean on this report\n");
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();

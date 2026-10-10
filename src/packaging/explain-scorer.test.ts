@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { compareTable, criterionDetail } from "../../scripts/explain-scorer.mjs";
+import { compareTable, criterionDetail } from "../../scripts/explain-scorer.ts";
 
 const report = (criteria: Record<string, Partial<Record<string, unknown>>>) => ({
   criteria: Object.fromEntries(Object.entries(criteria).map(([k, v]) => [k, {

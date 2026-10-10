@@ -11,13 +11,13 @@
  *
  * ## What it reads
  *
- * The per-page `cantTell` list that `calibrate-abstention.mjs` already computes and writes into `abstention-sweep.json` (`scored[]`). It
+ * The per-page `cantTell` list that `calibrate-abstention.ts` already computes and writes into `abstention-sweep.json` (`scored[]`). It
  * scores nothing itself and reaches no fleet or lab: the sweep is a recorded result, and a host without one gets a refusal naming the file,
- * never a zero. The shape comes from the CORPUS (`demonstrates`), joined by url, for the reason `calibrate-abstention.mjs` gives: a capture's
+ * never a zero. The shape comes from the CORPUS (`demonstrates`), joined by url, for the reason `calibrate-abstention.ts` gives: a capture's
  * own stamp is only as fresh as its last recapture.
  *
  * The path defaults to `abstentionSweepPath()` from `dataset-paths.mjs`, the one resolution of `runs/`, so the sweep this reads is the sweep
- * `calibrate-abstention.mjs` writes (`dataset-paths.test.ts` refuses a second spelling of that path).
+ * `calibrate-abstention.ts` writes (`dataset-paths.test.ts` refuses a second spelling of that path).
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -103,8 +103,8 @@ export function tableLines(rows: readonly ShapeRow[]): string[] {
   return [head, ...body];
 }
 
-const noSweepMessage = (path: string): string => `no recorded sweep at ${path}. This script reads \`calibrate-abstention.mjs\`'s output and scores nothing itself: `
-  + "the sweep is recorded by a `calibrate-abstention.mjs` run on a host with the corpus, and an absent file is not a rate of zero.";
+const noSweepMessage = (path: string): string => `no recorded sweep at ${path}. This script reads \`calibrate-abstention.ts\`'s output and scores nothing itself: `
+  + "the sweep is recorded by a `calibrate-abstention.ts` run on a host with the corpus, and an absent file is not a rate of zero.";
 
 function readSweep(path: string): { scored: { url: string; cantTell: string[] }[] } {
   return JSON.parse(readFileSync(path, "utf8"));

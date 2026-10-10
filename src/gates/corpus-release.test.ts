@@ -1,10 +1,10 @@
 /**
  * THE VERDICT AN OFFSITE BACKUP TURNS ON, testable without a network or a `gh` binary.
  *
- * `corpus-release.mjs` uploads a snapshot to a private GitHub release and then DOWNLOADS IT BACK to check
+ * `corpus-release.ts` uploads a snapshot to a private GitHub release and then DOWNLOADS IT BACK to check
  * what is inside — because `gh release upload` exiting 0 means the API accepted the bytes, which is not
  * the same as the asset being there, complete, and readable a month from now. That is the only property a
- * backup has, and it is the same argument `corpus-snapshot.mjs` makes about `tar` exiting 0 and
+ * backup has, and it is the same argument `corpus-snapshot.ts` makes about `tar` exiting 0 and
  * `worker:code` makes about verifying a deploy over HTTP rather than through the deploy channel.
  *
  * The comparison is split out from the I/O for the reason every verdict in this repo is: the decision is
@@ -12,7 +12,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { releaseVerdict, tagFor, jsonEntries, DEFAULT_REPO } from "../../scripts/corpus-release.mjs";
+import { releaseVerdict, tagFor, jsonEntries, DEFAULT_REPO } from "../../scripts/corpus-release.ts";
 
 test("a matching count is the only success, and it says what it counted", () => {
   const v = releaseVerdict({ expected: 5397, found: 5397, tag: "corpus-2026-09-06_18-15-48" });

@@ -16,7 +16,7 @@
  *
  * `captureAgeLines` was written there first and exported PURE specifically so a second reader could use
  * it rather than restate it. It moved here, to its own `.mjs` module, because the readers that needed it
- * next -- `lab-inventory.mjs`, `calibrate-abstention.mjs` and `build-realism-tier.mjs`, all plain `node`
+ * next -- `lab-inventory.ts`, `calibrate-abstention.ts` and `build-realism-tier.ts`, all plain `node`
  * -- cannot import a `.ts` file the way `check-real-page-findings.ts` (run under `tsx`) can. A `.ts` file
  * importing a plain `.mjs` module has never been a problem; the reverse is. So this is the "derive one
  * from the other" remedy CLAUDE.md prefers, applied at the layer that makes both directions work.
