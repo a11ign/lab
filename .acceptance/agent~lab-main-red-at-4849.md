@@ -2,6 +2,8 @@ Closes a11ign/a11ign#4849
 
 `src/packaging/acceptance-reads-the-live-body.test.ts` only. `commandProblems` expects the command step's env to be exactly `PR_BODY,PR_AUTHOR,ACCEPTANCE_ROW_LABELS` (the core's `reusable-acceptance.yml` has handed it `PR_AUTHOR` since a11ign/a11ign#4834), and a new check pins `PR_AUTHOR` to `${{ github.event.pull_request.user.login }}`, so a value taken from the body or the token is still refused. The comment beside the key list says why neither extra key is a credential. `holdsCredential` and the core's workflow are untouched. A new mutation sets `PR_AUTHOR` to the live body, the event payload's body and the token, and each is refused; for the live body it is the author check alone that refuses it.
 
+Mutation: in a scratch copy of the core's layout, deleting the new `PR_AUTHOR` check turned only `clause 2: an author taken from the body or the token FAILS` red; replacing it with `true` turned only `the shipped workflow holds every property` red; putting the key list back to `PR_BODY,ACCEPTANCE_ROW_LABELS` turned only that same test red. Each restore was `diff`-identical.
+
 Acceptance: `bash -c 'F=src/packaging/acceptance-reads-the-live-body.test.ts; ! grep -qF "!== \"PR_BODY,ACCEPTANCE_ROW_LABELS\"" $F && grep -qF "PR_AUTHOR" $F'`
 
 This is the row's own command with `gh api ...?ref=main` replaced by the checked-out file, because the row's form reads `main` and cannot pass before the merge; after the merge the row's command is the one that counts.
