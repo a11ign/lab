@@ -7,12 +7,12 @@
  * the lockfile never named -- guidepup's among them, which is evidence in the capture cache key.
  *
  * What is pinned, on the real files:
- *   - no non-comment line of the three provisioning scripts or `doctor.mjs` runs or recommends `npm install|ci|run|...`
+ *   - no non-comment line of the three provisioning scripts or `doctor.ts` runs or recommends `npm install|ci|run|...`
  *     (a comment naming the old behaviour is history, not an instruction);
  *   - every `pnpm install` line is FROZEN: an unfrozen one reconciles a drifted lockfile instead of refusing it;
  *   - the Windows provisioner installs with the SAME flags `roles/worker/tasks/nvda.yml` does, which
  *     `packages/control/src/worker-install-sites-match.test.ts` pins against `deploy.yml`;
- *   - `doctor.mjs` reaches pnpm through `pnpmCliInvocation` and never spawns npm.
+ *   - `doctor.ts` reaches pnpm through `pnpmCliInvocation` and never spawns npm.
  *
  * The scan is only worth its verdict if it can see: the fixtures below show it refusing each defect, and the real-file
  * test asserts the install lines it finds are not an empty population.
@@ -27,7 +27,7 @@ const PROVISIONING = "packages/worker-fleet/src/provisioning/";
 const BOOTSTRAP = `${PROVISIONING}bootstrap-control-plane.sh`;
 const PROVISION = `${PROVISIONING}provision-nvda-worker.ps1`;
 const DIAGNOSE = `${PROVISIONING}diagnose-nvda-worker.ps1`;
-const DOCTOR = "packages/worker-fleet/src/doctor.mjs";
+const DOCTOR = "packages/worker-fleet/src/doctor.ts";
 const NVDA_ROLE = "packages/control/ansible/roles/worker/tasks/nvda.yml";
 
 const read = (file: string): string => readFileSync(`${ROOT}${file}`, "utf8");
@@ -113,7 +113,7 @@ test("#2890: the Windows provisioner installs with the SAME flags as the worker 
     "corepack is reached from the Node install, not from a global pnpm");
 });
 
-test("#2890: doctor.mjs spawns no package manager, never npm, and prints pnpm remedies", () => {
+test("#2890: doctor.ts spawns no package manager, never npm, and prints pnpm remedies", () => {
   const text = read(DOCTOR);
   // It spawned pnpm through `pnpmCliInvocation` for `tsc --build --dry` until screenreader-fleet 0.5.1 (#3803) read `missingExportTargets` instead,
   // so the import is gone with its only caller; what stays true is that npm does not come back by the other door.

@@ -118,7 +118,7 @@ const INFRASTRUCTURE: Record<string, string> = {
   "packages/lab/src/dataset-paths.ts":
     "`refuseIfRunsReadonly` exits 3 when A11Y_RUNS_READONLY=1 is set and the given path resolves under "
     + "runsRoot() — not a gate and has no main of its own, inherited directly by every one of its 16 "
-    + "callers, the identical shape code-drift.mjs uses for a different meaning of 3",
+    + "callers, the identical shape code-drift.ts uses for a different meaning of 3",
   "packages/lab/src/gates/dispatch.ts":
     "dispatches a gate to the lab and exits with whatever it returns, except a killed/errored spawn also "
     + "produces 2 — self-documented as the honest INCONCLUSIVE for a dispatch that died, and the reason a "
@@ -131,12 +131,12 @@ const INFRASTRUCTURE: Record<string, string> = {
   "packages/lab/src/training/capture-fleet-guard.mjs":
     "`assertOneBrowserAcross` exits 3 on a fleet split across two browser builds and has no `main` of its "
     + "own — `capture-real-pages.mjs` inherits it directly, and that script's own entry below already "
-    + "documents 3 as 'fleet browser-version inconsistency'. The same shape as `code-drift.mjs` one entry "
+    + "documents 3 as 'fleet browser-version inconsistency'. The same shape as `code-drift.ts` one entry "
     + "down, for the neighbouring question about the same fleet",
-  "packages/worker-fleet/src/cli-flags.mjs":
+  "packages/worker-fleet/src/cli-flags.ts":
     "`refuseUnknownFlags` exits 2 on an unrecognised flag — the one place in this repo code 2 means exactly "
     + "one thing by design, inherited by every one of its ~30 callers rather than chosen by them",
-  "packages/worker-fleet/src/code-drift.mjs":
+  "packages/worker-fleet/src/code-drift.ts":
     "`assertWorkersServe` exits 3 for an empty worker pool or genuine code drift and has no `main` of its "
     + "own — whatever imports it inherits 3 directly, the same shape as `dispatch.mjs` one code over",
 };
@@ -147,7 +147,7 @@ const INFRASTRUCTURE: Record<string, string> = {
  *
  * Read out of each file by hand, the same way `cli-flags.test.ts`'s `GUARDED` reasons are — a regex over
  * these call sites would resolve named constants (`capture-status.mjs`'s `EXIT` map), ternaries
- * (`lab-job.mjs`'s Ansible passthrough) and thrown-error catches (`guest-run.mjs`) inconsistently or not at
+ * (`lab-job.mjs`'s Ansible passthrough) and thrown-error catches (`guest-run.ts`) inconsistently or not at
  * all, so deriving this list is the exact defect this file exists to prevent.
  */
 const DOCUMENTED: Record<string, string> = {
@@ -184,7 +184,7 @@ const DOCUMENTED: Record<string, string> = {
     + "directory, so there is no partial coverage of a subject to report. (a11ign/a11ign#3972: new in the control at the pin that moved here)",
   "packages/control/src/with-control-plane-fleet.ts":
     "2 usage error, no <bin> argument given; otherwise a direct, unmodified passthrough of the wrapped "
-    + "worker-fleet bin's own exit status (doctor.mjs/check-worker-code.mjs, already documented under "
+    + "worker-fleet bin's own exit status (doctor.ts/check-worker-code.ts, already documented under "
     + "packages/worker-fleet/src/) -- the same passthrough shape as lab-job.mjs's own 0/1/2/... above. A "
     + "control-plane refusal is a stderr warning, never its own exit code -- the child still runs (#1356)",
   "packages/control/src/lab-pipeline.ts":
@@ -341,15 +341,15 @@ const DOCUMENTED: Record<string, string> = {
     "0 finished clean; 1 finished with failures; 2 no run recorded; 3 'wedged' — threshold-based on the "
     + "run's OWN declared captureTimeoutMs, confirmed principled rather than the 'gave up observing' "
     + "antipattern, per a specific request to check this one closely",
-  "packages/worker-fleet/src/check-worker-code.mjs":
+  "packages/worker-fleet/src/check-worker-code.ts":
     "0 no worker configured, or zero stale workers found; 1 one or more workers serve a mismatched code hash "
     + "— an unreachable worker is explicitly excluded from 'stale'",
-  "packages/worker-fleet/src/compare-workers.mjs":
+  "packages/worker-fleet/src/compare-workers.ts":
     "2 usage error — missing page URL, or fewer than two workers named",
-  "packages/worker-fleet/src/doctor.mjs":
+  "packages/worker-fleet/src/doctor.ts":
     "1 ready is false, any check failed; 0 all checks pass",
   // screenreader-fleet 0.4.1 (#3803): a path the layout does not supply is a usage error naming the path and the flag, never an ENOENT.
-  "packages/worker-fleet/src/fleet-env.mjs":
+  "packages/worker-fleet/src/fleet-env.ts":
     "2 usage error — the inventory or group-vars file was not found (named, with `--inventory`/`--group-vars`, the flags that supply it); 0 printed",
   // MOVED 2026-09-05 from `packages/worker-fleet/src/`. The published package read the PRIVATE `control`
   // package's `inventory.yml`, and these three had no cross-package dependents in either direction, so
@@ -381,11 +381,11 @@ const DOCUMENTED: Record<string, string> = {
     + "POSTED because this host has no usable GitHub credential -- 'not yet', never a success and never a silent skip. A "
     + "poster, not a gate: the verdict it posts is `qualificationStatus`'s, and a missing or unreadable one "
     + "is posted as `failure` rather than exiting (#3289)",
-  "packages/worker-fleet/src/guest-run.mjs":
+  "packages/worker-fleet/src/guest-run.ts":
     "2 usage error; 1 via a top-level catch for ANY thrown error, including the polling-timeout path whose "
     + "own message reads 'the script may still be running' — a confirmed 'gave up observing' instance "
     + "conflated with real failures under one code",
-  "packages/worker-fleet/src/normalise-fleet.mjs":
+  "packages/worker-fleet/src/normalise-fleet.ts":
     "2 no a11y-worker* VMs registered; 1 one or more guests' normalise command failed for real; 0 otherwise",
 };
 

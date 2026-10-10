@@ -38,8 +38,10 @@ test("MUTATION: usesC8 really detects a c8 invocation -- the positive control fo
   assert.equal(usesC8("node scripts/coverage.ts"), false);
 });
 
-test("#1320: the coverage script is scripts/coverage.ts, run by node through tsx", () => {
-  assert.equal(SCRIPTS.coverage, "node --import tsx scripts/coverage.ts");
+// a11ign/a11ign#4699 dropped `--import tsx` from the manifest (Node 24 strips the types itself); the script is still the one TypeScript file, run by node, so the
+// loader is optional here and a respelling does not red the leg again.
+test("#1320: the coverage script is scripts/coverage.ts, run by node", () => {
+  assert.match(SCRIPTS.coverage, /^node (?:--import tsx )?scripts\/coverage\.ts$/);
 });
 
 test("#1320: scripts/coverage.ts itself imports @rstest/coverage-v8, and spawns no c8 command", () => {

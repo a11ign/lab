@@ -232,7 +232,7 @@ test("every EXEMPT entry names a file this discovery actually walks", () => {
 });
 
 test("MUTATION: a real leak reintroduced into a currently-clean source file is caught", () => {
-  const file = "packages/worker-fleet/src/host-address.mjs";
+  const file = "packages/worker-fleet/src/host-address.ts";
   const clean = collapsedText(file);
   const reintroduced = clean.replace(
     "against a bare-metal worker on the fleet's own LAN",
@@ -290,7 +290,7 @@ test("every LEAK_PATTERNS entry is exercised by at least one EXEMPT or MUTATION 
   // table, so the pattern is now proven by the two MUTATION cases above -- which is the stronger proof
   // anyway: an exemption shows the guard TOLERATES a value, a mutation shows it CATCHES one.
   const injected = privateAddress(192, 168, 64, 1);
-  assert.ok(findLeaks("packages/worker-fleet/src/host-address.mjs", `x ${injected} y`).length >= 1,
+  assert.ok(findLeaks("packages/worker-fleet/src/host-address.ts", `x ${injected} y`).length >= 1,
     "nothing here exercises the private-LAN-IPv4 pattern -- a pattern this file never triggers is one "
     + "the guard has not proven it can see for the SOURCE population");
   assert.ok(LEAK_PATTERNS.some((p) => p.name === "private LAN IPv4 address"),

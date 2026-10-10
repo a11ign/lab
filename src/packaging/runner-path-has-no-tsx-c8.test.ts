@@ -218,6 +218,10 @@ test("`c8` has no remaining use, so it leaves the manifest and the lockfile", ()
  * -- the distinction the whole rstest adoption turns on. A new, undocumented `tsx` use fails the test right
  * below rather than slipping in unnamed; one that stops using `tsx` fails the same way, so this cannot go
  * stale in either direction.
+ *
+ * The converted `.ts` entries (a11ign/a11ign#4273, #4274, #4343) were spelled `node --import tsx <entry>.ts` for a few days, and 27 scripts were named here
+ * for it. a11ign/a11ign#4699 dropped the loader (Node 24 strips the types itself), so `coverage`, `doctor`, `prepare`, `verify`, the `fleet:*` and
+ * `lab:*` entries and the rest run under bare `node` and left this list; what is below is the 21 that still name `tsx` (measured at core c18c2dab7).
  */
 const NAMED_TSX_USES: Record<string, string> = {
   spike: "a lab spike harness entry point",
@@ -241,37 +245,6 @@ const NAMED_TSX_USES: Record<string, string> = {
   "verdict:stability": "an occurrence-verdict-stability harness",
   "auth:leak-check": "the authenticated-capture credential-leak check (needs a worker on this machine; imports the CLI's TypeScript directly, so a worker machine needs no build)",
   "auth:artifact-scan": "the credential scan of a real run's output, every text file under a path (imports the CLI's TypeScript directly, so a machine needs no build)",
-  // #4273/#4274 converted the core's scripts/ from .mjs to .ts, so a manifest script that ran one with bare
-  // `node` now runs it as `node --import tsx scripts/<name>.ts`: the same program-mode use, newly spelled with tsx.
-  coverage: "the rstest coverage runner entry point (scripts/coverage.ts)",
-  "docs:known-gaps-index": "the known-gaps index generator",
-  "npm-token:check": "the npm token liveness check",
-  "outsider:verdict": "the outsider job's verdict entry point",
-  prepare: "the install-time hook installer (scripts/install-git-hooks.ts), before the layers are laid",
-  "scorer:migration": "the scorer schema-migration check",
-  "scorer:retired-heads": "the retired-scorer-heads check",
-  verify: "the local verify entry point (scripts/verify.ts)",
-  // a11ign/a11ign#4343 (core efa0ca7ab) moved the control plane's 19 scripts from `node packages/control/src/<f>.mjs` to
-  // `node --import tsx packages/control/src/<f>.ts` (control v0.1.17 ships .ts and no .mjs): program-mode uses, newly spelled with tsx.
-  doctor: "the worker doctor, run through the control plane's fleet wrapper",
-  "worker:code": "the worker-code check, run through the control plane's fleet wrapper",
-  "fleet:status": "the control plane's fleet status entry point",
-  "fleet:discover": "the control plane's fleet discovery entry point",
-  "fleet:wake": "the control plane's fleet wake entry point",
-  "fleet:auto-off": "the control plane's fleet auto-off entry point",
-  "fleet:watch": "the control plane's fleet watch entry point",
-  "fleet:deploy": "fleet-playbook.ts, playbook deploy.yml",
-  "fleet:sleep": "fleet-playbook.ts, playbook sleep.yml",
-  "fleet:provision": "fleet-playbook.ts, playbook provision-role.yml",
-  "fleet:recover": "fleet-playbook.ts, playbook recover.yml",
-  "fleet:logs": "fleet-playbook.ts, playbook collect-logs.yml",
-  "fleet:os-rollback": "fleet-playbook.ts, playbook os-rollback.yml",
-  "fleet:inventory-install": "fleet-playbook.ts, playbook inventory-install.yml",
-  "fleet:control-host-install": "fleet-playbook.ts, playbook control-host-install.yml",
-  "lab:job": "the lab job entry point",
-  "lab:pipeline": "the lab pipeline entry point",
-  "lab:failed-units": "the lab failed-units entry point",
-  "lab:watch": "the lab watch entry point",
 };
 
 test("every remaining manifest `tsx` use is named with its purpose, and none of them is `--test`", () => {

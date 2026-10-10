@@ -110,7 +110,12 @@ const CHECKED = MJS.filter((path) =>
 // shim. Measured in CI at 94ea3579: 102 of 123 marked `.mjs`, from 108 at origin/main.
 // 102 -> 69 (a11ign/a11ign#4551): the same reason, for the 35 `.mjs` of `scripts/` (33 of them marked); each old name stays one release as an UNMARKED shim, so the population still counts
 // 123 `.mjs` and the marked count falls by the files `tsc` now checks without a marker. Measured by this test at core 989c2bcc3 with this tree laid: 69 of 123 marked, from 102.
-const AT_LEAST = 69; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
+// 69 -> 44 (a11ign/a11ign#4839): the same reason, and none of the 25 was a marker removed. Measured: this repository's own tree had 44 of 85 `.mjs` marked at 91af8c01, the commit
+// whose pull request set 69 (a11ign/a11ign#4551; it fell from 77 there because 33 marked `.mjs` became UNMARKED one-release shims beside their `.ts`), and has 44 of 79 at
+// b23ac008 (a11ign/a11ign#4788 deleted six of the shims). The core's own tracked `.mjs` are 10 unmarked isolation fixtures at 989c2bcc3 and at c18c2dab7, so by elimination the other 25 of
+// the 69 were the LAID layers' (control, nvda-worker, worker-fleet), and the pins core c18c2dab7 lays carry no `.mjs` at all: its whole population is this repository's 79 plus those
+// 10 fixtures, 89, of which 44 are marked. Measured by this test at core c18c2dab7 with lab b23ac008 laid (Node 24.21.0). The 25 is the difference, not a count of the layers' files at 989c2bcc3.
+const AT_LEAST = 44; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
 
 test("the typechecked `.mjs` count never falls", () => {
   assert.ok(CHECKED.length >= AT_LEAST,
