@@ -75,12 +75,34 @@
  */
 import { requestJson } from "@a11ign/screenreader-fleet/worker-http";
 import { fleetConsistency, describeMismatches } from "@a11ign/screenreader-fleet/fleet-consistency";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { buildRunRecord, appendRunRecord } from "./capture-run-record.mjs";
 
 /**
  * @typedef {{ file: string, startedAt: string, alreadyExcluded?: import("./capture-run-record.mjs").Exclusion[],
  *   append?: (file: string, text: string) => void, makeDir?: (dir: string) => void }} RunRecordOptions
  */
+
+/**
+ * What the guard RUNS to bring an odd box back (#4448), injected the way `exit` is: `lab` does not import
+ * `control`, so the production binding (`fleetConvergeCommands`) is argv and the tests hand in a fake.
+ *
+ * @typedef {{ reassertDisplay: (worker: string, mode: string) => Promise<void>,
+ *   patch: (worker: string) => Promise<void> }} Converge
+ */
+
+/**
+ * One odd box, what was found and what was tried. `action` is null when nothing was run, and `note` says why.
+ *
+ * @typedef {{ worker: string, field: string, value: string, fleet: string,
+ *   action: "reassertDisplay" | "patch" | null, note: string }} Attempt
+ */
+
+/** The `MUST_MATCH` fields a box can be walked back to the fleet's value on. Every other field is a human's. */
+const DISPLAY_FIELD = "displayMode";
+/** `windowsBuild` is row A's name for the field; `windowsVersion` is what `MUST_MATCH` carries until it lands. */
+const BUILD_FIELDS = ["windowsBuild", "windowsVersion"];
 
 /** One guest's `/health` is a cheap read, and a box that needs longer than this is not one to capture on. */
 const HEALTH_TIMEOUT_MS = 10_000;
@@ -100,17 +122,13 @@ export const EXIT_FLEET_INCONSISTENT = 3;
  * @param {string} when — "before the run" / "by the END of the run", quoted into the refusal
  * @param {{probe?: (url: string) => Promise<any>, report?: (text: string) => void,
  *   exit?: (code: number) => void, allowMixedBrowsers?: boolean,
- *   allowUncheckedFields?: boolean, runRecord?: RunRecordOptions}} [deps]
+ *   allowUncheckedFields?: boolean, runRecord?: RunRecordOptions, converge?: Converge}} [deps]
  */
 export async function assertOneBrowserAcross(workers, when, deps = {}) {
   const probe = deps.probe ?? healthOfGuest;
   const report = deps.report ?? ((/** @type {string} */ text) => void process.stderr.write(text));
   const exit = deps.exit ?? ((/** @type {number} */ code) => process.exit(code));
-  const guests = await Promise.all(workers.map((url) => guestFrom(url, probe)));
-  // `!== null` rather than `Boolean`: a filter cannot narrow unless it says what it tests, and typing the
-  // guests is the whole point of this fix — a `.filter(Boolean)` here leaves the array `(guest|null)[]`,
-  // which is how a wrongly-shaped guest reached `fleetConsistency` unchecked in the first place.
-  const verdict = fleetConsistency(guests.filter((guest) => guest !== null));
+  const { guests, verdict, attempts } = await readOrConverge({ workers, probe, deps, report, when });
   // The record is written BEFORE either refusal can exit (#4459), so a run that stops with 3 leaves its
   // fleet behind. Whether this run is refused is decided once, here, and the two checks below act on it.
   const { gaps, refused } = refusalOf(verdict, deps);
@@ -124,7 +142,8 @@ export async function assertOneBrowserAcross(workers, when, deps = {}) {
     report(`\nFLEET INCONSISTENT ${when}: ${describeMismatches(verdict.mismatches)}\n`
       + "Two browser builds must never write into one corpus — `browserVersion` is in the capture cache\n"
       + "key for exactly this reason, and a split shows up later as evidence that cannot be compared.\n"
-      + "Pin the fleet (`provision-role.yml --tags edge`) or run with --allow-mixed-browsers.\n");
+      + "Pin the fleet (`provision-role.yml --tags edge`) or run with --allow-mixed-browsers.\n"
+      + (attempts.length > 0 ? `Tried before stopping: ${describeAttempts(attempts)}\n` : ""));
     return exit(EXIT_FLEET_INCONSISTENT);
   }
   // AGREEING IS NOT ENOUGH; THEY HAVE TO HAVE BEEN ASKED. Checked only once the mismatch verdict is
@@ -148,6 +167,154 @@ export async function assertOneBrowserAcross(workers, when, deps = {}) {
     + "Deploy the fleet (`npm run fleet:deploy`), take the field out of `MUST_MATCH`, or run with\n"
     + "--allow-unchecked-fields.\n");
   exit(EXIT_FLEET_INCONSISTENT);
+}
+
+/**
+ * Read the fleet and, on a split a box can be walked back from (#4448), converge and read it again.
+ * The refusal that follows is about what the fleet is NOW, so only the second reading is returned.
+ *
+ * @param {{ workers: string[], probe: (url: string) => Promise<any>, deps: { converge?: Converge,
+ *   allowMixedBrowsers?: boolean }, report: (text: string) => void, when: string }} request
+ */
+async function readOrConverge({ workers, probe, deps, report, when }) {
+  const first = await readFleet(workers, probe);
+  if (first.verdict.consistent || deps.allowMixedBrowsers || !deps.converge) return { ...first, attempts: [] };
+  const attempts = await convergeOddBoxes(planConvergence(first.verdict.mismatches, first.busy), deps.converge);
+  if (!attempts.some(({ action }) => action !== null)) return { ...first, attempts };
+  report(`\nFLEET CONVERGENCE ${when}: ${describeAttempts(attempts)}\n`);
+  return { ...(await readFleet(workers, probe)), attempts };
+}
+
+/**
+ * Probe every worker once. `busy` is read off the same `/health`, so "idle" and "what it runs" are one moment.
+ *
+ * @param {string[]} workers
+ * @param {(url: string) => Promise<any>} probe
+ */
+async function readFleet(workers, probe) {
+  /** @type {Map<string, unknown>} */
+  const busy = new Map();
+  const watching = async (/** @type {string} */ url) => {
+    const health = await probe(url);
+    busy.set(url, health?.busy);
+    return health;
+  };
+  const guests = await Promise.all(workers.map((url) => guestFrom(url, watching)));
+  return { guests, verdict: fleetConsistency(guests.filter((guest) => guest !== null)), busy };
+}
+
+/**
+ * Decide, for every odd box, what is to be done and why not when nothing is. Pure: `converge` runs it.
+ *
+ * A box AHEAD of the fleet's build is never repaired (there is no downgrade; `os-rollback.yml` is a human
+ * decision), and neither is one with no modal value to be behind, or one that is not provably idle. `busy`
+ * must be `false`: a box that did not say is not known to be free of a capture.
+ *
+ * @param {{ field: string, values: Record<string, unknown> }[]} mismatches
+ * @param {Map<string, unknown>} busy
+ * @returns {Attempt[]}
+ */
+function planConvergence(mismatches, busy) {
+  return mismatches.flatMap(({ field, values }) => {
+    const fleet = modalValue(values);
+    if (fleet === null) return [];
+    return Object.entries(values).filter(([, value]) => String(value) !== fleet).map(([worker, value]) => {
+      const odd = { worker, field, value: String(value), fleet };
+      if (field === DISPLAY_FIELD) return { ...odd, action: /** @type {const} */ ("reassertDisplay"), note: "" };
+      if (!BUILD_FIELDS.includes(field)) return { ...odd, action: null, note: "not a field the guard repairs" };
+      const order = compareBuilds(odd.value, fleet);
+      if (order === null) return { ...odd, action: null, note: "build not comparable, left alone" };
+      if (order > 0) return { ...odd, action: null, note: "AHEAD of the fleet's build; never downgraded, a human's call (os-rollback.yml)" };
+      if (busy.get(worker) !== false) return { ...odd, action: null, note: "not patched: not known to be idle" };
+      return { ...odd, action: /** @type {const} */ ("patch"), note: "" };
+    });
+  });
+}
+
+/** The value most guests hold, or null when two values tie for it — a tie has no fleet to converge on. @param {Record<string, unknown>} values */
+function modalValue(values) {
+  const counts = new Map();
+  for (const value of Object.values(values)) counts.set(String(value), (counts.get(String(value)) ?? 0) + 1);
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  if (ranked.length === 0 || (ranked.length > 1 && ranked[0][1] === ranked[1][1])) return null;
+  return ranked[0][0];
+}
+
+/**
+ * Order two Windows builds by their trailing dotted number (`... 10.0.22621.4317`), -1 behind, 1 ahead.
+ * Null when either has none: unreadable is not "behind".
+ *
+ * @param {string} box
+ * @param {string} fleet
+ */
+function compareBuilds(box, fleet) {
+  const parts = (/** @type {string} */ text) => /(\d+(?:\.\d+)+)\s*$/.exec(text)?.[1].split(".").map(Number) ?? null;
+  const [a, b] = [parts(box), parts(fleet)];
+  if (a === null || b === null) return null;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const difference = (a[i] ?? 0) - (b[i] ?? 0);
+    if (difference !== 0) return Math.sign(difference);
+  }
+  return 0;
+}
+
+/**
+ * Run what the plan chose, one action per box and kind, and say what each came to. A failed command is an
+ * outcome to print, not a reason to stop: the re-read decides whether the box is back.
+ *
+ * @param {Attempt[]} plan
+ * @param {Converge} converge
+ * @returns {Promise<Attempt[]>}
+ */
+async function convergeOddBoxes(plan, converge) {
+  const done = new Set();
+  const results = [];
+  for (const step of plan) {
+    const key = `${step.action}:${step.worker}`;
+    if (step.action === null || done.has(key)) { results.push(step); continue; }
+    done.add(key);
+    try {
+      if (step.action === "patch") await converge.patch(step.worker);
+      else await converge.reassertDisplay(step.worker, step.fleet);
+      results.push({ ...step, note: `ran ${step.action}` });
+    } catch (error) {
+      results.push({ ...step, note: `${step.action} FAILED: ${/** @type {Error} */ (error).message}` });
+    }
+  }
+  return results;
+}
+
+/** One line per box: where it is, where the fleet is, and what was tried. @param {Attempt[]} attempts */
+function describeAttempts(attempts) {
+  return attempts.map(({ worker, field, value, fleet, note }) =>
+    `${worker} ${field}=${value} (fleet ${fleet}): ${note}`).join("; ");
+}
+
+/**
+ * The production binding of `Converge`: the commands an operator would type, run from the core checkout.
+ * `nameOf` maps the guard's worker URL to the inventory name `--limit` takes; an unknown box throws and
+ * so is reported as a failed attempt rather than guessed at. Pinned by argv in the test.
+ *
+ * @param {{ nameOf: (url: string) => string | null, cwd: string,
+ *   run?: (argv: string[], cwd: string) => Promise<void> }} options
+ * @returns {Converge}
+ */
+export function fleetConvergeCommands({ nameOf, cwd, run = runCommand }) {
+  const limit = (/** @type {string} */ url) => {
+    const name = nameOf(url);
+    if (name === null) throw new Error(`no inventory name known for ${url}`);
+    return `--limit=${name}`;
+  };
+  return {
+    patch: async (worker) => run(["npm", "run", "fleet:patch", "--", "--apply", limit(worker)], cwd),
+    reassertDisplay: async (worker, mode) =>
+      run(["npm", "run", "fleet:provision", "--", `--display-mode=${mode}`, limit(worker)], cwd),
+  };
+}
+
+/** @param {string[]} argv @param {string} cwd */
+async function runCommand([file, ...args], cwd) {
+  await promisify(execFile)(file, args, { cwd });
 }
 
 /**
