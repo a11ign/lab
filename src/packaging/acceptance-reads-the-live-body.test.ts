@@ -173,8 +173,16 @@ test("the read moved before the build FAILS, so the window is not the job's setu
 
 type Outcome = { status: number | null; log: string; output: string };
 
+/**
+ * The author the step is run as. Since ADR 0044 the tool hands the live body on only for an exempt author (a dependency bot), and the step passes
+ * `PR_AUTHOR` to the reader (a11ign/a11ign#4857), so a test that wants the whole body back must run as one. It is NOT the default: with this author
+ * and no `Acceptance:` line the step waits out its re-read loop (18 reads, 5 seconds apart, measured 90.5 s), so a test whose body has none keeps the
+ * author out.
+ */
+const DEPENDABOT_AUTHOR = { PR_AUTHOR: "dependabot[bot]" };
+
 /** Runs the step's `run:` as bash. The stub answers only the call for THIS pull request, so a wrong endpoint reads as a failure. */
-function readLive({ body, exitCode = 0 }: { body: string; exitCode?: number }): Outcome {
+function readLive({ body, exitCode = 0, env = {} }: { body: string; exitCode?: number; env?: Record<string, string> }): Outcome {
   const dir = mkdtempSync(join(tmpdir(), "live-body-"));
   try {
     const gh = join(dir, "gh");
@@ -193,14 +201,15 @@ function readLive({ body, exitCode = 0 }: { body: string; exitCode?: number }): 
     writeFileSync(host, JSON.stringify({ primary: "lab", projects: [{ id: "lab", checkout: REPO_ROOT.replace(/\/$/, "") }] }));
     const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", reader.run!], {
       encoding: "utf8",
-      // The step asks the tool which file the pull request ADDS under `.acceptance/` (ADR 0044) by reading the checkout it runs in, and hands on only the
-      // `Closes` line when there is one. Run from this repository the answer depends on whether the pull request RUNNING THE TEST adds such a file (every
-      // product pull request does), so the step runs in the scratch directory: no checkout, no added file, the whole live body is what it hands on.
-      // The tool finds its project from the host file when it is not inside one, so that file names this repository as the project.
+      // The step asks the tool which source the `Acceptance:` family is read from (ADR 0044), and hands on only the `Closes` line unless the answer is "the
+      // body", which the tool gives for an exempt author alone (`PR_AUTHOR`, `DEPENDABOT_AUTHOR`) and for that author whether or not the diff can be
+      // read. So the step runs in this scratch directory, no checkout and no added file, and what it hands on is decided by the author the test gives it
+      // and not by whether the pull request RUNNING THE TEST adds an acceptance file (every product pull request does). The tool finds its project from
+      // the host file when it is not inside one, so that file names this repository as the project.
       cwd: dir,
       // `AGENT_ORG_TOOL` is exported by the step that clones the tool (`agent-org-newest-tag.ts`), and the reader imports `acceptance-commands` from it
       // to work out which rows the body closes; `node` is found beside the one running this test, which is not always in /usr/bin.
-      env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, AGENT_ORG_TOOL: toolRoot(), AGENT_ORG_HOST: host, GITHUB_OUTPUT: output, REPO: "o/r", PR_NUMBER: "7", FAKE_BODY: body, FAKE_EXIT: String(exitCode) },
+      env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, AGENT_ORG_TOOL: toolRoot(), AGENT_ORG_HOST: host, GITHUB_OUTPUT: output, REPO: "o/r", PR_NUMBER: "7", FAKE_BODY: body, FAKE_EXIT: String(exitCode), ...env },
     });
     return { status: result.status, log: `${result.stdout}${result.stderr}`, output: readFileSync(output, "utf8") };
   } finally {
@@ -226,15 +235,16 @@ const LIVE = "deps: bump tsx\n\nAcceptance:\n```bash\npnpm test\n```\n\nCloses: 
 
 test("clause 1: the step prints the LIVE body, which differs from the payload's", () => {
   const payload = "Bumps tsx from 4.22.4 to 4.23.15.";
-  const outcome = readLive({ body: LIVE });
+  const outcome = readLive({ body: LIVE, env: DEPENDABOT_AUTHOR });
   assert.equal(outcome.status, 0, outcome.log);
   assert.equal(outputBody(outcome.output), LIVE);
   assert.notEqual(outputBody(outcome.output), payload);
 });
 
 test("a body that tries to end the value early or set another output stays one value", () => {
-  const hostile = `first\nEOF\nbody<<EOF\nGITHUB_ENV=pwned\nsecond`;
-  const outcome = readLive({ body: hostile });
+  // The `Acceptance:` line is what lets a dependency bot's body through the step's re-read loop at once; the lines around it are the attack.
+  const hostile = `first\nEOF\nbody<<EOF\nGITHUB_ENV=pwned\nAcceptance:\nsecond`;
+  const outcome = readLive({ body: hostile, env: DEPENDABOT_AUTHOR });
   assert.equal(outcome.status, 0, outcome.log);
   assert.equal(outputBody(outcome.output), hostile);
 });
