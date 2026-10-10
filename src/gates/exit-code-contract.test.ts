@@ -52,7 +52,6 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
-import { isTransitionalShim } from "../transitional-shims.ts";
 
 /**
  * THE REPOSITORY ROOT, NOT A CORPUS ROOT — and the distinction is load-bearing enough to state.
@@ -398,8 +397,6 @@ const DOCUMENTED: Record<string, string> = {
 function hasExitContract(rel: string): boolean {
   if (!(rel.endsWith(".mjs") || rel.endsWith(".ts"))) return false;
   if (rel.endsWith(".test.ts") || rel.endsWith(".test.mjs")) return false;
-  // A one-release shim is a name, not a script: its program is classified under its `.ts` (a11ign/a11ign#4551).
-  if (isTransitionalShim(join(REPO, rel))) return false;
   const source = stripComments(readFileSync(join(REPO, rel), "utf8"));
   return source.includes("process.exit(") || source.includes("process.exitCode");
 }
