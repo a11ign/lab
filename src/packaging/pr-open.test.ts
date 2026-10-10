@@ -61,9 +61,19 @@ const WRONG_HEADING_BODY_736 = "## Verified\n\nnpx tsx --test packages/lab/src/p
 
 const VALID_BODY = "## Acceptance\n\nnode -e \"process.exit(0)\"\n\nCloses #1\n";
 
+// ADR 0044 (agent-org#519, v0.138.0): the reader takes a pull request's Acceptance from the `.acceptance/` file its diff ADDS,
+// and reads the body only for an exempt Dependabot author. The file's grammar is the body's own, and `writeAcceptanceFile`
+// writes the body's text unchanged, so a fixture's text IS the file's text: `readFile` hands that text back.
+const acceptancePathFor = (branch: string) => `.acceptance/${branch.replace(/\//g, "~")}.md`;
+/** The diff of a PR that ADDS its acceptance file on `agent/my-branch`, and that file's text, for a fixture carrying the Acceptance inline. */
+const addingAcceptanceFile = (text: string) => ({
+  diff: { ok: true as const, files: [acceptancePathFor("agent/my-branch")], added: [acceptancePathFor("agent/my-branch")] },
+  readFile: () => text,
+});
+
 test("#746's own acceptance shape: a DUPLICATE Acceptance section is refused, naming both occurrences "
   + "(#708's real shape)", () => {
-  const result = checkBody(DUPLICATE_BODY_708, { run: NEVER_RUN });
+  const result = checkBody(DUPLICATE_BODY_708, { run: NEVER_RUN, ...addingAcceptanceFile(DUPLICATE_BODY_708) });
   assert.equal(result.ok, false);
   assert.ok(result.lines.some((l: UntypedTool) => l.includes("DUPLICATE")));
   assert.ok(result.lines.some((l: UntypedTool) => l.includes("## Acceptance, all three from #705")));
@@ -71,7 +81,7 @@ test("#746's own acceptance shape: a DUPLICATE Acceptance section is refused, na
 
 test("#746's own acceptance shape: PROSE under Acceptance is refused as not-a-command, and Closes is "
   + "separately MISSING (#723's real shape)", () => {
-  const result = checkBody(PROSE_THEN_CLOSES_MISSING_BODY_723, { run: NEVER_RUN });
+  const result = checkBody(PROSE_THEN_CLOSES_MISSING_BODY_723, { run: NEVER_RUN, ...addingAcceptanceFile(PROSE_THEN_CLOSES_MISSING_BODY_723) });
   assert.equal(result.ok, false);
   assert.ok(result.lines.some((l: UntypedTool) => l.includes("is not a command")));
   assert.ok(result.lines.some((l: UntypedTool) => l.includes("CLOSES: MISSING")));
@@ -79,7 +89,7 @@ test("#746's own acceptance shape: PROSE under Acceptance is refused as not-a-co
 
 test("#746's own acceptance shape: a pipe the file pre-check cannot parse is refused, never run (#727's "
   + "real shape, #728's own mechanism)", () => {
-  const result = checkBody(PIPE_BODY_727, { run: NEVER_RUN });
+  const result = checkBody(PIPE_BODY_727, { run: NEVER_RUN, ...addingAcceptanceFile(PIPE_BODY_727) });
   assert.equal(result.ok, false);
   // #728 LANDED, AND THIS TEST NAMED THE MESSAGE IT REPLACED. Its own title says "#728's own
   // mechanism", so it was written expecting the wording to move; what it pinned was
@@ -97,7 +107,7 @@ test("#746's own acceptance shape: a pipe the file pre-check cannot parse is ref
 
 test("#746's own acceptance shape: the section under `## Verified` (not `## Acceptance`) is MISSING "
   + "(#736's real shape)", () => {
-  const result = checkBody(WRONG_HEADING_BODY_736, { run: NEVER_RUN });
+  const result = checkBody(WRONG_HEADING_BODY_736, { run: NEVER_RUN, ...addingAcceptanceFile(WRONG_HEADING_BODY_736) });
   assert.equal(result.ok, false);
   assert.ok(result.lines.some((l: UntypedTool) => l === "ACCEPTANCE: MISSING"));
 });
@@ -106,7 +116,7 @@ test("#746's own acceptance shape: a valid body checks clean -- the wrapper adds
   + "nothing", () => {
   let ran = 0;
   const run = () => { ran += 1; return 0; };
-  const result = checkBody(VALID_BODY, { run });
+  const result = checkBody(VALID_BODY, { run, ...addingAcceptanceFile(VALID_BODY) });
   assert.equal(result.ok, true);
   assert.equal(ran, 1, "the one real command in the body must actually run, exactly as the CI job would");
 });
@@ -164,9 +174,36 @@ test("MUTATION TARGET: a local regex standing in for the real parser is CAUGHT, 
   const naiveRegexCheck = (body: string) => /Acceptance:\s*\S/.test(body);
   assert.equal(naiveRegexCheck(DUPLICATE_BODY_708), true,
     "the naive check wrongly says this body is fine");
-  const real = checkBody(DUPLICATE_BODY_708, { run: NEVER_RUN });
+  const real = checkBody(DUPLICATE_BODY_708, { run: NEVER_RUN, ...addingAcceptanceFile(DUPLICATE_BODY_708) });
   assert.equal(real.ok, false, "the real parser correctly refuses the same body -- proving a hand-rolled "
     + "regex would have let #708's exact defect through");
+});
+
+// --- ADR 0044 (agent-org#519): the body is NOT the acceptance source; the `.acceptance/` file the diff adds is ---
+
+test("ADR 0044: a body-only PR -- an Acceptance in the body and no `.acceptance/` file in the diff -- is REFUSED by "
+  + "pr-open and nothing is sent; the same body with its file added is sent", () => {
+  let ran = 0;
+  const drive = (changed: string[]) => {
+    const spawned: string[][] = [];
+    const said: string[] = [];
+    const code = prOpenMain(["create", "--draft", "--body", VALID_BODY], {
+      runAcceptance: () => { ran += 1; return 0; },
+      run: (args: string[]) => { spawned.push(args); },
+      git: gitFor("agent/x", changed), readFile: () => VALID_BODY,
+      owner: LIVE_OWNER, out: (line: string) => { said.push(line); }, err: (line: string) => { said.push(line); },
+    });
+    return { code, spawned, said: said.join("\n") };
+  };
+  const bodyOnly = drive(["src/packaging/pr-open.test.ts"]);
+  assert.equal(bodyOnly.code, EXIT_NOTHING_SENT);
+  assert.deepEqual(bodyOnly.spawned, [], "nothing was sent");
+  assert.equal(ran, 0, "and the body's Acceptance was never run, because its source was refused first");
+  assert.match(bodyOnly.said, /ACCEPTANCE-SOURCE: none/, "the refusal names the source it did not find");
+  assert.match(bodyOnly.said, /\.acceptance\//, "and where that file has to be");
+  const withFile = drive([acceptancePathFor("agent/x")]);
+  assert.equal(withFile.code, 0, "POSITIVE CONTROL: the same body with its `.acceptance/` file added is sent");
+  assert.equal(ran, 1, "and then its Acceptance really ran");
 });
 
 // #909: a PR opened READY by this wrapper is armed at creation, on the injected runner's argv -- never a draft,
@@ -205,7 +242,13 @@ test("#909 MUTATION TARGET: arming uses --merge, never --squash or --rebase (the
 const ghFails = () => () => {
   throw new Error("Command failed: gh pr create --body-file /tmp/b.md --title probe");
 };
-const gitStub = (args: string[]) => (args.includes("--abbrev-ref") ? "agent/my-branch" : "abc1234");
+// A git seam for `main` on `branch`. A diff reports `changed`, which by default is the acceptance file that branch's PR adds (ADR 0044).
+const gitFor = (branch: string, changed: string[] = [acceptancePathFor(branch)]) => (args: string[]) => {
+  if (args.includes("--abbrev-ref")) return branch;
+  if (args.includes("--name-only")) return changed.join("\0");
+  return "abc1234";
+};
+const gitStub = gitFor("agent/my-branch");
 
 // THE OWNER IS INJECTED IN EVERY SPAWN-COUNTING TEST, never left to `ownerOfTree`'s real `process.cwd()`.
 // `sendToGitHub`'s default reads `.a11y-owner` from whatever tree the suite runs in, so a suite that left
@@ -510,6 +553,7 @@ function driveMain(argv: string[], outcomes: { create: () => void; arm: () => vo
       runAcceptance: () => 0,
       run: (args: string[]) => { spawned.push(args); (args[1] === "merge" ? outcomes.arm : outcomes.create)(); },
       git: gitStub,
+      readFile: () => VALID_BODY,
       owner: LIVE_OWNER,
       err: (l: string) => { errs.push(l); },
       out: () => {},
@@ -620,7 +664,7 @@ test("#1578 ACCEPTANCE, MUTATION TARGET: driven through main(), the Acceptance r
   try {
     code = prOpenMain(["create", "--draft", "--body", body], {
       run: (args: string[]) => { spawned.push(args); },
-      git: () => "agent/x", owner: LIVE_OWNER, out: () => {}, err: () => {},
+      git: gitFor("agent/x"), readFile: () => body, owner: LIVE_OWNER, out: () => {}, err: () => {},
     });
   } finally {
     if (saved === undefined) delete process.env.A11Y_ACCEPTANCE_PATH; else process.env.A11Y_ACCEPTANCE_PATH = saved;
@@ -642,9 +686,10 @@ test("#2099: a bare `gh` Acceptance is refused here and NOTHING is sent -- the a
   + "credential, and this wrapper exists to say so before the CI round rather than after it", () => {
   const spawned: string[][] = [];
   const said: string[] = [];
-  const code = prOpenMain(["create", "--draft", "--body", "## Acceptance\n\ngh pr view 1\n\nCloses #1\n"], {
+  const body = "## Acceptance\n\ngh pr view 1\n\nCloses #1\n";
+  const code = prOpenMain(["create", "--draft", "--body", body], {
     run: (args: string[]) => { spawned.push(args); },
-    git: () => "agent/x", owner: UNSTAMPED,
+    git: gitFor("agent/x"), readFile: () => body, owner: UNSTAMPED,
     out: (line: string) => { said.push(line); }, err: (line: string) => { said.push(line); },
   });
   assert.equal(code, EXIT_NOTHING_SENT);
@@ -669,7 +714,7 @@ test("#2099 CONTROL: the SAME body carrying the declaration is SENT, and reports
     + '\n## Hand-run output\n\n```\n$ gh pr view 1\n"ok"\n```\n';
   const code = prOpenMain(["create", "--draft", "--body", body], {
     run: (args: string[]) => { spawned.push(args); },
-    git: () => "agent/x", owner: LIVE_OWNER, out: (line: string) => { outs.push(line); }, err: () => {},
+    git: gitFor("agent/x"), readFile: () => body, owner: LIVE_OWNER, out: (line: string) => { outs.push(line); }, err: () => {},
   });
   assert.equal(code, 0);
   assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"], ["pr", "edit"]], "the create was sent, then the owner's label");
@@ -683,7 +728,7 @@ test("#2118: the SAME body with the declaration and NO pasted output is REFUSED 
   const body = "## Acceptance\n\nHand-run: whoever holds the credential\n\ngh pr view 1\n\nCloses #1\n";
   const code = prOpenMain(["create", "--draft", "--body", body], {
     run: (args: string[]) => { spawned.push(args); },
-    git: () => "agent/x", owner: UNSTAMPED, out: (line: string) => { outs.push(line); }, err: () => {},
+    git: gitFor("agent/x"), readFile: () => body, owner: UNSTAMPED, out: (line: string) => { outs.push(line); }, err: () => {},
   });
   assert.equal(code, 1, outs.join("\n"));
   assert.deepEqual(spawned, [], "nothing was sent -- the refusal is before the create, as every other one is");
@@ -833,7 +878,7 @@ test("#4386: a create whose tree is unstamped and whose row names no session is 
     const said: string[] = [];
     const code = prOpenMain(["create", "--draft", "--body", body], {
       runAcceptance: () => 0, run: (args: string[]) => { spawned.push(args); },
-      git: gitStub, owner, out: () => {}, err: (l: string) => { said.push(l); },
+      git: gitStub, readFile: () => body, owner, out: () => {}, err: (l: string) => { said.push(l); },
     });
     return { code, spawned, said: said.join("\n") };
   };
@@ -872,7 +917,7 @@ function driveMutation(body: string, mutateExit: number) {
     runAcceptance: () => 0,
     runMutation: (command: string) => { ran.push(command); return mutateExit; },
     run: (args: string[]) => { spawned.push(args); },
-    git: gitStub, owner: LIVE_OWNER, out: (l: string) => { outs.push(l); }, err: () => {},
+    git: gitStub, readFile: () => body, owner: LIVE_OWNER, out: (l: string) => { outs.push(l); }, err: () => {},
   });
   return { code, ran, outs: outs.join(""), spawned };
 }
@@ -929,7 +974,7 @@ test("#2307: a body the Acceptance check refuses never runs its Mutation", () =>
   const body = mutationBody(MUTATE_COMMAND).replace("Closes #1", "");
   const code = prOpenMain(["create", "--draft", "--body", body], {
     runAcceptance: () => 0, runMutation: (c: string) => { ran.push(c); return 0; },
-    run: () => {}, git: gitStub, owner: UNSTAMPED, out: () => {}, err: () => {},
+    run: () => {}, git: gitStub, readFile: () => body, owner: UNSTAMPED, out: () => {}, err: () => {},
   });
   assert.equal(code, EXIT_NOTHING_SENT);
   assert.deepEqual(ran, [], "a body that is refused sends nothing, so nothing is worth mutating for it");
