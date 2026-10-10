@@ -36,6 +36,9 @@ type Workflow = { on: { workflow_call: { inputs?: Record<string, unknown> } | nu
 // occurrence in a test file as the test NEEDING a token, and this file only names the variable in workflow text it parses.
 const GH_VAR = "GH_" + "TOKEN";
 
+/** The one value `PR_AUTHOR` may take: the login the event names, which is data and never the body's or the token's. */
+const PR_AUTHOR_EXPRESSION = "${{ github.event.pull_request.user.login }}";
+
 const parse = (text: string): Workflow => parseYaml(text) as Workflow;
 const stepsOf = (workflow: Workflow): Step[] => workflow.jobs.run.steps;
 const runs = (step: Step, command: string): boolean => (step.run ?? "").includes(command);
@@ -57,8 +60,12 @@ const tokenHolders = (workflow: Workflow): Step[] => stepsOf(workflow).filter(ho
 function commandProblems(workflow: Workflow, reader: Step): string[] {
   const command = commandStep(workflow);
   const found: string[] = [];
-  // `ACCEPTANCE_ROW_LABELS` (a11ign/a11ign#4138) is the one addition: DATA from the reader step beside the body, which lets `acceptance-commands` refuse a PR whose row is a hold; it is no credential.
-  if (Object.keys(command.env ?? {}).join() !== "PR_BODY,ACCEPTANCE_ROW_LABELS") found.push(`the command step's env is ${JSON.stringify(command.env)}, not PR_BODY and ACCEPTANCE_ROW_LABELS alone`);
+  // Two keys sit beside `PR_BODY`, and neither is a credential. `ACCEPTANCE_ROW_LABELS` (a11ign/a11ign#4138) is DATA from the reader step, which lets
+  // `acceptance-commands` refuse a PR whose row is a hold. `PR_AUTHOR` (a11ign/a11ign#4834) is the author's login read straight from the event, which the
+  // tool compares to a bot's login to decide whether a rewritten body is worth waiting for; no PR body can change it, so it is pinned to that one
+  // expression and not to "any key", and a value taken from the body or the token is refused below.
+  if (Object.keys(command.env ?? {}).join() !== "PR_BODY,PR_AUTHOR,ACCEPTANCE_ROW_LABELS") found.push(`the command step's env is ${JSON.stringify(command.env)}, not PR_BODY, PR_AUTHOR and ACCEPTANCE_ROW_LABELS alone`);
+  if (String(command.env?.PR_AUTHOR).trim() !== PR_AUTHOR_EXPRESSION) found.push(`the command step's PR_AUTHOR is ${command.env?.PR_AUTHOR}, not the event's author login`);
   if (!String(command.env?.ACCEPTANCE_ROW_LABELS).includes(`steps.${reader.id}.outputs.row-labels`)) found.push(`the command step's ACCEPTANCE_ROW_LABELS is ${command.env?.ACCEPTANCE_ROW_LABELS}, not the live body's row labels`);
   if (!String(command.env?.PR_BODY).includes(`steps.${reader.id}.outputs.body`)) found.push(`the command step's PR_BODY is ${command.env?.PR_BODY}, not the live body`);
   if (holdsCredential(command)) found.push("the command step holds a credential");
@@ -136,6 +143,17 @@ test("clause 2: a token handed to the command step FAILS, however it is spelled"
 test("clause 2: the row labels taken from anywhere but the reader's output FAIL", () => {
   const labels = mutate("ACCEPTANCE_ROW_LABELS: ${{ steps.live-body.outputs.row-labels }}", "ACCEPTANCE_ROW_LABELS: ${{ github.event.pull_request.title }}");
   assert.ok(problems(labels).some((p) => /ACCEPTANCE_ROW_LABELS/.test(p)), JSON.stringify(problems(labels)));
+});
+
+test("clause 2: an author taken from the body or the token FAILS, and from the body it is the author check alone that says so", () => {
+  const target = "          PR_AUTHOR: " + PR_AUTHOR_EXPRESSION + "\n          ACCEPTANCE_ROW_LABELS:";
+  const taking = (value: string): Workflow => mutate(target, `          PR_AUTHOR: ${value}\n          ACCEPTANCE_ROW_LABELS:`);
+  const fromBody = problems(taking("${{ steps.live-body.outputs.body }}"));
+  assert.ok(fromBody.some((p) => /PR_AUTHOR/.test(p)), JSON.stringify(fromBody));
+  assert.deepEqual(fromBody.filter((p) => !/PR_AUTHOR/.test(p)), [], "no other check refuses it, so the author check is what is under test");
+  for (const value of ["${{ github.event.pull_request.body }}", "${{ github.token }}"]) {
+    assert.ok(problems(taking(value)).some((p) => /PR_AUTHOR/.test(p)), `${value}: ${JSON.stringify(problems(taking(value)))}`);
+  }
 });
 
 test("clause 2: a job-level env, or a persisted checkout credential, FAILS", () => {
