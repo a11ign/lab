@@ -141,14 +141,14 @@ test("a single named worker, itself the one down: still refuses (one worker IS t
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * Closed ELSEWHERE, not silently dropped: `capture-check.mjs`, `stability-gate.mjs` and
+ * Closed ELSEWHERE, not silently dropped: `capture-check.ts`, `stability-gate.mjs` and
  * `gate-probe-order.mjs` also take `--worker=`, and `evidence-check.mjs` also takes one positionally --
  * but all four are catalogued `lab-job.yml` jobs (`capture-check`, `stability`/`gate-stability`,
  * `gate-probe-order`, `evidence-check`), so they wake THROUGH `lab:job` already (#2655's table, rows 4, 5,
  * 10). A census that also flagged them would ask this row to fix a defect closed by a different one.
  */
 const CLOSED_ELSEWHERE = new Set([
-  "packages/lab/src/harnesses/capture-check.mjs",
+  "packages/lab/src/harnesses/capture-check.ts",
   "packages/lab/scripts/stability-gate.mjs",
   "packages/lab/scripts/gate-probe-order.mjs",
   "packages/lab/scripts/evidence-check.mjs",
@@ -178,7 +178,7 @@ function candidateFiles(): string[] {
 /**
  * Names its workers directly, in the caller's own words: `configuredWorkers()`, a declared `--worker=`
  * flag, or a bare positional `process.argv` read into a variable spelled `worker` (case-insensitive) --
- * `occurrence-verdict-stability.mjs`'s `const WORKER = process.argv[2]` and `bench-capture.ts`'s
+ * `occurrence-verdict-stability.ts`'s `const WORKER = process.argv[2]` and `bench-capture.ts`'s
  * `const [worker, ...] = process.argv.slice(2)` take neither a flag nor `configuredWorkers()`, and are
  * exactly `#2655`'s row 11 either way.
  */
@@ -197,9 +197,9 @@ function discoverByHandEntries(): string[] {
 
 const REGION_ENTRIES = [
   "packages/lab/scripts/bench-capture.ts",
-  "packages/lab/src/harnesses/capture-fixtures.mjs",
-  "packages/lab/src/harnesses/occurrence-verdict-stability.mjs",
-  "packages/lab/src/harnesses/page-identity-rate.mjs",
+  "packages/lab/src/harnesses/capture-fixtures.ts",
+  "packages/lab/src/harnesses/occurrence-verdict-stability.ts",
+  "packages/lab/src/harnesses/page-identity-rate.ts",
   "packages/lab/src/training/capture-real-pages.mjs",
   "packages/lab/src/training/capture-screenreader-dataset.mjs",
   "packages/lab/src/training/repeat-capture.mjs",
@@ -208,8 +208,8 @@ const REGION_ENTRIES = [
 test("the census names its positive control: the discovery is not vacuous", () => {
   const discovered = discoverByHandEntries();
   assert.ok(discovered.length > 0, "discovered nothing -- the two signals themselves are untested");
-  assert.ok(discovered.includes("packages/lab/src/harnesses/capture-fixtures.mjs"),
-    "a known by-hand entry (`capture-fixtures.mjs`, declares `--worker=`) must be discoverable, or the " +
+  assert.ok(discovered.includes("packages/lab/src/harnesses/capture-fixtures.ts"),
+    "a known by-hand entry (`capture-fixtures.ts`, declares `--worker=`) must be discoverable, or the " +
     "signals below are being asked to prove an emptiness they cannot see into");
 });
 
@@ -220,9 +220,9 @@ test("the census finds exactly this row's Region, no more and no fewer", () => {
 /** The text right after the entry's own wake call: proof it runs BEFORE a single capture is dispatched. */
 const DISPATCH_MARKER: Record<string, string> = {
   "packages/lab/scripts/bench-capture.ts": "await collectSamples(page)",
-  "packages/lab/src/harnesses/capture-fixtures.mjs": "await captureOverWorker(url, worker, steps)",
-  "packages/lab/src/harnesses/occurrence-verdict-stability.mjs": "await capture(base, variant)",
-  "packages/lab/src/harnesses/page-identity-rate.mjs": "await runRounds(base, ROUNDS)",
+  "packages/lab/src/harnesses/capture-fixtures.ts": "await captureOverWorker(url, worker, steps)",
+  "packages/lab/src/harnesses/occurrence-verdict-stability.ts": "await capture(base, variant)",
+  "packages/lab/src/harnesses/page-identity-rate.ts": "await runRounds(base, ROUNDS)",
   "packages/lab/src/training/capture-real-pages.mjs": "await captureAcrossPool(toCapture, workers)",
   "packages/lab/src/training/capture-screenreader-dataset.mjs": "await captureDataset(cases, done, checked, lease)",
   "packages/lab/src/training/repeat-capture.mjs": "await captureWithRetry()",

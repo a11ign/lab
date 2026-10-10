@@ -1,0 +1,185 @@
+// @ts-check
+/**
+ * Assert things about a report the ACTION produced, from a file you can also run locally.
+ *
+ * This logic used to be two `node -e` blocks inside `action-smoke.yml`, hand-escaped inside a
+ * double-quoted bash string, with the second block re-implementing the first's parsing. Two costs, and
+ * the second is the one that mattered: an assertion living in YAML cannot be run or linted here, so every
+ * iteration on it was an **eight-minute CI round trip**. A check that expensive to change is a check
+ * nobody changes.
+ *
+ *   node packages/lab/src/harnesses/assert-action-report.ts <r.json> --expect-activation --forbid-wcag=1.1.1
+ *   node packages/lab/src/harnesses/assert-action-report.ts <r.json> --require-wcag=1.1.1
+ *   node packages/lab/src/harnesses/assert-action-report.ts <r.json> --require-rule-layer
+ *
+ * In `packages/lab` because that package is private: this is a harness, like `capture-check.ts` beside
+ * it, and it must not ship inside a published package. It also has to sit inside a package's own `src` to
+ * be covered by `npm test`'s glob at all — a test outside that glob is a test that never runs.
+ *
+ * Exit 0 on success, 1 with a named reason on failure. The predicates are exported and unit-tested in
+ * `assert-action-report.test.ts`, because a guard nobody has watched fail is not a guard.
+ */
+import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
+import type { Loose } from "../capture/loose.ts";
+
+/**
+ * these ARE the assertion: a mistyped `--require-wcag=` asserts nothing and the harness reports success.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--expect-activation", "--require-wcag=", "--forbid-wcag=", "--require-rule-layer"],
+  { entry: import.meta.url, command: "npm run assert:action-report" });
+
+/**
+ * The contract fields, checked against what `packages/cli/src/action/run.ts` actually depends on rather
+ * than a shape assumed here — guessing it wrong once produced a check that failed for the wrong reason.
+ *
+ * @returns the reason it is unusable, or null
+ */
+export function contractFailure(report: unknown): string | null {
+  const r = report as Record<string, Loose>;
+  if (!r?.url) return "report has no url";
+  if (!r.verdict || !Array.isArray(r.verdict.findings)) {
+    return "report has no verdict.findings — the judge did not run";
+  }
+  // Explicitly `=== false`: absent means "not reported", which is not the same as "rejected", and
+  // conflating the two is the mistake this project refuses to make anywhere else.
+  if (r.captureVerified === false) {
+    return "captureVerified is false: the screen reader ran but its evidence was rejected";
+  }
+  return null;
+}
+
+/** How many controls the capture operated. Zero on a default run means `probe-forms` silently regressed. */
+export function activationCount(report: Record<string, Loose>) {
+  const interaction = report?.capture?.interaction ?? report?.interaction;
+  return (interaction?.formChanges ?? []).length + (interaction?.stateChanges ?? []).length;
+}
+
+/**
+ * Is `ruleBased` populated, the way it must be when the axe layer was asked to run and did?
+ *
+ * FOUND 2026-09-06: `chromium.launch()` needs the bundled browser, `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`
+ * on the Action means it is never present, `launch()` threw on every Action run, and `cli.ts`'s catch
+ * turned that into `ruleBased: null` -- while the progress line still announced "rule-based axe-core +
+ * real screen reader" and NOTHING asserted `ruleBased` at all. This is the assertion that was missing:
+ * `axe: true` is `action.yml`'s default and neither smoke run passes `axe: false`, so a report from either
+ * one must carry a populated `ruleBased`, not the null a silently-failed scan produces.
+ *
+ * `null` and `[]` are deliberately NOT the same failure here, the same distinction `pageContext`
+ * (`cli.ts`) exists to preserve: `null` means the layer never ran or threw, `[]` means it ran and found
+ * nothing. Only `null` is refused -- a page with zero axe violations must never be rejected as evidence
+ * the layer did not run.
+ *
+ * @returns the reason it is unusable, or null
+ */
+export function ruleLayerFailure(report: Record<string, Loose>): string | null {
+  if (report?.ruleBased === null) {
+    return "ruleBased is null: the axe-core layer did not run (or threw) despite being requested -- " +
+      "the tool announced a layer it did not produce";
+  }
+  if (!Array.isArray(report?.ruleBased)) {
+    return `ruleBased is ${JSON.stringify(report?.ruleBased)}, neither an array of findings nor null`;
+  }
+  return null;
+}
+
+/** Findings for one criterion, matched on the `wcag` prefix so "1.1.1 Non-text Content" matches "1.1.1". */
+/**
+ */
+export function findingsFor(report: Record<string, Loose>, wcag: string): Record<string, Loose>[] {
+  return (report?.verdict?.findings ?? []).filter((f: Record<string, Loose>) => String(f?.wcag ?? "").startsWith(wcag));
+}
+
+/**
+ * Does the report ACCUSE the page of failing `wcag`, as opposed to referring it to a person?
+ *
+ * FOUND 2026-10-04 (#3373): `--forbid-wcag` counted any finding for the criterion, and the trained scorer
+ * only TRIAGES: every one of its findings maps `cantTell`, so on the W3C conformant page it referred a
+ * 1.1.1 on two runs in three (`outcomes[1.1.1].outcome` was `cantTell`) and stopped the release each time.
+ * A referral is "worth a person's eyes", not a claim that the page fails. The per-criterion outcome is where
+ * the report says which it is, and `failed` is the only value that accuses (ACT's vocabulary; an axe-core
+ * `violated` lands there too, asserted by axe and attributed to it, ADR 0021).
+ *
+ * A report with no `outcomes` cannot be read either way, so it is refused by name: treating the absence
+ * as "nothing asserted" would let a report shape that lost its outcomes pass the smoke for the wrong reason.
+ *
+ * @param wcag the bare criterion number, e.g. "1.1.1"
+ * @returns the reason the report accuses the page, or null
+ */
+export function accusationFailure(report: Record<string, Loose>, wcag: string): string | null {
+  if (!Array.isArray(report?.outcomes)) {
+    return `report has no outcomes, so an assertion of ${wcag} cannot be told from a referral of it`;
+  }
+  const asserted = report.outcomes.some((o: Record<string, Loose>) =>
+    o?.criterion === wcag && o?.outcome === "failed");
+  if (!asserted) return null;
+  return `${wcag} claimed against a page published as conformant: ` +
+    JSON.stringify(findingsFor(report, wcag).map((f) => f.evidence));
+}
+
+function flagValue(args: string[], name: string) {
+  const hit = args.find((a) => a.startsWith(`--${name}=`));
+  return hit ? hit.slice(name.length + 3) : null;
+}
+
+function main(argv: string[]) {
+  const [path, ...flags] = argv;
+  if (!path) {
+    process.stderr.write("usage: assert-action-report.ts <report.json> " +
+      "[--expect-activation] [--forbid-wcag=X] [--require-wcag=X] [--require-rule-layer]\n");
+    return 1;
+  }
+  const report = JSON.parse(readFileSync(path, "utf8"));
+
+  const contract = contractFailure(report);
+  if (contract) return fail(contract);
+
+  if (flags.includes("--expect-activation") && activationCount(report) === 0) {
+    return fail("a default run activated no control: probe-forms is no longer on by default, so every " +
+      "3.3.1 and 4.1.3 finding is now unreachable while this job stays green");
+  }
+
+  if (flags.includes("--require-rule-layer")) {
+    const ruleLayer = ruleLayerFailure(report);
+    if (ruleLayer) return fail(ruleLayer);
+  }
+
+  const forbidden = flagValue(flags, "forbid-wcag");
+  if (forbidden) {
+    const accusation = accusationFailure(report, forbidden);
+    if (accusation) return fail(accusation);
+    // A referral passes but stays visible: it is the triage working, and a reader of the log should see it.
+    for (const f of findingsFor(report, forbidden)) {
+      process.stdout.write(`::notice::${forbidden} REFERRED, not asserted: ${JSON.stringify(f.evidence)}\n`);
+    }
+  }
+
+  const required = flagValue(flags, "require-wcag");
+  if (required && findingsFor(report, required).length === 0) {
+    return fail(`no ${required} finding on a page that really fails it — a guard is silencing real ` +
+      "failures, which is worse than the false positive it was added to fix");
+  }
+
+  process.stdout.write(`  url: ${report.url}\n`);
+  process.stdout.write(`  controls activated: ${activationCount(report)}\n`);
+  process.stdout.write(`  findings: ${report.verdict.findings.length}\n`);
+  return 0;
+}
+
+function fail(reason: string): number {
+  process.stderr.write(`::error::${reason}\n`);
+  return 1;
+}
+
+// Guarded so the predicates above can be imported by the test without running the CLI.
+//
+// `pathToFileURL`, not `endsWith`. A suffix match fires for ANY path ending in this filename -- including
+// another checkout's copy, or a test runner invoked with a same-named argv[1] -- and
+// `entry-points.test.ts` forbids it for that reason. It could not see this file, because it discovers
+// entry points from `package.json` and this one is invoked by a workflow.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  process.exit(main(process.argv.slice(2)));
+}

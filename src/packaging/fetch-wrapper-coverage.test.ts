@@ -54,7 +54,7 @@ function sourceFiles(dir: string): string[] {
 
 /**
  * Files that USED to bypass `requestJson` and are now fully converted -- `capture-status.mjs`,
- * `capture-check.mjs`, `protocol-guard.mjs`, `compare-workers.mjs`, `check-worker-code.mjs`,
+ * `capture-check.ts`, `protocol-guard.mjs`, `compare-workers.mjs`, `check-worker-code.mjs`,
  * `code-drift.mjs` and `deploy-worker.mjs`'s `healthCode` (see `worker-http-client-owner.test.ts`, which
  * checks each by function name) -- carry NO raw `fetch(` at all any more, so none of them need an entry
  * below: a file with zero matches never reaches `found`, and a regression back to raw `fetch` would land

@@ -329,7 +329,7 @@ const SERVE_HINT =
   `process owns port ${PAGES_PORT} (a stray server can answer 404 for every page).`;
 
 // EXEMPT from audit §9's "the HTTP client" row, deliberately, unlike the other three raw-`fetch` sites
-// this row named (doctor.mjs, capture-status.mjs, capture-check.mjs -- all converted to `requestJson`).
+// this row named (doctor.mjs, capture-status.mjs, capture-check.ts -- all converted to `requestJson`).
 // This one talks to the DATASET PAGE SERVER, not a capture worker: it fetches an arbitrary page's raw
 // HTML for `titleOf()` to read, where `requestJson` is documented as, and shaped for, "HTTP to a capture
 // worker" returning pre-parsed JSON. Converting would misuse that abstraction for an unrelated service. It
