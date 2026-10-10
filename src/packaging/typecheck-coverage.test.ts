@@ -106,7 +106,9 @@ const CHECKED = MJS.filter((path) =>
 // the population (148 -> 126), 21 of them marked. Same reason as above: tsc checks a `.ts` WITHOUT a marker. Measured at core 989c2bcc3: 111 of 126.
 // 111 -> 108 (#4278): the same reason, for `bench-capture`, `claim-excludes-recompute` and `referral-repeat-share`. Measured as the difference at core 989c2bcc3:
 // the same tree with and without this change, 86 -> 83 marked `.mjs`.
-const AT_LEAST = 108; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
+// 108 -> 102 (a11ign/a11ign#4519): the same reason, for the gate and five harnesses of src/gates and src/harnesses (six `.mjs`, all marked); each old name stays one release as an UNMARKED
+// shim. Measured in CI at 94ea3579: 102 of 123 marked `.mjs`, from 108 at origin/main.
+const AT_LEAST = 102; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
 
 test("the typechecked `.mjs` count never falls", () => {
   assert.ok(CHECKED.length >= AT_LEAST,

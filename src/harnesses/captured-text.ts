@@ -3,9 +3,9 @@ import type { Loose } from "../capture/loose.ts";
 /**
  * The text a harness capture read, joined for its summary line -- a PURE function, in its own module (#1616).
  *
- * It lives here rather than in `capture-check.mjs` so a test can import it: that module imports `@a11ign/screenreader-worker`
+ * It lives here rather than in `capture-check.ts` so a test can import it: that module imports `@a11ign/screenreader-worker`
  * at top level, which loads `@guidepup/guidepup`, and guidepup throws at import wherever no screen reader exists. So
- * `capture-check.mjs` imports this, and `state-change-after-null.test.ts` imports this directly.
+ * `capture-check.ts` imports this, and `state-change-after-null.test.ts` imports this directly.
  */
 export function capturedText(r: Loose) {
   return [

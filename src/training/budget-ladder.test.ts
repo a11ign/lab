@@ -167,7 +167,7 @@ const UNDICI_HEADERS_CAP_MS = 300_000;
  * Every capture client, DISCOVERED rather than listed.
  *
  * The previous version of this guard named three files. Seven others posted captures and it could not
- * see any of them -- including `occurrence-verdict-stability.mjs`, which declared 560 s and got 300 s,
+ * see any of them -- including `occurrence-verdict-stability.ts`, which declared 560 s and got 300 s,
  * the exact defect this guard was written for. A hardcoded list is a guard that only checks the places
  * somebody already thought of, which is the same shape as the worker-file list that let a file deploy
  * invisibly.

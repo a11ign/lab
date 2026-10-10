@@ -47,7 +47,7 @@ refuseUnknownFlags(["--url=", "--worker=", "--times=", "--steps=", "--task=", "-
  * A named `--flag=value`, or the fallback.
  *
  * `fallback` typed rather than inferred: defaulting to `null` infers exactly `null`, so every caller
- * supplying a real default became the error. The same shape `capture-fixtures.mjs` has.
+ * supplying a real default became the error. The same shape `capture-fixtures.ts` has.
  *
  * @param {string} name
  * @param {string | number | null} [fallback]
