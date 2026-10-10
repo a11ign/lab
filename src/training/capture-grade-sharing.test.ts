@@ -21,12 +21,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 
 // Comments stripped for every caller: every test below checks presence or absence of a specific token
 // against raw or sliced source, and a comment mentioning that token in prose would satisfy or defeat the
 // check exactly as it did for `mapping-parity.test.ts` and `cli.test.ts`. See
-// `@a11ign/evidence/source-text`.
+// `@a11ign/toolchain/lib/source-text`.
 const read = (name: string) =>
   stripComments(readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), "utf8"));
 

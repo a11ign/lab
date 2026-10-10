@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { unmeasuredEvidence, UNMEASURED_EVIDENCE } from "./signal-evidence-measured.mjs";
 import { signalMatches } from "./case-matrix.mjs";
 import { SIGNAL_TYPES } from "./signal-predicates.mjs";

@@ -70,7 +70,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here

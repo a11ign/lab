@@ -39,7 +39,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { REPO_ROOT } from "./dataset-paths.ts";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const SELF = "packages/lab/src/dataset-paths.test.ts";

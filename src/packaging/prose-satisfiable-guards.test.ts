@@ -127,7 +127,7 @@ test("#1213: every prose-satisfiable guard either strips, or is EXEMPT with a re
   assert.deepEqual(unaccounted, [],
     `${unaccounted.length} guard(s) assert a pattern that matches the source's COMMENTS and not its `
     + "code, so the claim is currently held by prose. Strip the source before asserting "
-    + "(`stripComments` from `@a11ign/evidence/source-text`), or add an EXEMPT entry saying why the "
+    + "(`stripComments` from `@a11ign/toolchain/lib/source-text`), or add an EXEMPT entry saying why the "
     + `claim has NO CODE FORM -- "it does not strip" is not a reason:\n  `
     + unaccounted.map((f) => `${f}\n      ${(live.get(f) ?? []).join("\n      ")}`).join("\n  "));
 });

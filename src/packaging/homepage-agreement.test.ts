@@ -24,7 +24,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { productHome, PRODUCT_HOME_SOURCE } from "../../../../scripts/product-home.ts";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";

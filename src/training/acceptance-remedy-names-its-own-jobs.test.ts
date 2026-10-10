@@ -37,7 +37,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const EVALUATOR = "packages/lab/scripts/evaluate-screenreader-acceptance.py";
