@@ -49,8 +49,10 @@ test("`npm install` installs the hooks — the lifecycle script exists and names
   // packages' own racing `prepare: tsc --build` scripts (see control-plane-hygiene.mjs's
   // `rootPrepareBuildsEverything` for the full mechanism). The installer must still be the FIRST thing
   // `prepare` runs, so a hook-install failure is never masked by a build that happened to succeed.
-  // #4274: the installer is TypeScript now, so `prepare` runs it under tsx (`node --import tsx scripts/install-git-hooks.ts`).
-  assert.match(ROOT.scripts?.prepare ?? "", /^node --import tsx scripts\/install-git-hooks\.ts\b/,
+  // #4274 made the installer TypeScript and ran it under tsx; a11ign/a11ign#4699 dropped the loader (Node 24 strips the types itself). Either spelling runs the
+  // installer FIRST, which is the guarantee, so the loader is optional here and a respelling does not red the leg again. The core pins `prepare` nowhere else
+  // (measured at core c18c2dab7: no `*.test.ts` outside the laid `packages/lab` names the installer), so this assertion is the one that stays.
+  assert.match(ROOT.scripts?.prepare ?? "", /^node (?:--import tsx )?scripts\/install-git-hooks\.ts\b/,
     "a fresh clone gets hooks only if `prepare` runs the installer FIRST — `prepare` fires on `npm "
     + "install` in a git checkout and never for a consumer installing a published package");
   assert.equal(ROOT.private, true,

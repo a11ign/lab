@@ -1,6 +1,6 @@
 /**
  * Every raw `fetch(` anywhere in the tree is accounted for: routed through `requestJson`
- * (`packages/worker-fleet/src/worker-http.mjs`), or named here with a REAL reason it is not.
+ * (`packages/worker-fleet/src/worker-http.ts`), or named here with a REAL reason it is not.
  *
  * `requestJson` exists because global `fetch` truncates a response silently past undici's ~300 s headers
  * cap (see that file's own header) — a live risk for anything that talks to a capture worker, whose
@@ -58,7 +58,7 @@ function sourceFiles(dir: string): string[] {
  * `code-drift.mjs` and `deploy-worker.mjs`'s `healthCode` (see `worker-http-client-owner.test.ts`, which
  * checks each by function name) -- carry NO raw `fetch(` at all any more, so none of them need an entry
  * below: a file with zero matches never reaches `found`, and a regression back to raw `fetch` would land
- * it in `found` with no `EXEMPT` entry, which the loop below already fails on. `doctor.mjs` is the one
+ * it in `found` with no `EXEMPT` entry, which the loop below already fails on. `doctor.ts` is the one
  * exception worth naming explicitly: it had ONE converted function (`httpJson`) and STILL carries one raw
  * `fetch(` -- the page-server probe, entered below with count 1, which already accounts for it.
  */
@@ -68,11 +68,11 @@ function sourceFiles(dir: string): string[] {
  * different TARGET (not a capture worker's JSON API at all) or a structural reason (the package dependency
  * graph forbids the import).
  */
-// The four `.ts` entries below (the CDP spike, the fake identity provider, and the laid worker's two CDP files) were `.mjs` until the core renamed its `scripts/`
-// and package sources (a11ign/a11ign#4273, #4274); the raw `fetch(` calls and their reasons did not change, only the path this list keys on.
+// The five `.ts` entries below (the CDP spike, the fake identity provider, and the laid worker's two CDP files and `doctor`) were `.mjs` until the core renamed its `scripts/`
+// and package sources (a11ign/a11ign#4273, #4274) and the laid worker layer followed (screenreader-fleet v0.7.3 carries `doctor.ts` and no `.mjs`); the raw `fetch(` calls and their reasons did not change, only the path this list keys on.
 const EXEMPT: { file: string; count: number; reason: string }[] = [
   {
-    file: "packages/worker-fleet/src/doctor.mjs", count: 1,
+    file: "packages/worker-fleet/src/doctor.ts", count: 1,
     reason: "the dataset PAGE SERVER (a titleOf() probe at a fixed local port), not a worker -- the "
       + "worker probe in this same file (httpJson) is the one that was converted; see "
       + "worker-http-client-owner.test.ts.",
@@ -132,7 +132,7 @@ const EXEMPT: { file: string; count: number; reason: string }[] = [
 
 test("every raw fetch( in the tree is CONVERTED, EXEMPT with a reason, or fails this test", () => {
   const files = [...sourceFiles(join(ROOT, "packages")), ...sourceFiles(join(ROOT, "scripts"))]
-    .filter((f) => !f.endsWith("worker-http.mjs")); // requestJson's own implementation calls http.request, not fetch -- excluded for clarity, not because it would match
+    .filter((f) => !f.endsWith("worker-http.ts")); // requestJson's own implementation calls http.request, not fetch -- excluded for clarity, not because it would match
 
   // VACUITY GUARD. A walk or a regex that stopped finding anything would pass having examined nothing,
   // which is exactly how this repo's checks have come to vouch for trees they never read.
