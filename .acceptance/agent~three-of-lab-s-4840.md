@@ -1,8 +1,8 @@
 Closes a11ign/a11ign#4840
 
-Acceptance: `bash -c 'L=$(gh run list -R a11ign/lab --workflow ci --branch main --limit 1 --json databaseId --jq ".[0].databaseId"); T=$(gh run view $L -R a11ign/lab --log 2>/dev/null); echo "$T" | grep -q "Test Files" && ! echo "$T" | grep -E " FAIL .*(ansible-yaml-parses|roles-readme|rstest-report-is-not-the-verdict)\.test\.ts"'` (the row's command, verbatim; hand-run after merge because it reads the newest `main` run).
+Acceptance: `bash -c 'git grep -q "MINIMUM_FILES = 59" -- src/packaging/ansible-yaml-parses.test.ts && ! git grep -q "EXPECTED_FILES" -- src/packaging/ansible-yaml-parses.test.ts && ! git grep -q "ENGINEER_BRIEF_BYTE_CEILING" -- src && git grep -q "auto-arm-filter.test.ts" -- src/packaging/rstest-report-is-not-the-verdict.test.ts && ! git grep -q "CONTROL_TEST = .*workflow-filters" -- src/packaging/rstest-report-is-not-the-verdict.test.ts'` (run from the lab root; a structural check that each of the three edits is present, because the row's own command reads the newest `main` run and cannot pass before the merge).
 
-Hand-run: it reads the newest `main` run's log, which this pull request's own CI cannot yet show; run after the merge.
+Hand-run: the row's own command, `gh run view` over the newest `ci` run on `main`, is run by the host after the merge (it reads a run this pull request cannot yet have produced); paste its exit code on the row.
 
 ## How each file ended
 - `ansible-yaml-parses.test.ts`: FIXED FORWARD. The equality `EXPECTED_FILES = 59` mirrored the control layer's file count (61 at the pin), so it becomes a floor `MINIMUM_FILES = 59`; the every-file-parses assertion, the malformed-document control and the lab-job.yml reachability control are unchanged. Not retired because the parse guarantee has no other home (a11ign/control has no yml-parse test; measured by grep).
