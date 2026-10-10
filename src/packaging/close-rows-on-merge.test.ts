@@ -520,20 +520,11 @@ test("bridge: the dispatch path exits DONE with ONE DEGRADED line when every ref
   assert.equal(failedToo.code, EXIT.COULD_NOT_CLOSE, "a degraded Status never softens a row that could not be closed");
 });
 
-/** COMMENTS STRIPPED: commenting the call out IS the mutation a prose search agrees with. */
-test("#1299: the dispatch path's main() EXITS WITH that decision -- worker-capture's M1 on #1357 left it untested", () => {
-  const source = readFileSync(toolUrl("src/close-rows-for-merged-pr.mjs"), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  const mainBody = source.slice(source.indexOf("function main() {"));
-  assert.match(mainBody, /const \{ code, lines \} = closeRowsExit\(applyClosurePlan\(/,
-    "main() takes its exit from closeRowsExit over applyClosurePlan's outcome");
-  const afterPlan = mainBody.slice(mainBody.indexOf("closeRowsExit(applyClosurePlan("));
-  // #1443: exits through `exitAfterSweep`, not a bare `process.exit`, so a rate-limit reading always
-  // pairs with the exit -- still, and only ever, with `code`, the same guarantee this test has pinned
-  // since #1299/#1357.
-  assert.match(afterPlan, /^\s*exitAfterSweep\(code\);/m, "and exits with that code");
-  assert.doesNotMatch(afterPlan, /exitAfterSweep\(EXIT\.DONE\)/, "not with DONE, whatever the outcome said");
-});
+// RETIRED (a11ign/a11ign#4829): "#1299: the dispatch path's main() EXITS WITH that decision" read the TOOL's `close-rows-for-merged-pr` SOURCE with a regex over
+// `main()`'s own text, so it moved with every release of a repository this one does not build: `main()` gained the verify-row step (#4641) and now ends
+// `exitAfterSweep(code === EXIT.DONE && lost.length ? EXIT.COULD_NOT_CLOSE : code)`, which the regex could not match, red on the tool's newest tag. The decision itself
+// stays pinned here (`closeRowsExit`, above, imported from the tool) and in agent-org's `src/packaging/settle-closed-status.test.ts`; the closer's own exit is exercised by
+// agent-org's `src/close-rows-full-form.test.ts` (`runCloser`). The wiring of `main()` to that decision is the tool's source and the tool's to pin.
 
 /**
  * #1400: A TEST THAT OMITS AN EFFECT MUST FAIL, NOT REACH GITHUB. Each effect used to default to the live one, and two

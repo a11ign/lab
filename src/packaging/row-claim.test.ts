@@ -521,6 +521,13 @@ test("#987 ACCEPTANCE: declineRow removes the worktree the CLAIM COMMENT names -
   assert.deepEqual(removed, [path], "the path from the comment, byte-identical, is what must be removed");
 });
 
+/**
+ * The three fields #987 is about. `claimRecordFrom` grew `scope` (a11ign/a11ign#4739, `Claimed-scope:`) after these two tests were written and a `deepEqual` over the whole object was
+ * red on the tool's newest tag for it (a11ign/a11ign#4829); the agent-org repository pins the object's whole shape, `scope` included, in its own `src/row-claim.test.ts`. What
+ * THIS file asserts is what a release supersedes and what noise is ignored, so it reads those fields and not the tool's next addition.
+ */
+const heldBy = ({ branch, worktree, recorded }: { branch: string | null; worktree: string | null; recorded: boolean }) => ({ branch, worktree, recorded });
+
 test("#987: a RELEASE record supersedes the claim record, so `check` stops naming a worktree the decline "
   + "already removed -- the stale-record failure a label removal used to handle for free", () => {
   const path = "/private/tmp/wt-987";
@@ -536,7 +543,7 @@ test("#987: a RELEASE record supersedes the claim record, so `check` stops namin
   const release = posted.find((b) => b.includes(CLAIM_RECORD_MARKER));
   assert.ok(release, "the decline must append a release record");
   // THE ROUND TRIP THAT MATTERS: reading the thread in order, newest-wins, must now say nothing is held.
-  assert.deepEqual(claimRecordFrom([claim, release!]),
+  assert.deepEqual(heldBy(claimRecordFrom([claim, release!])),
     { branch: null, worktree: null, recorded: true },
     "a released row must read as recorded-and-empty, never as the claim that came before it");
   assert.equal(claimRecordFrom([claim]).worktree, path,
@@ -564,8 +571,8 @@ test("#987: claimRecordFrom takes the NEWEST record and ignores every other comm
   const noise = "Reviewed at `abc1234`: convinced. Claimed-worktree: /private/tmp/wt-quoted";
   assert.equal(claimRecordFrom([first, release, second, noise]).worktree, "/private/tmp/wt-second",
     "a comment QUOTING a field line is not a record -- only the marker makes one");
-  assert.deepEqual(claimRecordFrom([noise]), { branch: null, worktree: null, recorded: false });
-  assert.deepEqual(claimRecordFrom([]), { branch: null, worktree: null, recorded: false });
+  assert.deepEqual(heldBy(claimRecordFrom([noise])), { branch: null, worktree: null, recorded: false });
+  assert.deepEqual(heldBy(claimRecordFrom([])), { branch: null, worktree: null, recorded: false });
 });
 
 test("#987 THE MIGRATION READ: claimedObjects falls back to a pre-#987 `worktree:` LABEL, and the comment "

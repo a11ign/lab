@@ -1,0 +1,5 @@
+---
+"@a11ign/lab": patch
+---
+
+Seven of the lab's cross-repo tests are green at core `c18c2dab7` and the tool's newest tag, each read against what it was meant to guard (a11ign/a11ign#4829). `changed-files-renames` knows an add-only `--diff-filter=A` listing has no rename source side to lose; `control-plane-checkout-is-one-fact` treats an `.acceptance/` file as the record of a command somebody ran once, so a pull request's own worktree path is not a second literal of the checkout; `layer-edges` has its baseline's two stale entries removed and the one missing edge added; `local-import-closure` pins the tool's `arm-pr` imports as a floor, not an exact list; `row-claim` reads the three fields it is about, not every field the tool adds; `verify-affected-set` names the one trigger the core owes and re-points its sighted control at a file still in the closure; and `close-rows-on-merge`'s regex over the tool's `main()` source is retired, the decision it wired being pinned in the tool. No behaviour of the lab's own code changes.

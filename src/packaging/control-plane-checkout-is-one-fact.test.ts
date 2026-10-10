@@ -214,9 +214,6 @@ const CHECKOUT_NAME = /export const CONTROL_PLANE_CHECKOUT = "([^"]+)"/
  * states — which is the distinction that would have caught the outage.
  */
 const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
-  "/home/agent/repos/role-product-manager": "the `git -C` target of a11ign/a11ign#4569's Acceptance in `.acceptance/agent~the-lab-s-ci-4569.md`: "
-    + "the product-manager session's clone of the CORE, where `merge-base --is-ancestor` asks whether the pinned core sha descends from "
-    + "`f3b5c5f59`. It is a clone of a11ign/a11ign, not of the control repository, and the row wrote the path literally so the check runs as filed",
   "/root": "the ssh wrapper's landing directory in `fleet-playbook.mjs`, not the checkout — it is what "
     + "makes the checkout's own `cd` relative, and it is the ssh user's home rather than a path anybody "
     + "renamed",
@@ -369,6 +366,20 @@ const QUOTED_FIXTURE_FILES = new Set([
  */
 const RECORDS_DIR = "docs/board/reported/";
 
+/**
+ * AN ACCEPTANCE FILE IS A RECORD OF A COMMAND SOMEBODY RAN ONCE, IN THEIR OWN WORKTREE (ADR 0044; a11ign/a11ign#4829). It holds `cd /home/agent/repos/wt-4829 && ...`, the
+ * primary checkout of whichever repository the pull request touched, and `git -C /home/agent/repos/role-product-manager`: the working directories of one engineer's
+ * session, which no host runs and no unit starts. Each new pull request adds one, and each names a worktree that did not exist before it, so classifying them by target
+ * is a list that grows by a pull request and is red on the pull request that adds the next entry (measured at CORE_REF c18c2dab7: `/home/agent/repos/control`,
+ * `/home/agent/repos/lab`, `/home/agent/repos/lab-wt-4822`, from 4 acceptance files).
+ *
+ * The exemption is the DIRECTORY, unlike `RECORDS_DIR` above, because an acceptance file has no field to separate its quoted command from the rest: its whole body is the
+ * record. It does not reach prose in `docs/` or any script, which stay in the walk (the third control below pins that a `cd` in ordinary documentation is still a site).
+ * `packages/lab/.acceptance/` is the same directory as the lab sees it laid.
+ */
+const ACCEPTANCE_RECORDS = /(^|\/)\.acceptance\//;
+export const isAcceptanceRecord = (file: string): boolean => ACCEPTANCE_RECORDS.test(file);
+
 /** The fields of a reported record that hold QUOTED text rather than anything this repository executes. */
 const TRANSCRIPT_FIELDS = new Set(["command", "stdout", "stderr", "transcript", "output"]);
 
@@ -412,7 +423,7 @@ const REPO_SUBDIRECTORIES = new Set(
 
 function trackedSource(): string[] {
   return walkTree({ kind: "all", roots: [], selfPath: SELF }).map((f) => f.path)
-    .filter((f) => f !== SELF && !QUOTED_FIXTURE_FILES.has(f) && !f.includes("/dist/") && !f.startsWith("runs/"))
+    .filter((f) => f !== SELF && !QUOTED_FIXTURE_FILES.has(f) && !isAcceptanceRecord(f) && !f.includes("/dist/") && !f.startsWith("runs/"))
     // EVERY tracked text file, not a language. The `.mjs`/`.ts` walk is what hid a `.sh`, and narrowing
     // a walk to the languages you expect is the shape this whole file is about.
     .filter((f) => /\.(ts|mjs|js|yml|yaml|sh|ps1|cmd|py|md|json|service|xml)$/.test(f));
@@ -453,6 +464,18 @@ test("the source of truth exports the two shapes its consumers need, and the nam
       `${SOURCE_OF_TRUTH} no longer exports ${name} -- this guard's source of truth has moved and the `
       + "guard must move with it, rather than quietly asserting over nothing");
   }
+});
+
+test("an acceptance file is a record, a `cd` in the same words anywhere else is still a site, and the walk still holds acceptance files' neighbours (a11ign/a11ign#4829)", () => {
+  const command = "cd /home/agent/repos/wt-9999 && pnpm test";
+  for (const record of [".acceptance/agent~x-9999.md", "packages/lab/.acceptance/agent~x-9999.md"]) {
+    assert.equal(isAcceptanceRecord(record), true, `${record} is a record of a command already run`);
+  }
+  for (const live of ["docs/x.md", "packages/control/ansible/x.yml", "scripts/acceptance-x.ts", "packages/lab/src/acceptance/x.ts"]) {
+    assert.equal(isAcceptanceRecord(live), false, `${live} is not under an .acceptance directory`);
+    assert.deepEqual(entrySitesIn(live, command), [[live, "/home/agent/repos/wt-9999"]], "the same words outside a record are an entry site");
+  }
+  assert.ok(trackedSource().length > 0 && !trackedSource().some(isAcceptanceRecord), "the walk holds files, and none of them is a record");
 });
 
 test("every site that ENTERS a directory either interpolates the source of truth or is classified -- "

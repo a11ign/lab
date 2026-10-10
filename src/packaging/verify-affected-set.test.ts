@@ -152,6 +152,8 @@ const KNOWN_UNCOVERED_BY_THE_CORE: Record<string, string> = Object.fromEntries([
 ].map((file) => [file, OWED_TO_THE_CORE]).concat([
   ["packages/guards/layer-edges.baseline.json",
     "the core's forceRerunTriggers owe a pattern for the boundary job's baseline, read by boundary-report-job.test.ts (a11ign/a11ign#4434; found moving CORE_REF to a7d6a4158)"],
+  [".agent-org/host.json",
+    "the core's forceRerunTriggers owe a pattern for the host declaration, read by name by tests under packages/guards and the lab's packages/lab/src/packaging, `git grep agent-org/host.json` (a11ign/a11ign#4829; found at CORE_REF c18c2dab7)"],
 ]));
 const unexempted = (files: readonly string[]) => files.filter((file) => !(file in KNOWN_UNCOVERED_BY_THE_CORE));
 
@@ -222,8 +224,10 @@ test("the rstest config, what it loads and what every worker preloads are trigge
   // pins its version is the trigger, asserted by name below.
   const entries = ["scripts/rstest/rstest.config.ts", "packages/guards/src/walk-scope.ts"];
   const loaded = [...new Set(entries.flatMap((entry) => [...relativeImportClosure(entry)]))];
-  assert.ok(loaded.includes("packages/guards/src/walk-scope-declaration.ts"),
-    `the walk found ${loaded.join(", ")}, so it did not follow the preload's own imports`);
+  // THE SIGHTED CONTROL: the config's own relative import. It was `walk-scope-declaration.ts`, the preload's import, until the core moved that module into the toolchain
+  // (a11ign/a11ign#4829, at CORE_REF c18c2dab7): a control naming a file that left is a walk that is "broken" for a reason that is not the walk.
+  assert.ok(loaded.includes("scripts/private-tmp.ts"),
+    `the walk found ${loaded.join(", ")}, so it did not follow the config's own imports`);
   assert.deepEqual(loaded.filter((file) => !covers(triggers, file)), []);
   assert.ok(covers(triggers, "pnpm-lock.yaml"), "a new version of the installed toolchain changes what every run does, and the lockfile is where it shows");
 });
