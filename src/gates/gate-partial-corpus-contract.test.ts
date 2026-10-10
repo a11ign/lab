@@ -52,7 +52,6 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { isTransitionalShim } from "../transitional-shims.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
@@ -73,8 +72,7 @@ const DERIVED_VERDICT = /\b(gateVerdict|fleetVerdict)\(/;
 function resolvedScriptFile(argv: unknown): string | undefined {
   const tokens = Array.isArray(argv) ? argv.map(String) : typeof argv === "string" ? argv.split(/\s+/) : [];
   const direct = tokens.find((t) => t.endsWith(".mjs") || t.endsWith(".ts"));
-  // Control's `lab-job.yml` still spells the renamed programs by their `.mjs`, which is a one-release shim: the program is the `.ts` (a11ign/a11ign#4551).
-  if (direct) return isTransitionalShim(`${REPO}${direct}`) ? direct.replace(/\.mjs$/, ".ts") : direct;
+  if (direct) return direct;
   const runIndex = tokens.indexOf("run");
   if (!/npm|corepack/.test(tokens[0] ?? "") || runIndex < 0) return undefined; // `/usr/bin/corepack pnpm run` (#2893) or npm
   const scriptName = tokens[runIndex + 1] === "--silent" ? tokens[runIndex + 2] : tokens[runIndex + 1];

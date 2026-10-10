@@ -135,8 +135,9 @@ test("POSITIVE CONTROL: a real, tracked file that no runner glob reaches IS repo
   + "predicate — and stops being reported the moment a glob covering it is added, so the report comes "
   + "from the glob set rather than from the path being unmatchable", async () => {
   // A real file on disk, tracked, sibling of the orphan this row removed -- not a literal invented here.
-  // A `.mjs` under `packages/<pkg>/scripts/` is the exact shape that slipped past every glob.
-  const control = "packages/lab/scripts/corpus-snapshot.mjs";
+  // A `.sh` under `packages/<pkg>/scripts/` is a tracked file that no glob reaches: the same shape that slipped past every glob when the orphan was a `.mjs` there,
+  // and the last `.mjs` under `scripts/` is gone (a11ign/a11ign#4798), so the control is a file that is real and stays one.
+  const control = "packages/lab/scripts/action-dry-run.sh";
   const tracked = walkTree({ kind: "all", roots: ["packages/lab/scripts"] }).map((file) => file.path);
   assert.ok(tracked.includes(control), `${control} is not tracked — this control asserts nothing about a `
     + "path that does not exist, which is how an emptiness assertion passes by finding nothing");
@@ -144,7 +145,7 @@ test("POSITIVE CONTROL: a real, tracked file that no runner glob reaches IS repo
   const globs = await runnerGlobs();
   assert.deepEqual(unreachedBy([control], globs), [control]);
 
-  const covering: RunnerGlob = { source: "this test", pattern: "packages/*/scripts/**/*.mjs", min: 1 };
+  const covering: RunnerGlob = { source: "this test", pattern: "packages/*/scripts/**/*.sh", min: 1 };
   assert.ok(globFromRepo(covering.pattern).includes(control), "the covering glob must really match it");
   assert.deepEqual(unreachedBy([control], [...globs, covering]), []);
 });

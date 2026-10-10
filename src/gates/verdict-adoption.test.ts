@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { declareTreeWideGuard, walkTree } from "@a11ign/toolchain/lib/tree-wide-guard";
-import { isTransitionalShim } from "../transitional-shims.ts";
 
 /**
  * WHAT THIS GUARD READS, declared so a diff outside it does not run it -- #929. It walks `packages/lab/scripts` for gates adopting the verdict helpers, and reads their sources there and in `packages/lab/src`.
@@ -109,8 +108,6 @@ function discoverGates(): string[] {
   const out = walkTree({ kind: "both", roots: ["packages/lab/scripts"] }).map((f) => f.path);
   return out
     .filter((f) => !f.includes(".test."))
-    // A one-release `.mjs` shim is the name another repository still spells; its verdict is read from its `.ts` (a11ign/a11ign#4551).
-    .filter((f) => !isTransitionalShim(resolve(ROOT, f)))
     .map((f) => f.split("/").pop()!)
     .filter((name) => /^(gate|check|audit|score|evidence|stability|emit)/.test(name))
     .sort();
