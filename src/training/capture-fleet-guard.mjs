@@ -128,17 +128,7 @@ export async function assertOneBrowserAcross(workers, when, deps = {}) {
   const probe = deps.probe ?? healthOfGuest;
   const report = deps.report ?? ((/** @type {string} */ text) => void process.stderr.write(text));
   const exit = deps.exit ?? ((/** @type {number} */ code) => process.exit(code));
-  let { guests, verdict, busy } = await readFleet(workers, probe);
-  /** @type {Attempt[]} */
-  let attempts = [];
-  if (!verdict.consistent && !deps.allowMixedBrowsers && deps.converge) {
-    // CONVERGE BEFORE REFUSING (#4448), then re-read: the refusal below is about what the fleet is NOW.
-    attempts = await convergeOddBoxes(planConvergence(verdict.mismatches, busy), deps.converge);
-    if (attempts.some(({ action }) => action !== null)) {
-      ({ guests, verdict, busy } = await readFleet(workers, probe));
-      report(`\nFLEET CONVERGENCE ${when}: ${describeAttempts(attempts)}\n`);
-    }
-  }
+  const { guests, verdict, attempts } = await readOrConverge({ workers, probe, deps, report, when });
   // The record is written BEFORE either refusal can exit (#4459), so a run that stops with 3 leaves its
   // fleet behind. Whether this run is refused is decided once, here, and the two checks below act on it.
   const { gaps, refused } = refusalOf(verdict, deps);
@@ -177,6 +167,22 @@ export async function assertOneBrowserAcross(workers, when, deps = {}) {
     + "Deploy the fleet (`npm run fleet:deploy`), take the field out of `MUST_MATCH`, or run with\n"
     + "--allow-unchecked-fields.\n");
   exit(EXIT_FLEET_INCONSISTENT);
+}
+
+/**
+ * Read the fleet and, on a split a box can be walked back from (#4448), converge and read it again.
+ * The refusal that follows is about what the fleet is NOW, so only the second reading is returned.
+ *
+ * @param {{ workers: string[], probe: (url: string) => Promise<any>, deps: { converge?: Converge,
+ *   allowMixedBrowsers?: boolean }, report: (text: string) => void, when: string }} request
+ */
+async function readOrConverge({ workers, probe, deps, report, when }) {
+  const first = await readFleet(workers, probe);
+  if (first.verdict.consistent || deps.allowMixedBrowsers || !deps.converge) return { ...first, attempts: [] };
+  const attempts = await convergeOddBoxes(planConvergence(first.verdict.mismatches, first.busy), deps.converge);
+  if (!attempts.some(({ action }) => action !== null)) return { ...first, attempts };
+  report(`\nFLEET CONVERGENCE ${when}: ${describeAttempts(attempts)}\n`);
+  return { ...(await readFleet(workers, probe)), attempts };
 }
 
 /**
