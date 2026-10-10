@@ -228,8 +228,9 @@ test("ci-health.yml: `schedule` and `workflow_dispatch` only, `issues: write` an
     assert.ok(!(trigger in workflow.on), `${trigger} would let a change trip this workflow`);
   }
   assert.ok(workflow.on.schedule.length >= 1, "POSITIVE CONTROL: the schedule is really there");
-  // `ci-health` is a `.ts` script run under tsx since #4274 (it was `node scripts/ci-health.mjs --post`).
-  assert.match(JSON.stringify(workflow.jobs), /node --import tsx scripts\/ci-health\.ts --post/, "and it runs the script, posting");
+  // `ci-health` is a `.ts` script. The core ran it under `--import tsx` after #4274 and runs it as bare `node` since Node 24 strips types, so the
+  // flag is not what is pinned: that the step runs THIS script with `--post` is.
+  assert.match(JSON.stringify(workflow.jobs), /node (?:--import tsx )?scripts\/ci-health\.ts --post/, "and it runs the script, posting");
 });
 
 /** The 5-field cron's day-of-week and hour fields, which are the two this pin reads. */

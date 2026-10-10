@@ -47,12 +47,13 @@ test("every `npm run <script>` in CI names a script that exists", () => {
 
 test("every program CI invokes by path exists", () => {
   // The generalisation of the existing check, which read ONE workflow. A `node packages/…` path that has
-  // moved fails the same way and is just as invisible from here.
+  // moved fails the same way and is just as invisible from here. The programs are `.ts` since the core's #4274
+  // (`.mjs` before), and a scan for `.mjs` alone found none and said "the scan is broken".
   const missing: string[] = [];
   let seen = 0;
   for (const path of ciFiles()) {
     const text = readFileSync(join(REPO, path), "utf8");
-    for (const [, program] of text.matchAll(/node\s+(packages\/[A-Za-z0-9._/-]+\.mjs)/g)) {
+    for (const [, program] of text.matchAll(/node\s+(packages\/[A-Za-z0-9._/-]+\.(?:mjs|ts))/g)) {
       seen += 1;
       if (!existsSync(join(REPO, program))) missing.push(`${path} runs ${program}`);
     }

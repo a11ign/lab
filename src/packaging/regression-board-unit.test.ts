@@ -86,7 +86,9 @@ test("POSITIVE CONTROL: with the two names left out of units.own the classificat
 test("the unit runs the live tool, which has `--board=`, and declares the host and the launch reason it needs", () => {
   const text = unitText(SERVICE);
   const exec = setting(text, "ExecStart") ?? "";
-  assert.match(exec, /\/usr\/bin\/node %h\/repos\/agent-org\/src\/bin\.mjs row-file --board=/, "the pinned install's `agent-org` refuses --board (read 2026-10-03)");
+  // The live checkout's entry point, not the pinned install's `agent-org`, which refuses --board (read 2026-10-03). The core runs it as `src/bin.ts` under the user's pinned node (#4598, #4613);
+  // `/usr/bin/node` and `bin.mjs` were the spelling before, and either is the same call.
+  assert.match(exec, /(?:\/usr\/bin|%h\/\.local\/bin)\/node %h\/repos\/agent-org\/src\/bin\.(?:mjs|ts) row-file --board=/, "the live tool, which has --board=, and not the pinned install's `agent-org`");
   assert.doesNotMatch(exec, /pnpm exec agent-org/);
   assert.match(setting(text, "Environment=AGENT_ORG_HOST") ?? "", /\.agent-org\/host\.json$/);
   const reason = setting(text, "Environment=\"A11Y_POLICY_LAUNCH_REASON");
@@ -95,14 +97,14 @@ test("the unit runs the live tool, which has `--board=`, and declares the host a
 
 /**
  * The script inside `sh -c '...'`, with systemd's `$$` and `%h` resolved the way systemd resolves them, and the host's
- * `/usr/bin/node` swapped for the interpreter running this test: a CI runner keeps node elsewhere, and the unit's own path
+ * the host's node (`%h/.local/bin/node`, or `/usr/bin/node` before #4598) swapped for the interpreter running this test: a CI runner keeps node elsewhere, and the unit's own path
  * is pinned by the text reading above, so the behaviour readings need only a node that exists.
  */
 function scriptFor(text: string, home: string): string {
   const exec = setting(text, "ExecStart") ?? "";
   const quoted = /^\/usr\/bin\/sh -c '(.*)'$/.exec(exec)?.[1];
   assert.ok(quoted, `ExecStart is not a single-quoted sh -c: ${exec}`);
-  return quoted.replaceAll("$$", "$").replaceAll("%h", home).replaceAll("/usr/bin/node", process.execPath);
+  return quoted.replaceAll("$$", "$").replaceAll("%h", home).replaceAll(`${home}/.local/bin/node`, process.execPath).replaceAll("/usr/bin/node", process.execPath);
 }
 
 interface Sweep { status: number | null; boarded: string[]; stderr: string }
@@ -116,7 +118,10 @@ function runSweep(text: string, opts: { listed: string[]; listFails?: boolean; r
     const boardedLog = join(home, "boarded.log");
     writeFileSync(join(home, "bin/gh"), `#!/bin/sh\n${opts.listFails ? "exit 1" : opts.listed.map((n) => `echo ${n}`).join("\n") || "true"}\n`);
     chmodSync(join(home, "bin/gh"), EXECUTABLE);
-    writeFileSync(join(home, "repos/agent-org/src/bin.mjs"),
+    // The fake tool takes the entry point's name from the unit's own script, so a rename of it in the unit is not a silent "tool not found" that every refusal reading passes through.
+    const entry = /\/agent-org\/src\/(bin\.[a-z]+)/.exec(scriptFor(text, home))?.[1];
+    assert.ok(entry, "the unit's script names no agent-org/src/bin.* entry point");
+    writeFileSync(join(home, "repos/agent-org/src", entry),
       `import { appendFileSync } from "node:fs";\nconst n = process.argv.find((a) => a.startsWith("--board="))?.slice(8) ?? "";\n`
       + `appendFileSync(${JSON.stringify(boardedLog)}, process.argv.slice(2).join(" ") + "\\n");\n`
       + `process.exit(${JSON.stringify(opts.refused ?? [])}.includes(n) ? 1 : 0);\n`);

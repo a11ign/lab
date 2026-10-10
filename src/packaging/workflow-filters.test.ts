@@ -24,8 +24,9 @@ const workflow = readFileSync(join(root, ".github/workflows/capture-regression.y
 
 test("every program the capture workflow runs exists at the path it names", () => {
   // A moved harness makes the job fail on the runner with MODULE_NOT_FOUND — visible, but only after spending
-  // Windows minutes to find out. Cheaper to know here.
-  const referenced = [...workflow.matchAll(/node\s+(packages\/[A-Za-z0-9._/-]+\.mjs)/g)].map((m) => m[1]);
+  // Windows minutes to find out. Cheaper to know here. `.ts` since the core's #4274: a scan for `.mjs` alone found
+  // nothing and the control below said so.
+  const referenced = [...workflow.matchAll(/node\s+(packages\/[A-Za-z0-9._/-]+\.(?:mjs|ts))/g)].map((m) => m[1]);
   assert.ok(referenced.length > 0, "found no program invocations in the workflow; the scan is broken");
   for (const path of referenced) {
     assert.ok(existsSync(join(root, path)), `capture-regression.yml runs ${path}, which does not exist`);

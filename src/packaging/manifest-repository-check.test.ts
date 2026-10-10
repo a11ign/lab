@@ -79,8 +79,8 @@ test("#1536 THE INCIDENT, on the real manifests: from run 34816466408's reposito
 });
 
 test("#1536 THE WORKFLOW CALLS IT: release.yml runs the check with no `if:`, so on a rehearsal too, in a job the publishing call NEEDS", () => {
-  // The script is `.ts` and run under tsx since a11ign/a11ign#4274 (ca9629934): bare `node` cannot run it.
-  const step = WORKFLOW.indexOf("run: node --import tsx scripts/manifest-repository-check.ts");
+  // The script is `.ts`: run under tsx from a11ign/a11ign#4274 (ca9629934), and as bare `node` since the core's Node 24 strips types. Either spelling is the call.
+  const step = WORKFLOW.search(/run: node (?:--import tsx )?scripts\/manifest-repository-check\.ts/);
   assert.notEqual(step, -1, "release.yml does not run scripts/manifest-repository-check.ts");
   const stepStart = WORKFLOW.lastIndexOf("- name:", step);
   assert.doesNotMatch(WORKFLOW.slice(stepStart, step), /\n\s+if:/,
