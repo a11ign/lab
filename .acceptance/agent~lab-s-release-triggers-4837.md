@@ -1,6 +1,15 @@
 Closes a11ign/a11ign#4837
 
-Acceptance: `bash -c 'id=$(gh run list --repo a11ign/lab --workflow ci --branch agent/lab-s-release-triggers-4837 --limit 1 --json databaseId --jq ".[0].databaseId") && gh run view "$id" --repo a11ign/lab --log | grep -aE "(✓|✗).*packaging/.*release-triggers-itself[.]test[.]ts.*\([0-9]+\)" | awk "/✗/{f++} /✓/{p++} END{print p+0, \"pass\", f+0, \"fail\"; exit !(p==1 && f==0)}"'` (hand-run once the pull request's own `checks (cross-repo)` job has finished: it reads that job's log for the one Region file and exits 0 when it reports `✓`. The row's own command, which reads the newest `main` run, is hand-run after the merge, as the row says.)
+Acceptance: `bash -c 'cd ../wt-4837-core && pnpm exec rstest run --config scripts/rstest/rstest.config.ts packages/lab/src/packaging/release-triggers-itself.test.ts'`
+
+Hand-run: the acceptance job's runner holds no core checkout at `CORE_REF` with this repository laid at `packages/lab`, and this file's `REPO` is that core; `../wt-4837-core` is one (core `c18c2dab7`, lab laid as `ci.yml` lays it). The row's own command reads the newest `main` run and is hand-run after the merge.
+
+## Hand-run output
+`pnpm exec rstest run --config scripts/rstest/rstest.config.ts packages/lab/src/packaging/release-triggers-itself.test.ts`, lab at this head laid over core `c18c2dab7`, Node 24.21.0, exit 0 (the report's summary block):
+```
+"status": "pass", "testFiles": 1, "failedFiles": 0, "tests": 33, "failedTests": 0, "passedTests": 33
+```
+The same command at lab `b23ac008` (before): exit 1, `"tests": 32, "failedTests": 18, "passedTests": 14`, every failure listing `guard-manifest-repository-check`, `guard-gate-scope-statement` and `guard-consumer-gate-current`.
 
 Mutation: the `gate-scope-statement` predicate made to never match, then to always match, then the loader pattern narrowed to the old spelling only, then to the bare spelling only -- each went red in its own tests (19, 2, 19 and 1 failing; the 19 are the original 18 plus the new control), and the file was restored by `cp` and `diff`ed identical.
 
