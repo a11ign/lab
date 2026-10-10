@@ -25,7 +25,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { toolModule, toolPath, toolUrl } from "../../scripts/tool-source.ts";
 // #2046: the armed predicate now lives beside the hold predicate, in its own leaf module.
 const { armedQueryArgs, armedReason } = await toolModule("src/pr-armed-state.mjs");

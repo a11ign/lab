@@ -41,7 +41,7 @@ import { parse } from "yaml";
  * `actions/checkout@v4`, reporting checkout as "too late" for a step that was never actually there. A
  * comment is not a use -- `git-spawn-classification.test.ts` names the identical shape and the identical
  * fix (strip first) for the identical reason: "a file that only MENTIONS [the thing] in prose has not
- * done it." `@a11ign/evidence/source-text`'s `stripComments` is JS/TS-shaped (`//`, `/* *\/`) and does
+ * done it." `@a11ign/toolchain/lib/source-text`'s `stripComments` is JS/TS-shaped (`//`, `/* *\/`) and does
  * not touch YAML's `#`, so `stripYamlComments` below is this file's own, deliberately not a parser: a
  * line's own text past an UNQUOTED, whitespace-or-start-preceded `#` is discarded, which is enough to
  * tell a real `uses:` step from a comment describing one and is applied only to the TEXT-matching pass,

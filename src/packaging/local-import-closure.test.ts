@@ -62,7 +62,7 @@ test("#1019 THE SECOND HALF: with nothing to close against, the same input alway
 });
 
 test("#1019: a real block comment is still blanked, and OFFSETS ARE PRESERVED", () => {
-  // Load-bearing, and the reason this module does not use `@a11ign/evidence/source-text`'s tokenizer
+  // Load-bearing, and the reason this module does not use `@a11ign/toolchain/lib/source-text`'s tokenizer
   // instead: `closureRequirementMessage` reads an offset into the STRIPPED text as a line number in the
   // REAL file, so the output must be the same length with its newlines intact.
   const source = `const a = 1;\n${CLOSER.replace(" a perfectly", "\n a perfectly")}\nconst b = 2;\n`;

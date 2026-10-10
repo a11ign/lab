@@ -28,7 +28,7 @@ const { extractClosesDeclaration } = await toolModule("src/acceptance-commands.m
 const { refusalCause } = await toolModule("src/settle-closed-status.mjs");
 const { moveProjectStatus } = await toolModule("src/row-claim.mjs");
 const { scopedStatus } = await toolModule("src/board-snapshot.mjs");
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { toolModule, toolPath, toolUrl } from "../../scripts/tool-source.ts";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the

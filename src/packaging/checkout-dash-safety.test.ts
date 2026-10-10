@@ -60,7 +60,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.ts";
 import { laidControlFiles } from "./laid-control.ts";

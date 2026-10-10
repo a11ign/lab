@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@a11ign/control": "0.1.0",
-    "@a11ign/toolchain": "0.1.5",
+    "@a11ign/toolchain": "0.7.0",
     "@changesets/cli": "3.0.3",
     "@guidepup/guidepup": "0.35.0",
     "@rstest/core": "^0.12.3",

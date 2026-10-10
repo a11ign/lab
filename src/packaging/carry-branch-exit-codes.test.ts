@@ -18,7 +18,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const { noteCarryOnPr, carryMain, EXIT } = await toolModule("src/carry-branch.mjs");
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { toolModule, toolUrl } from "../../scripts/tool-source.ts";
 
 // --- noteCarryOnPr: fake `run`, matching this package's own convention for gh-calling functions ---

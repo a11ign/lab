@@ -22,7 +22,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { workerSource } from "../packaging/laid-worker.ts";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 
 import { CASES, pair } from "./case-matrix.mjs";
 // NAMED `WORKER_ACCEPTED_FLAGS`, because this file already has a `PROBE_FLAGS` meaning the opposite
@@ -33,7 +33,7 @@ import { pair as acceptancePair } from "./acceptance-matrix.mjs";
 
 // Comments stripped: every caller below checks whether a flag/option is MENTIONED in this source, and a
 // comment naming one in prose (this file discusses probe flags extensively) would satisfy the check
-// without the flag actually being read. See `@a11ign/evidence/source-text`.
+// without the flag actually being read. See `@a11ign/toolchain/lib/source-text`.
 const read = (path: string) => stripComments(readFileSync(resolve(process.cwd(), path), "utf8"));
 /** A file of the worker package, comments stripped, found by package name (#2613) and not by `packages/nvda-worker/`. */
 const readWorker = (rel: string) => stripComments(readFileSync(workerSource(rel), "utf8"));

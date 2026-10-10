@@ -31,7 +31,7 @@ import { once } from "node:events";
 import { tmpdir } from "node:os";
 import childProcessModule, { execSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import {
   runnerOwnedPaths, readsSoFar,
   DECLARER_BUILTINS, ESM_UNSYNCED, NOT_WRAPPED, WHOLE_REPOSITORY, inScope, isObserved, parseWalkScope, readsDuring,

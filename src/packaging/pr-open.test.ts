@@ -36,7 +36,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 const { acceptanceEnv, checkBody, bodyFromArgs, armAfterCreate, labelAfterCreate, sendToGitHub,
   headTreeRefusal, editTreeRefusal, mutationReport,

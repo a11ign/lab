@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { notRunAfterLeaving, sweepObservation } from "@a11ign/screenreader-worker/capture-pure";
 
 type Observation = { asked: boolean; complete?: boolean; why?: string; stop?: { prev: string; next: string } };

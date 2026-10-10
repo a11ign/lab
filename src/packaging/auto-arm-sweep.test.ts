@@ -30,7 +30,7 @@ const {
   sweepDecision, EXIT, mergedMeanwhile, MERGED_MEANWHILE_READS, MERGED_MEANWHILE_WAIT_MS, holdLookalikes, decideAndWarn,
   confirmArmed, CONFIRM_ARMED_READS, CONFIRM_ARMED_WAIT_MS, armedFromApi, unarmedCandidates, armFailureVerdict,
 } = await toolModule("src/auto-arm-sweep.mjs");
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { toolModule, toolPath } from "../../scripts/tool-source.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));

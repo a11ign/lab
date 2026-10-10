@@ -50,7 +50,7 @@ const { forgetProcessSnapshot, withBoardSnapshot } = await toolModule("src/board
 const { claimRefusal, REMOVAL_LOG_ENV } = await toolModule("src/worktree-removal.mjs");
 const { refusalCause, PROJECT_UNREADABLE } = await toolModule("src/settle-closed-status.mjs");
 const { laneReason } = await toolModule("src/row-claim/runner-rule.mjs");
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 const { READY_LABEL, WAS_READY_LABEL } = await toolModule("src/ready-label-audit.mjs");
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { toolModule, toolUrl } from "../../scripts/tool-source.ts";

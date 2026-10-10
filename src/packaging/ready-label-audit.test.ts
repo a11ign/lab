@@ -36,7 +36,7 @@ const {
   reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings, provenanceRemedySummary, reportProvenanceOf,
   guidanceDrift, statusLabelDisagreements, statusLabelRemedy, STATUS_LABEL_KINDS,
 } = await toolModule("src/ready-label-audit.mjs");
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { toolModule, toolPath, toolUrl } from "../../scripts/tool-source.ts";
 const { ARM_LABELS_FROM } = await toolModule("src/claim-provenance.mjs");
 // #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate

@@ -49,7 +49,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFi
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { stripComments } from "@a11ign/evidence/source-text";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { tempDir } from "../../../guards/src/test-tmp.ts";
 import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
 import { npmCliInvocation, pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
