@@ -512,17 +512,21 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "found the blind spot.",
   },
   "packages/lab/src/packaging/ansible-yaml-parses.test.ts": {
-    guard: "assert.equal(ours.length, EXPECTED_FILES",
+    guard: "assert.ok(ours.length >= MINIMUM_FILES",
     note: "#1274, discovered here only by #2028's widening -- it names its repository with a leading "
       + "`-C REPO` rather than `cwd:`, so the census could not see it and reported clean over it. It was "
-      + "NEVER UNSAFE, and that is the point of the entry: it already pins `ours.length` EQUAL to "
-      + "`EXPECTED_FILES` (48 today, 47 until #1980 added the shared zero-host include), which is a "
-      + "stronger pin than this census asks for, on a `git ls-files` population it then asserts "
-      + "`deepEqual(unparseable, [])` over. What was missing was not the guard but the CHECK that there "
-      + "was one -- nothing would have noticed had the pin been a floor, or absent. The equality is also "
-      + "the right shape rather than a floor (#1067): the count IS the claim that the walk reached every "
-      + "committed playbook, and its own two positive controls prove the parser can reject and that the "
-      + "walk reaches a named file.",
+      + "NEVER UNSAFE, and that is the point of the entry: it asserts `deepEqual(unparseable, [])` over a "
+      + "`git ls-files` population, and what was missing was not the guard but the CHECK that there was "
+      + "one -- nothing would have noticed had the pin been absent. The pin is a FLOOR on purpose "
+      + "(a11ign/lab#4840, lab#67): the population is the control layer laid at whatever pin the core "
+      + "takes, so its size moved (59 -> 61) with no lab commit, and an equality made this test a mirror "
+      + "of another repository's file count. That overrides #1067's rule that a floor cannot hold a "
+      + "count, for this file only, and it is a ruling rather than an oversight. What the floor still "
+      + "holds is that the walk is not empty and did not lose files the layer last held (59), so 'every "
+      + "playbook parses' and 'the walk read nothing' are not the same observation. What it no longer "
+      + "holds is that the count is RIGHT: a walk that stops short of a file the layer ADDED passes. "
+      + "Its two positive controls (the parser can reject; the walk reaches a named file) are what "
+      + "still say the walk reached the tree.",
   },
   "packages/lab/src/packaging/roles-readme.test.ts": {
     guard: "files.length >= SHELL_FILE_FLOOR",
