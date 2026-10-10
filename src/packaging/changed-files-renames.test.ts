@@ -81,6 +81,17 @@ test("#939 THE BYPASS, CLOSED: a file moved OUT of a directory is still listed a
   }
 });
 
+/**
+ * Whether one line of CODE asks git for changed paths bare, which is the fault this file is about. `--no-renames` answers it; so does `--diff-filter=A`, which lists ADDED
+ * files only: a rename is an R and is not an add, so there is no source side to lose (`scripts/verify.ts` says so beside its `--diff-filter=A` read, and agent-org's
+ * `resolveAcceptanceSource` holds the same rule). Found at CORE_REF c18c2dab7, where that one line was the whole of this test's red.
+ */
+export function asksBare(line: string): boolean {
+  if (/^\s*(\/\/|\*|#)/.test(line)) return false;
+  if (!/diff[^\n]*--name-only/.test(line)) return false;
+  return !/--no-renames|--diff-filter=A\b/.test(line);
+}
+
 /** Every `git diff --name-only` written in a script or a workflow, by file and line. */
 function bareDiffSites(): { sites: string[]; scanned: number } {
   const out: string[] = [];
@@ -95,10 +106,7 @@ function bareDiffSites(): { sites: string[]; scanned: number } {
         // CODE, not prose: this file's own header quotes the bare command, and so do three readers'
         // comments explaining why they stopped using it. A guard that reads its own explanation as a defect
         // is the shape `board-report.mjs` was caught by -- a fixture cannot name itself.
-        if (/^\s*(\/\/|\*|#)/.test(line)) return;
-        if (!/diff[^\n]*--name-only/.test(line)) return;
-        if (/--no-renames/.test(line)) return;
-        out.push(`${path.slice(REPO.length + 1)}:${i + 1}`);
+        if (asksBare(line)) out.push(`${path.slice(REPO.length + 1)}:${i + 1}`);
       });
     }
   };
@@ -122,6 +130,14 @@ const BARE_IS_DELIBERATE: Record<string, string> = {
   ".github/workflows/ci.yml": "the /tmp/changed.txt feed for owned-path-signoff, which #902 deletes with the "
     + "ownedPaths job; CODEOWNERS replaces it and #916 carries the same rename question",
 };
+
+test("#939 THE SCAN: a bare ask is found, and `--no-renames`, `--diff-filter=A` and a comment are not (the marker notices the fault, and goes quiet on its remedy)", () => {
+  const bare = 'const out = git(["diff", "--name-only", `${base}...HEAD`]);';
+  assert.equal(asksBare(bare), true, "the fault itself must be found, or an empty result below says nothing");
+  assert.equal(asksBare(bare.replace('"--name-only"', '"--name-only", "--no-renames"')), false);
+  assert.equal(asksBare(bare.replace('"--name-only"', '"--name-only", "--diff-filter=A"')), false, "an add-only listing has no source side to lose");
+  assert.equal(asksBare(`  // ${bare}`), false, "prose that quotes the command is not a use of it");
+});
 
 test("#939 THE SHAPE: no script or workflow asks git for changed paths without --no-renames, bar the named site", () => {
   const { sites: bare, scanned } = bareDiffSites();

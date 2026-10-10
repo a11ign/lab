@@ -16,7 +16,9 @@ test("a path read above the lab root is cross-repo, one inside it is not (a11ign
 });
 
 test("an import of the pinned core's code is not a read of its tree, and a use of the tool is", () => {
-  assert.deepEqual(crossRepoReasons('import { x } from "../../../guards/src/y.ts";', "src/packaging/x.test.ts", "/lab"), []);
+  // Built from pieces for the same reason as `readAbove`: a literal `from "../../../guards/src/y.ts"` in this file is an import the layer-edge walk reads as a real reach into the core.
+  const importOfTheCore = ["import { x } from ", '"', "../../../guards/src/y.ts", '"', ";"].join("");
+  assert.deepEqual(crossRepoReasons(importOfTheCore, "src/packaging/x.test.ts", "/lab"), []);
   assert.deepEqual(crossRepoReasons(toolCall, "src/packaging/x.test.ts", "/lab"), ["uses the tool"]);
 });
 

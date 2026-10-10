@@ -127,12 +127,17 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   // THE SEVENTH IS THE RENAME (agent-org#435, a11ign/a11ign#4427): the tool's `src/*.mjs` are `src/*.ts` (`toolPath` returns `arm-pr.ts`). `lib/cli-flags.mjs`, which the tool kept as `.mjs` until v0.103.0, is `lib/cli-flags.ts` at v0.104.0 (agent-org#524's follow-through, measured in lab#53's `checks`). The `.ts`
   // source also names `api-pool.ts` and `lane-ownership.ts` in TYPE positions (`import("./api-pool.ts").Pool`), which the walk reads as imports too, so the same file appears three times; the pin is
   // WHICH files are seen, so the list is deduplicated and a legitimate extra type annotation does not falsify it.
-  assert.deepEqual(
-    [...new Set(localImports(toolPath("src/arm-pr.mjs")).map((p: string) => p.replace(`${toolRoot()}/`, "")))].sort(),
-    ["src/acceptance-commands.ts", "src/api-pool.ts",
-      "src/lane-ownership.ts", "src/lib/cli-flags.ts", "src/pr-armed-state.ts",
-      "src/pr-hold-state.ts", "src/project-roles.ts",
-      "src/project-vocabulary.ts", "src/trunk-red.ts"],
+  //
+  // THE EIGHTH, AND WHY THIS IS A FLOOR (a11ign/a11ign#4829): `project-config.ts` is a tenth import the tool added after this list was written, and an exact `deepEqual` over a
+  // file of a repository this one does not build was red on the tool's newest tag until somebody edited it. What the control is FOR is "the walk sees real imports
+  // rather than nothing", and a SUPERSET answers that: every specifier below is still seen, so a walk that finds nothing, or stops at a type position, fails here, and an import
+  // the tool adds does not. A removal still falsifies it, and updating the list is then the response, as above.
+  const seen = new Set(localImports(toolPath("src/arm-pr.mjs")).map((p: string) => p.replace(`${toolRoot()}/`, "")));
+  const expected = ["src/acceptance-commands.ts", "src/api-pool.ts",
+    "src/lane-ownership.ts", "src/lib/cli-flags.ts", "src/pr-armed-state.ts",
+    "src/pr-hold-state.ts", "src/project-roles.ts",
+    "src/project-vocabulary.ts", "src/trunk-red.ts"];
+  assert.deepEqual(expected.filter((file) => !seen.has(file)), [],
     "arm-pr.mjs's local imports must all be visible to the walk");
 });
 
