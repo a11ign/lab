@@ -9,9 +9,11 @@
  *   2. no step checks anything out, so no byte of the pull request head is on the runner;
  *   3. no `run:` line interpolates the title or body (`${{ }}` in a shell is text the author chose, executed).
  *
- * The body it writes is read by the SAME `checkBody` the CI `acceptance` job and `pr-open` use (the shipped Acceptance
- * and Closes readers), with the command's run injected: this asks whether the declaration is well-formed, and the
- * command itself is exercised by its own test.
+ * The body it writes is read by the SAME reports the CI `acceptance` job and the Closes check run (`runCiBodyReports` over
+ * `CI_BODY_REPORTS`, the shipped Acceptance and Closes readers), with `PR_AUTHOR` set to Dependabot as CI sees it. That
+ * author matters: since agent-org#519 the body is the Acceptance source ONLY for an exempt author, and the file a pull
+ * request adds is the source for everyone else. The command's run is injected: this asks whether the declaration is
+ * well-formed, and the command itself is exercised by its own test.
  *
  * `violations()` is the instrument and is run on the real file AND on fixtures that each break one property, because a
  * checker that has never said no is not known to be able to. The positive control for the body readers is the same: a
@@ -25,7 +27,7 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parse as parseYaml } from "yaml";
 import { toolModule } from "../../scripts/tool-source.ts";
-const { checkBody } = await toolModule("src/pr-open.mjs");
+const { runCiBodyReports, CI_BODY_REPORTS } = await toolModule("src/acceptance-commands.mjs");
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const WORKFLOW = ".github/workflows/dependency-pr-body.yml";
@@ -159,10 +161,15 @@ function runScript({ title, files, owned = OWNED }: { title: string; files: stri
 const MANIFESTS = ["package.json", "packages/lab/package.json", "pnpm-lock.yaml"];
 const MINOR = "deps: bump yaml from 2.8.1 to 2.8.2";
 
-/** The shipped readers over a body, with the Acceptance command's run injected and recorded. */
-function shippedVerdict(body: string) {
+/**
+ * The shipped readers over a body, with the Acceptance command's run injected and recorded. `author` defaults to Dependabot,
+ * which is the author this workflow edits for: the body is read as the Acceptance source because of that author alone (agent-org#519).
+ * The diff adds no `.acceptance/` file, so nothing else can be the source.
+ */
+function shippedVerdict(body: string, author = BOT) {
   const ran: string[] = [];
-  const verdict = checkBody(body, { run: (command: string) => { ran.push(command); return 0; } });
+  const verdict = runCiBodyReports({ body, run: (command: string) => { ran.push(command); return 0; },
+    diff: { ok: true, files: MANIFESTS, added: [] }, author }, CI_BODY_REPORTS);
   return { ...verdict, ran };
 }
 
@@ -178,6 +185,15 @@ test("a minor bump of the manifests gets a body the shipped Acceptance and Close
   // the versions are the title's own: a fragment saying `2.8 to 2.8` for 2.8.1 -> 2.8.2 reads as no change at all (#3155)
   assert.match(out.body, /bump yaml from 2\.8\.1 to 2\.8\.2\./);
   assert.equal((out.body.match(/^Acceptance:/gm) ?? []).length, 1);
+});
+
+test("the SAME body from any other author is refused: the body is the Acceptance source only for Dependabot (positive control, agent-org#519)", () => {
+  const good = runScript({ title: MINOR, files: MANIFESTS }).body!;
+  assert.equal(shippedVerdict(good, BOT).ok, true, "the control's own premise: this body passes for Dependabot");
+  const other = shippedVerdict(good, "a11ign-bot");
+  assert.equal(other.ok, false, "the same text from another author has no Acceptance source, so it is refused");
+  assert.ok(other.lines.includes("ACCEPTANCE: MISSING"), other.lines.join("\n"));
+  assert.deepEqual(other.ran, [], "and its command is never run");
 });
 
 test("the readers REFUSE a duplicated Acceptance section and a missing Closes (the positive controls for the test above)", () => {
