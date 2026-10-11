@@ -182,8 +182,8 @@ jobs:
   # the tag and copies `src`, `scripts`, `baselines`, `rule-ownership.json` and `CLAUDE.md` into the core (`layers.json`'s `lays`), and an install of this manifest cannot run at all: it names
   # `@a11ign/control` and others no registry holds, and `.npmrc` sets `engine-strict` against npm. A step that installed the clone would be red on every pull request that touches a path above.
   #
-  # It versions EVERY changeset in the tree, where the release versions only those no tag has consumed: a superset, so a failure the release would meet is met here (the release's `plan` step needs the
-  # tags, which a two-commit checkout does not have).
+  # It versions EVERY changeset in the tree, where the release versions only those no tag has consumed: a superset, so a failure the release would meet is met here (the release's `plan` step reads
+  # the tags it would consume, which this job does not recompute).
   release-dry-run:
     runs-on: ubuntu-latest
     # A step that waits for ever is a six-hour job and a required check that never answers; the step below bounds each command and says what it was waiting on.
@@ -193,8 +193,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Two commits: HEAD and its first parent, which is all `touched` compares. No credential is kept: nothing here pushes.
-          fetch-depth: 2
+          # The WHOLE history, not two commits: `touched` needs only HEAD and its first parent, but the version step clones this checkout and `changeset version` reads git history and
+          # DEEPENS A SHALLOW CLONE, which it cannot do from a depth-1 one: it spins (this job's first run sat in `pnpm dlx ... version` until cancelled, the next until `bounded` killed it; a11ign/agent-org#967,
+          # a11ign/documents#14 and others were refused for the same). No credential is kept: nothing here pushes.
+          fetch-depth: 0
           persist-credentials: false
       - name: Does the change touch what the release installs from?
         id: touched
@@ -242,7 +244,8 @@ jobs:
         run: |
           set -euo pipefail
           scratch="$RUNNER_TEMP/release-dry-run"
-          git clone --quiet --depth=1 "file://$GITHUB_WORKSPACE" "$scratch"
+          # Not `--depth=1`: see the checkout above.
+          git clone --quiet "file://$GITHUB_WORKSPACE" "$scratch"
           cd "$scratch"
           if [ -f pnpm-lock.yaml ]; then
             echo "::error::pnpm-lock.yaml is present: the release would install from it, a path this job does not run, and this repository's manifest names packages no registry holds"
