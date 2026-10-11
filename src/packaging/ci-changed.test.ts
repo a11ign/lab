@@ -69,7 +69,7 @@ test("classify: a docs-only change fires docs and ts, and implicates NO package"
   // #2357: `ts: false` here was the defect. With no package implicated no package suite runs for a docs
   // diff -- only the guards that read the tree do.
   const result = classify(["docs/known-gaps.md", "README.md"], ["lab", "judge"]);
-  assert.deepEqual(result, { ts: true, python: false, ansible: false, docs: true, board: false,
+  assert.deepEqual(result, { ts: true, python: false, docs: true, board: false,
     changeset: false, rulesFitness: false, packages: [] });
 });
 
@@ -128,12 +128,11 @@ test("classify: a source change under one package fires ts, names that package, 
   assert.equal(result.ts, true);
   assert.deepEqual(result.packages, ["lab"]);
   assert.equal(result.python, false);
-  assert.equal(result.ansible, false);
   assert.equal(result.docs, false);
 });
 
 test("classify: a python file under a package fires python, and (bluntly) ts for that package too", () => {
-  // Same bluntness as the ansible case above: `changedPackages` does not filter by extension, so a `.py`
+  // Same bluntness as the single-package case above: `changedPackages` does not filter by extension, so a `.py`
   // file under `packages/scorer/` marks `scorer` touched for the scoped unit-test run too. Harmless --
   // scorer's own TS-side tests simply run alongside the Python ones -- and consistent rather than a
   // second, narrower definition of "touched" living beside the one the pre-push hook already uses.
@@ -142,18 +141,6 @@ test("classify: a python file under a package fires python, and (bluntly) ts for
   assert.equal(result.python, true);
   assert.equal(result.ts, true);
   assert.deepEqual(result.packages, ["scorer"]);
-});
-
-test("classify: the ansible job fires when the control's PIN moves, and on no diff of the playbooks themselves", () => {
-  // a11ign/a11ign#3506: the playbooks are `a11ign/control`'s and LAID into the core, so no diff of the core can touch `packages/control/ansible/**`; what can change
-  // them is the tag `layers.json` pins, and the job lays that tag before it checks it. `classify` reads `layers.json` (and nothing under `packages/control`) as the
-  // reason to re-read the playbooks. The earlier form of this test fed it a playbook path and a `control` package, which is a diff the core can no longer produce
-  // and a package whose manifest (`packages/control/package.json`) the laid layer does not carry (a11ign/a11ign#3972).
-  const pin = classify(["layers.json"], ["lab"]);
-  assert.equal(pin.ansible, true, "moving the pin is the one reason to re-read the playbooks");
-  assert.equal(pin.ts, false, "and it asks for no TypeScript job: the pin moves a layer, not a package of this workspace");
-  const playbook = classify(["packages/lab/src/gates/x.mjs"], ["lab"]);
-  assert.equal(playbook.ansible, false, "a diff that does not move the pin never re-reads the laid playbooks");
 });
 
 test("classify: a private package never demands a changeset, whatever it packs", () => {
@@ -263,7 +250,7 @@ test("classify: a scripts/*.mjs change also touches EVERY known package, for the
 
 test("classify: an unrelated file changes nothing", () => {
   const result = classify([".gitignore"], ["lab"]);
-  assert.deepEqual(result, { ts: false, python: false, ansible: false, docs: false, board: false,
+  assert.deepEqual(result, { ts: false, python: false, docs: false, board: false,
     changeset: false, rulesFitness: false, packages: [] });
 });
 
@@ -277,10 +264,8 @@ test("classify: a multi-package, multi-category diff sets every category it touc
     "packages/scorer/tests/test_runtime_versions.py",
   ], ["lab", "judge", "scorer"], { getPackedFiles });
   assert.equal(result.ts, true);
-  // `layers.json` is the ansible reason now (the test above): the playbooks are laid, so a diff names the PIN and never a playbook path.
   assert.deepEqual(result.packages, ["judge", "lab", "scorer"]);
   assert.equal(result.docs, true);
-  assert.equal(result.ansible, true);
   assert.equal(result.python, true);
   assert.equal(result.changeset, true, "packages/judge/src is published");
 });
@@ -410,7 +395,7 @@ test("jobsFor: agrees with classify() on the same input, by construction", () =>
   const files = ["README.md"];
   const viaJobsFor = new Set(jobsFor(files, REPO));
   const viaClassify = classify(files, knownPackages(REPO), { repoRoot: REPO });
-  const jobKeys = ["ts", "python", "ansible", "docs", "board", "changeset", "rulesFitness"] as const;
+  const jobKeys = ["ts", "python", "docs", "board", "changeset", "rulesFitness"] as const;
   for (const job of jobKeys) {
     assert.equal(viaJobsFor.has(job), Boolean(viaClassify[job]),
       `jobsFor and classify disagree on "${job}" for the same file list`);
@@ -695,7 +680,7 @@ test("lint.yml, ansible-check.yml and changeset-check.yml are retired, not merel
 
 /**
  * `gate` IS THE ONE CONTEXT BRANCH PROTECTION MAY REQUIRE, not the six scoped jobs above it -- see
- * `ci.yml`'s own header. Requiring `ts`/`python`/`ansible`/`docs`/`changeset`/`rulesFitness` directly means
+ * `ci.yml`'s own header. Requiring `ts`/`python`/`docs`/`changeset`/`rulesFitness` directly means
  * a required check with no run against a docs-only PR's commit, and GitHub treats a job SKIPPED by its own
  * `if:` as satisfying a required check only because it still posts a real check run concluding `skipped`
  * -- an implicit platform behaviour, not a fact this repo's own tests can see. `gate` computes the

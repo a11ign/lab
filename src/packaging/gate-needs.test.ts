@@ -91,7 +91,8 @@ const EXEMPT_ON_MERGE_GROUP: Record<string, string> = {
 // #2348: `guardSweep` joined -- the tree-wide guards on every PR, docs-only included.
 // #3885: `agentOrg` left -- a job that lays another repository's tree and runs its tests couples the two CIs (ci-runs-no-other-repositorys-tests.test.ts).
 // #4413: `bodyEdit` joined -- the job that classifies a body edit as prose-only so the body checks can skip it. It has no `if:`, so it runs on every event and `gate` must read its result.
-const KEPT = ["bodyEdit", "changed", "ts", "python", "ansible", "changeset", "rulesFitness", "guardSweep", "deliberateRefusals",
+// #4920: `ansible` left -- the playbooks are `a11ign/control`'s and laid, so the core no longer classifies a diff as one that re-reads them and the job is gone from ci.yml.
+const KEPT = ["bodyEdit", "changed", "ts", "python", "changeset", "rulesFitness", "guardSweep", "deliberateRefusals",
   "acceptance", "ownedPaths"];
 // #1065: `docs` left this list when it was deleted outright -- red and unread on an environment-only failure,
 // its population already run unscoped by trunk-guard after every merge.

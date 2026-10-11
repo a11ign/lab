@@ -114,9 +114,25 @@ function npmCliCalls(executable: string): { identifier: string }[] {
   return [...executable.matchAll(SPAWNS_NPM_CLI)].map(([, identifier]) => ({ identifier }));
 }
 
-/** A call is SAFE only when the identifier invoking the literal IS `npmCliInvocation` itself. */
+/**
+ * Identifiers the file itself binds to `npmCliInvocation` -- `{ npmCli = npmCliInvocation }`, the injected
+ * parameter `scripts/agent-org-newest-tag.ts`'s `installToolDependencies` takes so a test can see the argv
+ * without running an install (#4988, a11ign/a11ign#5105 at `CORE_REF` 2b8489a8d). The call goes through the
+ * helper whenever that default is in place, so the identifier is the helper under another name.
+ */
+function boundToNpmCliInvocation(executable: string): Set<string> {
+  return new Set([...executable.matchAll(/\b(\w+)\s*=\s*npmCliInvocation\b/g)].map(([, identifier]) => identifier));
+}
+
+/**
+ * A call is SAFE only when the identifier invoking the literal IS `npmCliInvocation` itself, or is a name the
+ * same file binds to it. An identifier with no such binding -- an injected `npmCli` with no default, say -- is
+ * still unsafe: nothing in the file says what it resolves to.
+ */
 function callsBareNpmCli(executable: string): boolean {
-  return npmCliCalls(executable).some(({ identifier }) => identifier !== "npmCliInvocation");
+  const bound = boundToNpmCliInvocation(executable);
+  return npmCliCalls(executable).some(({ identifier }) =>
+    identifier !== "npmCliInvocation" && !bound.has(identifier));
 }
 
 test("the discovery finds a non-trivial population -- vacuity guard for the walk itself", () => {
@@ -183,6 +199,19 @@ test("CONTROL: a call resolved through npmCliInvocation passes", () => {
   assert.equal(npmCliCalls(stripComments(fixture)).length, 1);
   assert.ok(!callsBareNpmCli(stripComments(fixture)),
     "a call resolved through npmCliInvocation must be classified SAFE, or every real fixed file would fail too");
+});
+
+test("CONTROL: an injected parameter whose default IS npmCliInvocation passes, and one with no such default is CAUGHT", () => {
+  const bound = 'export function install({ npmCli = npmCliInvocation }) {\n  run(npmCli("npm", ["ci"]));\n}\n';
+  assert.equal(npmCliCalls(stripComments(bound)).length, 1, "the discovery must still see the injected call");
+  assert.ok(!callsBareNpmCli(stripComments(bound)),
+    "a parameter defaulting to npmCliInvocation is the helper, or agent-org-newest-tag.ts fails");
+  const unbound = 'export function install({ npmCli }) {\n  run(npmCli("npm", ["ci"]));\n}\n';
+  assert.ok(callsBareNpmCli(stripComments(unbound)),
+    "an injected npmCli nothing binds to the helper must be classified UNSAFE");
+  const boundElsewhere = 'export function install({ npmCli = spawnIt }) {\n  run(npmCli("npm", ["ci"]));\n}\n';
+  assert.ok(callsBareNpmCli(stripComments(boundElsewhere)),
+    "a default that is some OTHER function is not the helper");
 });
 
 test("CONTROL: a file that never mentions npx/npm as a call argument is simply not part of the population", () => {

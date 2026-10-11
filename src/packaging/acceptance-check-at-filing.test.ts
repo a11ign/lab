@@ -315,14 +315,17 @@ test("CALIBRATION: the rule refuses ONE of the Acceptance sections on `main`'s o
 });
 
 /**
- * The lines of `source` that touch `existsSync` for anything but the two uses the filing tool is KNOWN to make of it: the `node:fs` import, and `present = existsSync`, the injectable default with
- * which the #855 Region check asks whether a CLONE is on this disk (agent-org 13e3a0cc: the CI runner has no `~/repos/agent-org`). Neither is a check over an acceptance token, which is
- * what this test pins; a bare `/existsSync/` match could not tell them apart and went red when the tool gained the second.
+ * The lines of `source` that touch `existsSync` for anything but the three uses the filing tool is KNOWN to make of it: the `node:fs` import; `present = existsSync`, the injectable default with
+ * which the #855 Region check asks whether a CLONE is on this disk (agent-org 13e3a0cc: the CI runner has no `~/repos/agent-org`); and `machineRoots`' probe of whether each declared
+ * repository's checkout directory exists (agent-org v0.174.2). None is a check over an acceptance token, which is what this test pins; a bare `/existsSync/` match could not tell them
+ * apart and went red when the tool gained the second, and again the third.
  */
-function existsSyncUsesOtherThanTheKnownTwo(source: string): string[] {
+function existsSyncUsesOtherThanTheKnownThree(source: string): string[] {
   return source.split("\n")
     .filter((line) => /\bexistsSync\b/.test(line))
-    .filter((line) => !/^import \{[^}]*\bexistsSync\b[^}]*\} from "node:fs";/.test(line) && !/\bpresent = existsSync\b/.test(line));
+    .filter((line) => !/^import \{[^}]*\bexistsSync\b[^}]*\} from "node:fs";/.test(line)
+      && !/\bpresent = existsSync\b/.test(line)
+      && !/\bcheckout !== null && existsSync\(checkout\)/.test(line));
 }
 
 test("the path check is the SHARED function in `row-file`, not a second copy", () => {
@@ -330,15 +333,16 @@ test("the path check is the SHARED function in `row-file`, not a second copy", (
   assert.match(tool, /import \{[^}]*acceptancePathsReason[^}]*\} from "\.\/acceptance-commands\.ts"/s,
     "row-file must IMPORT the path check; a local `existsSync` loop here would be the second "
     + "implementation this row exists to avoid");
-  assert.deepEqual(existsSyncUsesOtherThanTheKnownTwo(tool), [],
+  assert.deepEqual(existsSyncUsesOtherThanTheKnownThree(tool), [],
     "no hand-written filesystem check over acceptance tokens in the filing tool");
 });
 
-test("the `existsSync` reader lets the import and the injectable default through, and still sees a hand-written loop over tokens", () => {
-  const known = 'import { existsSync, readFileSync } from "node:fs";\n  checkoutOf = checkoutOfKey, present = existsSync, act = "file --ready" }';
-  assert.deepEqual(existsSyncUsesOtherThanTheKnownTwo(known), [], "the two known uses are not offenders");
+test("the `existsSync` reader lets the import, the injectable default and the checkout probe through, and still sees a hand-written loop over tokens", () => {
+  const known = 'import { existsSync, readFileSync } from "node:fs";\n  checkoutOf = checkoutOfKey, present = existsSync, act = "file --ready" }'
+    + "\n    if (checkout !== null && existsSync(checkout)) roots[key] = checkout;";
+  assert.deepEqual(existsSyncUsesOtherThanTheKnownThree(known), [], "the three known uses are not offenders");
   const loop = `${known}\n  for (const token of tokens) if (!existsSync(token)) missing.push(token);`;
-  assert.deepEqual(existsSyncUsesOtherThanTheKnownTwo(loop), ["  for (const token of tokens) if (!existsSync(token)) missing.push(token);"],
+  assert.deepEqual(existsSyncUsesOtherThanTheKnownThree(loop), ["  for (const token of tokens) if (!existsSync(token)) missing.push(token);"],
     "positive control: a local loop over the tokens is the second implementation, and is seen");
 });
 
