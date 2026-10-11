@@ -1,6 +1,6 @@
 """Where the published `@a11ign/scorer` keeps its Python, for the tests that import its featurizer.
 
-These tests used to put `packages/scorer/python` on `sys.path`, a path into the CORE's tree. The lab does not
+These tests used to put the core's scorer directory on `sys.path`, a path into the CORE's tree. The lab does not
 read another repository's source (ADR 0045, Decision 1 rule 2): the featurizer ships in the package, so it is
 found where Node would find the package, in the nearest `node_modules/@a11ign/scorer` above this file. A lab
 checkout with its own install has one at its root; the lab laid inside the core finds the workspace's link.
