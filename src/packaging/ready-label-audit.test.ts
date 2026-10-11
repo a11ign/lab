@@ -39,6 +39,9 @@ const {
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { toolModule, toolPath, toolUrl } from "../../scripts/tool-source.ts";
 const { ARM_LABELS_FROM } = await toolModule("src/claim-provenance.mjs");
+// #5137: the by-label list is a GraphQL CONNECTION since agent-org#5076 (`readRowsByLabel`), no longer `gh issue list --label`, so a fake answers it with the tool's OWN fixture
+// (the same one `row-claim.test.ts` takes) rather than a bare list the reader refuses with "did not come back as a connection".
+const { connectionOf, readsRowsByLabel, selectedFieldsOf } = await toolModule("src/packaging/rows-by-label-fixtures.ts");
 // #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate
 // test -- so this import is the proof the derivation actually happened, not a second, parallel check.
 const { labelsToStrip } = await toolModule("src/close-rows-for-merged-pr.mjs");
@@ -1916,27 +1919,35 @@ test("#2190: `unclaimable ready rows` is a CHECKS entry, so the live comparison 
     "a pure predicate nothing calls is a fact stated once more, not a fact checked");
 });
 
-test("#2190: fetchReadyRowsWithBodies asks server-side for `ready`, with the body, and parses labels", () => {
+/** A `run` answering the one by-label connection read `fetchReadyRowsWithBodies` makes, recording each argv; any other `gh` call fails the test by name. */
+function readyBodiesRun(rows: object[]) {
   const seen: string[][] = [];
   const run = (_cmd: string, args: string[]) => {
     seen.push(args);
-    return JSON.stringify([{ number: 7, title: "t", labels: [{ name: READY_LABEL }], body: "" }]);
+    assert.deepEqual(readsRowsByLabel(args), { label: READY_LABEL, state: "OPEN" }, `an unexpected gh call: ${args.join(" ")}`);
+    return connectionOf(rows);
   };
+  return { run, seen };
+}
+
+test("#2190: fetchReadyRowsWithBodies asks server-side for `ready`, with the body, and parses labels", () => {
+  const { run, seen } = readyBodiesRun([{ number: 7, title: "t", labels: [{ name: READY_LABEL }], body: "" }]);
   const rows = fetchReadyRowsWithBodies({ run });
   assert.deepEqual(rows, [{ number: 7, title: "t", labels: [READY_LABEL], body: "" }]);
+  assert.equal(seen.length, 1, "one read of one connection");
   const args = seen[0];
-  assert.equal(args[args.indexOf("--label") + 1], READY_LABEL);
-  assert.equal(args[args.indexOf("--state") + 1], "open");
-  assert.match(args[args.indexOf("--json") + 1], /\bbody\b/);
+  assert.ok(!args.includes("--label") && !args.includes("--search"), "a connection, never the `gh issue list --label` search the tool left");
+  assert.ok(selectedFieldsOf(args)?.includes("body"), "the body is in the selection: a row without it cannot be judged for its sections");
 });
 
 test("#2190: an entry with no `body` STRING throws -- an empty body is a fact, an absent one is a wrong question", () => {
-  const noBody = () => JSON.stringify([{ number: 7, title: "t", labels: [{ name: READY_LABEL }] }]);
+  const noBody = readyBodiesRun([{ number: 7, title: "t", labels: [{ name: READY_LABEL }] }]).run;
   assert.throws(() => fetchReadyRowsWithBodies({ run: noBody }), /missing number\/title\/labels\/body/);
   assert.throws(() => fetchReadyRowsWithBodies({ run: throwingRun("gh: authentication required") }),
     /could not list open ready rows with bodies/);
-  const nullBody = () => JSON.stringify([{ number: 7, title: "t", labels: [], body: null }]);
+  const nullBody = readyBodiesRun([{ number: 7, title: "t", labels: [], body: null }]).run;
   assert.throws(() => fetchReadyRowsWithBodies({ run: nullBody }), /missing number\/title\/labels\/body/);
+  assert.deepEqual(fetchReadyRowsWithBodies({ run: readyBodiesRun([]).run }), [], "control: a tracker with no ready row IS the empty list, not a refusal");
 });
 
 // --- #2150: a board Status that disagrees with the `ready` label, in both directions ---
