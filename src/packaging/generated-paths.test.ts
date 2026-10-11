@@ -67,7 +67,7 @@ const TRACKED_EXEMPT: Record<string, string> = {
 // legitimately empty rather than broken. Regenerated once, at module load, the same discipline
 // `coverage-doc.test.ts`'s own `regenerate()` uses -- so the known generated file is guaranteed present
 // before any test in this file runs, in every environment.
-const npxGen = npmCliInvocation("npx", ["tsx", "packages/lab/scripts/generate-coverage-doc.ts"]);
+const npxGen = npmCliInvocation("npx", ["tsx", "packages/lab/scripts/generate-coverage-doc.ts", "--out=docs/coverage.md"]);
 execFileSync(npxGen.command, npxGen.args, { cwd: REPO_ROOT, stdio: "pipe" });
 
 /** `<` `!` `-` `-` optional whitespace `GENERATED`, built from parts so this file's OWN source -- which
