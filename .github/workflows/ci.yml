@@ -165,9 +165,9 @@ jobs:
   # a11ign/a11ign#5063). `release.yml` calls a11ign/toolchain's `release-per-merge.yml`, whose `version` job is the first thing a merge to `main` runs, and nothing on a pull request ran it: a change
   # that broke it was found as a failed release. This job runs those commands in a scratch clone of the candidate tree and writes nothing: `contents: read`, no credential kept by the checkout, no push, no token.
   #
-  # THIS REPOSITORY HAS NO LOCKFILE (a manifest that names packages no registry holds cannot have one), so the release takes the shared workflow's lockfile-less path, `pnpm dlx @changesets/cli@<version>
-  # version`, and that is the branch that runs here. The lockfile branch is kept so the dry run follows the release if a lockfile is ever added: with one the release runs `pnpm install
-  # --frozen-lockfile`, the repository's own `changeset version`, then `pnpm install --lockfile-only`.
+  # THIS REPOSITORY HAS NO LOCKFILE (a manifest that names packages no registry holds cannot have one; `ci-composition.test.ts` pins the absence, and pins that this file holds no frozen install), so the
+  # release takes the shared workflow's lockfile-less path, `pnpm dlx @changesets/cli@<version> version`, and that is the only path this job models. A pull request that ADDS a lockfile makes the release
+  # take another path (an install of the manifest, which cannot run here), so the job refuses it by name instead of passing through the path it does not run.
   #
   # IT RUNS ON EVERY EVENT AND DOES ITS WORK ONLY WHEN THE CHANGE TOUCHES `package.json`, `pnpm-lock.yaml`, `.npmrc` OR `.github/workflows/`. GitHub filters `paths:` per WORKFLOW and not per job, and a
   # workflow-wide filter would skip `gate` with it, so the job reads the paths itself and the steps after `touched` are conditional on it: an untouched change is a `success` here, never a skip, and `gate`
@@ -186,6 +186,8 @@ jobs:
   # tags, which a two-commit checkout does not have).
   release-dry-run:
     runs-on: ubuntu-latest
+    # A step that waits for ever is a six-hour job and a required check that never answers; the step below bounds each command and says what it was waiting on.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -233,7 +235,7 @@ jobs:
         if: steps.touched.outputs.touched == 'true'
         with:
           node-version: ${{ steps.toolchain.outputs.node }}
-      - name: The release's version step, dry-run on a scratch clone -- install, changeset version, lockfile refresh
+      - name: The release's version step, dry-run on a scratch clone -- changeset version
         if: steps.touched.outputs.touched == 'true'
         env:
           CHANGESETS_VERSION: ${{ steps.toolchain.outputs.changesets }}
@@ -243,12 +245,28 @@ jobs:
           git clone --quiet --depth=1 "file://$GITHUB_WORKSPACE" "$scratch"
           cd "$scratch"
           if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-            pnpm exec changeset version
-            pnpm install --lockfile-only
-          else
-            pnpm dlx "@changesets/cli@$CHANGESETS_VERSION" version
+            echo "::error::pnpm-lock.yaml is present: the release would install from it, a path this job does not run, and this repository's manifest names packages no registry holds"
+            exit 1
           fi
+          # Bounded, and a command that outlives the bound is listed before it is killed, so a hang is a red job that names what it waited on.
+          set -m
+          bounded() {
+            "$@" &
+            local pid=$!
+            for _ in $(seq 1 240); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid"
+                return
+              fi
+              sleep 1
+            done
+            echo "::error::still running after 240 s: $*"
+            ps -eo pid,ppid,stat,etime,wchan:24,args --forest | tail -n 40
+            # `set -m` made the command its own process group: pnpm's children are killed with it, or the step's output stays open behind them.
+            kill -- "-$pid" || true
+            return 124
+          }
+          bounded pnpm dlx "@changesets/cli@$CHANGESETS_VERSION" version
 
   # THE REQUIRED CHECK. `main`'s protection and the `merge-queue-main` ruleset name `gate`, so it stays the one check that answers for the run. It waits for every job above and accepts `success`
   # ONLY: `always()` because a job whose need failed is SKIPPED, and a skipped required check counts as passed; and no `skipped` allowance, because the changeset job succeeds on a merge-group
