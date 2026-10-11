@@ -93,3 +93,5 @@ Bumping `CORE_REF` is a pull request: the only way the core's changes reach this
 
 A change that should be released carries a changeset (`pnpm exec changeset`); **merging it is the release**. `.github/workflows/release.yml` cuts the tag
 `v<version>` and a GitHub Release carrying the CHANGELOG entry: no registry, no token. A consumer pins a tag. With no lockfile the shared release workflow runs `pnpm dlx @changesets/cli`.
+
+<!-- THROWAWAY (a11ign/a11ign#5063): touches none of the four paths. Never merged. -->
