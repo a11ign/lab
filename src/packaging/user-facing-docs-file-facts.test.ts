@@ -94,7 +94,7 @@ test("README.md does not hardcode docs/coverage.md's generated criterion count",
     + "this will silently drift from it exactly as the deleted copy did");
   // docs/coverage.md is GENERATED and DELIBERATELY UNTRACKED (issue #158) -- regenerated here rather than
   // read off disk, since a fresh checkout has no committed copy to read.
-  const npx = npmCliInvocation("npx", ["tsx", "packages/lab/scripts/generate-coverage-doc.ts"]);
+  const npx = npmCliInvocation("npx", ["tsx", "packages/lab/scripts/generate-coverage-doc.ts", "--out=docs/coverage.md"]);
   execFileSync(npx.command, npx.args, { cwd: REPO, encoding: "utf8", stdio: "pipe" });
   const coverage = readFileSync(join(REPO, "docs/coverage.md"), "utf8");
   assert.match(coverage, /\d+ of 55 produce findings/,
