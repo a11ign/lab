@@ -632,10 +632,47 @@ const HOME_LITERAL = /\/home\/[A-Za-z_][\w.-]*/;
 
 test("[38] #2620: a11ign's host.json says every path the tool used to hard-code", () => {
   const host = hostConfig();
-  assert.deepEqual(templateValues(host, unitsDeclaration()), {
+  // The App-identity values (a11ign/a11ign#4900, agent-org 8698bee7) are rendered beside the paths since the tool grew `github.identity`; they are read below, from what
+  // host.json declares, so this deepEqual still names every path and none of it is a copy of an app id.
+  const values = templateValues(host, unitsDeclaration());
+  const { home, binDir, checkout, workersDir, leadsDir, prefix } = values;
+  assert.deepEqual({ home, binDir, checkout, workersDir, leadsDir, prefix }, {
     home: "/home/agent", binDir: "/home/agent/.local/bin", checkout: "/home/agent/repos/a11y-witness",
     workersDir: "/home/agent/workers", leadsDir: "/home/agent/leads", prefix: "a11ign-",
   });
+  assert.equal(values.appTokenDir, "/home/agent/.cache/a11ign/app-tokens");
+  assert.equal(values.appTokenScript, `${host.tool}/src/app-token.ts`, "the minter is the tool's own file, under the `tool` host.json names");
+});
+
+/** What a `host.json` text declares under `github.identity`, however much of it there is: a core older than a11ign/a11ign#4906 declares no `github` at all. */
+type DeclaredIdentity = Record<string, { mode: string; appId?: number; keyPath?: string }>;
+const declaredIdentity = (hostText: string): DeclaredIdentity => (JSON.parse(hostText) as { github?: { identity?: DeclaredIdentity } }).github?.identity ?? {};
+
+/** `appRoles` and `appDeclared` as the tool renders them for a host, set against the App-backed roles that host's text declares. */
+function assertWrapperCarriesDeclaredApps(hostText: string): number {
+  const apps = Object.entries(declaredIdentity(hostText)).filter(([, declared]) => declared.mode === "github-apps");
+  const { appRoles, appDeclared } = templateValues(parseHostConfig(hostText, ".agent-org/host.json"), unitsDeclaration());
+  assert.deepEqual(appRoles.split(" ").filter(Boolean).sort(), apps.map(([role]) => role).sort());
+  for (const [role, declared] of apps) {
+    assert.ok(appDeclared.includes(`    ${role}) app_id='${declared.appId}'; app_key='${declared.keyPath}'`), `the case statement carries an arm for ${role} with its declared app and key`);
+  }
+  assert.ok(appDeclared.includes("*) return 1 ;;"), "and a role that is not App-backed falls through to the user accounts");
+  return apps.length;
+}
+
+test("[38b] #4900: the App-backed roles the wrapper is rendered with are the ones host.json's `github.identity` declares as github-apps, however many it declares", () => {
+  // The lab's CI lays the core at its pinned `CORE_REF`, and a core from before a11ign/a11ign#4906 declares no `github.identity`: there the right reading is
+  // that the wrapper takes no App role, which is what the equality says. That this reader CAN see a declared role is [38c]'s, on a host that declares two.
+  assertWrapperCarriesDeclaredApps(read(".agent-org/host.json"));
+});
+
+const WORKERS_APP_ID = 101;
+const MANAGERS_APP_ID = 202;
+
+test("[38c] #4900 POSITIVE CONTROL for [38b]: a host that declares two App-backed roles is rendered with both, and a user-accounts role is not", () => {
+  const app = (slug: string, appId: number) => ({ mode: "github-apps", slug, appId, installationId: appId + 1, keyPath: `/home/agent/.config/agent-org/apps/${slug}.pem` });
+  const declared = { ...JSON.parse(read(".agent-org/host.json")), github: { identity: { scheduler: { mode: "user-accounts" }, workers: app("a11ign-workers", WORKERS_APP_ID), managers: app("a11ign-managers", MANAGERS_APP_ID) } } };
+  assert.equal(assertWrapperCarriesDeclaredApps(JSON.stringify(declared)), 2, "two App-backed roles were declared and two were found, so [38b]'s equalities are not two empty lists");
 });
 
 test("[39] #2620: the constants `wake.mjs` still spells out (rows 3b and 3c) equal what host.json says", () => {

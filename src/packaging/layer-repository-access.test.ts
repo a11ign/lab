@@ -120,11 +120,26 @@ test("#3124: the bots team is declared at `push` on a layer, never admin", () =>
   assert.equal(declaration().teams.bots.layer, "push");
 });
 
+/**
+ * The repositories a text NAMES, which is not the issues it CITES: `a11ign/a11ign#4148` in a comment is a pointer to a tracker row (the wrapper's ledger comment cites one
+ * since agent-org#741), and a per-repository table is the `owner/repo` with no `#number` after it. The citations are taken out first, because a lookahead on the name alone
+ * backtracks to a shorter prefix and still matches.
+ */
+function repositoriesNamed(text: string): string[] {
+  return text.replace(/\b[\w.-]+\/[\w.-]+#\d+/g, "").match(/a11ign\/[a-z][\w.-]*/g) ?? [];
+}
+
 test("#3124: the gh wrapper names no repository, and does name accounts (the control that the read saw it)", () => {
   const wrapper = readFileSync(toolPath("host/gh"), "utf8");
   assert.match(wrapper, /a11ign-ai-workers/, "positive control: the wrapper is the real file and names accounts");
   assert.match(wrapper, /a11ign-ai-leads/, "positive control: ...both of the accounts it routes to");
-  assert.deepEqual(wrapper.match(/a11ign\/[a-z][\w.-]*/g) ?? [], [], "a repository named in the wrapper is a per-repository table");
+  assert.deepEqual(repositoriesNamed(wrapper), [], "a repository named in the wrapper is a per-repository table");
+});
+
+test("#3124: the repository reader skips an issue citation and still sees a repository named as a table entry", () => {
+  assert.deepEqual(repositoriesNamed("# see a11ign/a11ign#4148 for why"), [], "a citation of a tracker row is not a repository table");
+  assert.deepEqual(repositoriesNamed('case "$repo" in a11ign/a11ign) token=x ;; esac'), ["a11ign/a11ign"], "positive control: a table entry is seen");
+  assert.deepEqual(repositoriesNamed("a11ign/lab#12 and a11ign/lab"), ["a11ign/lab"], "a citation beside a table entry hides nothing");
 });
 
 test("#3124: host-units.mjs's \"write, not admin\" sentence and the declaration agree about a11ign-ai-leads", () => {
