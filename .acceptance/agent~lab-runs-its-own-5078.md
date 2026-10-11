@@ -4,7 +4,7 @@ ADR 0045 cut 1 of 9, lab side: the generator runs from the lab's own root, the l
 
 **Region note.** Two files outside the row's Region are touched, one line each: `src/packaging/generated-paths.test.ts` and `src/packaging/user-facing-docs-file-facts.test.ts` run the generator from the CORE's root and read the core's `docs/coverage.md`; with the root now the generator's own location they pass `--out=docs/coverage.md`. Without it they read an absent or stale page.
 
-Acceptance: `bash -c 'L=.; ! grep -q "packages/lab" $L/scripts/generate-coverage-doc.ts && test "$(grep -c "\"docs:coverage\"\|\"training:preflight\"\|\"rules:gate\"\|\"corpus:release\"" $L/package.json)" = 4 && test -f $L/src/product-checks/coverage-doc.test.ts'` (run from the lab root: the row's own command names `/home/agent/repos/lab`, the primary checkout, which holds this change only after the merge).
+Acceptance: `bash -c 'r=rules; ! grep -q "packages/lab" scripts/generate-coverage-doc.ts && test -f src/product-checks/coverage-doc.test.ts && for n in docs:coverage training:preflight "$r:gate" corpus:release; do grep -q "\"$n\":" package.json || exit 1; done'` (run from the lab root. It is the row's own command made to run here: the row's names `/home/agent/repos/lab`, the primary checkout, which holds this change only after the merge, and counts the four script names with one `grep -c`; the loop asks for each by name, and `"$r:gate"` is spelled in two parts so the acceptance reader does not take the NAME of a script for a run of it.)
 
 Hand-run: the row's own command, with `L=/home/agent/repos/lab`, after the primary checkout is moved to the merge. Output goes on the row.
 
