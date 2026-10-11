@@ -5,7 +5,7 @@
  * inside the core: from the lab's own root both were wrong and nothing said so. These pin what replaced that,
  * each in both directions.
  *
- * Every test runs a COPY of the generator placed in a fixture root's own `scripts/`, because the program takes
+ * Every test runs a COPY of the generator placed in a fixture root's own `scripts/` directory, because the program takes
  * its root from where it is: a test that named the root as an argument could not see the default. The fixture's
  * `node_modules` is a link to the one this repository resolves `@a11ign/*` from.
  *
@@ -19,10 +19,11 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
+import { LAB_ROOT } from "./lab-sources.ts";
 
-const GENERATOR = resolve(import.meta.dirname, "generate-coverage-doc.ts");
-const LAB_ROOT = resolve(import.meta.dirname, "..");
+const GENERATOR_AT = "scripts/generate-coverage-doc.ts";
+const GENERATOR = join(LAB_ROOT, GENERATOR_AT);
 
 /** The nearest `node_modules` above the lab that holds `@a11ign/judge`: the lab's own after an install, the core's when laid in it. */
 function nodeModulesHoldingJudge(): string {
@@ -40,11 +41,11 @@ function generateAt(ownership: string | null): Run {
   const root = mkdtempSync(join(tmpdir(), "generate-coverage-doc-root-"));
   const cwd = mkdtempSync(join(tmpdir(), "generate-coverage-doc-cwd-"));
   try {
-    mkdirSync(join(root, "scripts"));
-    copyFileSync(GENERATOR, join(root, "scripts/generate-coverage-doc.ts"));
+    mkdirSync(dirname(join(root, GENERATOR_AT)));
+    copyFileSync(GENERATOR, join(root, GENERATOR_AT));
     symlinkSync(nodeModulesHoldingJudge(), join(root, "node_modules"));
     if (ownership !== null) writeFileSync(join(root, "rule-ownership.json"), ownership);
-    const run = spawnSync(process.execPath, [join(root, "scripts/generate-coverage-doc.ts")], { cwd, encoding: "utf8" });
+    const run = spawnSync(process.execPath, [join(root, GENERATOR_AT)], { cwd, encoding: "utf8" });
     const written = join(root, "docs/coverage.md");
     return { status: run.status, stderr: run.stderr, page: existsSync(written) ? readFileSync(written, "utf8") : null };
   } finally {

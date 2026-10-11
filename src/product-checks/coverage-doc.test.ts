@@ -6,7 +6,7 @@
  * Moved from the core's `coverage-doc.test.ts` (ADR 0045 cut 1), which ran the generator through the core's
  * `packages/lab/` path and read `docs/coverage.md` in the core's tree. This runs the generator from this
  * repository's root and reads the page from a directory of its own: it writes nothing into any checkout.
- * `scripts/generate-coverage-doc.test.ts` holds the generator's own controls (the root it reads, the empty file
+ * `generate-coverage-doc.test.ts` beside it holds the generator's own controls (the root it reads, the empty file
  * it refuses).
  */
 import { test } from "node:test";
