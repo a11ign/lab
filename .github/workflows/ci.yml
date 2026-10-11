@@ -1,4 +1,4 @@
-# The merge gate. Every pull request and every merge-queue entry runs lint, the typecheck and the tests (`checks`) and the changeset check (`changeset`), and the last job below, `gate`, waits for both. It is
+# The merge gate. Every pull request and every merge-queue entry runs lint, the typecheck and the tests (`checks`), the changeset check (`changeset`) and the release's version step as a dry run (`release-dry-run`), and the last job below, `gate`, waits for all three. It is
 # named `gate` because that is the check `main`'s protection and the `merge-queue-main` ruleset require (`docs/code-repository-protection.json` in a11ign/a11ign names it). `merge_group` is what lets the queue's
 # temporary branches run it: a required check that never runs on one blocks the queue for ever.
 #
@@ -161,11 +161,121 @@ jobs:
           pnpm exec rstest run --config scripts/rstest/rstest.config.ts "${selection[@]}"
         working-directory: core
 
-  # THE REQUIRED CHECK. `main`'s protection and the `merge-queue-main` ruleset name `gate`, so it stays the one check that answers for the run. It waits for both jobs above and accepts `success`
+  # A PULL REQUEST THAT CHANGES HOW THIS TREE INSTALLS DRY-RUNS THE RELEASE'S VERSION STEP (a11ign/agent-org#888; chairman, a11ign/agent-org#885 class 3 and a11ign/a11ign#4988; this repository's row
+  # a11ign/a11ign#5063). `release.yml` calls a11ign/toolchain's `release-per-merge.yml`, whose `version` job is the first thing a merge to `main` runs, and nothing on a pull request ran it: a change
+  # that broke it was found as a failed release. This job runs those commands in a scratch clone of the candidate tree and writes nothing: `contents: read`, no credential kept by the checkout, no push, no token.
+  #
+  # THIS REPOSITORY HAS NO LOCKFILE (a manifest that names packages no registry holds cannot have one; `ci-composition.test.ts` pins the absence, and pins that this file holds no frozen install), so the
+  # release takes the shared workflow's lockfile-less path, `pnpm dlx @changesets/cli@<version> version`, and that is the only path this job models. A pull request that ADDS a lockfile makes the release
+  # take another path (an install of the manifest, which cannot run here), so the job refuses it by name instead of passing through the path it does not run.
+  #
+  # IT RUNS ON EVERY EVENT AND DOES ITS WORK ONLY WHEN THE CHANGE TOUCHES `package.json`, `pnpm-lock.yaml`, `.npmrc` OR `.github/workflows/`. GitHub filters `paths:` per WORKFLOW and not per job, and a
+  # workflow-wide filter would skip `gate` with it, so the job reads the paths itself and the steps after `touched` are conditional on it: an untouched change is a `success` here, never a skip, and `gate`
+  # keeps accepting `success` alone. The paths are judged against the first parent of the checked-out commit: the merge ref of a pull request, a merge-queue entry, a push to `main` (the merge itself) or
+  # the nightly run (the newest merge, so it repeats the dry run only when that merge touched one of them).
+  #
+  # THE TOOLS ARE THE RELEASE'S, READ FROM `release.yml`'S CALL AND NEVER REPEATED HERE: `node-version`, `changesets-version` and `pnpm-version` are taken from the `with:` of that call, and where it sets
+  # none the shared workflow's own default is used (`node-version` 22 and `changesets-version` 3.0.3 at the sha `release.yml` pins; pnpm from this manifest's `packageManager`, which the shared workflow
+  # reads first and the setup action reads too). A default is a value in ANOTHER repository, so when `release.yml`'s pin moves, re-read those two defaults there and move them in `toolchain` below.
+  #
+  # NO SECOND STEP FOR THE CONSUMER'S INSTALL (the pattern's `agent-org-newest-tag` step is agent-org's): a consumer of this repository does not install it. a11ign/a11ign's `scripts/lay-layer.ts` clones
+  # the tag and copies `src`, `scripts`, `baselines`, `rule-ownership.json` and `CLAUDE.md` into the core (`layers.json`'s `lays`), and an install of this manifest cannot run at all: it names
+  # `@a11ign/control` and others no registry holds, and `.npmrc` sets `engine-strict` against npm. A step that installed the clone would be red on every pull request that touches a path above.
+  #
+  # It versions EVERY changeset in the tree, where the release versions only those no tag has consumed: a superset, so a failure the release would meet is met here (the release's `plan` step reads
+  # the tags it would consume, which this job does not recompute).
+  release-dry-run:
+    runs-on: ubuntu-latest
+    # A step that waits for ever is a six-hour job and a required check that never answers; the step below bounds each command and says what it was waiting on.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The WHOLE history, not two commits: `touched` needs only HEAD and its first parent, but the version step clones this checkout and `changeset version` reads git history and
+          # DEEPENS A SHALLOW CLONE, which it cannot do from a depth-1 one: it spins (this job's first run sat in `pnpm dlx ... version` until cancelled, the next until `bounded` killed it; a11ign/agent-org#967,
+          # a11ign/documents#14 and others were refused for the same). No credential is kept: nothing here pushes.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Does the change touch what the release installs from?
+        id: touched
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          echo "changed paths:"
+          echo "$changed"
+          if grep -q -E '^(package\.json|pnpm-lock\.yaml|\.npmrc)$|^\.github/workflows/' <<<"$changed"; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+            echo "no install-affecting path changed: the release dry run is not needed"
+          fi
+      - name: The release's toolchain, as release.yml's call sets it
+        id: toolchain
+        if: steps.touched.outputs.touched == 'true'
+        run: |
+          set -euo pipefail
+          # An input of the call: an indented `<name>: <value>` line, so a comment naming it is not read. Empty where the call does not set it.
+          input() { sed -n -E "s/^ +$1: *[\"']?([^\"' #]+)[\"']?.*$/\1/p" .github/workflows/release.yml | head -n 1; }
+          node=$(input node-version)
+          changesets=$(input changesets-version)
+          pnpm=$(input pnpm-version)
+          # The shared workflow reads `packageManager` where there is one and ignores `pnpm-version`; given both, the setup action refuses a pair that differs.
+          if [ -n "$(jq -r '.packageManager // empty' package.json)" ]; then pnpm=""; fi
+          {
+            echo "node=${node:-22}"
+            echo "changesets=${changesets:-3.0.3}"
+            echo "pnpm=$pnpm"
+          } | tee -a "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v6
+        if: steps.touched.outputs.touched == 'true'
+        with:
+          # Empty reads `packageManager`, as the release does.
+          version: ${{ steps.toolchain.outputs.pnpm }}
+      - uses: actions/setup-node@v7
+        if: steps.touched.outputs.touched == 'true'
+        with:
+          node-version: ${{ steps.toolchain.outputs.node }}
+      - name: The release's version step, dry-run on a scratch clone -- changeset version
+        if: steps.touched.outputs.touched == 'true'
+        env:
+          CHANGESETS_VERSION: ${{ steps.toolchain.outputs.changesets }}
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/release-dry-run"
+          # Not `--depth=1`: see the checkout above.
+          git clone --quiet "file://$GITHUB_WORKSPACE" "$scratch"
+          cd "$scratch"
+          if [ -f pnpm-lock.yaml ]; then
+            echo "::error::pnpm-lock.yaml is present: the release would install from it, a path this job does not run, and this repository's manifest names packages no registry holds"
+            exit 1
+          fi
+          # Bounded, and a command that outlives the bound is listed before it is killed, so a hang is a red job that names what it waited on.
+          set -m
+          bounded() {
+            "$@" &
+            local pid=$!
+            for _ in $(seq 1 240); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid"
+                return
+              fi
+              sleep 1
+            done
+            echo "::error::still running after 240 s: $*"
+            ps -eo pid,ppid,stat,etime,wchan:24,args --forest | tail -n 40
+            # `set -m` made the command its own process group: pnpm's children are killed with it, or the step's output stays open behind them.
+            kill -- "-$pid" || true
+            return 124
+          }
+          bounded pnpm dlx "@changesets/cli@$CHANGESETS_VERSION" version
+
+  # THE REQUIRED CHECK. `main`'s protection and the `merge-queue-main` ruleset name `gate`, so it stays the one check that answers for the run. It waits for every job above and accepts `success`
   # ONLY: `always()` because a job whose need failed is SKIPPED, and a skipped required check counts as passed; and no `skipped` allowance, because the changeset job succeeds on a merge-group
-  # entry rather than skipping, so a skip here means it did not run.
+  # entry rather than skipping and `release-dry-run` succeeds when nothing it reads changed, so a skip here means it did not run.
   gate:
-    needs: [changeset, checks]
+    needs: [changeset, checks, release-dry-run]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
@@ -180,5 +290,10 @@ jobs:
           fi
           if [ "${{ needs.checks.result }}" != "success" ]; then
             echo "::error::checks reported '${{ needs.checks.result }}', not success"
+            exit 1
+          fi
+          # `release-dry-run` is a `success` on every event, a change that touches none of the paths it reads included: there is no event it is excused on.
+          if [ "${{ needs.release-dry-run.result }}" != "success" ]; then
+            echo "::error::release-dry-run reported '${{ needs.release-dry-run.result }}', not success"
             exit 1
           fi
