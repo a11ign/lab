@@ -61,6 +61,11 @@ const WRONG_HEADING_BODY_736 = "## Verified\n\nnpx tsx --test packages/lab/src/p
 
 const VALID_BODY = "## Acceptance\n\nnode -e \"process.exit(0)\"\n\nCloses #1\n";
 
+// a11ign#5036 (agent-org 586f9c2f, v0.156.12): `pr-open create --draft` is REFUSED unless the body carries a `Draft-because: <reason>` line, before the
+// Acceptance runs and before anything is sent. Every test below that drives `create --draft` is about something else (the Acceptance, the owner, the
+// mutation), so its body carries this line, as agent-org's own copy of these tests does; the refusal itself is pinned by the two tests that end this file.
+const DRAFT_REASON = "Draft-because: this test drives pr-open, it is not a review\n";
+
 // ADR 0044 (agent-org#519, v0.138.0): the reader takes a pull request's Acceptance from the `.acceptance/` file its diff ADDS,
 // and reads the body only for an exempt Dependabot author. The file's grammar is the body's own, and `writeAcceptanceFile`
 // writes the body's text unchanged, so a fixture's text IS the file's text: `readFile` hands that text back.
@@ -187,7 +192,7 @@ test("ADR 0044: a body-only PR -- an Acceptance in the body and no `.acceptance/
   const drive = (changed: string[]) => {
     const spawned: string[][] = [];
     const said: string[] = [];
-    const code = prOpenMain(["create", "--draft", "--body", VALID_BODY], {
+    const code = prOpenMain(["create", "--draft", "--body", VALID_BODY + DRAFT_REASON], {
       runAcceptance: () => { ran += 1; return 0; },
       run: (args: string[]) => { spawned.push(args); },
       git: gitFor("agent/x", changed), readFile: () => VALID_BODY,
@@ -655,7 +660,7 @@ function recordingShim(name: string): { dir: string; marker: string } {
 
 test("#1578 ACCEPTANCE, MUTATION TARGET: driven through main(), the Acceptance reaches the override's executable "
   + "while create still gets its call", () => {
-  const body = "## Acceptance\n\nnode --version\n\nCloses #1\n";
+  const body = "## Acceptance\n\nnode --version\n\nCloses #1\n" + DRAFT_REASON;
   const { dir, marker } = recordingShim("node");
   const spawned: string[][] = [];
   const saved = process.env.A11Y_ACCEPTANCE_PATH;
@@ -686,7 +691,7 @@ test("#2099: a bare `gh` Acceptance is refused here and NOTHING is sent -- the a
   + "credential, and this wrapper exists to say so before the CI round rather than after it", () => {
   const spawned: string[][] = [];
   const said: string[] = [];
-  const body = "## Acceptance\n\ngh pr view 1\n\nCloses #1\n";
+  const body = "## Acceptance\n\ngh pr view 1\n\nCloses #1\n" + DRAFT_REASON;
   const code = prOpenMain(["create", "--draft", "--body", body], {
     run: (args: string[]) => { spawned.push(args); },
     git: gitFor("agent/x"), readFile: () => body, owner: UNSTAMPED,
@@ -711,7 +716,7 @@ test("#2099 CONTROL: the SAME body carrying the declaration is SENT, and reports
   // test's own subject is unchanged: the create is SENT and the line reads NOT RUN rather than running a
   // command this job cannot honestly attempt. The unevidenced half is pinned in the test below.
   const body = "## Acceptance\n\nHand-run: whoever holds the credential\n\ngh pr view 1\n\nCloses #1\n"
-    + '\n## Hand-run output\n\n```\n$ gh pr view 1\n"ok"\n```\n';
+    + '\n## Hand-run output\n\n```\n$ gh pr view 1\n"ok"\n```\n' + DRAFT_REASON;
   const code = prOpenMain(["create", "--draft", "--body", body], {
     run: (args: string[]) => { spawned.push(args); },
     git: gitFor("agent/x"), readFile: () => body, owner: LIVE_OWNER, out: (line: string) => { outs.push(line); }, err: () => {},
@@ -725,7 +730,7 @@ test("#2118: the SAME body with the declaration and NO pasted output is REFUSED 
   + "not sent, which is the half #2099 left open reaching the command that opens the PR", () => {
   const spawned: string[][] = [];
   const outs: string[] = [];
-  const body = "## Acceptance\n\nHand-run: whoever holds the credential\n\ngh pr view 1\n\nCloses #1\n";
+  const body = "## Acceptance\n\nHand-run: whoever holds the credential\n\ngh pr view 1\n\nCloses #1\n" + DRAFT_REASON;
   const code = prOpenMain(["create", "--draft", "--body", body], {
     run: (args: string[]) => { spawned.push(args); },
     git: gitFor("agent/x"), readFile: () => body, owner: UNSTAMPED, out: (line: string) => { outs.push(line); }, err: () => {},
@@ -872,7 +877,7 @@ test("#2929 CONTROL: an `edit`, a failed create and an arm that fails after the 
 // --- agent-org#436 (a11ign/a11ign#4386): a create that cannot name its owner is refused BEFORE it sends ---
 
 test("#4386: a create whose tree is unstamped and whose row names no session is REFUSED and sends nothing; a live owner is sent", () => {
-  const body = "## Acceptance\n\nnode -e \"process.exit(0)\"\n\nCloses: none -- a probe\n";
+  const body = "## Acceptance\n\nnode -e \"process.exit(0)\"\n\nCloses: none -- a probe\n" + DRAFT_REASON;
   const drive = (owner: () => string | null) => {
     const spawned: string[][] = [];
     const said: string[] = [];
@@ -909,7 +914,8 @@ const MUTATE_COMMAND = "npm run mutate -- --file=packages/x.mjs --mutate='perl -
 const mutationBody = (mutation: string) => `## Acceptance\n\nnode -e "process.exit(0)"\n\nMutation:\n\`\`\`\n${mutation}\n\`\`\`\n\nCloses #1\n`;
 
 /** `main` on a body whose Acceptance passes, with `mutate`'s exit code chosen by the test. */
-function driveMutation(body: string, mutateExit: number) {
+function driveMutation(declared: string, mutateExit: number) {
+  const body = declared + DRAFT_REASON;
   const ran: string[] = [];
   const outs: string[] = [];
   const spawned: string[][] = [];
@@ -971,7 +977,7 @@ test("#2307: a Mutation that is prose, or absent, or `none`, runs nothing (the t
 
 test("#2307: a body the Acceptance check refuses never runs its Mutation", () => {
   const ran: string[] = [];
-  const body = mutationBody(MUTATE_COMMAND).replace("Closes #1", "");
+  const body = mutationBody(MUTATE_COMMAND).replace("Closes #1", "") + DRAFT_REASON;
   const code = prOpenMain(["create", "--draft", "--body", body], {
     runAcceptance: () => 0, runMutation: (c: string) => { ran.push(c); return 0; },
     run: () => {}, git: gitStub, readFile: () => body, owner: UNSTAMPED, out: () => {}, err: () => {},
@@ -986,4 +992,39 @@ test("#2307: mutationReport lists ONLY `npm run mutate` lines and skips other co
   const report = mutationReport(body, (c: string) => { ran.push(c); return 0; });
   assert.deepEqual(ran, [MUTATE_COMMAND], "an arbitrary command in a section nobody gates is never executed");
   assert.equal(report.warned, false);
+});
+
+// --- a11ign#5036 (agent-org 586f9c2f): `--draft` is refused without a `Draft-because:` reason, before anything is run or sent ---
+//
+// The tests above all carry `DRAFT_REASON`; these two are the control that the line is what lets them through. Without them, a body that
+// carried the line for nothing would be indistinguishable from one the tool never looked at.
+
+const driveDraft = (body: string) => {
+  const spawned: string[][] = [];
+  const said: string[] = [];
+  let ran = 0;
+  const code = prOpenMain(["create", "--draft", "--body", body], {
+    runAcceptance: () => { ran += 1; return 0; },
+    run: (args: string[]) => { spawned.push(args); },
+    git: gitStub, readFile: () => body, owner: LIVE_OWNER, out: (line: string) => { said.push(line); }, err: (line: string) => { said.push(line); },
+  });
+  return { code, spawned, ran, said: said.join("\n") };
+};
+
+test("a11ign#5036: `create --draft` with no Draft-because line, or an empty one, is REFUSED and nothing is run or sent", () => {
+  for (const body of [VALID_BODY, `${VALID_BODY}Draft-because:   \n`]) {
+    const refused = driveDraft(body);
+    assert.equal(refused.code, EXIT_NOTHING_SENT);
+    assert.deepEqual(refused.spawned, [], "nothing was sent");
+    assert.equal(refused.ran, 0, "and the Acceptance never ran: the refusal comes first");
+    assert.match(refused.said, /--draft` without a reason/);
+    assert.match(refused.said, /Draft-because: <reason>/, "and the remedy is named");
+  }
+});
+
+test("a11ign#5036 CONTROL: the same body with a Draft-because reason is SENT, as a draft", () => {
+  const sent = driveDraft(VALID_BODY + DRAFT_REASON);
+  assert.equal(sent.code, 0);
+  assert.equal(sent.ran, 1, "its Acceptance really ran");
+  assert.deepEqual(sent.spawned.map((args) => args.slice(0, 2)), [["pr", "create"], ["pr", "edit"]], "the create, then the owner's label (a draft is labelled, not armed)");
 });
