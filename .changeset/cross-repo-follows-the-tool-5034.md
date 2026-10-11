@@ -1,0 +1,5 @@
+---
+"@a11ign/lab": patch
+---
+
+Five packaging tests follow the tool at its newest tag instead of reading an older one, so the `cross-repo` leg is green again: `row-claim.test.ts`'s `issue view` mocks answer by whether the requested `--json` fields include `body` (the claim reads `body,labels` in one call since agent-org#732, so the template-fields check had been skipped silently); `agent-org-wiring.test.ts` reads the App-identity template values from `github.identity` (a11ign/a11ign#4900); `layer-repository-access.test.ts` no longer counts an issue citation in the `gh` wrapper as a repository table; `homepage-agreement.test.ts` accepts `productHome(<checkout>)` imported from the toolchain (agent-org#522); `acceptance-check-at-filing.test.ts` allows the `existsSync` default of the #855 Region check and still refuses a loop over acceptance tokens (a11ign/a11ign#5034).

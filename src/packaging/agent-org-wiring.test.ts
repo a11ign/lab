@@ -632,10 +632,28 @@ const HOME_LITERAL = /\/home\/[A-Za-z_][\w.-]*/;
 
 test("[38] #2620: a11ign's host.json says every path the tool used to hard-code", () => {
   const host = hostConfig();
-  assert.deepEqual(templateValues(host, unitsDeclaration()), {
+  // The App-identity values (a11ign/a11ign#4900, agent-org 8698bee7) are rendered beside the paths since the tool grew `github.identity`; they are read below, from what
+  // host.json declares, so this deepEqual still names every path and none of it is a copy of an app id.
+  const values = templateValues(host, unitsDeclaration());
+  const { home, binDir, checkout, workersDir, leadsDir, prefix } = values;
+  assert.deepEqual({ home, binDir, checkout, workersDir, leadsDir, prefix }, {
     home: "/home/agent", binDir: "/home/agent/.local/bin", checkout: "/home/agent/repos/a11y-witness",
     workersDir: "/home/agent/workers", leadsDir: "/home/agent/leads", prefix: "a11ign-",
   });
+  assert.equal(values.appTokenDir, "/home/agent/.cache/a11ign/app-tokens");
+  assert.equal(values.appTokenScript, `${host.tool}/src/app-token.ts`, "the minter is the tool's own file, under the `tool` host.json names");
+});
+
+test("[38b] #4900: the App-backed roles the wrapper is rendered with are the ones host.json's `github.identity` declares as github-apps", () => {
+  const identity: Record<string, { mode: string; appId?: number; keyPath?: string }> = JSON.parse(read(".agent-org/host.json")).github.identity;
+  const apps = Object.entries(identity).filter(([, declared]) => declared.mode === "github-apps");
+  assert.ok(apps.length > 0, "POSITIVE CONTROL: host.json declares at least one App-backed role, so the equalities below are not two empty lists");
+  const { appRoles, appDeclared } = templateValues(hostConfig(), unitsDeclaration());
+  assert.deepEqual(appRoles.split(" ").sort(), apps.map(([role]) => role).sort());
+  for (const [role, declared] of apps) {
+    assert.ok(appDeclared.includes(`    ${role}) app_id='${declared.appId}'; app_key='${declared.keyPath}'`), `the case statement carries an arm for ${role} with its declared app and key`);
+  }
+  assert.ok(appDeclared.includes("*) return 1 ;;"), "and a role that is not App-backed falls through to the user accounts");
 });
 
 test("[39] #2620: the constants `wake.mjs` still spells out (rows 3b and 3c) equal what host.json says", () => {

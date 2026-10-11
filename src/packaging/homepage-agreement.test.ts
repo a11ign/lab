@@ -116,7 +116,9 @@ function boardDocumentHome(): { file: string; homepage: string | null } {
 test("#1113: the board document RENDERS the derived home — it does not state one", () => {
   const source = stripComments(readFileSync(toolPath("src/board-document.mjs"), "utf8"));
 
-  assert.match(source, /productHome\(\)/,
+  // `productHome(` and not `productHome()`: since agent-org#522 the document IMPORTS the function from `@a11ign/toolchain/lib/product-home` instead of carrying a copy,
+  // and calls it with the checkout it reads (`productHome(HOME_CHECKOUT)`). What is pinned is that the value is DERIVED by a call, whatever argument that call is given.
+  assert.match(source, /\bproductHome\(/,
     "board-document.mjs must CALL productHome(). Without this the eighth place is a literal again, and "
     + "the comparison above cannot see it: it compares a value derived from a manifest against that same "
     + "manifest and agrees with itself");

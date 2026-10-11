@@ -275,17 +275,27 @@ test("claimRow claims a genuinely unclaimed row: reads, writes, re-reads, confir
 
 // --- #707: claim-time enforcement of the three required template fields ---
 
+/**
+ * Whether an `issue view` asks for the row's BODY, by the fields it lists and never by the exact string `body`: the claim reads the body WITH the
+ * labels (`--json body,labels`, one `ROW_READ_FIELDS`, a11ign/agent-org#732 at v0.156.x) so its batched pre-write read serves both from one call.
+ * A mock keyed on `=== "body"` stopped seeing that read, answered it with no `body` field, and the template-fields check was skipped
+ * without a failure: the claim answered `claimed: true` for a body with no headings (a11ign/a11ign#5034).
+ */
+function asksForBody(args: string[]): boolean {
+  const jsonIndex = args.indexOf("--json");
+  return args[1] === "view" && jsonIndex >= 0 && args[jsonIndex + 1].split(",").includes("body");
+}
+
 /** A `run` that answers BOTH `--json` shapes `writeRowLabels` needs from `issue view` -- the plain label
- * fetch (`fetchLabels`) and the body fetch (the new template-fields check) -- distinguished by the actual
- * `--json` value asked for, since a naive "any `issue view` call" mock would answer one shape for both
+ * fetch (`fetchLabels`) and the body fetch (the new template-fields check) -- distinguished by whether the
+ * requested fields include `body`, since a naive "any `issue view` call" mock would answer one shape for both
  * and break whichever call came second. */
 function claimRunWithBody(body: string, labels: string[] = []) {
   return (_cmd: string, args: string[]) => {
     if (args[1] === "view") {
-      const jsonIndex = args.indexOf("--json");
-      const jsonArg = jsonIndex >= 0 ? args[jsonIndex + 1] : "";
-      if (jsonArg === "body") return JSON.stringify({ body });
-      return JSON.stringify({ number: 707, title: "A row", labels: labels.map((name) => ({ name })) });
+      const labelObjects = labels.map((name) => ({ name }));
+      if (asksForBody(args)) return JSON.stringify({ body, labels: labelObjects });
+      return JSON.stringify({ number: 707, title: "A row", labels: labelObjects });
     }
     if (args[1] === "list") return "[]"; // #3475: the claimed-rows read -- an empty list, so no Region overlaps
     return ""; // the `edit` call
@@ -1686,7 +1696,7 @@ function claimRunFailingAt(failAt: (args: string[], labelReads: number) => boole
     const isLabelRead = args[1] === "view" && args.includes("number,title,labels,state");
     if (isLabelRead) labelReads += 1;
     if (failAt(args, labelReads)) throw new Error(`simulated: gh ${args.slice(0, 2).join(" ")} failed`);
-    if (args[1] === "view" && args.includes("body")) return JSON.stringify({ body: TEMPLATE_BODY });
+    if (asksForBody(args)) return JSON.stringify({ body: TEMPLATE_BODY, labels: [{ name: READY_LABEL }] });
     if (isLabelRead) {
       // Reads 1 and 2 are the two BEFORE the write (`writeRowLabels`'s and #2151's fresh one); 3 is the verify.
       const labels = labelReads <= 2 ? [READY_LABEL]
@@ -1713,7 +1723,7 @@ const SET = `set the row's labels to ${CLAIM_LABEL}, session:worker-judge, ${STA
   + `(\`${READY_LABEL}\` removed in the same write)`;
 
 test("#1399 ACCEPTANCE: labels LANDED, then the verify read throws -- exit 4, naming the written labels", () => {
-  const { run } = claimRunFailingAt((args, reads) => args[1] === "view" && !args.includes("body") && reads === 3);
+  const { run } = claimRunFailingAt((args, reads) => args[1] === "view" && !asksForBody(args) && reads === 3);
   const error = thrownBy(claimOf(run));
   assert.deepEqual(landedWritesOf(error), [SET]);
   const report = failureReport(error);
@@ -1725,7 +1735,7 @@ test("#1399 ACCEPTANCE: labels LANDED, then the verify read throws -- exit 4, na
 });
 
 test("#1399 CONTROL: the PRE-write read throws -- nothing is written, and COULD NOT DETERMINE stays, exit 2", () => {
-  const { run, calls } = claimRunFailingAt((args, reads) => args[1] === "view" && !args.includes("body") && reads === 1);
+  const { run, calls } = claimRunFailingAt((args, reads) => args[1] === "view" && !asksForBody(args) && reads === 1);
   const error = thrownBy(claimOf(run));
   assert.equal(landedWritesOf(error), null);
   assert.deepEqual(failureReport(error).exitCode, 2);
