@@ -52,6 +52,10 @@ const { refusalCause, PROJECT_UNREADABLE } = await toolModule("src/settle-closed
 const { laneReason } = await toolModule("src/row-claim/runner-rule.mjs");
 import { stripComments } from "@a11ign/toolchain/lib/source-text";
 const { READY_LABEL, WAS_READY_LABEL } = await toolModule("src/ready-label-audit.mjs");
+// a11ign#5039 (agent-org 209a56cb, v0.157.3): the claim lists the rows that hold files over `gh api graphql` (`repository.issues(labels:)`), no longer `gh issue list --label`,
+// which `gh` sends as a SEARCH. A fake that answered `issue list` answers nothing to it, the read fails, and B4 refuses INCONCLUSIVE for every row that declares a Region. The tool's own
+// fixture file is where the argv and the answer's shape are written down; a fake adds the two lines below.
+const { connectionOf, readsRowsByLabel } = await toolModule("src/packaging/rows-by-label-fixtures.ts");
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { toolModule, toolUrl } from "../../scripts/tool-source.ts";
 
@@ -297,7 +301,7 @@ function claimRunWithBody(body: string, labels: string[] = []) {
       if (asksForBody(args)) return JSON.stringify({ body, labels: labelObjects });
       return JSON.stringify({ number: 707, title: "A row", labels: labelObjects });
     }
-    if (args[1] === "list") return "[]"; // #3475: the claimed-rows read -- an empty list, so no Region overlaps
+    if (readsRowsByLabel(args) !== null) return connectionOf([]); // #3475, #5039: the claimed-rows read -- an empty list, so no Region overlaps
     return ""; // the `edit` call
   };
 }
@@ -633,7 +637,7 @@ test("#987: a claim naming NEITHER a branch nor a worktree posts a record that i
   const run = (cmd: string, args: string[]) => {
     calls.push(args);
     if (args[1] === "view") return JSON.stringify({ number: 665, title: "A row", labels: [] });
-    if (args[1] === "list") return "[]";
+    if (readsRowsByLabel(args) !== null) return connectionOf([]);
     return "";
   };
   claimRow(665, "worker-config", { run, moveStatus: () => ({ moved: true }) });
@@ -1696,6 +1700,7 @@ function claimRunFailingAt(failAt: (args: string[], labelReads: number) => boole
     const isLabelRead = args[1] === "view" && args.includes("number,title,labels,state");
     if (isLabelRead) labelReads += 1;
     if (failAt(args, labelReads)) throw new Error(`simulated: gh ${args.slice(0, 2).join(" ")} failed`);
+    if (readsRowsByLabel(args) !== null) return connectionOf([]); // #5039: no row holds a file, so the Region overlaps nothing and the claim goes on to its writes
     if (asksForBody(args)) return JSON.stringify({ body: TEMPLATE_BODY, labels: [{ name: READY_LABEL }] });
     if (isLabelRead) {
       // Reads 1 and 2 are the two BEFORE the write (`writeRowLabels`'s and #2151's fresh one); 3 is the verify.
