@@ -42,8 +42,9 @@ test("judge-file.ts takes the wire types from the published package, not from a 
 
 test("no lab source restates a capture wire type, and the scan examines the lab's own tree", () => {
   const population = labSources(/\.ts$/);
-  // The positive control: the scan must reach the judge file the entries above pin, or it would pass having
-  // examined less than the lab's tree.
+  // The positive control, on the population itself: an empty walk would make the scan below pass having examined
+  // nothing, and the judge file the entries above pin must be among the files it reaches.
+  assert.ok(population.length > 0, "the scan found no lab sources, so an empty result would prove nothing");
   assert.ok(population.includes(join(LAB_ROOT, JUDGE_FILE)),
     `${JUDGE_FILE} is not in the scanned population (${population.length} files), so an empty result would prove nothing`);
   const restatements = population.flatMap((file) =>
