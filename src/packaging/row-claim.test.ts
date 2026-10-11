@@ -1984,7 +1984,8 @@ test("#1432 ACCEPTANCE: a clean claim CREATES the worktree, stamps it, THEN clai
   const run = worktreeClaim(stub);
   assert.deepEqual(run.call(), { claimed: true, statusMoved: true });
   assert.deepEqual(run.order, ["git fetch --quiet", "git worktree add", "stamp", "claim"]);
-  const add = stub.calls.find((c) => c[1] === "worktree")!;
+  // The tool reads `git worktree list --porcelain` before it adds (a11ign/a11ign#5105, agent-org's newest tag), so `worktree` alone names two calls.
+  const add = stub.calls.find((c) => c[1] === "worktree" && c[2] === "add")!;
   assert.deepEqual(add, ["git", "worktree", "add", "-b", "agent/x-1432", "/repos/wt-1432", "origin/main"]);
   assert.deepEqual(run.stamped, [["/repos/wt-1432", "worker-tooling"]]);
   const deps = run.claimCalls[0][2] as { branch: string; worktree: string };

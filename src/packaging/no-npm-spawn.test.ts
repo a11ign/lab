@@ -60,6 +60,21 @@ const ALLOWED: Record<string, string> = {
 const STAYS_MARKER = /\/\/ STAYS npm\b/;
 
 /**
+ * A file that keeps npm and says why in its own words, with no `// STAYS npm` line. `scripts/agent-org-newest-tag.ts`
+ * lost the marker in a11ign/a11ign#4988 (7b7e7d498): its `installToolDependencies` doc comment now carries the reason --
+ * "An older tag with no lockfile keeps the npm path" -- so the entry names the sentence the file must still contain,
+ * and the file stays under the same two obligations (named in ALLOWED, says why) as the ones that carry the marker.
+ */
+const SAYS_WHY_IN_ITS_OWN_WORDS: Record<string, RegExp> = {
+  "scripts/agent-org-newest-tag.ts": /An older tag with no lockfile keeps the npm path/,
+};
+
+/** Whether `source` says why it keeps npm: the marker, or the sentence its entry in SAYS_WHY_IN_ITS_OWN_WORDS names. */
+function saysWhyItKeepsNpm(path: string, source: string): boolean {
+  return STAYS_MARKER.test(source) || (SAYS_WHY_IN_ITS_OWN_WORDS[path]?.test(source) ?? false);
+}
+
+/**
  * Callee and literal, in the two shapes a spawn of the old tool takes in this tree:
  *   - the argv shape, `anything("npm", ...)` / `npmCliInvocation("npx", ...)`, which catches the helper and a local `run`;
  *   - the command-string shape, `execSync("npm run x")`, on the `child_process` names only, so an error message that begins
@@ -180,8 +195,19 @@ test("the allowlist is EXACTLY these named files (the registry gates, the isolat
 });
 
 test("each allowlisted file says in a `STAYS npm` comment why it does", () => {
+  assert.ok(Object.keys(ALLOWED).length > 0, "the population is empty: the loop below would compare nothing");
   for (const path of Object.keys(ALLOWED)) {
-    assert.match(readFileSync(`${REPO}${path}`, "utf8"), STAYS_MARKER, `${path} keeps npm without saying why`);
+    assert.ok(saysWhyItKeepsNpm(path, readFileSync(`${REPO}${path}`, "utf8")), `${path} keeps npm without saying why`);
   }
   assert.doesNotMatch("// stays a normal comment", STAYS_MARKER, "the marker is not satisfied by any comment");
+});
+
+test("SAYS_WHY_IN_ITS_OWN_WORDS names only allowlisted files, and a file with neither the marker nor its sentence is refused", () => {
+  assert.deepEqual(Object.keys(SAYS_WHY_IN_ITS_OWN_WORDS).filter((path) => !(path in ALLOWED)), [],
+    "an entry for a file that no longer keeps npm is a stale exemption: remove it");
+  assert.ok(Object.keys(SAYS_WHY_IN_ITS_OWN_WORDS).length > 0, "the population is empty: the control below would compare nothing");
+  const path = Object.keys(SAYS_WHY_IN_ITS_OWN_WORDS)[0]!;
+  assert.ok(!saysWhyItKeepsNpm(path, "run(npmCli(\"npm\", args));\n// an ordinary comment\n"),
+    "a file naming neither the marker nor its sentence must be refused");
+  assert.ok(saysWhyItKeepsNpm("scripts/other.ts", "// STAYS npm: the registry read\n"), "the marker alone still satisfies it");
 });

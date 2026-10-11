@@ -247,8 +247,10 @@ const END_OF_TURN_HEADING = /^## Nobody is at the terminal\b.*$/gm;
 interface EndOfTurnClause { clause: string; pattern: RegExp }
 
 const END_OF_TURN_CLAUSES: ReadonlyArray<EndOfTurnClause> = [
-  { clause: "when genuinely blocked, say so on the row and message `product-manager`, never wait on a human",
-    pattern: /message `product-manager`[^]*?never stop and wait on a human/ },
+  // a11ign/a11ign#5105 (`CORE_REF` 2b8489a8d): the brief stopped saying "message `product-manager`" and says "declare `blocked <row> <reason>`" -- the gate
+  // routes the question from that declaration (`answer:<session>`), so the clause is the same rule with its mechanism named. The pattern follows the words.
+  { clause: "when genuinely blocked, declare `blocked <row> <reason>`, never stop and wait on a human",
+    pattern: /declare `blocked <row> <reason>`[^]*?never stop and\s+wait on a human/ },
   { clause: "ending a turn with a question is the same as stopping",
     pattern: /Ending your turn with a question is the same as stopping/ },
   { clause: "an action in your lane is taken and reported, not offered",

@@ -350,8 +350,9 @@ for (const file of Object.keys(TRUNK_FOLLOWUP_ALLOWLIST)) {
 test("#3046: auto-arm.yml has no job that pushes main into a PR branch, and still has arm, sweep and stalled", () => {
   const text = readWorkflow("auto-arm.yml");
   const doc = parseYaml(text) as { jobs: Record<string, { steps?: Array<Record<string, unknown>> }> };
-  assert.deepEqual(Object.keys(doc.jobs).sort(), ["arm", "stalled", "sweep"],
-    "the control: the three jobs that are NOT being deleted are all present, and nothing else is");
+  // #4969 (core 5a871223e, 747f3b53c): `relay` and `arm-approved` joined -- an approving review marks a draft ready and arms it. Neither pushes a branch.
+  assert.deepEqual(Object.keys(doc.jobs).sort(), ["arm", "arm-approved", "relay", "stalled", "sweep"],
+    "the control: the three jobs that are NOT being deleted are all present, with the two #4969 added and nothing else");
   const runLines = Object.values(doc.jobs).flatMap((job) => job.steps ?? []).map((s) => String(s.run ?? "")).join("\n");
   assert.doesNotMatch(runLines, /update-branch-sweep|gh pr update-branch|gh api\b[^\n]*update-branch/,
     "no step calls the sweep that pushed main into armed PRs, or GitHub's own update-branch");
@@ -361,7 +362,9 @@ test("#3046: auto-arm.yml is triggered by every event it was before the job went
   const { on } = parseYaml(readWorkflow("auto-arm.yml")) as { on: Record<string, unknown> };
   // #4198: `pull_request_target` joined the list so `arm` and `sweep` run THIS FILE AS IT IS ON `main` and Octo STS can bind the mint to
   // `refs/heads/main`; `stalled` keeps `pull_request` because it mints nothing. Every event it had before is still here.
-  assert.deepEqual(Object.keys(on).sort(), ["pull_request", "pull_request_target", "push", "workflow_dispatch", "workflow_run"]);
+  // #4969: `pull_request_review` joined, for the one `relay` job that mints nothing; the file's own comment says why it cannot carry a minting job.
+  assert.deepEqual(Object.keys(on).sort(),
+    ["pull_request", "pull_request_review", "pull_request_target", "push", "workflow_dispatch", "workflow_run"]);
   assert.deepEqual(on.push, { branches: ["main"] }, "`sweep` and `stalled` ride a push to main");
   assert.deepEqual((on.workflow_run as { workflows: string[] }).workflows, ["ci"], "`stalled` rides a ci completion");
 });
