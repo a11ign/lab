@@ -1,0 +1,85 @@
+{
+  "what": "The ONE rule for 'does this head's type-I error block a release', written once and asserted by both implementations.",
+  "why": [
+    "The rule exists twice because it must: the trainer decides `releaseEligible` in Python at train time,",
+    "and `releasability.mjs` decides the release in JavaScript at promote time. Neither language can import",
+    "the other, so CLAUDE.md's first two remedies for a fact stated twice -- delete a copy, derive one from",
+    "the other -- are both unavailable. That leaves the third: pin them equal with a test.",
+    "",
+    "They HAD drifted, and it cost a diagnosis on 2026-08-25. The trainer blocked on `if falsePositive or",
+    "falseNegative`, a zero-tolerance rule left over from before Neyman-Pearson calibration. The gate had",
+    "moved on: bounded false positives are the POINT of an NP threshold, and `releasability.test.ts`",
+    "explicitly pins that false negatives must never block -- 'that bar is unclearable and was never the",
+    "point'. Both test suites passed. The contradiction lived between them, where no compiler could see it.",
+    "",
+    "The candidate that exposed it was declared ineligible by SIX criteria. Five were inside the guarantee",
+    "they had been calibrated to. Retraining to satisfy them would have been tuning against a rule that",
+    "should not exist, while the one genuine failure stayed buried among the five."
+  ],
+  "axis": "SUBTYPE, never criterion. The guarantee is computed per subtype, so that is the only level at which `permittedFalsePositives` means anything. The trainer used to aggregate to the criterion and compare against no bound at all, which is a second drift on top of the first.",
+  "cases": [
+    {
+      "name": "a clean head with a guarantee does not block",
+      "development": { "falsePositive": 0, "falseNegative": 0 },
+      "guarantee": { "permittedFalsePositives": 4, "atTarget": true },
+      "blocks": false,
+      "why": "nothing to answer for"
+    },
+    {
+      "name": "false positives INSIDE the bound do not block",
+      "development": { "falsePositive": 2, "falseNegative": 2 },
+      "guarantee": { "permittedFalsePositives": 4, "atTarget": true },
+      "blocks": false,
+      "why": "an NP threshold PERMITS bounded type-I error; that is what the bound is for. Observed on 1.3.1."
+    },
+    {
+      "name": "false positives EXACTLY at the bound do not block",
+      "development": { "falsePositive": 4, "falseNegative": 0 },
+      "guarantee": { "permittedFalsePositives": 4, "atTarget": true },
+      "blocks": false,
+      "why": "the rank was chosen so that exactly this many negatives sit above the cut. Observed on 2.4.4, 2.4.6, 3.3.1 and 4.1.3 — four of the five phantom blockers."
+    },
+    {
+      "name": "one false positive OVER the bound blocks",
+      "development": { "falsePositive": 5, "falseNegative": 0 },
+      "guarantee": { "permittedFalsePositives": 4, "atTarget": true },
+      "blocks": true,
+      "why": "the threshold and the scores disagree, which is a fault in the calibration rather than a weak head. `test_np_threshold.py` already refuses to RETURN such a cut, so seeing one here means something downstream moved it."
+    },
+    {
+      "name": "FALSE NEGATIVES ALONE NEVER BLOCK",
+      "development": { "falsePositive": 0, "falseNegative": 13 },
+      "guarantee": { "permittedFalsePositives": 4, "atTarget": true },
+      "blocks": false,
+      "why": "THE DRIFT ITSELF. NP bounds type-I error and trades recall deliberately; demanding recall 1.000 is a bar nothing learned can clear, and development recall is computed on a corpus particular to one model so its absolute value cannot support a gate. A head that genuinely weakens is caught on held-out acceptance, where two models ARE comparable."
+    },
+    {
+      "name": "many false negatives still do not block on this rule",
+      "development": { "falsePositive": 0, "falseNegative": 100 },
+      "guarantee": { "permittedFalsePositives": 4, "atTarget": true },
+      "blocks": false,
+      "why": "a head that has gone SILENT is a real blocker, but it is a DIFFERENT rule with a different message. Collapsing the two would report one where the other is true."
+    },
+    {
+      "name": "not calibrated to the target rate blocks, whatever the counts",
+      "development": { "falsePositive": 0, "falseNegative": 0 },
+      "guarantee": { "permittedFalsePositives": 0, "atTarget": false },
+      "blocks": true,
+      "why": "too few conformant records to reach the target false-positive rate at all. No threshold can fix that; only more negatives can."
+    },
+    {
+      "name": "no guarantee at all falls back to zero tolerance",
+      "development": { "falsePositive": 1, "falseNegative": 0 },
+      "guarantee": null,
+      "blocks": true,
+      "why": "an uncalibrated head makes no claim about unseen pages, so the only defensible bar is the old one. This is the pre-NP path and must stay strict."
+    },
+    {
+      "name": "no guarantee and no false positives does not block",
+      "development": { "falsePositive": 0, "falseNegative": 7 },
+      "guarantee": null,
+      "blocks": false,
+      "why": "even without a guarantee, false negatives are not a type-I error and are not this rule's business"
+    }
+  ]
+}
