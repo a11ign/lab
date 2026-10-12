@@ -19,18 +19,12 @@ from pathlib import Path
 from typing import Any
 
 
-# Two different anchors, because this file needs two different things and one variable was doing both jobs:
-# the SCORER PACKAGE (a sibling package) and the CORPUS (`runs/`, at the repo root). After M8 moved this file
-# into `packages/lab/scripts/`, the single `parents[1]` anchor pointed at `packages/lab` and produced
-# `packages/lab/packages/scorer/python/score.py` — a path that does not exist.
-REPO_ROOT = Path(__file__).resolve().parents[3]
+# The lab's own checkout: the CORPUS (`runs/`) lives at its root, and this file is in `scripts/`.
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# The weights, the encoder and the scoring program live in `@a11ign/scorer` (PLAN.md M3). Anchored on
-# the package directory rather than on `models/` at the repo root, which no longer holds them.
-# `packages/lab/scripts/` -> `packages/` -> `packages/scorer`. It was `parents[1] / "packages" / "scorer"`,
-# which resolved to `packages/lab/packages/scorer` once M8 moved this file into the lab package — a path that
-# does not exist, and the failure was `ModuleNotFoundError: No module named 'screenreader_features'`.
-SCORER_PACKAGE = Path(__file__).resolve().parents[2] / "scorer"
+# The weights, the encoder and the scoring program live in `@a11ign/scorer` (PLAN.md M3), installed under
+# `node_modules` like any other dependency. The lab does not read the core's tree (ADR 0045).
+SCORER_PACKAGE = REPO_ROOT / "node_modules" / "@a11ign" / "scorer"
 # The DECISION lives in the scorer package, so this reaches for it rather than reimplementing it. Loaded
 # by path for the same reason `score.py` is: this file is not inside that package and must not assume an
 # installed one.
