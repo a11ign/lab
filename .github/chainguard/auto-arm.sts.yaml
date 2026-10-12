@@ -1,8 +1,10 @@
 # Trust policy for `.github/workflows/auto-arm.yml`'s `arm` job (a11ign/a11ign#4199), Octo STS v0.11.2 syntax; the same shape as a11ign/a11ign's
 # (#4198), which carries the reasoning and the measurements (#4191). Every pattern is matched against the WHOLE claim, so none is anchored here.
 #
-# WHAT IT HOLDS: pull-request write (enable auto-merge) and contents write (the merge itself), on THIS repository only: the server forces
-# `repositories` to the repository the file sits in. Nothing else.
+# WHAT IT HOLDS: pull-request write (enable auto-merge), contents write (the merge itself) and actions READ (a job's log, which the cross-repo
+# refusal compares file by file against `main`'s newest run: a11ign/a11ign#5192; a log answers 403 without it), on THIS repository only: the
+# server forces `repositories` to the repository the file sits in. Nothing else, and `actions: write` is not asked for: the Octo STS app holds
+# it (`gh api apps/octo-sts`), so a read here is the policy's own restraint and no server would refuse more.
 #
 # WHAT BINDS IT TO `main`: `pull_request` runs the workflow as it is on the BRANCH's merge ref and presents the same `sub` as
 # `pull_request_target`, so `sub` alone cannot tell a branch's edited copy from `main`'s. `job_workflow_ref` pinned to `@refs/heads/main`
@@ -18,3 +20,4 @@ claim_pattern:
 permissions:
   pull_requests: write
   contents: write
+  actions: read

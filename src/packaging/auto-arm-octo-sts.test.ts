@@ -39,9 +39,10 @@ function mints(policy: typeof POLICY, claims: { sub: string; job_workflow_ref: s
     && fullMatch(policy.event_name, claims.event_name);
 }
 
-test("a11ign/a11ign#4199: the policy grants pull-request write and contents write, and nothing else", () => {
+test("a11ign/a11ign#4199: the policy grants pull-request write, contents write and actions READ, and nothing else (a11ign/a11ign#5192)", () => {
   const permissions = withoutComments(policyText).split("permissions:")[1]!.split("\n").map((l) => l.trim()).filter(Boolean);
-  assert.deepEqual(permissions, ["pull_requests: write", "contents: write"]);
+  // `actions: read` is the job log the cross-repo refusal compares file by file; `actions: write` would let the token re-run or cancel runs.
+  assert.deepEqual(permissions, ["pull_requests: write", "contents: write", "actions: read"]);
 });
 
 test("a11ign/a11ign#4199: the policy mints for the runs of main's copy of this workflow and refuses the ones that are not its own", () => {
@@ -103,6 +104,8 @@ test("a11ign/a11ign#4199: the minting jobs hold the OIDC request and no write, a
   assert.doesNotMatch(code, /^permissions:/m, "no workflow-level grant: the writes come from the minted token");
   assert.match(code, / {4}permissions:\n(?: {6}contents: read\n)? {6}id-token: write\n/, "the job holds id-token: write and at most a read");
   assert.doesNotMatch(code, /write-all|(?:pull-requests|contents|issues|actions):\s*write/, "no write on GITHUB_TOKEN");
+  // The log read is the MINTED token's grant (the policy's `actions: read`); `permissions:` here is `GITHUB_TOKEN`'s, and widening it grants nothing to the mint.
+  assert.doesNotMatch(code, /actions:\s*read/, "the minting jobs' own GITHUB_TOKEN stays at id-token: write; the log read is the policy's");
   assert.doesNotMatch(code, /secrets\.|github\.token|FALLBACK_TOKEN|A11IGN_BOT_TOKEN/, "no stored or fallback token");
   assert.doesNotMatch(code, /^ {2}token-reach:/m, "the probe of the stored token goes with the token");
 });

@@ -28,14 +28,42 @@ case "$path" in
   repos/*/commits/*/check-runs*) printf '%s' "$CHECKS_JSON" ;;
   repos/*/actions/workflows/ci.yml/runs*) printf '%s' "$RUNS_JSON" ;;
   repos/*/actions/runs/*/jobs*) printf '%s' "$JOBS_JSON" ;;
+  # A job log, by job id (11 is the head's leg, 12 the trunk's). The real \`gh api\` REFUSES a response carrying a terminal escape unless it is
+  # given \`--allow-escape-sequences\` (measured on a log of this repository, 2026-10-12), so this does too: a call without the flag is a 403 here.
+  repos/*/actions/jobs/*/logs)
+    case "$*" in *--allow-escape-sequences*) ;; *) echo "the response contains terminal escape sequences; pass --allow-escape-sequences" >&2; exit 1;; esac
+    case "$path" in
+      */11/logs) [ -n "\${HEAD_LOG+x}" ] && { printf '%s' "$HEAD_LOG"; exit 0; } ;;
+      */12/logs) [ -n "\${TRUNK_LOG+x}" ] && { printf '%s' "$TRUNK_LOG"; exit 0; } ;;
+    esac
+    echo "gh: HTTP 403: Must have admin rights to Repository." >&2; exit 1 ;;
   repos/*/issues/*/comments*) printf '%s' "$COMMENTS" ;;
   repos/*/issues/*) [ -n "$ROW_STATE" ] && printf '%s' "$ROW_STATE" || exit 1 ;;
   *) echo "fake gh: unexpected $*" >&2; exit 1 ;;
 esac
 `;
 
+/** `headLog` and `trunkLog`: the job log of each leg; absent is a log the token cannot read (a 403). */
 type World = { leg?: { status: string; conclusion: string | null }; trunk?: "success" | "failure" | "cancelled" | "none"; trunkLeg?: string;
-  body?: string; row?: string; comments?: string };
+  body?: string; row?: string; comments?: string; headLog?: string; trunkLog?: string };
+
+const ESC = String.fromCharCode(27);
+/** A job log as the runner serves it: a timestamp on every line, and rstest painting the directory, the file and the `>` separately. */
+function rstestLog(failing: string[]): string {
+  const stamp = "2026-10-12T07:38:13.2456415Z";
+  const paint = (file: string) => {
+    const slash = file.lastIndexOf("/") + 1;
+    return `${ESC}[90m${file.slice(0, slash)}${ESC}[39m${ESC}[36m${file.slice(slash)}${ESC}[39m`;
+  };
+  return [
+    `${stamp} ${ESC}[90m  Test Files${ESC}[39m 221 passed`,
+    ...failing.map((file) => `${stamp} ${ESC}[41m${ESC}[37m${ESC}[1m FAIL ${ESC}[22m${ESC}[39m${ESC}[49m ${paint(file)} ${ESC}[2m>${ESC}[22m the edges agree`),
+    // Not a FAIL line: the per-file summary also names the file, and so does a diff of its assertion.
+    ...failing.map((file) => `${stamp}  ${ESC}[1m${ESC}[31m\u2717${ESC}[39m${ESC}[22m ${paint(file)} (35)`),
+  ].join("\n");
+}
+const EDGES = "packages/lab/src/packaging/layer-edges.test.ts";
+const OTHER = "packages/lab/src/packaging/arm-pr.test.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "auto-arm-cross-repo-"));
 writeFileSync(join(dir, "gh"), FAKE_GH);
@@ -57,6 +85,8 @@ function drive(world: World, script: string): { out: string; posted: string; sta
       RUNS_JSON: JSON.stringify({ workflow_runs: runs }),
       JOBS_JSON: JSON.stringify({ total_count: jobs.length, jobs }),
       COMMENTS: world.comments ?? "", ROW_STATE: world.row ?? "",
+      ...(world.headLog === undefined ? {} : { HEAD_LOG: world.headLog }),
+      ...(world.trunkLog === undefined ? {} : { TRUNK_LOG: world.trunkLog }),
     },
   });
   return { out: run.stdout.trim(), posted: readFileSync(posted, "utf8"), status: run.status };
@@ -66,9 +96,36 @@ const verdict = (world: World) => drive(world, "cross_repo_verdict 5").out.split
 
 const RED_HEAD = { leg: { status: "completed", conclusion: "failure" } } as const;
 
-test("a red head leg against a GREEN newest trunk run is red; against a red one it is main's own, so clear", () => {
+test("a red head leg against a GREEN newest trunk run is red, and no log is read to say so", () => {
   assert.equal(verdict({ ...RED_HEAD, trunk: "success", trunkLeg: "success" }), "red");
-  assert.equal(verdict({ ...RED_HEAD, trunk: "failure", trunkLeg: "failure" }), "clear");
+});
+
+test("a red head leg against a red trunk leg is judged FILE BY FILE (a11ign/a11ign#5192): the file main already fails is clear, a second is red", () => {
+  const trunk = { trunk: "failure", trunkLeg: "failure", trunkLog: rstestLog([EDGES]) } as const;
+  assert.equal(verdict({ ...RED_HEAD, ...trunk, headLog: rstestLog([EDGES]) }), "clear", "lab#92's own case: the same file, so main's red");
+  const second = drive({ ...RED_HEAD, ...trunk, headLog: rstestLog([EDGES, OTHER]) }, "cross_repo_verdict 5").out;
+  assert.match(second, /^red\|/, "a second red file on a red main is the pull request's own");
+  assert.ok(second.includes(OTHER), "the refusal names the file that is new");
+  assert.ok(!second.includes(EDGES), "and not the one main already fails");
+  assert.equal(verdict({ ...RED_HEAD, ...trunk, headLog: rstestLog([OTHER]) }), "red", "a different file entirely is new, not inherited");
+  assert.equal(verdict({ ...RED_HEAD, ...trunk, headLog: rstestLog([OTHER, EDGES].reverse()) }), "red", "order of the lines does not matter");
+});
+
+test("a red trunk leg whose logs cannot be told is `cannot`, never an inherited red: an unreadable log and a log naming no file", () => {
+  const both = { ...RED_HEAD, trunk: "failure", trunkLeg: "failure" } as const;
+  const none = drive({ ...both, headLog: rstestLog([EDGES]), trunkLog: rstestLog([EDGES]) }, "cross_repo_verdict 5").out;
+  assert.equal(none, "clear|-", "control: with both logs readable the same world is clear, so the refusals below are the logs' doing");
+  assert.match(drive({ ...both, trunkLog: rstestLog([EDGES]) }, "cross_repo_verdict 5").out, /^cannot\|.*job 11 could not be read/, "the head's log is a 403");
+  assert.match(drive({ ...both, headLog: rstestLog([EDGES]) }, "cross_repo_verdict 5").out, /^cannot\|.*job 12 could not be read/, "the trunk's log is a 403");
+  assert.match(drive({ ...both, headLog: "build failed before any test ran", trunkLog: rstestLog([EDGES]) }, "cross_repo_verdict 5").out,
+    /^cannot\|.*job 11 names no failing test file/, "a leg red for a reason that is not a test names no file, so nothing is inherited");
+  assert.match(drive({ ...both, headLog: rstestLog([EDGES]), trunkLog: "" }, "cross_repo_verdict 5").out, /^cannot\|.*job 12 names no failing test file/);
+});
+
+test("a file new on a red main is exempt only through an OPEN declared row, as a red on a green main is", () => {
+  const world = { ...RED_HEAD, trunk: "failure", trunkLeg: "failure", trunkLog: rstestLog([EDGES]), headLog: rstestLog([EDGES, OTHER]) } as const;
+  assert.equal(verdict({ ...world, body: "Cross-repo-red: a11ign/a11ign#5188", row: "open" }), "clear");
+  assert.equal(verdict({ ...world, body: "Cross-repo-red: a11ign/a11ign#5188", row: "closed" }), "red");
 });
 
 test("a leg that is green, skipped or cancelled on the head is clear: only `failure` is a red", () => {
@@ -86,6 +143,7 @@ test("a trunk that cannot be compared with is `cannot`, which is a refusal and n
   assert.equal(verdict({ ...RED_HEAD, trunk: "none" }), "cannot");
   assert.equal(verdict({ ...RED_HEAD, trunk: "cancelled" }), "cannot", "a cancelled run says nothing, so there is no run to compare with");
   assert.equal(verdict({ ...RED_HEAD, trunk: "success" }), "cannot", "the run has no cross-repo job");
+  assert.equal(verdict({ ...RED_HEAD, trunk: "success", trunkLeg: "cancelled" }), "cannot", "a cancelled trunk leg says nothing to compare with");
 });
 
 test("a `Cross-repo-red:` line names the exit only when its row is OPEN", () => {
