@@ -3,7 +3,7 @@ name: capture-check
 # The capture layer's regression check, run by the repository that owns it (a11ign/a11ign#5196, ruling (b) of a11ign/a11ign#5179).
 #
 # `src/harnesses/capture-check.ts` drives the REAL capture worker (NVDA, in-process, on a Windows runner) over the bundled tutorial pages and asserts the stable raw signals each should
-# yield (ADR 0003). It was run by the core's `capture-regression.yml` as gate 6 of `release.yml` from a copy `prepare` laid under `packages/` until ADR 0045 cut 9 (a11ign/a11ign#5087) stopped
+# yield (ADR 0003). It was run by the core's `capture-regression.yml` as gate 6 of `release.yml` from a copy `prepare` laid under the core's `packages` directory until ADR 0045 cut 9 (a11ign/a11ign#5087) stopped
 # laying it; that job now fails closed. The core's job is deleted only AFTER this one is green on this repository's `main` (the 2026-10-10 rule on a11ign/a11ign#4425), so this is the
 # check a11ign/a11ign#5179 reads.
 #
