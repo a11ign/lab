@@ -28,7 +28,7 @@ The third is the row's "a head adding a second red file": a REAL head, not a con
 
 Tests: `src/packaging/auto-arm-cross-repo-red.test.ts` (11, was 8) and `auto-arm-octo-sts.test.ts` (6) and `auto-arm-filter.test.ts` (2) pass under `node --test`. Before the change the three new file-by-file tests fail (trunk-red read `clear` whatever the files).
 
-Mutation (each on a copy of the workflow or policy, restored from a copy and checked with `cmp`, identical; each caught by its own test(s)):
+Mutation: each on a copy of the workflow or policy, restored from a copy and checked with `cmp`, identical; each caught by its own test(s)):
 - `--allow-escape-sequences` dropped from the log read: the file-by-file, unreadable-log and declared-row tests fail
 - a non-empty `added` never reads `clear` (always red): the file-by-file and unreadable-log tests fail
 - `added` forced empty (always clear): the file-by-file and declared-row tests fail
