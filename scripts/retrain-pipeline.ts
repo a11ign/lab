@@ -27,7 +27,7 @@ import { releasability } from "../src/packaging/releasability.ts";
 import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.ts";
-import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.ts";
+import { pnpmCliInvocation } from "@a11ign/toolchain/lib/npm-cli-executable";
 import type { Loose } from "../src/capture/loose.ts";
 
 /**

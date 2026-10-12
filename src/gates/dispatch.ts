@@ -18,7 +18,7 @@
  */
 import { spawn } from "node:child_process";
 import { REPO_ROOT } from "../dataset-paths.ts";
-import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.ts";
+import { pnpmCliInvocation } from "@a11ign/toolchain/lib/npm-cli-executable";
 
 /**
  * The flag that keeps a gate here. EXPORTED so a caller's `refuseUnknownFlags` list and this check cannot

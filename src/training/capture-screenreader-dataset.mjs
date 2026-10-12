@@ -27,7 +27,7 @@ import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-fl
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 import { datasetRoot, captureRoot, refuseIfRunsReadonly, runsRoot } from "../dataset-paths.ts";
 import { captureRunsFile, recordUnguardedRun } from "./capture-run-record.mjs";
-import { probeWorker } from "../../../control/src/fleet-wake.ts";
+import { probeWorker } from "@a11ign/control/fleet-wake";
 import { captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.ts";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";

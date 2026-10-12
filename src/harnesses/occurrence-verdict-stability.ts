@@ -20,8 +20,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-// By PATH, not by name: `@a11ign/control` is on no registry and a host holds control LAID (`src/`, no manifest), so the name resolves nowhere there (a11ign/a11ign#3984).
-import { layerRoot } from "../../../control/src/layer-checkouts.ts";
+// By name, through the `exports` control declares: a repository never reads another's source by path (ADR 0045, Decision 1, rule 2; a11ign/a11ign#5176).
+import { layerRoot } from "@a11ign/control/layer-checkouts";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";

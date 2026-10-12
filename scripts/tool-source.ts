@@ -8,10 +8,47 @@
  * the way out is for agent-org to declare what these tests read or to carry the tests itself (a11ign/a11ign#4427).
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { toolExportPath, toolRoot } from "../../../scripts/agent-org-newest-tag.ts";
+const TOOL_ENV = "AGENT_ORG_TOOL";
+const HOST_FILE = ".agent-org/host.json";
+
+/** The lab's root: one directory above `scripts/`, wherever the repository is checked out or laid. */
+const LAB_ROOT = resolve(import.meta.dirname, "..");
+
+/**
+ * The host files that may name the tool: the lab's own and, when the core has laid the lab as `<core>/packages/lab`, the core's. A host file is the machine's declaration of where the tool
+ * is checked out, not the core's source, so reading it is not the reach this file used to make (a11ign/a11ign#5176).
+ */
+function hostFiles(root: string): string[] {
+  const laidInCore = basename(dirname(root)) === "packages";
+  return [join(root, HOST_FILE), ...(laidInCore ? [join(root, "../..", HOST_FILE)] : [])];
+}
+
+/**
+ * Where the tool is: `$AGENT_ORG_TOOL` (CI exports it after cloning the newest tag), else the `tool` a host file declares. REFUSES when neither says, naming both: a guess from where this
+ * file sits would be a second version of the tool, which is what the core's `agent-org-newest-tag.ts` (the same answer, kept there for the core's own scripts) exists to prevent.
+ */
+function toolRoot(env: Record<string, string | undefined> = process.env, root: string = LAB_ROOT): string {
+  const named = env[TOOL_ENV];
+  if (named !== undefined && named !== "") return named;
+  for (const hostFile of hostFiles(root).filter((file) => existsSync(file))) {
+    const host: { tool?: unknown; } = JSON.parse(readFileSync(hostFile, "utf8"));
+    if (typeof host.tool === "string" && isAbsolute(host.tool)) return host.tool;
+  }
+  throw new Error(`tool-source: the tool is nowhere: ${TOOL_ENV} is unset and none of ${hostFiles(root).join(", ")} names an absolute \`tool\`. `
+    + "In CI, the step that clones the newest tag exports it; on a host, export it to the checkout the work-tick unit keeps at the newest tag.");
+}
+
+/**
+ * The file a DECLARED subpath of the tool's `exports` names, resolved by the platform from the tool's own `package.json` (the tool is named `agent-org`, so a self-reference), and so read as
+ * node reads a condition or a pattern. Throws for a name the tool does not declare.
+ */
+function toolExportPath(subpath: string): string {
+  return createRequire(join(toolRoot(), "package.json")).resolve(`agent-org/${subpath}`);
+}
 
 /** The declared export a `src/<name>.mjs|ts` path names, if the tool declares one; `undefined` when it does not. */
 function declaredPath(relative: string): string | undefined {

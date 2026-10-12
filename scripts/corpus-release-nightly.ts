@@ -1,7 +1,7 @@
 // @ts-check
 // Fetch the lab's newest corpus snapshot and release it, on a clock -- #1042 item 3.
 //
-//   node packages/lab/scripts/corpus-release-nightly.ts
+//   node scripts/corpus-release-nightly.ts   (from the lab's own checkout)
 //
 // `a11y-corpus-snapshot.timer` (on the LAB) fires daily and produces an archive nobody publishes.
 // `corpus:release` (on the CONTROL PLANE, where the GitHub token lives -- see corpus-release.ts's own
@@ -36,12 +36,17 @@ import { execFile } from "node:child_process";
 import { copyFileSync, existsSync, realpathSync, unlinkSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 import { promisify } from "node:util";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.ts";
 import type { Loose } from "../src/capture/loose.ts";
 
 const run = promisify(execFile);
+
+/**
+ * The script this unit releases with, by the path of THIS file's own directory and not by the `corpus:release` script of whatever directory the unit was started in: the unit
+ * keeps the core's working directory (`runs/` and `packages/control` are there), and that directory's `package.json` is not this repository's (a11ign/a11ign#5176).
+ */
+const CORPUS_RELEASE = fileURLToPath(new URL("./corpus-release.ts", import.meta.url));
 
 // Takes no flags -- refuses anything passed rather than silently ignoring it, the same guard every other
 // command line in this repo carries.
@@ -141,8 +146,7 @@ async function main() {
 
   // Inherits stdio so `corpus:release`'s own report -- the count, the size, the verify -- lands in this
   // job's own journal rather than being summarised a second time and possibly disagreeing with it.
-  const pnpm = pnpmCliInvocation(["run", "corpus:release", "--", `--archive=${named}`]);
-  const child = await run(pnpm.command, pnpm.args, { maxBuffer: 1 << 24 })
+  const child = await run(process.execPath, [CORPUS_RELEASE, `--archive=${named}`], { maxBuffer: 1 << 24 })
     .then((r) => ({ ...r, code: 0 }))
     .catch((e: Loose) => ({ stdout: e?.stdout ?? "", stderr: e?.stderr ?? String(e), code: e?.code ?? 1 }));
   process.stdout.write(child.stdout);

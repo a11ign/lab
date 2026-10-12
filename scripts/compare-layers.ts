@@ -31,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { errorText } from "@a11ign/screenreader-worker/error-text";
-import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.ts";
+import { pnpmCliInvocation } from "@a11ign/toolchain/lib/npm-cli-executable";
 
 /**
  * takes its sites as a POSITIONAL JSON argument and no flags; `--json`, `--probe-forms` and `--task`
