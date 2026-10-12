@@ -29,7 +29,7 @@ Not moved to the core: the packaging tests still run in the lab. Their consumers
 - Lint, typecheck and rstest were not run: the lab has no lockfile and its dependencies are not installed on this host.
 - The harness file's import check was blocked by `Cannot find package '@a11ign/control'`, so it was verified by the Acceptance grep and by reading, not by importing it.
 
-Outside-Region: `scripts/cross-repo-tests.ts` line 9, a comment only.
+Outside-Region: scripts/cross-repo-tests.ts — line 9, a comment only, reworded so the Acceptance grep does not match its own comment.
 Fleet: No.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
