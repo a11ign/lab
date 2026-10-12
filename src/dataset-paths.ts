@@ -18,7 +18,7 @@
  * packages (worker-fleet, nvda-worker, judge, and now cli) had already needed their own duplicate of this
  * exact computation to avoid depending on `lab`.
  *
- * Before this existed, the repo-root computation `fileURLToPath(new URL("../../../", import.meta.url))`
+ * Before this existed, the repo-root computation (a `fileURLToPath` of `import.meta.url` climbed three directories)
  * was pasted into roughly a dozen scripts, each counting ".." segments to ITS OWN depth in the tree —
  * `dispatch.mjs` needed four where every `packages/lab/scripts/*.mjs` needed three, and nothing checked
  * which was right short of manually counting slashes. `DATASET_ROOT` was resolved eleven more times,
@@ -55,11 +55,11 @@
  * by `control-has-no-dependencies.test.ts`), and its own `REPO` in `lab-job.mjs`/`lab-pipeline.mjs` is
  * used only as a `cwd` for spawning Ansible — it never reads or writes anything under `runs/`.
  *
- * `promote-model.ts` and `check-shipped-provenance.ts` are exempt too, but for a reason to keep rather
+ * `promote-model.ts` and `check-shipped-provenance.ts` do not take `REPO_ROOT`, for a reason to keep rather
  * than a boundary to fix: each takes its OWN override (`A11Y_PROMOTE_ROOT`, `A11Y_PROVENANCE_ROOT`) that
  * repoints the entire script at a fixture tree so its refusal can be proven without copying the
- * repository. That override has to live on the constant those two files compute themselves — a shared
- * `REPO_ROOT` fixed at this module's own location could not be repointed per test.
+ * repository, and what they read is the CORE's (the shipped weights, `.changeset/`), which is not where
+ * `runs/` is. They ask `coreRoot()` below, which takes that override and refuses to guess.
  *
  * `packages/lab/scripts/audit-rule-coverage.ts` and `check-real-page-findings.ts` are ordinary
  * consumers: `.ts` files under `packages/lab/scripts/` already import sibling `.mjs` modules by relative
@@ -70,16 +70,52 @@
  * test's own exemption list, with a reason.
  */
 import { fileURLToPath } from "node:url";
-import { resolve, relative } from "node:path";
+import { basename, dirname, resolve, relative } from "node:path";
+
+/** This checkout's own root: `src/` sits one directory below it, whether the lab stands alone or is laid. */
+const LAB_ROOT = fileURLToPath(new URL("../", import.meta.url));
+
+/** The variable that names the core for every gate that reads the core's own files, whichever one asks. */
+export const CORE_ROOT_VARIABLE = "A11Y_CORE_ROOT";
 
 /**
- * Computed from THIS file's own location, once, rather than by every caller re-deriving it from ITS
- * location. `packages/lab/src/dataset-paths.ts` sits three directories below the repo root
- * (`packages`, `lab`, `src`), so three ".." get there regardless of whether a caller imports the
- * `src` copy directly (scripts do) or the built `dist` copy (a cross-package `@a11ign/lab`
- * import would) — `dist/` mirrors `src/`'s depth under the package root.
+ * True when `labRoot` is `<core>/packages/lab`. Decided by the path alone, as everything in this file is
+ * (`dataset-paths.test.ts` refuses a `realpathSync` here): a symlinked lab is the module's own resolved
+ * location, which is where Node puts `import.meta.url`.
  */
-export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+function laidUnderCore(labRoot: string): boolean {
+  return basename(labRoot) === "lab" && basename(dirname(labRoot)) === "packages";
+}
+
+/**
+ * THE CORE'S ROOT, for a gate that reads the core's own files (the shipped weights, `.changeset/`,
+ * `RELEASE.md`): named by `specific` or by `A11Y_CORE_ROOT`, or recognised because this lab is laid at
+ * `<core>/packages/lab`, and otherwise REFUSED, naming both variables.
+ *
+ * It used to be a three-directory climb from `import.meta.url`, which is the core only while something lays the lab
+ * under it. From a standalone checkout it is whatever directory holds the checkout, so a gate read
+ * `/home/<user>/.changeset` and `/home/<user>/packages/scorer`, found nothing, and reported on a tree that
+ * is not the core's. A laid lab is RECOGNISED (it must stand at `<core>/packages/lab`), never
+ * assumed: the lab's own CI lays it and runs its tests with no variable set.
+ *
+ * @param specific the gate's own variable, which wins over `A11Y_CORE_ROOT`
+ */
+export function coreRoot(specific: string, env: NodeJS.ProcessEnv = process.env, labRoot: string = LAB_ROOT): string {
+  const named = env[specific] || env[CORE_ROOT_VARIABLE];
+  if (named) return resolve(named);
+  if (laidUnderCore(labRoot)) return resolve(labRoot, "..", "..");
+  throw new Error(`${specific} is not set, and this checkout is not laid under the core's packages/lab: `
+    + `the core's root cannot be assumed from the lab's location. Set ${specific}, or ${CORE_ROOT_VARIABLE} `
+    + "for every gate at once, to the core's checkout.");
+}
+
+/**
+ * The root that holds `runs/`: the core when the lab is laid under it (the repo-wide tests walk `packages/`
+ * from there), otherwise the lab's own checkout, where `runs/` is the corpus and the volume's symlink.
+ * Never refused, because both layouts have one; `A11Y_CORE_ROOT` does not move it, so naming the core to a
+ * release gate does not point the corpus stages at the core's `runs/`.
+ */
+export const REPO_ROOT = laidUnderCore(LAB_ROOT) ? resolve(LAB_ROOT, "..", "..") : LAB_ROOT;
 
 /**
  * `RUNS_ROOT` (read by `explain-scorer.ts`) and `A11Y_RUNS_ROOT` (read by `lab-inventory.ts`) were
