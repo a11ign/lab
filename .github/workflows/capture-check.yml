@@ -1,0 +1,115 @@
+name: capture-check
+
+# The capture layer's regression check, run by the repository that owns it (a11ign/a11ign#5196, ruling (b) of a11ign/a11ign#5179).
+#
+# `src/harnesses/capture-check.ts` drives the REAL capture worker (NVDA, in-process, on a Windows runner) over the bundled tutorial pages and asserts the stable raw signals each should
+# yield (ADR 0003). It was run by the core's `capture-regression.yml` as gate 6 of `release.yml` from a copy `prepare` laid under the core's `packages` directory until ADR 0045 cut 9 (a11ign/a11ign#5087) stopped
+# laying it; that job now fails closed. The core's job is deleted only AFTER this one is green on this repository's `main` (the 2026-10-10 rule on a11ign/a11ign#4425), so this is the
+# check a11ign/a11ign#5179 reads.
+#
+# WHAT IT INSTALLS, AND WHY NOT THE MANIFEST. `ci.yml` is explicit that this repository does not install on its own: `package.json` names `@a11ign/control` and `@a11ign/nvda-speech`, which no registry
+# holds, and workspace versions of `@a11ign/evidence`, `judge` and `scorer` that the registry does not hold either, so a plain `pnpm install` is an E404 and there is no lockfile (`ci-composition.test.ts`
+# pins that absence, and `ci.yml`'s `release-dry-run` refuses a pull request that adds one). The harness imports only `@a11ign/screenreader-worker` and `@a11ign/screenreader-fleet`
+# (and `@a11ign/toolchain` through the page server); `tsx` runs it and `serve` is what the page server starts. So the install step keeps those entries of the manifest, at the versions the
+# manifest names, and drops the rest: THIS REPOSITORY'S OWN PINS, which are older than the core's (its worker and fleet ranges are what the core's job did not measure). A name the manifest
+# stops declaring fails the step rather than being installed from nowhere. The trimmed manifest exists on the runner only; nothing is committed back.
+#
+# WHICH NVDA. `@guidepup/setup` reads `node_modules/@guidepup/guidepup/manifest.json` from its working directory to decide the NVDA build to fetch, and that must be the guidepup that DRIVES
+# NVDA, which is the one `@a11ign/screenreader-worker` depends on (an exact pin of its own, nested under it), not this manifest's own `@guidepup/guidepup`, which names a different NVDA
+# build (measured 2026-10-12: worker 0.6.0 depends on guidepup 0.31.0, NVDA 2026.1.1; this manifest pins 0.35.0, NVDA 2026.2). The core's job ran the installer from the root for the same reason
+# in the other direction: there the two were one package. The installer is `@guidepup/setup` at the version the core's job used (`0.29.1`, a11ign/a11ign `package.json` `devDependencies`), added to the
+# trimmed manifest below.
+#
+# TRIGGERS. A pull request, so a change here is judged before it merges; `push` to `main`, so a red `main` is red the hour it happens (the same reason `ci.yml` has it, a11ign/a11ign#4588);
+# `workflow_dispatch` for the on-demand run. No `schedule`: GitHub disables one after 60 days without activity, and the NVDA build this installs is the one thing that moves with no commit.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  capture:
+    runs-on: windows-2022 # Guidepup supports Windows Server 2022/2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # No `cache: pnpm`: it keys on a lockfile, and this repository has none.
+      - name: Install what the capture harness imports, at this repository's own pins
+        shell: bash
+        run: |
+          node --input-type=module <<'TRIM'
+          import { readFileSync, writeFileSync } from "node:fs";
+          // `@guidepup/setup` is not in the manifest: it is the installer, at the version the core's `capture-regression.yml` ran.
+          const INSTALLER = { "@guidepup/setup": "0.29.1" };
+          const NEEDED = ["@a11ign/screenreader-fleet", "@a11ign/screenreader-worker", "@a11ign/toolchain", "serve", "tsx"];
+          const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+          const declared = { ...manifest.dependencies, ...manifest.devDependencies };
+          const missing = NEEDED.filter((name) => !(name in declared));
+          if (missing.length > 0) throw new Error(`package.json no longer declares ${missing.join(", ")}: this step names what capture-check.ts imports`);
+          manifest.dependencies = {};
+          manifest.devDependencies = { ...Object.fromEntries(NEEDED.map((name) => [name, declared[name]])), ...INSTALLER };
+          writeFileSync("package.json", `${JSON.stringify(manifest, null, 2)}\n`);
+          console.log(manifest.devDependencies);
+          TRIM
+          pnpm install --no-frozen-lockfile
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      # Install NVDA via the guidepup the WORKER uses (see `WHICH NVDA` above), not guidepup/setup-action, which predates the @guidepup/setup 0.24.0 CLI rewrite and installs a layout
+      # guidepup >= 0.29 does not look at (a11ign/a11ign `capture-regression.yml`). The installer's working directory is the pnpm store entry that holds the worker's guidepup.
+      - name: Set up NVDA (Guidepup), the build the worker's own guidepup names
+        shell: bash
+        run: |
+          node --input-type=module <<'NVDA'
+          import { execFileSync } from "node:child_process";
+          import { createRequire } from "node:module";
+          import { join, sep } from "node:path";
+          const root = process.cwd();
+          const worker = createRequire(join(root, "package.json")).resolve("@a11ign/screenreader-worker");
+          const driver = createRequire(worker).resolve("@guidepup/guidepup");
+          const marker = `${sep}node_modules${sep}@guidepup${sep}guidepup${sep}`;
+          const guidepupRoot = driver.slice(0, driver.indexOf(marker));
+          if (!driver.includes(marker)) throw new Error(`cannot place the worker's guidepup from ${driver}`);
+          console.log(`installing the NVDA named by ${guidepupRoot}`);
+          const installer = join(root, "node_modules", "@guidepup", "setup", "bin", "guidepup");
+          for (const args of [["setup"], ["install", "nvda"]]) {
+            execFileSync(process.execPath, [installer, ...args], { cwd: guidepupRoot, stdio: "inherit" });
+          }
+          NVDA
+      # Guidepup ships the Speech Viewer ON. Its focus event lands in the spokenPhraseLog delta captured after activating a control, so every interaction probe records "NVDA Speech Viewer"
+      # instead of the page's response, and capture-check would still pass, because it asserts the probe fired, not what it heard. Turn it off before capturing.
+      - name: Disable the NVDA Speech Viewer
+        shell: pwsh
+        run: |
+          $cacheRoot = if ($env:GUIDEPUP_SCREEN_READERS_PATH) { $env:GUIDEPUP_SCREEN_READERS_PATH }
+                       else { Join-Path $env:LOCALAPPDATA 'guidepup' }
+          $inis = Get-ChildItem (Join-Path $cacheRoot 'nvda') -Recurse -Filter 'nvda.ini' -ErrorAction SilentlyContinue
+          if (-not $inis) { throw "No NVDA config found under $cacheRoot - the install step failed." }
+          foreach ($ini in $inis) {
+            $body = Get-Content $ini.FullName -Raw
+            Set-Content -Path $ini.FullName -NoNewline `
+              -Value ($body -replace 'showSpeechViewerAtStartup = True', 'showSpeechViewerAtStartup = False')
+          }
+          if ($inis | Select-String 'showSpeechViewerAtStartup = True') { throw 'Speech Viewer still enabled.' }
+      # A fresh Edge profile shows a first-run welcome/sign-in surface; on a page with no headings of a type, NVDA quick-nav escapes the empty document into that browser UI and pollutes the
+      # capture. Suppress it via the documented Edge policies (runner steps are admin).
+      - name: Suppress Edge first-run experience
+        shell: pwsh
+        run: |
+          $key = "HKLM:\SOFTWARE\Policies\Microsoft\Edge"
+          New-Item -Path $key -Force | Out-Null
+          Set-ItemProperty -Path $key -Name "HideFirstRunExperience" -Value 1 -Type DWord
+          Set-ItemProperty -Path $key -Name "BrowserSignin" -Value 0 -Type DWord
+      - name: Capture-regression checks (real NVDA)
+        run: pnpm run capture:check
