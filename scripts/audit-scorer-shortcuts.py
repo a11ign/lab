@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 UNCLOSABLE_MAP = REPO_ROOT / "runs/unclosable-vetoes.json"
 
 
@@ -53,7 +53,7 @@ def unclosable_vetoes() -> dict[str, dict[str, set[str]]]:
     raw = json.loads(UNCLOSABLE_MAP.read_text(encoding="utf-8"))
     return {kind: {subtype: set(features) for subtype, features in group.items()}
             for kind, group in raw.items()}
-SCORER_PACKAGE = Path(__file__).resolve().parents[2] / "scorer"
+SCORER_PACKAGE = REPO_ROOT / "node_modules" / "@a11ign" / "scorer"
 sys.path.insert(0, str(SCORER_PACKAGE / "python"))
 
 import screenreader_features as features  # noqa: E402  (needs the path above)

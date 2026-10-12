@@ -26,8 +26,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-REPO = Path(__file__).resolve().parents[3]
-SCORER = Path(__file__).resolve().parents[2] / "scorer"
+REPO = Path(__file__).resolve().parents[1]
+SCORER = REPO / "node_modules" / "@a11ign" / "scorer"
 
 
 def load(path: Path, name: str) -> Any:
