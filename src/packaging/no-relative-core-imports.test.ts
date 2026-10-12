@@ -52,6 +52,7 @@ test("an import inside the lab, a package name and a commented-out reach are not
 test("no non-test file of the lab imports by a relative path that leaves it", () => {
   const files = labSources(TS_OR_MJS);
   const labRelative = files.map((file) => relative(LAB_ROOT, file));
+  assert.ok(files.length > 0, "the walk found no lab sources: an empty population would pass every check below");
   // The positive control: the population is the one the twelve files were found in, so an empty or a shrunken walk cannot pass this test.
   for (const known of ["scripts/tool-source.ts", "scripts/corpus-release-nightly.ts", "src/gates/dispatch.ts", "src/training/page-server.mjs"]) {
     assert.ok(labRelative.includes(known), `${known} is not in the scanned population (${files.length} files)`);

@@ -17,7 +17,7 @@ import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts
 import { coreRoot } from "../src/dataset-paths.ts";
 import { rehearsalReading, rehearsalMarkerSha, ageInDays, REHEARSAL_DOCUMENTS, publishedPackagePaths }
   from "../src/packaging/rehearsal-currency.ts";
-import { sandboxGitEnv } from "@a11ign/toolchain/lib/git-env";
+import { sandboxGitEnv } from "@a11ign/toolchain/lib/git-sandbox";
 
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run release:rehearsal-check" });
 
