@@ -14,11 +14,13 @@
 # THE CROSS-REPO REFUSAL (a11ign/a11ign#5188). `ci.yml` makes the `cross-repo` leg `continue-on-error`, so `gate` reads green while the leg is red and
 # such a pull request merges and puts `main` red (lab#92 on 2026-10-12: the leg `failure` on its head, the newest push run's `success`, merged
 # anyway). a11ign/agent-org#1045 refuses that in agent-org's own arming doors, and this repository arms through neither, so the same rule is here,
-# as a smaller shell form of its `crossRepoRedVerdict`: the head's leg is `failure` AND the newest completed push run of `ci.yml` on `main` had
-# it `success`. `Cross-repo-red: #n` or `owner/repo#n` in the body, naming an OPEN row, is the exit. IT DOES NOT COMPARE FAILING TEST FILES as the
-# tool does: that needs the job log, which takes `actions: read`, and `auto-arm-octo-sts.test.ts` pins the minting jobs at `id-token: write`. So a
-# leg that is red on `main` ALREADY is not refused, and a pull request adding a second red file to a red `main` is not caught; what it does read
-# (check runs, runs, jobs, issues) is public and needs no grant. It is ONE text (`CROSS_REPO_RED_LIB`, below) that both arming jobs `eval`, so
+# as a smaller shell form of its `crossRepoRedVerdict`: the head's leg is `failure` AND it fails a test FILE the newest completed push run of
+# `ci.yml` on `main` did not. `Cross-repo-red: #n` or `owner/repo#n` in the body, naming an OPEN row, is the exit. A trunk leg that is red too is
+# compared file by file from the two job logs (a11ign/a11ign#5192, which first read it `clear` because the arming token could not read a log),
+# so a pull request adding a second red file to a red `main` is refused and one failing only the file `main` already fails is not. A log that
+# cannot be read, or names no failing file, is `cannot` and leaves the pull request unarmed: it is never an inherited red. The log is the one read
+# that needs a grant, `actions: read` in the POLICY (`auto-arm.sts.yaml`); it is the MINTED token's and not `GITHUB_TOKEN`'s, so the minting jobs'
+# own `permissions:` stay at `id-token: write`. It is ONE text (`CROSS_REPO_RED_LIB`, below) that both arming jobs `eval`, so
 # they cannot drift; every Dependabot pull request is in `arm`'s listing and is approved through `arm-approved`, so those two cover all three paths.
 #
 # A PULL REQUEST IS ARMED ONLY AFTER ITS LEG HAS CONCLUDED. `arm` fires at `opened`, minutes before the leg exists, so a refusal that read the leg
@@ -78,12 +80,12 @@ env:
   CROSS_REPO_RED_LIB: |
     CROSS_LEG="checks (cross-repo)"
 
-    # `<status> <conclusion>` of the leg in a list of check runs or jobs (key `check_runs` or `jobs`); `unread` when the leg is absent from a
-    # page that was not read in full; nothing when it is simply absent.
+    # `<status> <conclusion> <id>` of the leg in a list of check runs or jobs (key `check_runs` or `jobs`; an Actions check run's id IS its job id,
+    # which is what the log is read by); `unread` when the leg is absent from a page that was not read in full; nothing when it is simply absent.
     leg_in() {
       jq -r --arg leg "$CROSS_LEG" --arg key "$1" '
         ([.[$key][] | select(.name == $leg)][0]) as $l
-        | if $l != null then "\($l.status) \($l.conclusion // "none")"
+        | if $l != null then "\($l.status) \($l.conclusion // "none") \($l.id)"
           elif .total_count > (.[$key] | length) then "unread" else empty end'
     }
 
@@ -91,6 +93,27 @@ env:
     trunk_run() {
       gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?branch=main&event=push&status=completed&per_page=20" |
         jq -r '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure")][0].id // empty'
+    }
+
+    # The test FILES a job log says failed, one per line and sorted: rstest's ` FAIL  <file> > <test>` lines (agent-org's `failingFilesFromRstestLog`).
+    # Colour escapes and the timestamp come off first, because rstest paints the directory, the file and the `>` separately and the runner
+    # puts a timestamp in front of every line. Prints nothing when no line is a FAIL line, which is "could not tell" and never "none failed".
+    failing_files() {
+      local esc
+      esc=$(printf '\033')
+      sed -E "s/${esc}\[[0-9;]*m//g; s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?//" |
+        sed -nE 's/^[[:space:]]*FAIL[[:space:]]+([^[:space:]]+\.[cm]?[jt]sx?)(:[0-9]+(:[0-9]+)?)?([[:space:]]+>[[:space:]].*)?[[:space:]]*$/\1/p' | sort -u
+    }
+
+    # The failing test files of the job `$1`, one per line; or, with return 1, WHY they could not be told. An unreadable log and a log naming no
+    # file are both "could not tell", which the caller refuses on: neither is a red that is inherited. `--allow-escape-sequences` because `gh api`
+    # REFUSES a response carrying a terminal escape (measured 2026-10-12 on a job log of this repository), and every rstest log carries them.
+    leg_files() {
+      local log files
+      log=$(gh api --allow-escape-sequences "repos/$GH_REPO/actions/jobs/$1/logs" 2>&1) || { echo "the log of job $1 could not be read ($(head -n1 <<<"$log"))"; return 1; }
+      files=$(failing_files <<<"$log")
+      [ -n "$files" ] || { echo "the log of job $1 names no failing test file"; return 1; }
+      printf '%s\n' "$files"
     }
 
     # 0 when a `Cross-repo-red: #n` / `owner/repo#n` line of the body names an OPEN row; otherwise says why not and returns 1.
@@ -112,30 +135,39 @@ env:
     }
 
     # ONE LINE, `kind|why`, kind being `clear`, `pending` (the leg has not concluded), `red` (newly red, undeclared) or `cannot` (not readable).
-    # agent-org's `crossRepoRedVerdict` in its smaller form: the head's leg is `failure` AND the newest trunk run's leg was `success`. A trunk leg
-    # that is `failure` too is `clear`: telling a new red file from an inherited one needs the job log, which the arming token cannot read.
+    # agent-org's `crossRepoRedVerdict` in its smaller form: the head's leg is `failure` AND it fails a test file the newest trunk run's leg did not.
+    # A trunk leg that was `success` fails none, so every file is new. A trunk leg that is `failure` too is compared FILE BY FILE from the two job
+    # logs (`actions: read` in the policy, a11ign/a11ign#5192): a file `main` already fails is the world's red, and one it does not is the pull request's.
     cross_repo_verdict() {
-      local pr sha body checks jobs status conclusion trunk tstatus tconclusion declared
+      local pr sha body checks jobs status conclusion leg_id trunk tstatus tconclusion trunk_leg declared own theirs added newly
       pr=$(gh api "repos/$GH_REPO/pulls/$1") || { echo "cannot|pull request #$1 could not be read"; return 0; }
       sha=$(jq -r .head.sha <<<"$pr")
       body=$(jq -r '.body // ""' <<<"$pr")
       checks=$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100") || { echo "cannot|the check runs of ${sha:0:9} could not be read"; return 0; }
-      read -r status conclusion <<<"$(leg_in check_runs <<<"$checks")"
+      read -r status conclusion leg_id <<<"$(leg_in check_runs <<<"$checks")"
       [ "$status" != unread ] || { echo "cannot|the check runs of ${sha:0:9} were not read in full"; return 0; }
       if [ "$status" != completed ]; then echo "pending|its \`$CROSS_LEG\` leg has not concluded"; return 0; fi
       if [ "$conclusion" != failure ]; then echo "clear|-"; return 0; fi
 
       trunk=$(trunk_run) && [ -n "$trunk" ] || { echo "cannot|no completed push run of ci.yml on main to compare the red with"; return 0; }
       jobs=$(gh api "repos/$GH_REPO/actions/runs/$trunk/jobs?per_page=100") || { echo "cannot|the jobs of run $trunk could not be read"; return 0; }
-      read -r tstatus tconclusion <<<"$(leg_in jobs <<<"$jobs")"
+      read -r tstatus tconclusion trunk_leg <<<"$(leg_in jobs <<<"$jobs")"
       [ "$tstatus" = completed ] || { echo "cannot|run $trunk has no concluded \`$CROSS_LEG\` job to compare with"; return 0; }
+      newly="the newest push run on main (https://github.com/$GH_REPO/actions/runs/$trunk) had the leg \`success\`"
       case "$tconclusion" in
         success) ;;
-        failure) echo "clear|-"; return 0 ;;
+        failure)
+          own=$(leg_files "$leg_id") || { echo "cannot|the leg of #$1 failed and $own"; return 0; }
+          theirs=$(leg_files "$trunk_leg") || { echo "cannot|the leg of #$1 failed on $(paste -sd, - <<<"$own" | sed 's/,/, /g') and the newest trunk run's leg failed too and $theirs"; return 0; }
+          added=$(comm -23 <(printf '%s\n' "$own") <(printf '%s\n' "$theirs"))
+          # THE RED IS `main`'S OWN ALREADY: every file this leg fails, the newest trunk run's leg failed.
+          [ -n "$added" ] || { echo "clear|-"; return 0; }
+          newly="the newest push run on main (https://github.com/$GH_REPO/actions/runs/$trunk) did not fail $(paste -sd, - <<<"$added" | sed 's/,/, /g')"
+          ;;
         *) echo "cannot|the newest trunk run $trunk read its leg as ${tconclusion:-unfinished}, which says nothing to compare with"; return 0 ;;
       esac
       if declared=$(declared_row_open "$body"); then echo "clear|-"; return 0; fi
-      echo "red|the newest push run on main (https://github.com/$GH_REPO/actions/runs/$trunk) had the leg \`success\`, and $declared"
+      echo "red|$newly, and $declared"
     }
 
     # Says a refusal ONCE per pull request: the marker is the same for every head, so a pull request that stays red is not told again.
