@@ -104,12 +104,12 @@ def flatten(by_path: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     return [record for records in by_path.values() for record in records]
 
 
-# The case definitions the code has, asked of the code. `packages/lab/src/training/acceptance-matrix.mjs`
+# The case definitions the code has, asked of the code. `src/training/acceptance-matrix.mjs`
 # is JavaScript and this evaluator is Python, so neither can import the other — the same bind
 # `audit_grants.py` is in, and this is its answer: ask node, rather than re-parsing the source with a
 # regex. A regex over an `id: "..."` literal would be a SECOND definition of the case set that can match
 # nothing and still pass, which is the defect class this guard exists to close, one level up.
-ACCEPTANCE_MATRIX = "./packages/lab/src/training/acceptance-matrix.mjs"
+ACCEPTANCE_MATRIX = "./src/training/acceptance-matrix.mjs"
 
 
 def defined_cases() -> dict[str, dict[str, Any]]:
@@ -755,7 +755,7 @@ def missed_cases(records: list[dict[str, Any]], missed_indices: list[int],
 
     NAMED AND EXTRACTED so the pairing can be tested. It was a comprehension inline in `main`, which no
     unit can reach without a model and a corpus: replacing `records[index]` there with `{}` left the
-    whole of `packages/lab/tests` green, because every test of the classifier hands the record in by
+    whole of `tests` green, because every test of the classifier hands the record in by
     hand. The classification asks the applicability gate and the gate READS the capture, so a caller
     that pairs a score with the wrong record -- or with none -- answers about a different page and says
     nothing while doing it.
@@ -961,7 +961,7 @@ def false_positive_reason(criterion: str, block: dict[str, Any]) -> str:
 # `ceo` had accepted read `passed: false` for good, `promote:gated` refused it, and the schema migration it gates
 # could not close. `known-gaps-file-facts.test.ts` reads the SAME file and pins it to §53, so the doc and the gate
 # cannot drift.
-ACCEPTED_CASES_FILE = REPO_ROOT / "packages/lab/src/training/accepted-acceptance-cases.json"
+ACCEPTED_CASES_FILE = REPO_ROOT / "src/training/accepted-acceptance-cases.json"
 # THE LIST IS A `4.1.3` STATUS-HEAD LIST, NOT A GENERAL MECHANISM (`ceo`, 2026-09-25). Refused HERE as well as in the
 # doc test, because the loader is what the gate runs: a widened file must fail the evaluation, not merely a test.
 # `2.4.6` (#2188's icon-help false positive and its two heading misses) is NOT covered; widening is a new ruling
