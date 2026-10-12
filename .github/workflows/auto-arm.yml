@@ -8,7 +8,23 @@
 # This is a deliberately SMALL copy of a11ign/a11ign's `auto-arm.yml`, not a port. That one runs `agent-org arm-pr`, which
 # reads `.agent-org/project.json` and `.agent-org/roles/sessions.json` from the checkout it runs in; this repository
 # declares no org project, so installing the tool here would mean copying that declaration and keeping it in step. What
-# the tool decides that matters here is one rule, and it is stated below: a `hold:` label is a hold.
+# the tool decides that matters here is two rules, and both are stated below: a `hold:` label is a hold, and a pull request whose
+# `checks (cross-repo)` leg newly fails is not armed (a11ign/a11ign#5188, after a11ign/agent-org#1045).
+#
+# THE CROSS-REPO REFUSAL (a11ign/a11ign#5188). `ci.yml` makes the `cross-repo` leg `continue-on-error`, so `gate` reads green while the leg is red and
+# such a pull request merges and puts `main` red (lab#92 on 2026-10-12: the leg `failure` on its head, the newest push run's `success`, merged
+# anyway). a11ign/agent-org#1045 refuses that in agent-org's own arming doors, and this repository arms through neither, so the same rule is here,
+# as a smaller shell form of its `crossRepoRedVerdict`: the head's leg is `failure` AND the newest completed push run of `ci.yml` on `main` had
+# it `success`. `Cross-repo-red: #n` or `owner/repo#n` in the body, naming an OPEN row, is the exit. IT DOES NOT COMPARE FAILING TEST FILES as the
+# tool does: that needs the job log, which takes `actions: read`, and `auto-arm-octo-sts.test.ts` pins the minting jobs at `id-token: write`. So a
+# leg that is red on `main` ALREADY is not refused, and a pull request adding a second red file to a red `main` is not caught; what it does read
+# (check runs, runs, jobs, issues) is public and needs no grant. It is ONE text (`CROSS_REPO_RED_LIB`, below) that both arming jobs `eval`, so
+# they cannot drift; every Dependabot pull request is in `arm`'s listing and is approved through `arm-approved`, so those two cover all three paths.
+#
+# A PULL REQUEST IS ARMED ONLY AFTER ITS LEG HAS CONCLUDED. `arm` fires at `opened`, minutes before the leg exists, so a refusal that read the leg
+# at that moment would read nothing and arm: that is how lab#92 was armed at 07:17:55Z with its leg red from 07:22:16Z. A leg that has not concluded
+# is waited for (CROSS_REPO_DEADLINE, ten minutes against a leg of about five) and a pull request still pending after that is left unarmed: the next
+# `push` to `main`, a body edit (`edited`) or an approving review asks again.
 #
 # ONE JOB ASKS THE REPOSITORY'S QUESTION, NOT THE EVENT'S PULL REQUEST'S. A pull request that was open before this file
 # merged has no `opened` left to fire, and a Dependabot pull request's own event runs with a read-only token. Listing
@@ -41,7 +57,8 @@ name: auto-arm
 
 on:
   pull_request_target:
-    types: [opened, ready_for_review, reopened, synchronize]
+    # `edited`: adding the `Cross-repo-red:` line to the body is the exit from a refusal, and it must ask again (#5188).
+    types: [opened, ready_for_review, reopened, synchronize, edited]
   push:
     branches: [main]
   # #4969: an APPROVING review is the event on which a draft's wait ends. It runs the file as the PR's merge ref has it, the BRANCH'S copy, so
@@ -54,6 +71,103 @@ on:
         description: "Pull request number to ready (if still a draft) and arm, when it is approved. Empty runs the sweep only (#4969)"
         required: false
         type: string
+
+env:
+  # The cross-repo refusal, one text for `arm` and `arm-approved` (see the header). `eval "$CROSS_REPO_RED_LIB"` defines the functions;
+  # the caller sets GH_REPO, GH_TOKEN (the minted token: everything read here is public) and CROSS_REPO_DEADLINE.
+  CROSS_REPO_RED_LIB: |
+    CROSS_LEG="checks (cross-repo)"
+
+    # `<status> <conclusion>` of the leg in a list of check runs or jobs (key `check_runs` or `jobs`); `unread` when the leg is absent from a
+    # page that was not read in full; nothing when it is simply absent.
+    leg_in() {
+      jq -r --arg leg "$CROSS_LEG" --arg key "$1" '
+        ([.[$key][] | select(.name == $leg)][0]) as $l
+        | if $l != null then "\($l.status) \($l.conclusion // "none")"
+          elif .total_count > (.[$key] | length) then "unread" else empty end'
+    }
+
+    # The newest COMPLETED push run of ci.yml on main whose verdict is success or failure: a cancelled run says nothing (agent-org's `newestVerdictRun`).
+    trunk_run() {
+      gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?branch=main&event=push&status=completed&per_page=20" |
+        jq -r '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure")][0].id // empty'
+    }
+
+    # 0 when a `Cross-repo-red: #n` / `owner/repo#n` line of the body names an OPEN row; otherwise says why not and returns 1.
+    declared_row_open() {
+      local rows row state why="" row_re='^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#([0-9]+)$'
+      rows=$(printf '%s\n' "$1" | tr -d '\r' | { grep -iE '^[[:space:]]*Cross-repo-red:' || true; } | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
+      [ -n "$rows" ] || { echo "its body carries no \`Cross-repo-red:\` line"; return 1; }
+      while IFS= read -r row; do
+        if [[ "$row" =~ $row_re ]]; then
+          state=$(gh api "repos/${BASH_REMATCH[1]:-$GH_REPO}/issues/${BASH_REMATCH[2]}" --jq .state 2>/dev/null) || state=""
+          [ "$state" = open ] && return 0
+          why="$why; \`$row\` is ${state:-absent or unreadable}, not open"
+        else
+          why="$why; \`$row\` is not \`#n\` or \`owner/repo#n\`"
+        fi
+      done <<<"$rows"
+      echo "its \`Cross-repo-red:\` row does not stand${why}"
+      return 1
+    }
+
+    # ONE LINE, `kind|why`, kind being `clear`, `pending` (the leg has not concluded), `red` (newly red, undeclared) or `cannot` (not readable).
+    # agent-org's `crossRepoRedVerdict` in its smaller form: the head's leg is `failure` AND the newest trunk run's leg was `success`. A trunk leg
+    # that is `failure` too is `clear`: telling a new red file from an inherited one needs the job log, which the arming token cannot read.
+    cross_repo_verdict() {
+      local pr sha body checks jobs status conclusion trunk tstatus tconclusion declared
+      pr=$(gh api "repos/$GH_REPO/pulls/$1") || { echo "cannot|pull request #$1 could not be read"; return 0; }
+      sha=$(jq -r .head.sha <<<"$pr")
+      body=$(jq -r '.body // ""' <<<"$pr")
+      checks=$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100") || { echo "cannot|the check runs of ${sha:0:9} could not be read"; return 0; }
+      read -r status conclusion <<<"$(leg_in check_runs <<<"$checks")"
+      [ "$status" != unread ] || { echo "cannot|the check runs of ${sha:0:9} were not read in full"; return 0; }
+      if [ "$status" != completed ]; then echo "pending|its \`$CROSS_LEG\` leg has not concluded"; return 0; fi
+      if [ "$conclusion" != failure ]; then echo "clear|-"; return 0; fi
+
+      trunk=$(trunk_run) && [ -n "$trunk" ] || { echo "cannot|no completed push run of ci.yml on main to compare the red with"; return 0; }
+      jobs=$(gh api "repos/$GH_REPO/actions/runs/$trunk/jobs?per_page=100") || { echo "cannot|the jobs of run $trunk could not be read"; return 0; }
+      read -r tstatus tconclusion <<<"$(leg_in jobs <<<"$jobs")"
+      [ "$tstatus" = completed ] || { echo "cannot|run $trunk has no concluded \`$CROSS_LEG\` job to compare with"; return 0; }
+      case "$tconclusion" in
+        success) ;;
+        failure) echo "clear|-"; return 0 ;;
+        *) echo "cannot|the newest trunk run $trunk read its leg as ${tconclusion:-unfinished}, which says nothing to compare with"; return 0 ;;
+      esac
+      if declared=$(declared_row_open "$body"); then echo "clear|-"; return 0; fi
+      echo "red|the newest push run on main (https://github.com/$GH_REPO/actions/runs/$trunk) had the leg \`success\`, and $declared"
+    }
+
+    # Says a refusal ONCE per pull request: the marker is the same for every head, so a pull request that stays red is not told again.
+    post_refusal() {
+      local number=$1 marker=$2 body=$3
+      if gh api --paginate "repos/$GH_REPO/issues/$number/comments?per_page=100" --jq '.[].body' | grep -qF -- "$marker"; then
+        echo "AUTO-ARM: #$number already carries this refusal"
+      else
+        gh api -X POST "repos/$GH_REPO/issues/$number/comments" -f body="$marker"$'\n'"$body" --silent
+      fi
+    }
+
+    # 0 when #n may be armed as far as the cross-repo leg is concerned. A leg that has not concluded is WAITED FOR until CROSS_REPO_DEADLINE
+    # (a pull request armed at `opened` is armed before its leg exists, which is how lab#92 merged red); every other refusal leaves the pull request
+    # unarmed and returns 1, with nothing marking it ready either.
+    cross_repo_gate() {
+      local kind why
+      while :; do
+        IFS='|' read -r kind why <<<"$(cross_repo_verdict "$1")"
+        [ "$kind" = pending ] && [ "$SECONDS" -lt "$CROSS_REPO_DEADLINE" ] || break
+        sleep 30
+      done
+      case "$kind" in
+        clear) return 0 ;;
+        red)
+          echo "AUTO-ARM: NOT arming #$1 -- its \`$CROSS_LEG\` leg newly fails: $why"
+          post_refusal "$1" "<!-- arm-refused: cross-repo-red -->" "**Not armed.** The \`$CROSS_LEG\` leg of this pull request fails, and $why."$'\n\n'"That leg is \`continue-on-error\`, so \`gate\` reads green and the merge would put \`main\` red. Add a line \`Cross-repo-red: <row>\` to the body naming the OPEN row that greens it (\`#n\`, or \`owner/repo#n\` for a core-side row); editing the body asks again."
+          ;;
+        *) echo "AUTO-ARM: leaving #$1 unarmed -- $why" ;;
+      esac
+      return 1
+    }
 
 jobs:
   arm:
@@ -91,12 +205,16 @@ jobs:
           GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          eval "$CROSS_REPO_RED_LIB"
+          CROSS_REPO_DEADLINE=$((SECONDS + 600))
           # `--limit 200` and not the default 30: a list that silently stops at 30 is a sweep that quietly arms 30.
           # The selection is `.github/auto-arm.jq`, which `src/packaging/auto-arm-filter.test.ts` runs in the gate.
           numbers=$(gh pr list --state open --base main --limit 200 \
             --json number,isDraft,labels,autoMergeRequest | jq -r -f .github/auto-arm.jq)
           failed=0
           for n in $numbers; do
+            # Refused, still pending or unreadable: left unarmed, said once on the pull request (a red) or in this log (the rest).
+            cross_repo_gate "$n" || continue
             if gh pr merge --auto --merge "$n"; then
               echo "ARMED #$n"
             else
@@ -158,6 +276,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PULL_REQUEST: ${{ github.event.inputs.pr }}
         run: |
+          eval "$CROSS_REPO_RED_LIB"
+          CROSS_REPO_DEADLINE=$((SECONDS + 600))
           case "$PULL_REQUEST" in ''|*[!0-9]*) echo "::error::AUTO-ARM: pr input '$PULL_REQUEST' is not a pull request number"; exit 1;; esac
           # An approval is readable a moment after the review event, so a dispatch that outruns it asks again before it refuses.
           for attempt in 1 2 3; do
@@ -177,6 +297,10 @@ jobs:
               else "arm" end' <<<"$pr")
           case "$verdict" in
             skip:*) echo "AUTO-ARM: leaving #${PULL_REQUEST} in ${GH_REPO} untouched -- ${verdict#skip: }"; exit 0;;
+          esac
+          # Before it is marked ready as well as before it is armed: a refused pull request is left exactly as it was found (#5188).
+          cross_repo_gate "$PULL_REQUEST" || exit 0
+          case "$verdict" in
             ready) echo "AUTO-ARM: #${PULL_REQUEST} is an approved draft: marking it ready"; gh pr ready "$PULL_REQUEST";;
           esac
           gh pr merge --auto --merge "$PULL_REQUEST"

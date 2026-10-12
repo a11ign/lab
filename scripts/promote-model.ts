@@ -29,9 +29,10 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { sandboxGitEnv } from "../../guards/src/git-env.ts";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.ts";
+import { coreRoot, refuseIfRunsReadonly, runsRoot } from "../src/dataset-paths.ts";
 import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.ts";
 import { dirtyTargets, promotionBlockedBy } from "../src/packaging/promotion-targets.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
@@ -47,7 +48,9 @@ refuseUnknownFlags(["--from=", "--dry-run", "--accept-regression"],
   { entry: import.meta.url, command: "npm run promote:model" });
 
 /**
- * The tree to promote INTO. Overridable so this can be proven without copying the repository.
+ * The tree to promote INTO: the core's, named by `A11Y_PROMOTE_ROOT` or `A11Y_CORE_ROOT`, and refused when
+ * neither is set and the lab is not laid under it (`coreRoot`). Overridable so this can be proven without
+ * copying the repository.
  *
  * `docs/proving-a-gate.md` step 2: separate the DECISION from the DATA. The first version of
  * `promotion-refuses-dirty.test.ts` planted a temp repo and `cpSync`-ed the whole of `node_modules` into
@@ -59,9 +62,19 @@ refuseUnknownFlags(["--from=", "--dry-run", "--accept-regression"],
  * `check-shipped-provenance.ts` takes, and the same convention as `audit-rule-coverage.ts`'s
  * `CAPTURE_ROOT`.
  */
-const REPO = process.env.A11Y_PROMOTE_ROOT || fileURLToPath(new URL("../../../", import.meta.url));
-const SHIPPED = resolve(REPO, "packages/scorer/models/screenreader-scorer");
-const CHANGESETS = resolve(REPO, ".changeset");
+/**
+ * Resolved at the point of use and never at import: `check-shipped-provenance.ts` imports this module for two
+ * pure renderers and takes its own variable, so a root asked for here at load would refuse it for a variable
+ * it never needed.
+ */
+function promotionTree(): { repo: string; shipped: string; changesets: string } {
+  const repo = coreRoot("A11Y_PROMOTE_ROOT");
+  return {
+    repo,
+    shipped: resolve(repo, "packages/scorer/models/screenreader-scorer"),
+    changesets: resolve(repo, ".changeset"),
+  };
+}
 
 /** Read a JSON file, or explain which missing file blocks the promotion. */
 /** @param {string} path @param {string} what */
@@ -247,8 +260,9 @@ function thresholdLines(training: Record<string, Loose>): string {
  */
 function gitStatusForTargets(): string {
   try {
-    return execFileSync("git", ["status", "--porcelain", "--", SHIPPED, CHANGESETS],
-      { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const { repo, shipped, changesets } = promotionTree();
+    return execFileSync("git", ["status", "--porcelain", "--", shipped, changesets],
+      { cwd: repo, env: sandboxGitEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   } catch {
     return "";
   }
@@ -260,7 +274,7 @@ function gitStatusForTargets(): string {
  *
  * @param {string} [repo] @returns {Record<string, string>} version by package name
  */
-export function publicPackageVersions(repo: string = REPO): Record<string, string> {
+export function publicPackageVersions(repo: string = promotionTree().repo): Record<string, string> {
   const packages = resolve(repo, "packages");
   const versions: Record<string, string> = {};
   for (const dir of readdirSync(packages)) {
@@ -305,7 +319,7 @@ from 1.0 every retrain is a major.`,
 /** @param {string} candidateName @param {string} entry @returns {string} */
 function changesetPath(candidateName: string, entry: string): string {
   const identity = createHash("sha256").update(entry).digest("hex").slice(0, 8);
-  return join(CHANGESETS, `promote-${candidateName}-${identity}.md`);
+  return join(promotionTree().changesets, `promote-${candidateName}-${identity}.md`);
 }
 
 /**
@@ -323,6 +337,7 @@ export function promote({ candidate, candidateName, dryRun = false, acceptRegres
   const { training, acceptance, ...taken } = assertPromotable(candidate, shippedReport, shippedAcceptance,
     acceptRegression);
   const level = promotionLevel(versions);
+  const { shipped } = promotionTree();
   const entry = `---
 "@a11ign/scorer": ${level}
 ---
@@ -343,7 +358,7 @@ Held-out acceptance: ${acceptance.passed ? "passed" : "FAILED"}.
 ${acceptedLines(taken)}`;
   const target = changesetPath(candidateName, entry);
   if (dryRun) {
-    process.stdout.write(`DRY RUN — would copy ${candidate} -> ${SHIPPED}\n`
+    process.stdout.write(`DRY RUN — would copy ${candidate} -> ${shipped}\n`
       + `DRY RUN — would write ${target}:\n\n${entry}\n`);
     return { target, entry };
   }
@@ -358,16 +373,19 @@ ${acceptedLines(taken)}`;
     process.stderr.write(`${blocked}\n`);
     process.exit(3);
   }
-  mkdirSync(SHIPPED, { recursive: true });
+  // A promotion writes into the core, never into `runs/`; the guard is asked all the same, so a root that
+  // names a read-only corpus volume is refused here and not halfway through the copy.
+  refuseIfRunsReadonly(shipped);
+  mkdirSync(shipped, { recursive: true });
   // The acceptance report ships WITH the weights, and that is not tidiness. It is the only fixed-set
   // measurement a future candidate can be compared against — the shipped model had none, which is why the
   // first regression check fell back to development figures and reported thirteen false regressions.
   for (const file of ["model.safetensors", "training-report.json", "acceptance-report.json"]) {
-    cpSync(join(candidate, file), join(SHIPPED, file));
+    cpSync(join(candidate, file), join(shipped, file));
   }
   writeFileSync(target, entry);
   process.stdout.write(`Promoted ${candidateName}.\n`
-    + `  weights   -> ${SHIPPED}\n  changeset -> ${target}\n\n`
+    + `  weights   -> ${shipped}\n  changeset -> ${target}\n\n`
     + "Nothing is committed and nothing is published. Review both, then commit them together — the\n"
     + `changeset is what makes this a ${level.toUpperCase()} release of @a11ign/scorer rather than a silent swap.\n`);
   return { target, entry };
@@ -381,9 +399,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       + "  reads runs/model-<name>/, or set A11Y_CANDIDATE_ROOT to point elsewhere\n");
     process.exit(2);
   }
-  const root = process.env.A11Y_CANDIDATE_ROOT ?? resolve(REPO, "runs");
+  const root = process.env.A11Y_CANDIDATE_ROOT ?? runsRoot();
   try {
-    const shippedPath = join(SHIPPED, "training-report.json");
+    const { shipped } = promotionTree();
+    const shippedPath = join(shipped, "training-report.json");
     promote({
       candidate: join(root, `model-${from}`), candidateName: from,
       dryRun: args.includes("--dry-run"),
@@ -392,8 +411,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       // earlier would describe a model that may already have been replaced.
       shippedReport: existsSync(shippedPath) ? JSON.parse(readFileSync(shippedPath, "utf8")) : null,
       // Kept beside the weights by this same command, so every promotion leaves a baseline for the next.
-      shippedAcceptance: existsSync(join(SHIPPED, "acceptance-report.json"))
-        ? JSON.parse(readFileSync(join(SHIPPED, "acceptance-report.json"), "utf8"))
+      shippedAcceptance: existsSync(join(shipped, "acceptance-report.json"))
+        ? JSON.parse(readFileSync(join(shipped, "acceptance-report.json"), "utf8"))
         : null,
     });
   } catch (cause) {
