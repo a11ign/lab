@@ -10,10 +10,11 @@
  */
 import { readFileSync, existsSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
+import { coreRoot } from "../src/dataset-paths.ts";
 import { rehearsalReading, rehearsalMarkerSha, ageInDays, REHEARSAL_DOCUMENTS, publishedPackagePaths }
   from "../src/packaging/rehearsal-currency.ts";
 import { sandboxGitEnv } from "../../guards/src/git-env.ts";
@@ -21,11 +22,12 @@ import { sandboxGitEnv } from "../../guards/src/git-env.ts";
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run release:rehearsal-check" });
 
 /**
- * The tree to examine, overridable so this gate can be PROVEN rather than trusted -- `docs/proving-a-
+ * The tree to examine: the core's, named by `A11Y_REHEARSAL_ROOT` or `A11Y_CORE_ROOT`, and refused when
+ * neither is set and the lab is not laid under it (`coreRoot`). Overridable so this gate can be PROVEN rather than trusted -- `docs/proving-a-
  * gate.md` step 2, the identical convention `check-shipped-provenance.ts`'s own `A11Y_PROVENANCE_ROOT`
  * uses for the same reason.
  */
-const REPO = process.env.A11Y_REHEARSAL_ROOT || fileURLToPath(new URL("../../../", import.meta.url));
+const REPO = coreRoot("A11Y_REHEARSAL_ROOT");
 const RELEASE_MD = resolve(REPO, "RELEASE.md");
 
 /** `ls-tree -r` over `packages/` is thousands of lines; spawnSync's 1 MB default would truncate it into ENOBUFS. */

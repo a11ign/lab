@@ -16,16 +16,18 @@
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { provenanceLines } from "./promote-model.ts";
 import { provenanceProblems } from "../src/packaging/shipped-provenance.ts";
+import { coreRoot } from "../src/dataset-paths.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run release:provenance" });
 
 /**
- * The tree to examine. Overridable so this gate can be PROVEN.
+ * The tree to examine: the core's, named by `A11Y_PROVENANCE_ROOT` or `A11Y_CORE_ROOT`, and refused when
+ * neither is set and the lab is not laid under it (`coreRoot`). Overridable so this gate can be PROVEN.
  *
  * `docs/proving-a-gate.md` step 2: separate the DECISION from the DATA, or the only way to watch a gate
  * refuse is to break the repo. Every path below derives from one root, so a test plants a three-file tree
@@ -33,7 +35,7 @@ refuseUnknownFlags([], { entry: import.meta.url, command: "npm run release:prove
  * tier that matters here, since this repo's recurring defect is a correct decision some path never
  * reaches. Same convention as `audit-rule-coverage.ts`'s `CAPTURE_ROOT`.
  */
-const REPO = process.env.A11Y_PROVENANCE_ROOT || fileURLToPath(new URL("../../../", import.meta.url));
+const REPO = coreRoot("A11Y_PROVENANCE_ROOT");
 const SHIPPED = resolve(REPO, "packages/scorer/models/screenreader-scorer/training-report.json");
 const CHANGESETS = resolve(REPO, ".changeset");
 const CHANGELOG = resolve(REPO, "packages/scorer/CHANGELOG.md");
