@@ -45,7 +45,7 @@ import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { assertWorkerUrl } from "@a11ign/screenreader-fleet/worker-http";
 import { datasetRoot, repeatCapturesRoot } from "../src/dataset-paths.ts";
-import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.ts";
+import { pnpmCliInvocation } from "@a11ign/toolchain/lib/npm-cli-executable";
 import type { Loose } from "../src/capture/loose.ts";
 
 /**

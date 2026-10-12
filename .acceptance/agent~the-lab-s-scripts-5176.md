@@ -1,0 +1,19 @@
+Closes a11ign/a11ign#5176
+
+Acceptance: `bash -c 'test "$(git grep -lE "from \"(\.\./){3,}|import\(\"(\.\./){3,}" -- scripts src ":!*.test.ts" ":!scripts/cross-repo-tests.ts" | wc -l)" = 0'`
+
+Run from this worktree of lab (the row's `cd /home/agent/repos/lab` names the primary checkout, which does not hold the branch): exit 0, 12 files before (`git grep` at a7dfcfc0), 0 after.
+
+Mutation: `src/packaging/no-relative-core-imports.test.ts` run with `node --test`, 3 pass unmutated. Each mutation restored from a copy and checked with `diff` (identical): appending `import { pnpmCliInvocation as again } from "../../../scripts/npm-cli-executable.ts";` to `scripts/stability-gate.ts` fails the scan test (1 of 3); a detector that never fires fails the negative control and the scan (2 of 3); one that always fires fails the other-direction control and the scan (2 of 3); an emptied population (`labSources(/\.nothing$/)`) fails the positive control (1 of 3); a fixed file left in `KNOWN_UNTIL_5182` fails the scan (1 of 3).
+
+Outside-Region: src/packaging/no-relative-core-imports.test.ts — Done-when 3 asks for a test that refuses a new reach, and it resolves each specifier against its own directory, which sees what the Acceptance's `{3,}` cannot: four `../../guards/src/git-env.ts` imports in `scripts/` (two levels leave the lab from there). They are named in the test as `KNOWN_UNTIL_5182`, compared in both directions, so the list can only shrink; a11ign/a11ign#5182 removes them.
+Outside-Region: baselines/layer-edges.baseline.json — the twelve `import` edges from the twelve files to `scripts/npm-cli-executable.ts`, `scripts/agent-org-newest-tag.ts` and `packages/control/src/{fleet-wake,layer-checkouts}.ts` no longer exist; the path-literal entries of the same files are untouched.
+Outside-Region: .changeset/lab-scripts-run-from-own-checkout-5176.md — the lab's required changeset.
+
+Tests run, in a core worktree with this tree laid as `packages/lab` and control laid at its pinned tag (v0.5.3): `src/gates/corpus-release-nightly.test.ts`, `stability-gate-crash`, `stability-gate-keeps-variants`, `dataset-paths`, `exit-code-contract`, `region-paths`, `local-import-closure` and the new test: 118 pass, 5 fail. The five fail on this ad-hoc layout and not on the change: the tracked-file walks see control's own `*.test.ts` and a missing `packages/worker-fleet`; `corpus-release-nightly.test.ts` (which could not load before, `ERR_MODULE_NOT_FOUND`) passes whole. `eslint --no-ignore` over the thirteen touched files: 0 errors (40 `no-magic-numbers` warnings, none from this diff). `tsc -p tsconfig.json`: 235 errors, none in these files' imports (the module-not-found ones are `@a11ign/evidence/verify` with no `dist` built here).
+
+Not run here: `pnpm run verify` and the lab's CI legs. This checkout holds no lockfile and no installed dependencies; the lab's own CI lays it over the core at `CORE_REF` and is the run that decides.
+
+Finding, not fixed (a11ign/a11ign#5183): `@a11ign/control/fleet-wake` is a declared export that itself imports `../../worker-fleet/src/worker-http.ts` and `cli-flags.ts`, so `capture-real-pages.mjs`, `capture-screenreader-dataset.mjs` and `wake-by-hand.mjs` resolve the name from the lab's checkout and then fail inside control until that row lands. It carries an ADR 0012 decision (control declares `"dependencies": {}` on purpose), so it is a ruling before it is a build.
+
+Risk, for `orchestrator`: a11ign/a11ign#3984 changed two of these imports from by-name to by-path because on the lab host nothing provided `@a11ign/control` (on no registry, laid as `src/` with no manifest). This row reverses that on the row's own instruction. It holds where `@a11ign/control` resolves in the lab's `node_modules` (CI assembles it by hand); that the lab host provides it was not read here (the resource ban) and is the VERIFY row's reading under a11ign#5087 Done-when 5.
