@@ -1,6 +1,10 @@
 Closes a11ign/a11ign#5196
 
-Acceptance: `grep -c "capture:check" .github/workflows/capture-check.yml` (run from the lab root). Prints `1`.
+Acceptance: `grep -c "run: pnpm run capture" .github/workflows/capture-check.yml` (run from the lab root). Prints `1`.
+
+Acceptance: `grep -c "runs-on: windows-2022" .github/workflows/capture-check.yml` (run from the lab root). Prints `1`.
+
+The row's own command, `grep -c "capture:check" .github/workflows/capture-check.yml`, prints `1` here too, and `pr:open`'s acceptance reader REFUSES it by name (`needs a real worker and NVDA`: it matches the string, not what the command does). The two above prove the same fact (the step that runs the harness exists; the runner is the Windows one) with no worker.
 
 Hand-run: Done-when 2 of the row is a green `capture-check` run on the lab's `main` at the merge commit, which this pull request cannot have produced. The run on this pull request's own head is the only evidence before the merge, and it is recorded on the pull request, not here.
 
