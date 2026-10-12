@@ -1,6 +1,10 @@
 Closes a11ign/a11ign#5198
 
-Acceptance: `bash -c 'python3 -m pytest -q tests/test_accepted_acceptance_cases.py tests/test_criterion_with_no_head.py tests/test_near_cut_negatives.py tests/test_miss_above_the_floor.py tests/test_unclosable_map_is_current.py tests/test_grants_map_is_current.py tests/test_acceptance_cases_exist.py tests/test_acceptance_case_definitions.py'`
+Acceptance: `bash -c 'test -z "$(grep -nE "parents\[3\]|packages/lab/(scripts|src|rule-ownership)|ROOT / \"packages|\"packages/(lab|scorer)" tests/test_accepted_acceptance_cases.py tests/test_criterion_with_no_head.py tests/test_near_cut_negatives.py tests/test_miss_above_the_floor.py tests/test_unclosable_map_is_current.py tests/test_grants_map_is_current.py tests/test_acceptance_cases_exist.py tests/test_acceptance_case_definitions.py scripts/evaluate-screenreader-acceptance.py)"'`
+
+Hand-run, the row's own command (needs `@a11ign/scorer` 0.3.1, `@a11ign/evidence` 0.5.0 and `@a11ign/screenreader-fleet` in `node_modules` and a Python with pytest, which this host's `python3` lacks, so it ran under the core checkout's `.venv`): `python -m pytest -q` over the eight files read `86 passed`, and over `tests/` read `214 passed`. It is not the machine-run Acceptance above because neither CI nor `pr:open`'s host can run it, and the lab has no Python leg.
+
+Marker control: the same grep over `origin/main:` at `43e59160` finds 15 lines in the nine files, and 0 on this branch, so it notices the fault and stops complaining once remedied.
 
 Mutation: run from this worktree with the `.venv` of the core checkout (it holds pytest 9.1.1), each restore a byte-identical copy of the branch (`diff` empty). Setting `ACCEPTED_CASES_FILE` back to `REPO_ROOT / "packages/lab/src/training/accepted-acceptance-cases.json"` alone fails 19 tests, all in `tests/test_accepted_acceptance_cases.py` and no other file. Setting `ACCEPTANCE_MATRIX` back to `./packages/lab/src/training/acceptance-matrix.mjs` alone fails 6, three in each of `tests/test_acceptance_case_definitions.py` and `tests/test_acceptance_cases_exist.py` and no other file.
 
