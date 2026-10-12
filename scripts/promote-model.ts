@@ -28,7 +28,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { sandboxGitEnv } from "../../guards/src/git-env.ts";
+import { sandboxGitEnv } from "@a11ign/toolchain/lib/git-sandbox";
 import { pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.ts";
