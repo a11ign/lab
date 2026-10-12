@@ -1,6 +1,8 @@
 Closes a11ign/a11ign#5189
 
-Acceptance: `node --import tsx --test --test-name-pattern="agree with its own baseline" packages/lab/src/packaging/layer-edges.test.ts`
+Acceptance: `node --test --test-name-pattern="agree with its own baseline" packages/lab/src/packaging/layer-edges.test.ts`
+
+Hand-run: the claimant, from a core worktree with this tree laid as `packages/lab` and control laid beside it, because the test reads the core's guard and needs the laid layout; CI's `checks (cross-repo)` leg is the run that decides.
 
 Run from a core worktree (fb4425991) with this tree laid as `packages/lab` (files `git add -f`ed, as CI does) and control laid from `origin/main` at `packages/control`. Before the change the four NEW EDGEs of run 38218432835 are named; after it none is. The row's literal `node --test src/packaging/layer-edges.test.ts` cannot run from the lab checkout alone (the test imports `../../../guards/src/layer-edges.ts`, which exists only in the laid layout).
 
