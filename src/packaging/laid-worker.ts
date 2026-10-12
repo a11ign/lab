@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { coreRoot } from "../dataset-paths.ts";
 
 /**
  * A file of the screenreader-worker's SOURCE, read from where the core LAYS it (`packages/nvda-worker/`, `scripts/lay-layer.ts`), as `laid-control.ts` does for control.
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
  * (guidepup throws at module load without a screen reader) reads the laid copy, at the tag the core's lockfile pins (`.layer-ref`) and the same copy the core's own tests
  * import from. It refuses when the layer is not laid; it never falls back to the registry package, which holds no source.
  */
-const LAYER = join(fileURLToPath(new URL("../../../../", import.meta.url)), "packages/nvda-worker");
+const LAYER = join(coreRoot("A11Y_LAID_WORKER_ROOT"), "packages/nvda-worker");
 
 /** The worker's sources went from `.mjs` to `.ts` (a11ign/a11ign#4274 for its `src/`); a caller that names the old spelling is read at the new one rather than refused. */
 function laidPath(rel: string): string {

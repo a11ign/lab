@@ -37,9 +37,9 @@
  */
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { coreRoot } from "../dataset-paths.ts";
 
-const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+const REPO_ROOT = coreRoot("A11Y_PREFIX_PINS_ROOT");
 
 export const IMPERATIVE = "imperative";
 export const NARRATIVE = "narrative";

@@ -19,7 +19,8 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { runsRoot } from "../dataset-paths.ts";
 // By name, through the `exports` control declares: a repository never reads another's source by path (ADR 0045, Decision 1, rule 2; a11ign/a11ign#5176).
 import { layerRoot } from "@a11ign/control/layer-checkouts";
 import { leasePageServer } from "../training/page-server.mjs";
@@ -49,7 +50,7 @@ const RUNS = 3;
 const TASK = "Submit the request without entering a reference number and understand what needs fixing.";
 // Resolved from this module, not the cwd — `spawned-paths.test.ts` exists because a moved script with a
 // repo-relative path dies with "Command failed" and nothing to read.
-const PAGES = fileURLToPath(new URL("../../../../runs/screenreader-dataset/pages/", import.meta.url));
+const PAGES = join(runsRoot(), "screenreader-dataset/pages/");
 
 /**
  * Role and state words, taken from the ported NVDA labels.
