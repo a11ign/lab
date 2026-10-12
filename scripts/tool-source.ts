@@ -7,7 +7,7 @@
  * the one returned. That second half is the reach the core's `agent-org-src-reach` guard forbids to the core's own files; it is held in THIS file so a rename inside agent-org breaks one place, and
  * the way out is for agent-org to declare what these tests read or to carry the tests itself (a11ign/a11ign#4427).
  */
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -37,6 +37,21 @@ export function toolPath(relative: string): string {
 /** The same file as a `URL`, for `readFileSync(url)`. */
 export function toolUrl(relative: string): URL {
   return pathToFileURL(toolPath(relative));
+}
+
+/**
+ * The gate's source as one text: `src/work-gate.mjs` followed by every non-test file under `src/work-gate/`, sorted, joined with a newline. The
+ * tool moved the gate's causes out of its entry (a11ign/a11ign#5152), so a pin on the entry alone reads the gate without them. This is the same
+ * text agent-org's own `workGateSource()` (agent-org#1066) gives its tests, read here from the tool at the tag `toolRoot()` names.
+ */
+export function toolGateSource(): string {
+  const entry = readFileSync(toolPath("src/work-gate.mjs"), "utf8");
+  const dir = join(toolRoot(), "src", "work-gate");
+  const parts = readdirSync(dir, { recursive: true, encoding: "utf8" })
+    .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+    .sort()
+    .map((file) => readFileSync(join(dir, file), "utf8"));
+  return [entry, ...parts].join("\n");
 }
 
 /** A module of the tool, imported. Computed `import()`, so the caller names the shape it uses. */
