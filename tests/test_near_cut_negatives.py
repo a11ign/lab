@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[3]
+LAB = Path(__file__).resolve().parents[1]
 
 SILENT = "4.1.3:form-activation-silent"
 OTHER = "4.1.3:other-head"
@@ -30,7 +30,7 @@ SUBTYPES = {SILENT: {"threshold": CUT, "guarantee": {"floor": FLOOR}}}
 
 def load():
     spec = importlib.util.spec_from_file_location(
-        "acceptance_evaluator", ROOT / "packages/lab/scripts/evaluate-screenreader-acceptance.py")
+        "acceptance_evaluator", LAB / "scripts" / "evaluate-screenreader-acceptance.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules["acceptance_evaluator"] = module
     spec.loader.exec_module(module)

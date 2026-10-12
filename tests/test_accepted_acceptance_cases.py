@@ -22,9 +22,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-ROOT = Path(__file__).resolve().parents[3]
+LAB = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location(
-    "acceptance_evaluator_accepted", ROOT / "packages/lab/scripts/evaluate-screenreader-acceptance.py")
+    "acceptance_evaluator_accepted", LAB / "scripts" / "evaluate-screenreader-acceptance.py")
 evaluator = importlib.util.module_from_spec(_spec)
 sys.modules["acceptance_evaluator_accepted"] = evaluator
 _spec.loader.exec_module(evaluator)
@@ -249,7 +249,7 @@ def test_the_report_records_which_list_it_was_judged_against():
     provenance = evaluator.accepted_cases_provenance(evaluator.ACCEPTED_CASES_FILE, accepted)
     assert provenance["falsePositives"] == 2 and provenance["misses"] == 9
     assert len(provenance["sha256"]) == 64
-    assert provenance["source"] == "packages/lab/src/training/accepted-acceptance-cases.json"
+    assert provenance["source"] == "src/training/accepted-acceptance-cases.json"
 
 
 def test_main_reads_the_list_and_subtracts_it_before_passed_is_decided():

@@ -23,15 +23,15 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+LAB = Path(__file__).resolve().parents[1]
 
 _spec = importlib.util.spec_from_file_location(
-    "train_model", ROOT / "packages" / "lab" / "scripts" / "train-screenreader-model.py")
+    "train_model", LAB / "scripts" / "train-screenreader-model.py")
 train = importlib.util.module_from_spec(_spec)
 sys.modules["train_model"] = train
 _spec.loader.exec_module(train)
 
-OWNERSHIP = json.loads((ROOT / "packages" / "lab" / "rule-ownership.json").read_text())
+OWNERSHIP = json.loads((LAB / "rule-ownership.json").read_text())
 
 
 def declared_no_head() -> list[str]:
@@ -79,7 +79,7 @@ def test_the_loop_skips_an_empty_criterion_and_says_so():
     a report that drops the criterion entirely cannot tell them apart. Same rule `printCoverage` follows for
     `decidedBy: "unavailable"`: the map of who decides what, where "nobody" is the answer most worth seeing.
     """
-    source = (ROOT / "packages" / "lab" / "scripts" / "train-screenreader-model.py").read_text()
+    source = (LAB / "scripts" / "train-screenreader-model.py").read_text()
     assert "if not subtypes_by_criterion[criterion]:" in source, (
         "the per-criterion loop no longer checks for an empty subtype list, so torch.stack([]) is "
         "reachable again")

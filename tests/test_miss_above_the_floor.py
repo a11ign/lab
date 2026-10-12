@@ -35,13 +35,17 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
-SHIPPED_TRAINING_REPORT = ROOT / "packages/scorer/models/screenreader-scorer/training-report.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _scorer_python import scorer_python  # noqa: E402
+
+LAB = Path(__file__).resolve().parents[1]
+# The shipped weights' report lives in the package, beside the `python/` directory `scorer_python()` finds.
+SHIPPED_TRAINING_REPORT = scorer_python().parent / "models" / "screenreader-scorer" / "training-report.json"
 
 
 def load():
     spec = importlib.util.spec_from_file_location(
-        "acceptance_evaluator", ROOT / "packages/lab/scripts/evaluate-screenreader-acceptance.py")
+        "acceptance_evaluator", LAB / "scripts" / "evaluate-screenreader-acceptance.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules["acceptance_evaluator"] = module
     spec.loader.exec_module(module)
@@ -220,7 +224,7 @@ def test_the_missed_cases_carry_the_RECORD_each_score_was_computed_FROM():
     The classification asks the applicability gate and the gate READS the capture, so pairing a score
     with the wrong record -- or with none -- answers about a different page and reports nothing wrong
     while doing it. Measured while building this fix: replacing `records[index]` with `{}` at the call
-    site left the whole of `packages/lab/tests` green, which is why the pairing is a named function.
+    site left the whole of `tests` green, which is why the pairing is a named function.
 
     Identity, not equality: two captures of the same case differ in their interaction and compare equal
     on nothing that matters here, so `==` would accept the wrong repeat.
