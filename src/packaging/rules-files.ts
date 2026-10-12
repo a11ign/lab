@@ -16,7 +16,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { coreRoot } from "../dataset-paths.ts";
 
 export const RULES_DIR = ".claude/rules";
 
@@ -30,7 +30,7 @@ export const RULES_FILES = [
   `${RULES_DIR}/guards-and-assertions.md`,
 ] as const;
 
-const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+const REPO_ROOT = coreRoot("A11Y_RULES_FILES_ROOT");
 
 /** One rules file, read. Throws on a missing file: an absent destination is never an empty one. */
 export function readRulesFile(rel: string): string {

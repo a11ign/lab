@@ -60,9 +60,10 @@ test("a checkout that is not named packages/lab, or sits under a directory not n
 });
 
 test("no non-test source of the lab computes a root with a three-level URL climb", () => {
-  // Exactly three, the row's own count. Four climbs from `src/packaging/` or `src/harnesses/` name the core's root from one level deeper (five files, a11ign/a11ign#5185's follow-up row).
-  const CLIMB = /new URL\(\s*["'`](?:\.\.\/){3}["'`]/;
+  // Three or four. Four is what `src/packaging/` and `src/harnesses/` write: one level deeper than `src/`, so the same climb names the core from there (a11ign/a11ign#5191, the follow-up to #5185).
+  const CLIMB = /new URL\(\s*["'`](?:\.\.\/){3,4}["'`]/;
   assert.ok(CLIMB.test('const REPO = fileURLToPath(new URL("../../../", import.meta.url));'), "POSITIVE CONTROL: the idiom is seen where it is written");
+  assert.ok(CLIMB.test('const LAYER = fileURLToPath(new URL("../../../../", import.meta.url));'), "POSITIVE CONTROL: a four-climb from one level deeper is seen too");
   assert.ok(!CLIMB.test('const HERE = fileURLToPath(new URL("../", import.meta.url));'), "a one-level climb is the lab's own root, not a reach");
   const files = labSources(/\.(ts|mjs)$/);
   const labRelative = files.map((file) => relative(LAB_ROOT, file));

@@ -6,7 +6,7 @@
  * and fail at 15:08Z with no change to the lab, and the lab's last merge was 13:21Z.
  *
  * A file is cross-repo when it does either of:
- *   - resolves a path above the lab root (`new URL("../../../../", import.meta.url)`, `resolve(import.meta.dirname, "../../..")`): a READ of the core's or another layer's files.
+ *   - resolves a path above the lab root (a `new URL` climbing out of the lab, `resolve(import.meta.dirname, "../../..")`): a READ of the core's or another layer's files.
  *     An `import ... from "../../../guards/x.ts"` is NOT counted: that is code from the core at the sha `CORE_REF` pins, which does not move under a pull request;
  *   - uses the tool (`toolModule`, `toolPath`, `toolUrl`, `toolRoot`, `toolExportPath`, `tool-source`): agent-org at its NEWEST tag, which does.
  *

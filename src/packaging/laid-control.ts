@@ -13,8 +13,8 @@
  */
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { walkTree } from "@a11ign/toolchain/lib/tree-wide-guard";
+import { coreRoot } from "../dataset-paths.ts";
 
 const LAYER = "packages/control";
 const NOT_THE_LAYER_S = /(^|\/)node_modules(\/|$)|(^|\/)\.layer-ref$|^packages\/control\/ansible\/(inventory\.yml|[^/]*\.local\.yml)$/;
@@ -41,7 +41,7 @@ export function laidControlFiles(repoRoot: string): string[] {
   return found.sort();
 }
 
-const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url)).replace(/\/$/, "");
+const REPO_ROOT = coreRoot("A11Y_LAID_CONTROL_ROOT");
 
 /** `walkTree`'s tracked paths PLUS the laid control layer's: what a tree-wide guard walked before a11ign/a11ign#3506 took `packages/control` out of the index. */
 export const trackedAndLaidPaths = (): string[] => [...walkTree({ kind: "all", roots: [] }).map((file) => file.path), ...laidControlFiles(REPO_ROOT)];
