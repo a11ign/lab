@@ -20,5 +20,12 @@ Not exercised here: the Windows runner, NVDA and the capture itself. The first r
 
 Mutation: n/a -- no guard added. The one refusal the install step has (a name the manifest stops declaring) was exercised by renaming `tsx` in a copy of `package.json`: the step threw `package.json no longer declares tsx`; the manifest was restored from a copy and `diff` was identical.
 
-Outside-Region: none
+## Two files outside the Region, and why they are in this pull request
+The queue ejected this pull request (`merge_group` run 38229640134, reason `failed_checks`) on two reds that `main` already carried after lab#99, neither from the workflow:
+- `.changeset/lab-python-tests-anchor-on-the-lab-root-5198.md`: frontmatter `"@a11ign/lab"` with no bump type, which `changeset version` refuses (`release-dry-run`). Now `"@a11ign/lab": patch`, as every other changeset reads.
+- `baselines/layer-edges.baseline.json`: the entry `tests/test_miss_above_the_floor.py -> training-report.json` is stale since lab#99 anchored that test on the lab root (`layer-edges.test.ts`: `STALE ENTRY ... no longer exists`). Entry removed, nothing else.
+
+Both fixes are the smallest change that lets this pull request enter the queue; no other open pull request carries them (`gh pr list -R a11ign/lab`: #97 and this one).
+
+Outside-Region: `.changeset/lab-python-tests-anchor-on-the-lab-root-5198.md`, `baselines/layer-edges.baseline.json`
 Fleet: No.
