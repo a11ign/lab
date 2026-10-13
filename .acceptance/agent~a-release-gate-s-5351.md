@@ -19,7 +19,7 @@ The test declares `// no-token: gh`: the fixture half spawns nothing (`readIssue
 
 Mutation: ten, each restored byte-identical from a copy (`diff -q` after each). Reader: (A) `failures` never fires: fails 4 (closed, unreadable, citation, reworded). (B) `failures` always fires: fails only the owner-open twin. (C) qualifier not read, so `a11ign/a11ign#5179` is read as a bare `#n`: fails 7, the real-tree control included. (D) citations count as owners: fails the citation and the reworded tests. (E) an unreadable issue read as open: fails the path-fragment and the live-reader-mapping tests. (F) a `REFUSED` string with no owner passes: fails only the reworded test. `ci.yml`: (G) the `LIVE PASS` grep removed, (J) the step piped through `tee`: each fails only the step test. (H) `gate` no longer needs `refusalOwners`, (I) `gate` accepting anything but `success`: each fails only the blocking test. (K) `package.json` put back to `#5179`, live flag set: fails naming the script and the number.
 
-Outside-Region: none
+Outside-Region: src/packaging/cross-repo-tests.test.ts — it pins `gate`'s `needs` to `[changeset, checks, release-dry-run]`; the `checks (own)` leg of the first run failed on exactly that assertion (206 files passed, 1 failed), so the pin moves to include `refusalOwners` and gains the matching result-read assertion.
 Fleet: No.
 
 platform: checked `gh api repos/<repo>/issues/<n>` for the state read, and whether GitHub or the toolchain offers a check that a refusal message names an open issue (none); the reader is the core's, copied.
