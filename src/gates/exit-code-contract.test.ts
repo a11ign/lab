@@ -138,6 +138,10 @@ const INFRASTRUCTURE: Record<string, string> = {
   "packages/worker-fleet/src/code-drift.ts":
     "`assertWorkersServe` exits 3 for an empty worker pool or genuine code drift and has no `main` of its "
     + "own — whatever imports it inherits 3 directly, the same shape as `dispatch.mjs` one code over",
+  "packages/control/src/worker-fleet-carried.ts":
+    "a carried copy of worker-fleet's `cli-flags.ts` (its header says so): `refuseUnknownFlags` exits 2 on "
+    + "an unrecognised flag, the one meaning that entry gives code 2 — inherited by the carried callers, not "
+    + "chosen by them",
 };
 
 /**
@@ -370,6 +374,20 @@ const DOCUMENTED: Record<string, string> = {
     + "inventory code); 1 a shutdown held back because the checkout differs from main, or any worker's "
     + "wake proof is lapsing or lapsed (#3309); 0 otherwise regardless of what any worker was decided — "
     + "the decision itself is the output, never a pass/fail verdict",
+  "packages/control/src/fleet-converge.ts":
+    "2 refused before any worker is touched — a `refusal` on the command, an empty inventory.yml, or a "
+    + "pinned-layer refusal; 1 a converge that ran and whose status is not `ok` (`failed` or `unknown`); 0 "
+    + "a converge whose status is `ok`, and 0 for a plan-only run, which returns without an exit call",
+  "packages/control/src/fleet-dispatch.ts":
+    "0 a choice was made, printed as one JSON line `{request, chosen, short, notes}` where `short` may be "
+    + "below the request; 2 usage — a `--request` that is neither ready nor a whole number of at least 1, "
+    + "or a bad `--pool`; 3 refused — a refusal from the choice, or no worker chosen (the code `lab-job.ts` "
+    + "refuses with, so 3 is not this script's alone)",
+  "packages/control/src/fleet-lock.ts":
+    "0 always, and the status is not the answer: `REMOTE_TAKE` and `REMOTE_END` are `node -e` strings sent "
+    + "over ssh (`lockWriteCommand`), and each prints its outcome as JSON — `{taken:false,held}` when another "
+    + "operation holds the lock, `{ended:false}` when this holder does not own it. The file's own process "
+    + "never sets an exit code",
   "packages/control/src/gate-heartbeat.ts":
     "1 a message the verdict called for could NOT be sent (no Telegram route, or Telegram refused or timed "
     + "out) — the standing verdict is then not recorded and the next run retries; 0 otherwise, INCLUDING a "
