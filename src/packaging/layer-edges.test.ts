@@ -24,8 +24,9 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { declareTreeWideGuard } from "@a11ign/toolchain/lib/tree-wide-guard";
-import { LAYER_PACKAGES, findEdges, isScanned, packageOf, trackedFiles } from "../../../guards/src/layer-edges.ts";
+import { EDGE_KINDS, LAYER_PACKAGES, findEdges, isScanned, packageOf, trackedFiles } from "../../../guards/src/layer-edges.ts";
 // The judge of the lab's baseline lived in the core's `layer-edges.ts` until cut 9 (a11ign/a11ign#5087) and is this repository's own now (a11ign/a11ign#5431).
+import * as judge from "./layer-edges-baseline.ts";
 import { BASELINE_PATH, countByDisposition, describeVerdict, judgeEdges } from "./layer-edges-baseline.ts";
 import { laidControlFiles } from "./laid-control.ts";
 
@@ -81,6 +82,12 @@ test("the layer packages are DECLARED, all six, and packageOf reads the director
   assert.equal(packageOf("packages/nvda-worker/src/server.ts"), "nvda-worker");
   assert.equal(packageOf("packages/nvda-speech"), "nvda-speech");
   assert.equal(packageOf("scripts/x.ts"), null, "the repository root and scripts/ are in no package");
+});
+
+test("the judge's own copies of the edge kinds and the layer list equal the core's, so a drift is red and not a fork (the lists are not empty)", () => {
+  assert.ok(EDGE_KINDS.length > 0 && LAYER_PACKAGES.length > 0, "an empty list would be equal to an empty list");
+  assert.deepEqual([...judge.EDGE_KINDS], [...EDGE_KINDS]);
+  assert.deepEqual([...judge.LAYER_PACKAGES], [...LAYER_PACKAGES]);
 });
 
 // ------------------------------------------------------------------ the clean fixture PASSES

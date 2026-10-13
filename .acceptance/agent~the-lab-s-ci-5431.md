@@ -14,9 +14,9 @@ How: the `run:` blocks of this branch's `ci.yml` were extracted with a YAML pars
 | `eslint --no-ignore` | 0 errors | not reached | 0 errors (2,039 warnings, 2 more than main, both in `ci-composition.test.ts`: the version floors `[0, 11, 0]` and `[0, 13, 0]`, spelled as the existing `[0, 13, 15]` is) |
 | `tsc` | 0 errors | not reached (laid by hand without the `cp`: 5 errors, all in `layer-edges.test.ts`) | 0 errors |
 | `own` leg | 1,660 pass (11 skipped) | not reached (laid by hand without the `cp`: **3 of 1,660 fail**) | **1,662 pass (11 skipped)** |
-| `cross-repo` leg | 9 of 2,972 fail, 3 files | not reached | 101 of 2,975 fail, 46 files |
+| `cross-repo` leg | 9 of 2,972 fail, 3 files | not reached | 100 of 2,976 fail, 45 files |
 
-The cross-repo leg is `continue-on-error` and `failure` on lab `main` at the current pin (run 38402411384), so its CONCLUSION is no worse (`failure` and `failure`) and its COUNT is not: 9 of 2,972 became 101 of 2,975. That is the leg doing what it was built for (a newer core's tests fail the lab's copies of them); it is listed file by file on a11ign/a11ign#5435, not fixed here.
+The cross-repo leg is `continue-on-error` and `failure` on lab `main` at the current pin (run 38402411384), so its CONCLUSION is no worse (`failure` and `failure`) and its COUNT is not: 9 of 2,972 became 100 of 2,976. That is the leg doing what it was built for (a newer core's tests fail the lab's copies of them); it is listed file by file on a11ign/a11ign#5435, not fixed here.
 
 ## Why the three own failures and the five `tsc` errors are in this diff
 
@@ -30,8 +30,8 @@ At `87d89fdec` the lab's own tree fails three of its own tests and `tsc`, so `ch
 Outside-Region: src/packaging/lab-fetch-paths.test.ts — reads the lab's own `package.json` for the scripts a lab job runs; cut 9 took them out of the core's (measured: the test fails at `87d89fdec`, passes after)
 Outside-Region: src/packaging/public-api.test.ts — the CLI's documented surface is now `reportLines` and `DEFAULT_PROBE_FLAGS` (core #5091); the assertion that said "only the renderer" failed at `87d89fdec`
 Outside-Region: src/packaging/layer-edges.test.ts — typechecks again (the judge is imported from the lab's own file), excludes the baseline file from its own scan in code (a named `SELF`, because cut 9 dropped `\.baseline\.json` from the core guard's own), and follows the core's fixtures to `nvda-speech` and the guard's `REACH`/`no reach` wording
-Outside-Region: src/packaging/layer-edges-baseline.ts — NEW: `judgeEdges`, `describeVerdict`, `countByDisposition` and the disposition vocabulary, copied from the core at `23a179418~1` and changed in nothing but their imports
-Outside-Region: baselines/layer-edges.baseline.json — 11 entries that no longer exist removed, 16 added (the six `ci.yml` reads of the laid fleet and worker, the new helper's import, `laid-worker.ts`'s path, and eight fleet reads the scan now sees because cut 9 removed the core's `.gitignore` lines that hid the laid directories); `layer-edges.test.ts` fails on a new or a stale entry (mutated: see below)
+Outside-Region: src/packaging/layer-edges-baseline.ts — NEW: `judgeEdges`, `describeVerdict`, `countByDisposition` and the disposition vocabulary, copied from the core at `23a179418~1`; the three things it read from the core's `layer-edges.ts` (`EDGE_KINDS`, `LAYER_PACKAGES`, `Edge`) are declared in the file, because a non-test file of the lab does not import the core by a relative path, and `layer-edges.test.ts` asserts the two lists equal the core's
+Outside-Region: baselines/layer-edges.baseline.json — 11 entries that no longer exist removed, 15 added (the six `ci.yml` reads of the laid fleet and worker, `laid-worker.ts`'s path, and eight fleet reads the scan now sees because cut 9 removed the core's `.gitignore` lines that hid the laid directories); `layer-edges.test.ts` fails on a new or a stale entry (mutated: see below)
 
 ## Mutation (both directions), on the laid copy, each restored byte-identical (`cp` before, `cp` after, `diff -q`)
 

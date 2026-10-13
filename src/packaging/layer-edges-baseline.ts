@@ -11,7 +11,15 @@
  * WHETHER THIS REPOSITORY SHOULD KEEP A BASELINE AT ALL is not decided by moving the judge: the core's ruling is that a reach that is
  * accepted is a reach that stays. This file keeps the lab's tests running until that is ruled on its own row.
  */
-import { EDGE_KINDS, LAYER_PACKAGES, type Edge } from "../../../guards/src/layer-edges.ts";
+
+/**
+ * The three things the judge read from the core's `layer-edges.ts`, declared HERE because this file is not a test and a non-test file of the lab
+ * does not import the core by a relative path (`no-relative-core-imports.test.ts`, ADR 0045 Decision 1 rule 2). The core exports none of them by
+ * name, so `layer-edges.test.ts`, which may read the core where it is laid, asserts each equals the core's: a drift is a red test and not a silent fork.
+ */
+export const EDGE_KINDS: readonly string[] = Object.freeze(["import", "path-literal", "launcher", "workflow", "config"]);
+export const LAYER_PACKAGES: readonly string[] = Object.freeze(["nvda-worker", "nvda-speech", "agent-org", "worker-fleet", "lab", "control"]);
+export type Edge = { from: string, to: string, kind: string, direction: "in" | "out", via?: { declaredLine: number, readLine: number } };
 
 /** Where the lab's baseline is, from the core's root when the lab is laid under it. */
 export const BASELINE_PATH = "packages/lab/baselines/layer-edges.baseline.json";
