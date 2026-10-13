@@ -1,6 +1,6 @@
 Closes a11ign/a11ign#5395
 
-Acceptance: `bash -c 'node --test src/packaging/row-claim.test.ts src/packaging/cross-repo-tests.test.ts'` (run from the lab root, laid at `core/packages/lab` beside a core checkout at `2b8489a8d`, because `row-claim.test.ts` reads the core's tree and `~/repos/lab` has no core layout and no lockfile). Measured in that layout against agent-org v0.191.0: `ℹ tests 157 / pass 157 / fail 0`, exit 0.
+Acceptance: `bash -c 'T=/home/agent/repos/core-verify-5395; rsync -a --delete --exclude=.git --exclude=node_modules /home/agent/repos/lab-wt-5395/ "$T/packages/lab/" && cd "$T/packages/lab" && node --test src/packaging/row-claim.test.ts src/packaging/cross-repo-tests.test.ts'` (this lays the lab at `packages/lab` in a core checkout, because `row-claim.test.ts` reads the core's tree at `../../../guards/` and a bare lab checkout cannot run it; the same layout as the cross-repo leg). Measured in that layout against agent-org v0.191.0 on the merged head `8040fce6` (the commit after it changes only this file): `ℹ tests 157 / pass 157 / fail 0`, exit 0.
 
 ## What changes
 `src/packaging/row-claim.test.ts` only. The mock of the tool's `gh` calls now answers the reads agent-org v0.191.0 makes:
