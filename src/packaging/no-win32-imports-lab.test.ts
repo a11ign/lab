@@ -116,8 +116,10 @@ function staticImports(relative: string): string[] {
   let text: string;
   try {
     text = readFileSync(join(REPO, relative), "utf8");
-  } catch {
-    return [];
+  } catch (cause) {
+    // An unreadable source reached by the walk is a broken walk, not a module with no imports: returning []
+    // here would let "no portable module reaches the driver" pass over a file it never read.
+    throw new Error(`cannot read ${relative} to list its imports`, { cause });
   }
   const specifiers: string[] = [];
   for (const match of text.matchAll(/^\s*(?:import|export)\b[^;\n]*?from\s*["']([^"']+)["']/gm)) {

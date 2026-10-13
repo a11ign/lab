@@ -48,8 +48,10 @@
 import { declareWalkScope } from "../../../guards/src/walk-scope.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
+import { captureClients } from "./capture-client-discovery.ts";
 
 /**
  * WHAT THIS GUARD READS, declared so a diff outside it does not run it -- #929. It reads the capture-body owners under `packages/lab/src` and nothing else outside its own imports.
@@ -91,23 +93,6 @@ const FIXED_POLICY: Record<string, string> = {
   "packages/lab/src/harnesses/capture-check.ts":
     "a fixed regression-check body, { url, steps, probeForms }, not derived from case data",
 };
-
-/** The discovery `worker-code-check-clients.test.ts` shares for "who dispatches a capture". */
-function captureClients(): string[] {
-  const found: string[] = [];
-  for (const dir of ["packages/lab/src/training", "packages/lab/src/harnesses"]) {
-    for (const entry of readdirSync(`${REPO}${dir}`)) {
-      // `.ts` since lab v0.1.27 (a11ign/a11ign#4519); a `.mjs` left beside it is a one-release shim that throws, so it matches no dispatch below.
-      if (!/\.(mjs|ts)$/.test(entry) || /\.(test|d)\.ts$/.test(entry)) continue;
-      const path = `${dir}/${entry}`;
-      const source = read(path);
-      const dispatches = /["'`][^"'`]*\/capture["'`][^]{0,120}?method:\s*["']POST["']/.test(source)
-        || /\bcaptureTolerantly\(/.test(source);
-      if (dispatches) found.push(path);
-    }
-  }
-  return found.sort();
-}
 
 const CLIENTS = captureClients();
 

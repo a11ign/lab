@@ -3,8 +3,10 @@
 import { declareWalkScope } from "../../../guards/src/walk-scope.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
+import { captureClients } from "./capture-client-discovery.ts";
 
 /**
  * WHAT THIS GUARD READS, declared so a diff outside it does not run it -- #929. It reads the capture clients under `packages/lab/src` and nothing else outside its own imports.
@@ -40,31 +42,6 @@ const DIAGNOSTICS = [
   "packages/lab/src/harnesses/occurrence-verdict-stability.ts",
   "packages/lab/src/harnesses/capture-check.ts",
 ];
-
-/** Every lab module that POSTs a capture to a worker. */
-function captureClients(): string[] {
-  const found: string[] = [];
-  for (const dir of ["packages/lab/src/training", "packages/lab/src/harnesses"]) {
-    for (const entry of readdirSync(`${REPO}${dir}`)) {
-      // `.ts` since lab v0.1.27 (a11ign/a11ign#4519). The control copy matched `.mjs` alone, so the five harness
-      // clients, now `.ts`, were never discovered and DIAGNOSTICS was classified by hand and never checked.
-      if (!/\.(mjs|ts)$/.test(entry) || /\.(test|d)\.ts$/.test(entry)) continue;
-      const path = `${dir}/${entry}`;
-      const source = readFileSync(`${REPO}${path}`, "utf8");
-      // DISPATCHING WORK is the signature, and it now has two spellings: a literal POST, or a call to the
-      // shared `captureTolerantly`. Matching only the first found four clients after nine moved behind the
-      // shared one -- a discovery walk quietly describing less than half the codebase, which is the exact
-      // rot this test's own count assertion exists to catch.
-      //
-      // Still NOT matched: reading `/capture/<id>` to recover a lost response. That is asking for work
-      // already done, not dispatching it, and a module that merely mentions the route is not a client.
-      const dispatches = /["'`][^"'`]*\/capture["'`][^]{0,120}?method:\s*["']POST["']/.test(source)
-        || /\bcaptureTolerantly\(/.test(source);
-      if (dispatches) found.push(path);
-    }
-  }
-  return found.sort();
-}
 
 const CLIENTS = captureClients();
 
