@@ -1,6 +1,6 @@
 Closes a11ign/a11ign#5435
 
-Acceptance: `bash -c 'gh pr view agent/the-lab-s-cross-5435 --json statusCheckRollup --jq ".statusCheckRollup[] | select(.name == \"checks (cross-repo)\") | .conclusion" | grep -qx SUCCESS'` (the row's done-when 1: the `checks (cross-repo)` leg of this PR's own CI passes at CORE_REF `87d89fdec`, with the copied-core guards and the tests that could not port retired under a11ign/a11ign#4425 phase 3, each with its reason on the row).
+Acceptance: `bash -c 'gone=$(git diff --name-only --diff-filter=D origin/agent/the-lab-s-ci-5431 -- src); test "$(printf "%s\n" "$gone" | grep -c .)" -eq 48 && for f in $gone; do test ! -e "$f" || { echo "still present: $f"; exit 1; }; done && node -e "process.exit(require(\"./baselines/layer-edges.baseline.json\").length === 428 ? 0 : 1)"'` (the row's done-when 1, by its retirement branch: each unportable file is gone from the tree, and the layer-edges baseline is at its measured 428). The leg's own pass is NOT this line: it is the PR's `checks (cross-repo)` job at CORE_REF `87d89fdec`, read on the PR and posted on a11ign/a11ign#5435, because a PR cannot read its own CI result at the moment it is opened.
 
 ## Verification record
 
