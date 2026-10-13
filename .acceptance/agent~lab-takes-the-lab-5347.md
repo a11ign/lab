@@ -2,6 +2,8 @@ Closes a11ign/a11ign#5347
 
 Acceptance: `git ls-tree -r --name-only HEAD | grep -x "src/packaging/capture-body-owner.test.ts"`
 
+Class: none — a relocation of existing guards to the repository that owns the files they scan; the one defect carried over (a discovery matching `.mjs` alone after the harnesses became `.ts`) is fixed in `worker-code-check-clients.test.ts`, whose floor is now the number classified
+
 The row's own Acceptance (`cd ~/repos/lab && git fetch -q origin && git ls-tree -r --name-only origin/main | grep -qx "src/packaging/capture-body-owner.test.ts"`) reads `origin/main` and is true once this merges; the form above is the same sentence read at this branch's HEAD. Run from this worktree it prints `src/packaging/capture-body-owner.test.ts` (nothing at origin/main cfbc75b8, the row's Open-check).
 
 **What moved** (copied from a11ign/control `origin/main` `src/fleet-layer/`, which a11ign#5345 deletes after this merges; control is not edited here):
@@ -22,7 +24,9 @@ Also: `declared-walk-scope.test.ts` names the new path (row cross-reference); `b
 
 **Measured** (the lab laid as `packages/lab` over a core worktree, with the fleet and worker layers laid from their `origin/main`; `A11Y_ALLOW_FOREIGN_RESOLUTION=1` because the worktree's `@a11ign/*` are installed copies, which these string-scanning tests do not touch): the five new files + `declared-walk-scope` + `reported-counts` = `VERDICT pass: 72 tests in 7 files`. `eslint` on the five: 0 errors; `tsc -p packages/lab/tsconfig.json`: no error in them.
 
-Mutation, each on the laid copy and restored from a copy with `diff` identical, each breaking exactly one test of its own file:
+Mutation: each of the five new guards broken in the way it exists to catch and seen red, below.
+
+Mutation detail, each on the laid copy and restored from a copy with `diff` identical, each breaking exactly one test of its own file:
 - a new unclassified `captureTolerantly(` client in `src/harnesses`: `capture-body-owner` and `worker-code-check-clients` each fail the classification test
 - a `--worker=` reader with no `assertWorkerUrl`: `worker-url-clients` fails
 - a lab module with a static `import "@guidepup/guidepup"`: `no-win32-imports-lab` fails
