@@ -235,6 +235,12 @@ const labelsSetBy = (args: string[]) => args.filter((a) => a.startsWith("labels[
 // nothing to restore, so the tests that say "does NOT invent `ready`" still mean it.
 const STATE_KEPT_THROUGH_CLAIM = "backlog";
 
+/** The label read `fetchLabels` makes: REST `gh api repos/<repo>/issues/<n>` (agent-org#1302), not `issue view`. */
+const isLabelRead = (args: string[]) => args.length === 2 && args[0] === "api" && /^repos\/[^/]+\/[^/]+\/issues\/\d+$/.test(args[1]);
+
+/** Any read of the issue row: the REST label read above, or an `issue view` (the body read and the `blockedBy` read). */
+const isIssueRead = (args: string[]) => isLabelRead(args) || args[1] === "view";
+
 function boardRun(initial: string[], { number = 176, state = "OPEN", interleave, failWhen }: {
   number?: number,
   state?: "OPEN" | "CLOSED",
@@ -257,12 +263,14 @@ function boardRun(initial: string[], { number = 176, state = "OPEN", interleave,
       board.labels = [...board.labels.filter((l) => !changed("--remove-label").includes(l)), ...changed("--add-label")];
       return "";
     }
-    if (args[1] === "view") {
-      if (args.includes("number,title,labels,state")) {
+    if (isIssueRead(args)) {
+      if (isLabelRead(args)) {
         labelReads += 1;
         interleave?.(labelReads, board);
       }
-      return JSON.stringify({ number, title: "A row", state, labels: board.labels.map((name) => ({ name })) });
+      // REST answers `open`/`closed` in lower case; `fetchLabels` maps them up (agent-org#1302), so the mock must too.
+      const reported = isLabelRead(args) ? state.toLowerCase() : state;
+      return JSON.stringify({ number, title: "A row", state: reported, labels: board.labels.map((name) => ({ name })) });
     }
     return "";
   };
@@ -287,7 +295,7 @@ test("claimRow claims a genuinely unclaimed row: reads, writes, re-reads, confir
  */
 function asksForBody(args: string[]): boolean {
   const jsonIndex = args.indexOf("--json");
-  return args[1] === "view" && jsonIndex >= 0 && args[jsonIndex + 1].split(",").includes("body");
+  return isIssueRead(args) && jsonIndex >= 0 && args[jsonIndex + 1].split(",").includes("body");
 }
 
 /** A `run` that answers BOTH `--json` shapes `writeRowLabels` needs from `issue view` -- the plain label
@@ -296,7 +304,7 @@ function asksForBody(args: string[]): boolean {
  * and break whichever call came second. */
 function claimRunWithBody(body: string, labels: string[] = []) {
   return (_cmd: string, args: string[]) => {
-    if (args[1] === "view") {
+    if (isIssueRead(args)) {
       const labelObjects = labels.map((name) => ({ name }));
       if (asksForBody(args)) return JSON.stringify({ body, labels: labelObjects });
       return JSON.stringify({ number: 707, title: "A row", labels: labelObjects });
@@ -398,7 +406,7 @@ test("dispatchRow marks in-progress + session, but deliberately NOT started", ()
 
 test("MUTATION: a SECOND dispatch sees the FIRST, and refuses -- the whole point of #176", () => {
   const run = (cmd: string, args: string[]) => {
-    if (args[1] === "view") {
+    if (isIssueRead(args)) {
       // The board already reflects a prior dispatch to another session -- no `claim` ever ran.
       return JSON.stringify({ number: 176, title: "A row",
         labels: [{ name: CLAIM_LABEL }, { name: "session:worker-judge" }] });
@@ -610,14 +618,14 @@ test("#987: fetchClaimComments REFUSES a response it cannot read, rather than re
   const cases: [string, () => string][] = [
     ["a failed call", () => { throw new Error("gh: HTTP 502"); }],
     ["not JSON", () => "<html>proxy error</html>"],
-    ["no comments array", () => JSON.stringify({ number: 987, title: "A row" })],
+    ["no list of pages", () => JSON.stringify({ number: 987, title: "A row" })],
   ];
   for (const [name, run] of cases) {
     assert.throws(() => fetchClaimComments(987, { run: () => run() }), /row-claim/,
       `${name} must refuse, never return []`);
   }
   assert.deepEqual(
-    fetchClaimComments(987, { run: () => JSON.stringify({ comments: [{ body: "one" }, { body: "two" }] }) }),
+    fetchClaimComments(987, { run: () => JSON.stringify([[{ body: "one" }, { body: "two" }]]) }),
     ["one", "two"], "and the reading path must work, or the refusals above prove nothing");
 });
 
@@ -636,7 +644,7 @@ test("#987: a claim naming NEITHER a branch nor a worktree posts a record that i
   const calls: string[][] = [];
   const run = (cmd: string, args: string[]) => {
     calls.push(args);
-    if (args[1] === "view") return JSON.stringify({ number: 665, title: "A row", labels: [] });
+    if (isIssueRead(args)) return JSON.stringify({ number: 665, title: "A row", labels: [] });
     if (readsRowsByLabel(args) !== null) return connectionOf([]);
     return "";
   };
@@ -1150,7 +1158,7 @@ test("moveProjectStatus reports (never throws) when the SNAPSHOT itself fails, p
 test("MUTATION target: claimRow moves Status to 'In progress' on a successful claim", () => {
   let reads = 0;
   const run = (cmd: string, args: string[]) => {
-    if (args[1] === "view") {
+    if (isIssueRead(args)) {
       reads += 1;
       const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }];
       return JSON.stringify({ number: 400, title: "A row", labels });
@@ -1169,7 +1177,7 @@ test("claimRow's own claimed:true does not depend on the Status move succeeding 
   + "not as a half-applied failure", () => {
   let reads = 0;
   const run = (cmd: string, args: string[]) => {
-    if (args[1] === "view") {
+    if (isIssueRead(args)) {
       reads += 1;
       const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }];
       return JSON.stringify({ number: 400, title: "A row", labels });
@@ -1187,7 +1195,7 @@ test("claimRow reports a GENUINE Status-write failure as half-applied -- ceo's r
   + "must never look like a plain success, even though the label (the record) still stands", () => {
   let reads = 0;
   const run = (cmd: string, args: string[]) => {
-    if (args[1] === "view") {
+    if (isIssueRead(args)) {
       reads += 1;
       const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }];
       return JSON.stringify({ number: 400, title: "A row", labels });
@@ -1694,19 +1702,19 @@ function claimRunFailingAt(failAt: (args: string[], labelReads: number) => boole
   let labelReads = 0;
   const run = (_cmd: string, args: string[]) => {
     calls.push(args);
-    // Exactly `fetchLabels`'s own field list (`before` and the post-write `after` verify both call it,
-    // and only it): "not body" also matched #1886's new `--json blockedBy` eligibility read, which sits
-    // between the two and would otherwise be miscounted as one of them.
-    const isLabelRead = args[1] === "view" && args.includes("number,title,labels,state");
-    if (isLabelRead) labelReads += 1;
+    // Exactly `fetchLabels`'s own REST read (`before` and the post-write `after` verify both call it,
+    // and only it): not the `issue view` body read, which sits between the two and would otherwise be
+    // miscounted as one of them.
+    const labelRead = isLabelRead(args);
+    if (labelRead) labelReads += 1;
     if (failAt(args, labelReads)) throw new Error(`simulated: gh ${args.slice(0, 2).join(" ")} failed`);
     if (readsRowsByLabel(args) !== null) return connectionOf([]); // #5039: no row holds a file, so the Region overlaps nothing and the claim goes on to its writes
     if (asksForBody(args)) return JSON.stringify({ body: TEMPLATE_BODY, labels: [{ name: READY_LABEL }] });
-    if (isLabelRead) {
+    if (labelRead) {
       // Reads 1 and 2 are the two BEFORE the write (`writeRowLabels`'s and #2151's fresh one); 3 is the verify.
       const labels = labelReads <= 2 ? [READY_LABEL]
         : [CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, WAS_READY_LABEL];
-      return JSON.stringify({ number: ROW, title: "A row", state: "OPEN", labels: labels.map((name) => ({ name })) });
+      return JSON.stringify({ number: ROW, title: "A row", state: "open", labels: labels.map((name) => ({ name })) });
     }
     return "[]";
   };
@@ -1728,7 +1736,7 @@ const SET = `set the row's labels to ${CLAIM_LABEL}, session:worker-judge, ${STA
   + `(\`${READY_LABEL}\` removed in the same write)`;
 
 test("#1399 ACCEPTANCE: labels LANDED, then the verify read throws -- exit 4, naming the written labels", () => {
-  const { run } = claimRunFailingAt((args, reads) => args[1] === "view" && !asksForBody(args) && reads === 3);
+  const { run } = claimRunFailingAt((args, reads) => isIssueRead(args) && !asksForBody(args) && reads === 3);
   const error = thrownBy(claimOf(run));
   assert.deepEqual(landedWritesOf(error), [SET]);
   const report = failureReport(error);
@@ -1740,7 +1748,7 @@ test("#1399 ACCEPTANCE: labels LANDED, then the verify read throws -- exit 4, na
 });
 
 test("#1399 CONTROL: the PRE-write read throws -- nothing is written, and COULD NOT DETERMINE stays, exit 2", () => {
-  const { run, calls } = claimRunFailingAt((args, reads) => args[1] === "view" && !asksForBody(args) && reads === 1);
+  const { run, calls } = claimRunFailingAt((args, reads) => isIssueRead(args) && !asksForBody(args) && reads === 1);
   const error = thrownBy(claimOf(run));
   assert.equal(landedWritesOf(error), null);
   assert.deepEqual(failureReport(error).exitCode, 2);
@@ -1797,7 +1805,7 @@ test("#1399 ACCEPTANCE: decline removed the worktree and the labels, then its re
 });
 
 test("#1399 CONTROL: decline's label read throws -- nothing removed, COULD NOT DETERMINE, exit 2", () => {
-  const { deps, removed, calls } = declineRunFailing((args) => args[1] === "view");
+  const { deps, removed, calls } = declineRunFailing((args) => isIssueRead(args));
   const error = thrownBy(() => declineRow(ROW, "worker-judge", deps));
   assert.equal(landedWritesOf(error), null);
   assert.equal(failureReport(error).exitCode, 2);
@@ -1831,11 +1839,11 @@ test("#2746 REGRESSION: a decline label edit that exits CLEAN but does not durab
   const calls: string[][] = [];
   const run = (_cmd: string, args: string[]) => {
     calls.push(args);
-    if (args[1] === "view") {
+    if (isIssueRead(args)) {
       // ALWAYS answers the pre-decline state: `gh issue edit` "succeeds" (no throw, no error output) but
       // never actually lands -- GitHub silently applying the `--remove-label` half while refusing the
       // `--add-label` half is #677's own measured failure, and a re-read is the only way to see it.
-      return JSON.stringify({ number: 2746, title: "A row", state: "OPEN",
+      return JSON.stringify({ number: 2746, title: "A row", state: "open",
         labels: [CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, WAS_READY_LABEL].map((name) => ({ name })) });
     }
     return ""; // `label create` and `edit` both report success and change nothing
@@ -1907,8 +1915,8 @@ function worktreeClaimRun({ localBranch = false, remoteBranch = false, remoteSta
     }
     if (cmd === "git" && (args[0] === "merge-base" || args[0] === "rev-list")) return unmergedBranchAnswer(args[0]);
     if (cmd === "git" && args[0] === "ls-remote") return lsRemoteAnswer(args, { remoteBranch, remoteStatus, originHeads, listingThrows });
-    if (cmd === "gh" && args[0] === "issue" && args.includes("comments")) {
-      return JSON.stringify({ comments: recordComments.map((body) => ({ body })) });
+    if (cmd === "gh" && args[0] === "api" && args[1].includes("/comments")) {
+      return JSON.stringify([recordComments.map((body) => ({ body }))]); // REST, `--paginate --slurp`: one array of pages (agent-org#1302)
     }
     return "";
   };
@@ -1956,12 +1964,14 @@ test("#1432: an existing path with no stamp says UNSTAMPED, never free", () => {
   assert.match((result as { reason: string }).reason, /UNSTAMPED \(nobody recorded an owner, which is not the same as free\)/);
 });
 
-test("#1432 ACCEPTANCE: an existing LOCAL branch is refused before any write, naming the claim record's session", () => {
-  const record = claimRecordComment({ session: "worker-judge", branch: TARGET.branch, worktree: "/repos/wt-1432" });
+// agent-org#1285: a local branch that the row's OWN record names is ADOPTED now, not refused, so the refusal is for a branch no record names.
+// The adoption path is pinned in the tool's own `row-claim-existing-branch.test.ts`.
+test("#1432 ACCEPTANCE: an existing LOCAL branch no record names is refused before any write, and the reason says so", () => {
+  const record = claimRecordComment({ session: "worker-judge", branch: "agent/other-1432", worktree: "/repos/wt-1432" });
   const stub = worktreeClaimRun({ localBranch: true, recordComments: [record] });
   const run = worktreeClaim(stub);
   const result = run.call();
-  assert.match((result as { reason: string }).reason, /--branch=agent\/x-1432 ALREADY EXISTS locally \(row #1432's claim record names `worker-judge`\)/);
+  assert.match((result as { reason: string }).reason, /--branch=agent\/x-1432 ALREADY EXISTS locally \(row #1432's newest claim record does not name this branch\)/);
   assert.deepEqual(run.order, []);
 });
 
