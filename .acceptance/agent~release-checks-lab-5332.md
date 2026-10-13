@@ -1,0 +1,13 @@
+**The lab runs `scorer:verify` and `release:provenance` itself, in a workflow the core's `release.yml` reads** (a11ign/a11ign#5332, chairman on a11ign/a11ign#928 2026-10-13, item 1; this is the lab half, the core half is a11ign/a11ign's `release.yml` job `lab-release-checks`).
+
+Acceptance: `bash -c 'grep -c "run: pnpm run scorer:verify" .github/workflows/release-checks.yml && grep -c "run: pnpm run release:provenance" .github/workflows/release-checks.yml'` (run from the lab root). Prints `1` and `1`.
+
+The row's Change 1 is a workflow file, so a command that proves it works is a RUN of it, which this pull request produces on its own head (`release-checks`, `pull_request`) and a run on `main` at the merge commit produces after (Done-when 2 of the row). Neither can exist before the push, so both are recorded on the pull request and the row, not here.
+
+Hand-run, before pushing (a pre-check, not a verdict): the two scripts were run from a scratch copy of this repository's `scripts/` and `src/` at `origin/main` (`1d40e3d5`) with the core's `node_modules` linked and `A11Y_CORE_ROOT` naming a core checkout: `MODEL CHECK PASSED (training)` over the core's `packages/scorer/models/screenreader-scorer`, and `PASS — all 1 of 1 from the shipped weights, 0 pending changeset(s) and the CHANGELOG examined and clean`.
+
+## Decisions a reviewer should look at
+- **Two `scorer:verify` readings, not one.** `pnpm run scorer:verify` reads the `@a11ign/scorer` this manifest pins from the registry (0.3.1). The core publishes ITS tree's weights (its manifest reads 0.2.1, the registry's latest is 0.3.6), so the second step runs the same script over the core's `packages/scorer/models/screenreader-scorer`. The registry reading alone would let a pickle checkpoint merged into the core pass here until this pin moved.
+- **The core is always `main`, read at the START of the run.** There is no input naming another ref: the core's job compares a run's start with the last change to what these steps read, and an input that let a run examine an older core would make that comparison a claim nobody could check. A stale reading is re-run (`workflow_dispatch`), never argued with.
+- **The install is `capture-check.yml`'s, narrowed to three entries** (`@a11ign/scorer`, `@a11ign/screenreader-fleet`, `@a11ign/toolchain`), the ones the two scripts import (walked from `origin/main`: `verify-safetensors.ts` imports `cli-flags`; `check-shipped-provenance.ts` reaches `promote-model.ts`, which imports `@a11ign/toolchain/lib/git-sandbox`). No lockfile is committed, for the reason `capture-check.yml` gives.
+- **A checkout of the core to READ**, with no test runner in the job (`ci-runs-no-other-repositorys-tests.test.ts` refuses the two together).
