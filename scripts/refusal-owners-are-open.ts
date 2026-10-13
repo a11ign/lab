@@ -6,7 +6,8 @@
  *
  * COPIED, NOT IMPORTED. The core's `scripts/refusal-owners-are-open.ts` is not a published package and ADR 0045 forbids a reach into another repository's
  * tree, so this is the core's file trimmed to what the lab has: the workflow half (`release.yml`'s `::error` lines) is dropped because no workflow here
- * carries a `REFUSED` line, and the default repository is this one. A change to the rules below is made in BOTH files.
+ * carries a `REFUSED` line, and the default repository is this one. A change to the rules below is made in BOTH files, until a11ign/a11ign#5361
+ * decides whether the core publishes the reader (and this copy is deleted) or the two are held together.
  *
  * WHAT IS READ. Every `REFUSED` string in `package.json` scripts: the text after the marker to the end of the string is the refusal, and a `#<n>` in it
  * is the owner the refusal sends a reader to.
