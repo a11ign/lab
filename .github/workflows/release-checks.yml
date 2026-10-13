@@ -1,0 +1,88 @@
+name: release-checks
+
+# The two release stages the core cannot run, run by the repository that owns them (a11ign/a11ign#5332; the same arrangement as `capture-check.yml`, ruling (b) of a11ign/a11ign#5179).
+#
+# `scorer:verify` and `release:provenance` were stages of the core's `release:gate:ci` until ADR 0045 cut 9 (a11ign/a11ign#5087) moved their scripts here, and the core's chain then ended in a stage that always
+# exits 1: no release shipped from a11ign@0.10.2 (2026-10-11) until this workflow existed. The core's `release.yml` READS this workflow's newest decisive run on this repository's `main`, exactly as it reads
+# `capture-check`'s (newest `success`/`failure`, `cancelled` and `skipped` passed over, only `push` and `workflow_dispatch` count). It is a separate workflow so the core asks for exactly this verdict and
+# not for `ci`'s whole gate, and so the Windows runner `capture-check` needs is not spent on two file reads.
+#
+# WHAT EACH STEP READS, AND OF WHICH SHA:
+# - `scorer:verify` reads the `@a11ign/scorer` THIS repository pins (`package.json`, installed from the registry): the weights directory holds safetensors and no pickle-style checkpoint or symlink.
+# - The same check is run a second time over the CORE's `packages/scorer/models/screenreader-scorer`, because the registry's pin is not what the core publishes (measured 2026-10-13: the core's manifest reads
+#   0.2.1 and this repository pins 0.3.1 while the registry's latest is 0.3.6). Without it a pickle checkpoint merged into the core would pass here until somebody bumped this repository's pin.
+# - `release:provenance` reads the core's shipped training report, pending `promote-*.md` changesets and the scorer's CHANGELOG, through `A11Y_CORE_ROOT`: the core's `main` at the START of this run.
+#
+# THE CORE IS ALWAYS `main`, AND THE RUN SAYS WHICH SHA. A run names no other ref on purpose: the core's job decides whether a run is new enough by comparing its start with the last change to the files the
+# two checks read (a11ign/a11ign `release.yml`, `lab-release-checks`), and an input that let a run examine an OLDER core would make that comparison a claim nobody could check. A stale reading is re-run, never
+# argued with: `workflow_dispatch` on this repository's `main`.
+#
+# TRIGGERS. A pull request, so a change here is judged before it merges; `push` to `main`, which the core reads; `workflow_dispatch`, the on-demand run. No `schedule` (GitHub disables one after 60 days
+# without activity), and none is needed: the core's job refuses a run older than the last change to what is read.
+#
+# NOT `ci.yml`: this repository does not install on its own (`ci.yml` and `capture-check.yml` say why: its manifest names packages no registry holds and there is no lockfile), so the install step keeps
+# the three entries these scripts import, at the versions the manifest names, and drops the rest on the runner only. A name the manifest stops declaring fails the step rather than being installed from nowhere.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      # A checkout to READ: the files `release:provenance` examines are the core's. No test runner runs in this job (`ci-runs-no-other-repositorys-tests.test.ts`).
+      - uses: actions/checkout@v7
+        with:
+          repository: a11ign/a11ign
+          ref: main
+          path: core
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # No `cache: pnpm`: it keys on a lockfile, and this repository has none.
+      - name: Install what the two scripts import, at this repository's own pins
+        run: |
+          node --input-type=module <<'TRIM'
+          import { readFileSync, writeFileSync } from "node:fs";
+          // `@a11ign/scorer` is the directory `scorer:verify` reads; `@a11ign/screenreader-fleet` is `cli-flags`, which both scripts import; `@a11ign/toolchain` is `lib/git-sandbox`, which `promote-model.ts` imports and
+          // `check-shipped-provenance.ts` imports `promote-model.ts` for `provenanceLines`.
+          const NEEDED = ["@a11ign/scorer", "@a11ign/screenreader-fleet", "@a11ign/toolchain"];
+          const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+          const declared = { ...manifest.dependencies, ...manifest.devDependencies };
+          const missing = NEEDED.filter((name) => !(name in declared));
+          if (missing.length > 0) throw new Error(`package.json no longer declares ${missing.join(", ")}: this step names what the release checks import`);
+          manifest.dependencies = {};
+          manifest.devDependencies = Object.fromEntries(NEEDED.map((name) => [name, declared[name]]));
+          writeFileSync("package.json", `${JSON.stringify(manifest, null, 2)}\n`);
+          console.log(manifest.devDependencies);
+          TRIM
+          pnpm install --no-frozen-lockfile
+      - name: Say what is read, before any of it can fail
+        run: |
+          {
+            echo "### release-checks"
+            echo "- lab sha: \`$GITHUB_SHA\`"
+            echo "- core: \`a11ign/a11ign\` \`main\` at \`$(git -C core rev-parse HEAD)\`, read at the start of this run"
+            echo "- registry scorer (this repository's pin): \`$(jq -r '.version' node_modules/@a11ign/scorer/package.json)\`; core's own manifest: \`$(jq -r '.version' core/packages/scorer/package.json)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: scorer:verify, on the scorer this repository pins
+        run: pnpm run scorer:verify
+      - name: scorer:verify, on the weights the core ships
+        run: pnpm exec node scripts/verify-safetensors.ts core/packages/scorer/models/screenreader-scorer
+      - name: release:provenance, on the core's shipped weights, changesets and CHANGELOG
+        run: pnpm run release:provenance
+        env:
+          A11Y_CORE_ROOT: ${{ github.workspace }}/core
