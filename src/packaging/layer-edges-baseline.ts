@@ -8,8 +8,8 @@
  * judge lives HERE, copied from the core at `23a179418~1` and changed in nothing but its imports. Without it that test did not typecheck
  * at the first core commit past cut 9, and `checks (own)` ran `tsc` over it.
  *
- * WHETHER THIS REPOSITORY SHOULD KEEP A BASELINE AT ALL is not decided by moving the judge: the core's ruling is that a reach that is
- * accepted is a reach that stays. This file keeps the lab's tests running until that is ruled on its own row.
+ * WHETHER THIS REPOSITORY SHOULD KEEP A BASELINE AT ALL is ruled KEEP, as a ledger that only shrinks: ADR 0045, section
+ * "The lab's own baseline of its reaches" (a11ign/a11ign#5436). The baseline is deleted when it is empty, and that section then ends.
  */
 import { EDGE_KINDS, LAYER_PACKAGES, type Edge } from "../../../guards/src/layer-edges.ts";
 
