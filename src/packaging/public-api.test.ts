@@ -94,10 +94,12 @@ test("worker-fleet exports the lease surface and the script paths", async () => 
   }
 });
 
-test("the CLI exports only the renderer, which is the whole documented surface", async () => {
+test("the CLI exports only the renderer and the probe defaults, which is the whole documented surface", async () => {
   const cli = await import("a11ign");
-  assert.equal(typeof cli.reportLines, "function", "reportLines is the entire public API (ADR 0004)");
+  assert.equal(typeof cli.reportLines, "function", "reportLines is the renderer a consumer prints our report shape with (ADR 0004)");
+  // The probe defaults are the second export since core #5091 (a11ign/a11ign#5431 moved this test onto it): the lab's `probe-consent` check READS them rather than scraping `cli.ts` (ADR 0045, Decision 1 rule 2).
+  assert.equal(typeof cli.DEFAULT_PROBE_FLAGS, "object", "DEFAULT_PROBE_FLAGS is what the CLI sends a page it does not own");
   // Asserting the surface is SMALL matters as much as asserting it exists: a second way to orchestrate a run
   // would be a second API to keep honest, and ADR 0004 deliberately does not offer one.
-  assert.deepEqual(Object.keys(cli).filter((k) => k !== "default"), ["reportLines"]);
+  assert.deepEqual(Object.keys(cli).filter((k) => k !== "default").sort(), ["DEFAULT_PROBE_FLAGS", "reportLines"]);
 });

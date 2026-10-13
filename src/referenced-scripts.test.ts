@@ -31,7 +31,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { sandboxGitEnv } from "../../guards/src/git-env.ts";
 import { declareTreeWideGuard, walkTree } from "@a11ign/toolchain/lib/tree-wide-guard";
@@ -103,38 +103,17 @@ function trackedFiles(): Set<string> {
 const isTracked = (path: string): boolean => trackedFiles().has(path);
 
 /**
- * The directories of the layers that live in their OWN repository and are laid beside this tree (`layers.json` at the ROOT since a11ign/a11ign#3506, which moved it out of
- * `packages/control`, and `lay-layer` leaves a copy there; entries with a `remote`, under `layers` since #3504 added the fleet's and under `pinned` for the two laid at a tag, `lab` and `control`). A program under
- * one is not tracked here BY DESIGN: `package.json`'s `doctor`, `worker:*` and `fleet:*` run it where it is laid (a host's checkout, or `scripts/lay-layer.ts` in a
- * worktree or CI), and `fleet:*` and `lab:*` run the control's `packages/control/src/*.mjs` that way.
+ * The referenced programs this repository cannot run: the ones that are not tracked. There is NO exemption for a program under a laid layer any more
+ * (a11ign/a11ign#5431). The core's `layers.json` declared the layers whose programs `package.json` ran where they were laid (`doctor`, `worker:*`, `fleet:*`),
+ * and was the only thing that said which directories were excused; cut 9 (a11ign/a11ign#5087, `23a179418`) deleted it together with those scripts, so
+ * `package.json` and `action.yml` name no `packages/worker-fleet/` or `packages/control/` path, and an exemption with no declaration to read would be a hole
+ * that excuses whatever a person writes under a laid directory.
  */
-// The laid copy of the root `layers.json`, not the root file: `lay-layer.mjs` writes it over whatever the tag holds ("so the two cannot differ"), and the core's `forceRerunTriggers` names
-// the root file nowhere, so `verify-affected-set` refuses a by-name read of it (a11ign/a11ign#3972).
-const LAID_DECLARATION = "packages/control/layers.json";
-type LayerDeclaration = Record<string, { path: string; remote?: string }>;
-const declaredLayerPaths = (): string[] => {
-  const manifest = JSON.parse(readFileSync(LAID_DECLARATION, "utf8")) as { layers: LayerDeclaration; pinned?: LayerDeclaration };
-  return Object.values({ ...manifest.layers, ...manifest.pinned }).filter((layer) => layer.remote !== undefined).map((layer) => layer.path);
-};
-
-/**
- * The referenced programs this repository cannot run. A tracked one is fine; so is one under a declared layer, with two refusals so that
- * exemption is not a hole: a layer that IS laid must hold the file (a reference to a program the layer no longer has is the defect this test
- * exists for), and only a path under a declared layer is excused at all. A layer not laid cannot be asked, which is why CI -- whose `build` lays
- * it -- is where a stale reference is caught.
- */
-function unrunnableReferences({ referenced, isTracked: tracked, layers, exists }: {
-  referenced: Iterable<string>; isTracked: (path: string) => boolean; layers: string[]; exists: (path: string) => boolean;
-}): string[] {
-  return [...referenced].filter((path) => {
-    if (tracked(path)) return false;
-    const layer = layers.find((directory) => path.startsWith(`${directory}/`));
-    if (layer === undefined) return true;
-    return exists(layer) && !exists(path);
-  });
+function unrunnableReferences({ referenced, isTracked: tracked }: { referenced: Iterable<string>; isTracked: (path: string) => boolean }): string[] {
+  return [...referenced].filter((path) => !tracked(path));
 }
 
-test("every scripts/ program referenced by package.json or action.yml is tracked in git, or is in a layer laid beside it", (t) => {
+test("every scripts/ program referenced by package.json or action.yml is tracked in git", (t) => {
   if (!insideGitRepo()) {
     t.skip("not a git checkout, so tracked-ness cannot be determined here");
     return;
@@ -143,11 +122,10 @@ test("every scripts/ program referenced by package.json or action.yml is tracked
   // Guard the guard: if the regexes stop matching, this test would pass by examining nothing — the exact
   // failure mode this project keeps meeting. The repo references well over a dozen.
   assert.ok(referenced.size >= 10, `only found ${referenced.size} referenced scripts; the scan is broken`);
-  const layers = declaredLayerPaths();
-  assert.ok(layers.includes("packages/worker-fleet"), "the fleet's layer is declared with a remote, so its programs are excused and the loop below is not the only thing reading them");
-  assert.ok([...referenced.keys()].some((path) => path.startsWith("packages/worker-fleet/")), "package.json still runs the fleet by path, so the exemption below examines something");
+  // The population is not only `scripts/`: `package.json` runs the core's own packages by path, which are tracked. (At the cut-9 sha it named none under a laid layer, and 13 of its 27 under `packages/`.)
+  assert.ok([...referenced.keys()].some((path) => path.startsWith("packages/")), "package.json still runs the core's own packages by path, so the loop below examines more than `scripts/`");
 
-  const missing = unrunnableReferences({ referenced: referenced.keys(), isTracked, layers, exists: existsSync })
+  const missing = unrunnableReferences({ referenced: referenced.keys(), isTracked })
     .map((path) => `${path} (referenced by ${(referenced.get(path) ?? []).join(", ")})`);
 
   assert.deepEqual(missing, [],
@@ -155,17 +133,12 @@ test("every scripts/ program referenced by package.json or action.yml is tracked
     + `run them, however well they work on the machine that has them.`);
 });
 
-test("POSITIVE CONTROL: a reference is refused when untracked and outside every layer, or inside a LAID layer that lacks the file, and excused only when the layer is not laid", () => {
+test("POSITIVE CONTROL: a reference is refused when it is untracked, wherever it points, and excused only when tracked", () => {
   const nothingTracked = () => false;
-  const layers = ["packages/worker-fleet"];
-  const refused = (path: string, present: string[]) =>
-    unrunnableReferences({ referenced: [path], isTracked: nothingTracked, layers, exists: (candidate) => present.includes(candidate) });
-  assert.deepEqual(refused("scripts/never-committed.py", []), ["scripts/never-committed.py"], "the original defect: untracked, in no layer");
-  assert.deepEqual(refused("packages/other/src/x.mjs", ["packages/worker-fleet"]), ["packages/other/src/x.mjs"], "a laid layer excuses only its own directory");
-  assert.deepEqual(refused("packages/worker-fleet/src/gone.mjs", ["packages/worker-fleet"]), ["packages/worker-fleet/src/gone.mjs"], "laid, and it lacks the file");
-  assert.deepEqual(refused("packages/worker-fleet/src/doctor.mjs", ["packages/worker-fleet", "packages/worker-fleet/src/doctor.mjs"]), [], "laid, and it holds the file");
-  assert.deepEqual(refused("packages/worker-fleet/src/doctor.mjs", []), [], "not laid: it cannot be asked, and CI's build lays it");
-  assert.deepEqual(unrunnableReferences({ referenced: ["scripts/a.mjs"], isTracked: (path) => path === "scripts/a.mjs", layers, exists: () => false }), [], "tracked is fine");
+  const refused = (path: string) => unrunnableReferences({ referenced: [path], isTracked: nothingTracked });
+  assert.deepEqual(refused("scripts/never-committed.py"), ["scripts/never-committed.py"], "the original defect: untracked");
+  assert.deepEqual(refused("packages/worker-fleet/src/doctor.mjs"), ["packages/worker-fleet/src/doctor.mjs"], "a laid layer's directory excuses nothing: there is no declaration left to excuse it");
+  assert.deepEqual(unrunnableReferences({ referenced: ["scripts/a.mjs"], isTracked: (path) => path === "scripts/a.mjs" }), [], "tracked is fine");
 });
 
 /** `extends` targets of every tracked tsconfig, resolved to repo-relative paths. */
