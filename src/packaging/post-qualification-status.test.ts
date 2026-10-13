@@ -19,11 +19,14 @@ import assert from "node:assert/strict";
 import {
   QUALIFICATION_CONTEXT, QUALIFICATION_GATE, qualificationStatus,
 } from "../gates/qualification-status.ts";
-import { gateVerdict } from "../gates/verdict.ts";
+import { exitCodeFor, gateVerdict } from "../gates/verdict.ts";
 import { QUALIFICATION_CONTEXT as READ_CONTEXT } from "../../../../scripts/release-reads-qualification.ts";
 import {
   EXIT, parseArgs, postQualificationStatus, renderResult, requireFullSha,
 } from "../../../control/src/post-qualification-status.ts";
+// The carried copy control ships for its own lab imports (control#87 / a11ign#5372). It is a verbatim copy of
+// the two lab modules above, so this file is the only place that keeps the copy honest.
+import * as carried from "../../../control/src/lab-carried.ts";
 
 const SHA = "308b2de5bbd8a1f0c4e7d9b3a6f2e1d0c9b8a7f6";
 const GITHUB_DESCRIPTION_LIMIT = 140;
@@ -77,6 +80,28 @@ test("POSITIVE CONTROL: the table reaches success, and ONLY through a PASS readi
   assert.deepEqual(successes, ["PASS verdict", "exit 0"]);
   const states = new Set(TABLE.map((row) => row.state));
   assert.deepEqual([...states].sort(), ["failure", "pending", "success"]);
+});
+
+test("the carried copy returns the SAME payload as the original, over every row of the table", () => {
+  for (const row of TABLE) {
+    const input = { sha: SHA, outcome: row.outcome, run: "a11y-job-gate-stability" };
+    assert.deepEqual(carried.qualificationStatus(input), qualificationStatus(input), row.name);
+  }
+});
+
+test("POSITIVE CONTROL for the copy: the same success rows reach success through it", () => {
+  const reached = TABLE.filter((row) => carried.qualificationStatus({ sha: SHA, outcome: row.outcome }).state === "success")
+    .map((row) => row.name);
+  assert.deepEqual(reached, ["PASS verdict", "exit 0"]);
+});
+
+test("the carried constants and exit-code rule are the originals', not a second spelling of them", () => {
+  assert.equal(carried.QUALIFICATION_CONTEXT, QUALIFICATION_CONTEXT);
+  assert.equal(carried.QUALIFICATION_GATE, QUALIFICATION_GATE);
+  for (const verdict of [PASS, FAIL, INCONCLUSIVE]) {
+    assert.equal(carried.exitCodeFor(verdict), exitCodeFor(verdict));
+  }
+  assert.equal(carried.exitCodeFor(PASS), 0, "positive control: a PASS reading exits 0 through the copy too");
 });
 
 test("a missing or unparseable verdict is never success, and says so", () => {
