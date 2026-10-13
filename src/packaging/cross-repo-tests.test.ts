@@ -27,7 +27,8 @@ test("the real tree: both populations exist, and the tests that went red on a mo
   const cross = crossRepoTests();
   // POSITIVE CONTROL for the emptiness reads below: neither side is vacuous.
   assert.ok(cross.length > 0 && cross.length < all.length, `cross-repo ${cross.length} of ${all.length}: both legs must have tests`);
-  for (const known of ["layer-edges", "verify-affected-set", "changed-files-renames", "acceptance-reads-the-live-body", "agent-org-wiring"]) {
+  // The tests that read the core's tree were retired under a11ign/a11ign#4425 phase 3 (#5435), so they cannot be named here.
+  for (const known of ["layer-edges", "acceptance-reads-the-live-body"]) {
     assert.ok(cross.includes(`src/packaging/${known}.test.ts`), `${known} reads another tree and must not block a pull request`);
   }
   assert.ok(!cross.includes("src/packaging/cross-repo-tests.test.ts"), "the classifier's own test stays in the required leg");

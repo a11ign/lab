@@ -287,6 +287,8 @@ const RESERVED_BY_A_ROW: readonly RegExp[] = [
   // lab#69 (a11ign#4838) DELETES `packages/lab/src/packaging/work-gate.test.ts`, a stale copy of the tool's own test, so the Region
   // that filed it no longer finds it on disk. Listed by name: a misspelt path is still refused.
   /^packages\/lab\/src\/packaging\/(work-gate)\.test\.ts$/,
+  // a11ign#5435 RETIRES these two cross-repo guards with the rest of the copied-core guards (a11ign#4425 phase 3): their Regions still name them.
+  /^packages\/lab\/src\/packaging\/(control-plane-checkout-is-one-fact|repo-identity-consolidated)\.test\.ts$/,
 ];
 
 /** The paths each appendix entry's Region lists: the lines of the FIRST fenced block under its `## Region`. */

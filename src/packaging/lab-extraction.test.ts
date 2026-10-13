@@ -171,13 +171,15 @@ test("the baseline gives no edge to #2703: every edge out of lab is decided", ()
   const baseline = baselineOf(REPO_ROOT);
   assert.deepEqual(undecided(baseline), []);
   // Was 600 over 620 edges; the tests that read the tool now import scripts/tool-source.ts instead of the core's agent-org-newest-tag.mjs (a11ign/a11ign#4427), which leaves 590, so the floor is 500.
-  assert.ok(outOfLab(baseline).length > 500, "too few edges out of lab read: the baseline was read wrongly");
+  // Then 540: a11ign/a11ign#5435 retired the 110 cross-repo guards that read the core's tree, and their 110 edges went with them, so the floor is 400.
+  assert.ok(outOfLab(baseline).length > 400, "too few edges out of lab read: the baseline was read wrongly");
 });
 
 test("every checkout-path edge out of lab names a path the core has, so laying the core beside lab resolves it", () => {
   const baseline = outOfLab(baselineOf(REPO_ROOT));
   // Was 513 of 592: the 56 edges to the eight modules the core deleted and the toolchain publishes (`@a11ign/toolchain/lib/*`) left the baseline with the swap (a11ign/a11ign#4822), which leaves 457, so the floor is 400.
-  assert.ok(baseline.filter((e) => e.disposition === "checkout-path").length > 400, "too few checkout-path edges: this row's decision was not read");
+  // Then 454 of 540, and 356 of 430 once a11ign/a11ign#5435 retired the 110 cross-repo guards and their edges: the floor is 300.
+  assert.ok(baseline.filter((e) => e.disposition === "checkout-path").length > 300, "too few checkout-path edges: this row's decision was not read");
   assert.deepEqual(unresolvable(baseline, coreHas), []);
 });
 
