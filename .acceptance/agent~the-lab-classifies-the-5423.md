@@ -2,6 +2,19 @@ Closes a11ign/a11ign#5423
 
 Acceptance: `bash -c 'cd ~/repos/lab && git fetch -q origin && git checkout -q --detach origin/main && node --test src/gates/exit-code-contract.test.ts'`
 
+Hand-run: the test imports the control package, which this job's bare checkout does not lay; run in the CI-equivalent layout (core 2b8489a8, screenreader-fleet v0.7.3, control v0.13.15, lab branch at packages/lab)
+
+## Hand-run output
+`node --test src/gates/exit-code-contract.test.ts`, node v24.21.0, this branch as `packages/lab` of that layout:
+
+```
+ℹ tests 13
+ℹ pass 13
+ℹ fail 0
+```
+
+Mutation: the `fleet-lock.ts` entry removed -> 1 test fails, naming it; the entry renamed to a path that does not exist -> 2 fail; each restored from a copy and diffed byte-identical, 13 pass.
+
 ## What changes
 - `src/gates/exit-code-contract.test.ts`: classifies the four control files the cross-repo leg fails on (a11ign/a11ign#5413's lab half), each by the exit calls read from control v0.13.15 source: `fleet-converge.ts`, `fleet-dispatch.ts` and `fleet-lock.ts` are DOCUMENTED, `worker-fleet-carried.ts` is INFRASTRUCTURE. The entries are worker-5413's (lab `b56ff307`); every code in them was re-read from source here.
 
