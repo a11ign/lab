@@ -715,8 +715,8 @@ test("#1349: a SECOND copy of walk-scope shares one observer state -- it reports
 });
 
 test("#1349: the runner's own snapshot probe beside a test file is the runner's read, not the guard's population", () => {
-  assert.deepEqual(runnerOwnedPaths(join(REPO, "packages/worker-fleet/src/capture-body-owner.test.ts")),
-    ["packages/worker-fleet/src/__snapshots__/capture-body-owner.test.ts.snap"]);
+  assert.deepEqual(runnerOwnedPaths(join(REPO, "packages/lab/src/packaging/capture-body-owner.test.ts")),
+    ["packages/lab/src/packaging/__snapshots__/capture-body-owner.test.ts.snap"]);
 });
 
 // ---------------------------------------------------------------------------------------------------------
