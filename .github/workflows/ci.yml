@@ -271,11 +271,40 @@ jobs:
           }
           bounded pnpm dlx "@changesets/cli@$CHANGESETS_VERSION" version
 
+  # A RELEASE GATE'S REFUSAL NAMES AN OPEN OWNING ROW, READ LIVE (a11ign/a11ign#5351, after the core's #5333). `gate:core-held` said "whether a release may proceed without them is
+  # a11ign/a11ign#5179", and #5179 closed on 2026-10-12 after fixing a different gate: an owner on paper and nobody looking. `scripts/refusal-owners-are-open.ts` (the core's reader,
+  # copied: the core does not publish it and ADR 0045 forbids a reach into its tree) finds every owner a `REFUSED` string in `package.json` names, reading `a11ign/a11ign#n` in the
+  # core, and this job asks GitHub whether each is open. IT BLOCKS: it is in `gate`'s `needs`, and a refusal naming a closed row holds every merge until somebody re-points it, which is
+  # the intent. It reads the tree UNDER TEST, so the pull request that re-points the refusal turns it green itself. An issue it cannot read is CANNOT_TELL and red, never open.
+  # `A11Y_CHECK_REFUSAL_OWNERS=1` names the instrument; the grep below is what stops an opt-in test that SKIPPED from standing in for one that read. No `node_modules`, no core checkout:
+  # the reader and its test import only `node:` modules, so this is not another leg of `checks`.
+  refusalOwners:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 22 }
+      - name: Every owner a refusal names is an open issue
+        env:
+          A11Y_CHECK_REFUSAL_OWNERS: "1"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # No pipe: Actions' default `bash -e` has no `pipefail`, so `node --test | tee` takes `tee`'s status and a failed fixture test beside a printed LIVE PASS exits 0
+          # (the core's reviewer-5352). The test's own status is kept and returned; `src/packaging/refusal-owners-are-open.test.ts` runs this block.
+          status=0
+          node --test src/packaging/refusal-owners-are-open.test.ts > "$RUNNER_TEMP/refusal-owners.out" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/refusal-owners.out"
+          [ "$status" -eq 0 ] || { echo "::error::refusal-owners-are-open.test.ts exited $status"; exit "$status"; }
+          grep -q "LIVE PASS: " "$RUNNER_TEMP/refusal-owners.out" || { echo "::error::the live read printed no LIVE PASS line: it was skipped or found no owner"; exit 1; }
+
   # THE REQUIRED CHECK. `main`'s protection and the `merge-queue-main` ruleset name `gate`, so it stays the one check that answers for the run. It waits for every job above and accepts `success`
   # ONLY: `always()` because a job whose need failed is SKIPPED, and a skipped required check counts as passed; and no `skipped` allowance, because the changeset job succeeds on a merge-group
   # entry rather than skipping and `release-dry-run` succeeds when nothing it reads changed, so a skip here means it did not run.
   gate:
-    needs: [changeset, checks, release-dry-run]
+    needs: [changeset, checks, release-dry-run, refusalOwners]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
@@ -295,5 +324,10 @@ jobs:
           # `release-dry-run` is a `success` on every event, a change that touches none of the paths it reads included: there is no event it is excused on.
           if [ "${{ needs.release-dry-run.result }}" != "success" ]; then
             echo "::error::release-dry-run reported '${{ needs.release-dry-run.result }}', not success"
+            exit 1
+          fi
+          # `refusalOwners` runs on every event and reads no state a skip could excuse: success or it did not look.
+          if [ "${{ needs.refusalOwners.result }}" != "success" ]; then
+            echo "::error::refusalOwners reported '${{ needs.refusalOwners.result }}', not success"
             exit 1
           fi
