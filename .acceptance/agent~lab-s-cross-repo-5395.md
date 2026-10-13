@@ -18,9 +18,10 @@ Acceptance: `bash -c 'node --test src/packaging/row-claim.test.ts src/packaging/
 - Mutation M2 (a mutated copy of the test file): `ℹ fail 1`, the #1432 local-branch test.
 
 ## Done-when (2): what red remains on lab main
-Newest lab main push run that reached the cross-repo leg: ci run 38376549284, head `fd7bd047`, `checks (cross-repo)` = failure, `Test Files 2 failed | 225 passed (227)`.
-- `src/packaging/row-claim.test.ts`: this change.
-- `layer-edges.test.ts`: NOT fixed here. Owner a11ign/a11ign#5187 (closed). Its change to `SCORER_PACKAGE` in `scripts/evaluate-screenreader-acceptance.py` made the baseline entry for `packages/lab/scripts/evaluate-screenreader-acceptance.py -> packages/scorer/models/screenreader-scorer` stale; line 4 of `baselines/layer-edges.baseline.json` should be removed by whichever row takes that fix.
+Newest lab main push run that reached the cross-repo leg: ci run 38389252031, head `265f7954`, `checks (cross-repo)` = failure. Three files still fail there:
+- `src/packaging/row-claim.test.ts`: this change (fixed on this branch; the PR-head run is not yet observed).
+- `src/packaging/layer-edges.test.ts`: NOT fixed here. Owner a11ign/a11ign#5403 (open, `ready`). A stale baseline entry for `evaluate-screenreader-acceptance.py -> packages/scorer/models/screenreader-scorer` in `baselines/layer-edges.baseline.json`.
+- `src/gates/exit-code-contract.test.ts`: NOT fixed here. Owner a11ign/a11ign#5413 (open, `ready`, filed 2026-10-13; the owning row for the four control files is pending product-manager). Four control files call `process.exit` and are classified nowhere: `packages/control/src/fleet-converge.ts`, `fleet-dispatch.ts`, `fleet-lock.ts`, `worker-fleet-carried.ts`.
 
 ## Not done / open
 - The PR-head `checks (cross-repo)` run has not been observed yet; this file does not claim it.
