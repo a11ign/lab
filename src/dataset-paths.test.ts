@@ -178,6 +178,14 @@ const EXEMPT: Record<string, string> = {
     "#4446: the identical shape fleet-watch.ts and fleet-auto-off.ts are exempted for -- ADR 0012's @a11ign/control cannot "
     + "import @a11ign/lab, and `PATCH_RUN_RECORD` (runs/fleet-patch-last-run.json) is a one-field ledger of when the last "
     + "`fleet:patch --apply` COMPLETED, which `fleet-watch`'s patch-window-missed reads back; not a dataset root this module owns.",
+  "packages/control/src/fleet-build-incident.ts":
+    "a11ign/a11ign#5400: laid since CONTROL_REF moved to v0.13.15. The identical shape fleet-watch.ts and fleet-auto-off.ts are exempted for -- ADR 0012's "
+    + "@a11ign/control cannot import @a11ign/lab, and runs/fleet-build-incident-state.json is a one-record ledger of the open Windows-build "
+    + "incident between one fleet-watch tick and the next, not a dataset root this module owns.",
+  "packages/control/src/fleet-converge.ts":
+    "a11ign/a11ign#5400: laid since CONTROL_REF moved to v0.13.15. The identical shape, one file over -- ADR 0012's @a11ign/control cannot import "
+    + "@a11ign/lab, and `RESULT_PATH` (runs/fleet-converge-last-run.json) is the one result a converge run writes for its caller, as "
+    + "runs/fleet-wake-proof.json is, not a dataset root this module owns.",
   "packages/lab/src/packaging/acceptance-check-at-filing.test.ts":
     "#1973: the same literals, as the expected VALUES the refusal above must name -- a test that read "
     + "them from dataset-paths.mjs would be asserting the checker against its own source and could not "
