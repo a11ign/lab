@@ -43,7 +43,7 @@ const DIAGNOSTICS = [
   "packages/lab/src/harnesses/capture-check.ts",
 ];
 
-const CLIENTS = captureClients();
+const CLIENTS = captureClients(REPO);
 
 test("capture clients are still found -- the positive control for the emptiness assertion below", () => {
   // Without this, `deepEqual(unclassified, [])` passes having compared nothing, which is what an empty

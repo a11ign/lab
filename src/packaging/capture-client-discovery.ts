@@ -1,7 +1,4 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
-const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /**
  * Every lab module that DISPATCHES a capture to a worker -- the one discovery that `capture-body-owner.test.ts`
@@ -16,15 +13,17 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
  * five harness clients were never discovered; a `.mjs` left beside a `.ts` is a one-release shim that throws,
  * so it matches no dispatch.
  *
+ * `repo` is the root a caller computes for itself: this is a non-test source, which `core-root.test.ts` refuses to
+ * climb out of the lab, and a caller that is a test may.
  * The positive control for an emptiness assertion over this list lives in each caller's own floor test.
  */
-export function captureClients(): string[] {
+export function captureClients(repo: string): string[] {
   const found: string[] = [];
   for (const dir of ["packages/lab/src/training", "packages/lab/src/harnesses"]) {
-    for (const entry of readdirSync(`${REPO}${dir}`)) {
+    for (const entry of readdirSync(`${repo}${dir}`)) {
       if (!/\.(mjs|ts)$/.test(entry) || /\.(test|d)\.ts$/.test(entry)) continue;
       const path = `${dir}/${entry}`;
-      const source = readFileSync(`${REPO}${path}`, "utf8");
+      const source = readFileSync(`${repo}${path}`, "utf8");
       const dispatches = /["'`][^"'`]*\/capture["'`][^]{0,120}?method:\s*["']POST["']/.test(source)
         || /\bcaptureTolerantly\(/.test(source);
       if (dispatches) found.push(path);

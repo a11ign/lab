@@ -94,7 +94,7 @@ const FIXED_POLICY: Record<string, string> = {
     "a fixed regression-check body, { url, steps, probeForms }, not derived from case data",
 };
 
-const CLIENTS = captureClients();
+const CLIENTS = captureClients(REPO);
 
 test("capture clients are still found -- the vacuity guard for the discovery itself", () => {
   // The message names no count: a floor that also REPORTS its subject is refused by `reported-counts.test.ts`.
