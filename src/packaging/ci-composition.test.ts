@@ -39,11 +39,12 @@ test("control is laid at a release tag this file names, at or after the first on
   assert.ok(versionAtLeast(pin[1], FIRST_CONTROL_WITH_LAB_CARRIED), `${pin[1]} predates control v0.13.15, which first has src/lab-carried.ts`);
   assert.ok(versionAtLeast("v0.13.15", FIRST_CONTROL_WITH_LAB_CARRIED) && !versionAtLeast("v0.13.14", FIRST_CONTROL_WITH_LAB_CARRIED) && !versionAtLeast("v0.5.3", FIRST_CONTROL_WITH_LAB_CARRIED), "positive control: the comparison separates v0.13.15 from the tag the core used to lay");
   assert.match(ci, /git clone [^\n]*--branch "\$CONTROL_REF" https:\/\/github\.com\/a11ign\/control\.git "\$RUNNER_TEMP\/control"\n/, "the clone uses the declaration");
-  assert.doesNotMatch(ci, /\.layer-ref/, "the core's pin no longer decides which control is laid: cut 9 deleted the file that wrote it");
+  // Control's OWN `.layer-ref` is the one this guards: the core's pin decided which control was laid by writing it, and cut 9 deleted the file that did. The fleet and the worker write theirs below, from the tags this file names.
+  assert.doesNotMatch(ci, /packages\/control\/\.layer-ref/, "the core's pin no longer decides which control is laid: cut 9 deleted the file that wrote it");
   assert.doesNotMatch(ci, /raw\.githubusercontent\.com\/a11ign\/control/, "the manifest is read from the clone, not fetched at a ref the core names");
 });
 
-test("control is laid AFTER the install and the build, which lay the core's own pin back, and BEFORE the lab is laid and linked to it", () => {
+test("control is laid AFTER the install and the build and BEFORE the lab is laid and linked to it", () => {
   const lay = ci.indexOf("git clone --quiet --depth 1 --branch \"$CONTROL_REF\"");
   assert.ok(lay > 0, "positive control: the control step is found");
   assert.ok(lay > ci.indexOf("pnpm install --no-frozen-lockfile"), "laid after the install");
@@ -52,8 +53,43 @@ test("control is laid AFTER the install and the build, which lay the core's own 
   assert.match(ci, /rm -rf packages\/control\n {10}mkdir packages\/control\n/, "the core's laid copy is replaced, not merged into");
   // What the core's `lay-layer.ts` laid at its pin: `src`, `ansible` and the two docs, no `package.json`, no `.git`, and no test (laid whole, four lab guards that walk `packages/control` went red).
   assert.match(ci, /archive --format=tar HEAD src ansible CLAUDE\.md README\.md \| tar -x -C packages\/control\n/, "only what the core laid: no `.git`, no manifest, no `scripts/`");
-  assert.match(ci, /\n {10}cp layers\.json packages\/control\/layers\.json\n/, "and the core's declaration beside it, which `referenced-scripts.test.ts` reads as the laid layer's");
+  // The core deleted `layers.json` in cut 9 (a11ign/a11ign#5087, `23a179418`): a `cp` of it dies at every core commit from there, which is why moving `CORE_REF` was not one pin bump (a11ign/a11ign#5431).
+  assert.doesNotMatch(ci, /layers\.json/, "no copy of a declaration the core no longer has");
   assert.match(ci, /find packages\/control\/src -type f \\\( -name '\*\.test\.ts' -o -name '\*\.test\.mts' -o -name '\*\.test\.mjs' \\\) -delete\n/, "and not its own tests");
+});
+
+// The releases the core's lockfile pinned at the sha this file moved to (`git show 87d89fdec:pnpm-lock.yaml`: `@a11ign/screenreader-fleet` 0.11.0, `@a11ign/screenreader-worker` 0.13.0). The core's `prepare` laid
+// them at the releases its lockfile pinned until cuts 4 and 6 (a11ign/a11ign#5082, #5084); the lab's tests were written against that tree, so a lower tag reads a tree no test of this repository was run against (a11ign/a11ign#5431).
+const FLEET_AT_CUT_9 = [0, 11, 0];
+const WORKER_AT_CUT_9 = [0, 13, 0];
+
+test("the fleet and the worker are laid at release tags this file names, as the core's `prepare` laid them until cuts 4 and 6 (a11ign/a11ign#5431)", () => {
+  const fleet = /^ {2}FLEET_REF: ([^\s]+)$/m.exec(ci);
+  const worker = /^ {2}WORKER_REF: ([^\s]+)$/m.exec(ci);
+  assert.ok(fleet && worker, "positive control: both declarations are found");
+  for (const [name, pin, floor] of [["FLEET_REF", fleet[1], FLEET_AT_CUT_9], ["WORKER_REF", worker[1], WORKER_AT_CUT_9]] as const) {
+    assert.match(pin, /^v\d+\.\d+\.\d+$/, `${name} is a release tag, never a branch`);
+    assert.ok(versionAtLeast(pin, [...floor]), `${name} ${pin} predates the release the core's lockfile pinned at the sha this file moved to`);
+  }
+  assert.ok(versionAtLeast("v0.11.0", FLEET_AT_CUT_9) && !versionAtLeast("v0.10.9", FLEET_AT_CUT_9), "positive control: the comparison separates the floor from the release before it");
+  assert.match(ci, /git clone [^\n]*--branch "\$FLEET_REF" https:\/\/github\.com\/a11ign\/screenreader-fleet\.git "\$RUNNER_TEMP\/screenreader-fleet"\n/, "the fleet clone uses its declaration");
+  assert.match(ci, /git clone [^\n]*--branch "\$WORKER_REF" https:\/\/github\.com\/a11ign\/screenreader-worker\.git "\$RUNNER_TEMP\/screenreader-worker"\n/, "the worker clone uses its declaration");
+  assert.match(ci, /archive --format=tar HEAD src \| tar -x -C packages\/worker-fleet\n/, "the fleet's `src` only, at the path control's relative imports and the lab's tests name");
+  assert.match(ci, /archive --format=tar HEAD src \| tar -x -C packages\/nvda-worker\n/, "the worker's `src` only, at the path the lab's tests name");
+  assert.match(ci, /find packages\/worker-fleet\/src packages\/nvda-worker\/src -type f \\\( -name '\*\.test\.ts' -o -name '\*\.test\.mts' -o -name '\*\.test\.mjs' \\\) -delete\n/, "and not their own tests");
+  // `laid-worker.ts` refuses a layer with no `.layer-ref`, and the file holds the tag so a reader can say which release a test read.
+  assert.match(ci, /echo "\$FLEET_REF" > packages\/worker-fleet\/\.layer-ref\n/, "the fleet records its tag");
+  assert.match(ci, /echo "\$WORKER_REF" > packages\/nvda-worker\/\.layer-ref\n/, "the worker records its tag");
+});
+
+test("the fleet and the worker are laid AFTER the install and the build, and BEFORE anything reads them", () => {
+  const lay = ci.indexOf("rm -rf packages/worker-fleet packages/nvda-worker");
+  assert.ok(lay > 0, "positive control: the laying step is found");
+  assert.ok(lay > ci.indexOf("pnpm install --no-frozen-lockfile"), "laid after the install, or the clone would be read as a workspace member");
+  assert.ok(lay > ci.indexOf("pnpm run build"), "laid after the build");
+  assert.ok(lay < ci.indexOf("rm -rf packages/lab"), "laid before the lab, whose tests read them");
+  assert.ok(lay < ci.indexOf("pnpm exec rstest run"), "laid before the tests");
+  assert.ok(lay > ci.indexOf("git clone --quiet --depth 1 --branch \"$CONTROL_REF\""), "after control, so the three layers are laid in one order");
 });
 
 test("the tool is resolved at the newest release tag by the core's resolver, with no tag held here (a11ign/a11ign#4427)", () => {
@@ -63,12 +99,13 @@ test("the tool is resolved at the newest release tag by the core's resolver, wit
   assert.ok(step < ci.indexOf("pnpm exec eslint"), "resolved before the lint");
   assert.ok(step < ci.indexOf("pnpm exec rstest run"), "resolved before the tests");
   assert.doesNotMatch(ci, /AGENT_ORG_PIN/, "no pin: the newest tag is what the tests read the tool at");
-  // `CONTROL_REF` is the one release tag written here, and it is control's, pinned above; the line is dropped so this still reads every other place a tag could hide.
-  assert.doesNotMatch(ci.replace(/^ {2}CONTROL_REF: .*$/m, ""), /\bv\d+\.\d+\.\d+\b/, "and no release tag is written in the code");
+  // `CONTROL_REF`, `FLEET_REF` and `WORKER_REF` are the release tags written here, each the layer's own and pinned by the tests around this one; their lines are dropped so this still reads every other place a tag could hide.
+  assert.doesNotMatch(ci.replace(/^ {2}(?:CONTROL|FLEET|WORKER)_REF: .*$/gm, ""), /\bv\d+\.\d+\.\d+\b/, "and no release tag is written in the code");
 });
 
 test("this repository's package replaces the core's own AFTER the install and the build, and before anything reads it", () => {
-  // The core's `prepare` (run by `pnpm install` and by `build`) lays the core's PINNED lab, which has no tests and no manifest, over whatever is there: laying first is "No test files found".
+  // This repository's `package.json` names packages no registry holds, so a `packages/lab` laid before the install is a workspace member the install cannot resolve. (Until cut 9, a11ign/a11ign#5087, `prepare` also
+  // laid the core's PINNED lab, which has no tests and no manifest, over whatever was there: laying first was "No test files found".)
   const lay = ci.indexOf("rm -rf packages/lab");
   assert.ok(lay > 0, "positive control: the laying step is found");
   assert.ok(lay > ci.indexOf("pnpm install --no-frozen-lockfile"), "laid after the install");

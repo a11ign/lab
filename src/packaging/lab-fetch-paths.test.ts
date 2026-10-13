@@ -84,10 +84,16 @@ function argvAfter(job: string, flag: string): string {
   return normalise(argv[at + 1] as string);
 }
 
-/** The value of `--flag=` in a root npm script -- the command a lab job runs. */
+/**
+ * The lab's OWN `package.json`: the 69 `training:*`, `corpus:*` and `lab:*` scripts a lab job runs left the core's at cut 9 (a11ign/a11ign#5087, `23a179418`), and `lab-job.yml` runs them from the
+ * lab's checkout. Read by this file's own path, not through `REPO_ROOT`, which is the core when the lab is laid under it and holds none of them (a11ign/a11ign#5431).
+ */
+const LAB_MANIFEST = new URL("../../package.json", import.meta.url);
+
+/** The value of `--flag=` in one of the lab's npm scripts -- the command a lab job runs. */
 function npmFlag(script: string, flag: string): string {
-  const text = (JSON.parse(read("package.json")) as { scripts: Record<string, string> }).scripts[script];
-  assert.ok(text, `package.json has no script \`${script}\` -- its producer cannot be found`);
+  const text = (JSON.parse(readFileSync(LAB_MANIFEST, "utf8")) as { scripts: Record<string, string> }).scripts[script];
+  assert.ok(text, `the lab's package.json has no script \`${script}\` -- its producer cannot be found`);
   const value = text.match(new RegExp(`${flag}=(\\S+)`))?.[1];
   assert.ok(value, `script \`${script}\` passes no \`${flag}=\``);
   return normalise(value);

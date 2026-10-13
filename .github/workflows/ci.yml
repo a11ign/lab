@@ -50,12 +50,21 @@ env:
   # a11ign/a11ign#4822: MOVED to `c18c2dab76b795b1c3fec79d43ab3d653879bc9e` (core #4815, which pins control v0.3.5), in the SAME pull request that swaps this repository's tests onto `@a11ign/toolchain/lib/*`: neither is green without the other (measured 2026-10-10). The core's detectors learned the toolchain specifier in the commits that deleted the copies (`c6560f915`, `25f0e9b3e`), so no core commit is both before the deletions and after the detectors: the swapped tests at `989c2bcc3` are 14 `local/git-spawn-scrubbed` errors and 2 required tests red, the old tests at `c18c2dab7` are 58 TS2307. The comment above describes the previous pin, which this bump supersedes.
   # a11ign/a11ign#4798: MOVED to `da027c092c6ce17609599da8eaaefe2f1d3735d8` (core `origin/main` when this was read, past core #4801 at `81c6680ad`, the merge after which the core's `package.json` names no `packages/lab/scripts/*.mjs`: 34 lines at `c18c2dab7`, 0 here), in the SAME pull request that deletes the 35 one-release shims: a pin that still named them would red `referenced-scripts.test.ts` the moment they went. The comment above describes the previous pin, which this bump supersedes.
   # a11ign/a11ign#4865: MOVED to `36c354839ac064126aa92874307558672a69940a` (core #4859, the merge that hands the live-body step's reader the pull request's author, a11ign/a11ign#4857), 10 commits past `da027c092` (`compare` reads `ahead_by=10`). lab#75 gave `acceptance-reads-the-live-body.test.ts` an exempt author and only half of a11ign/a11ign#4854's fix reached this repository's CI: the core half lives in the step, so at `da027c092` the leg stayed red on `clause 1: the step prints the LIVE body` and `a body that tries to end the value early` (run 38068241483, `Test Files 1 failed | 221 passed`). The EARLIEST core commit that holds #4859, so nothing between it and a later sha was taken on. The comment above describes the previous pin, which this bump supersedes.
-  CORE_REF: 2b8489a8d79a32e5fa6195c134f0afb3e51e93d0
+  # a11ign/a11ign#5431: MOVED to `87d89fdec2c26b9fb3d2e8dd99160ec8c52f9dc1` (core #5413's merge: the first core commit holding the exit-code lines a11ign/a11ign#5419 added to `docs/gate-exit-codes.md`), 246 commits past `2b8489a8d`
+  # and PAST CORE CUTS 4, 6 AND 9: `cc4dd7e09` (a11ign/a11ign#5082) stopped `prepare` laying the fleet and `959ebfe0e` (a11ign/a11ign#5084) the worker, and `23a179418` (a11ign/a11ign#5087) made `prepare` and `build` lay NOTHING and deleted `layers.json` and `scripts/lay-layer.ts`. So this file lays
+  # what the core used to lay for it (control at `CONTROL_REF`, the fleet at `FLEET_REF`, the worker at `WORKER_REF`, below) and a bump that did not add them died at the `cp layers.json` step (measured 2026-10-13: `git cat-file -e 87d89fdec:layers.json` fails).
+  # Why THIS sha and not core `main`: it is the floor the row names, and each commit after it moves what the lab's tests read (11 more at the time of writing). Measured on the laid layout at this sha, before the pull request's test changes: 3 of 1,660 `own` tests failed and `tsc` had 5 errors.
+  CORE_REF: 87d89fdec2c26b9fb3d2e8dd99160ec8c52f9dc1
   # a11ign/a11ign#5400: THE CONTROL THIS REPOSITORY'S TESTS RUN AGAINST, named HERE and no longer by the core. Until now control was laid at whatever tag the core's `layers.json` pinned at `CORE_REF` (v0.5.3), and cut 9 (a11ign/a11ign#5087, 2026-10-12)
   # deleted that file, so no core commit pins control at or after v0.13.15, where `src/lab-carried.ts` first exists (control#87): a lab test importing it failed `tsc` and took `checks (own)` red (a11ign/a11ign#5379). Moving `CORE_REF` cannot reach it.
   # A TAG of a11ign/control, cloned over the core's laid `packages/control` by the step below: control is private and published nowhere (ADR 0045 item 3, "Control stays private"), so a checkout at a ref is the only way to lay it. The FLOOR is v0.13.15,
   # which `ci-composition.test.ts` pins; raise it in a pull request that runs this job at the new tag, the way `CORE_REF` is raised. Dependabot cannot read it (a ref in an `env` value), so nothing moves it by itself.
   CONTROL_REF: v0.13.15
+  # a11ign/a11ign#5431: THE FLEET AND THE WORKER THIS REPOSITORY'S TESTS READ, named HERE for the reason `CONTROL_REF` is. The core's `prepare` laid them (`scripts/lay-layer.ts`, at the release its lockfile pinned) until cut 4 for the fleet (a11ign/a11ign#5082) and cut 6 for the worker (a11ign/a11ign#5084), so
+  # the tags are the releases that lockfile holds at `CORE_REF`: `@a11ign/screenreader-fleet` 0.11.0 and `@a11ign/screenreader-worker` 0.13.0 (`git show 87d89fdec:pnpm-lock.yaml`, importer entries). Both repositories tag `v<semver>`. They are laid `src` only, less its tests, as
+  # `lay-layer.ts` laid them, at `packages/worker-fleet` and `packages/nvda-worker`, the paths the lab's tests and control's relative imports name. Raise them with `CORE_REF`, in a pull request that runs this job at the new tags.
+  FLEET_REF: v0.11.0
+  WORKER_REF: v0.13.0
 
 jobs:
   # A releasable change needs a changeset or a `no-release:` line (a11ign/a11ign#4127, the class fix of #4084: screenreader-worker#25 and #26 changed shipped code with no changeset and released
@@ -113,9 +122,9 @@ jobs:
       # The packages' `dist` is what `@a11ign/*` imports resolve to, in the typecheck and in the tests alike: unbuilt, both fail on the first import (the monorepo's `pretest` does this).
       - run: pnpm run build
         working-directory: core
-      # CONTROL AT THE TAG THIS FILE NAMES (`CONTROL_REF`, a11ign/a11ign#5400), laid over the core's own `packages/control` AFTER the install and the build, for the reason the next step gives: both run `prepare`, which lays the core's
-      # pinned control (v0.5.3) back. What is laid is what the core's `scripts/lay-layer.ts` laid at the pin (`lays` in `layers.json`: `src`, `ansible`, `CLAUDE.md`, `README.md`, and `src` LESS its own tests, its `TESTS` pattern), because the
-      # lab's own guards walk `packages/control` for runs/-resolving files, corpus readers and referenced programs: laid whole, with control's tests and `.git`, four of them went red (measured 2026-10-13, 1,656 tests, 4 failed; 0 with the layer as the core lays it). `layers.json` is the core's own copy, which `lay-layer` writes there (`declares`) and `referenced-scripts.test.ts` reads as `LAID_DECLARATION`. There is NO manifest in it, as before:
+      # CONTROL AT THE TAG THIS FILE NAMES (`CONTROL_REF`, a11ign/a11ign#5400), laid over the core's own `packages/control` AFTER the install and the build, as before: at the pin this file held until a11ign/a11ign#5431 both ran `prepare`, which laid the core's
+      # pinned control (v0.5.3) back, and since cut 9 (a11ign/a11ign#5087) they lay nothing. What is laid is what the core's `scripts/lay-layer.ts` laid at the pin (`lays` in `layers.json`: `src`, `ansible`, `CLAUDE.md`, `README.md`, and `src` LESS its own tests, its `TESTS` pattern), because the
+      # lab's own guards walk `packages/control` for runs/-resolving files, corpus readers and referenced programs: laid whole, with control's tests and `.git`, four of them went red (measured 2026-10-13, 1,656 tests, 4 failed; 0 with the layer as the core lays it). There is NO `layers.json` in it any more (the core deleted the file in cut 9, so the step that copied it is gone and `referenced-scripts.test.ts` reads none) and NO manifest, as before:
       # one there would make a `packages/*` workspace member of it, and the manifest is read from the clone by the next step. The path stays `packages/control` because control's own relative imports reach it: `../../worker-fleet/src/...` in `fleet-playbook.ts` and
       # `lab-pipeline.ts` (control v0.13.15) and `../../../` in `lab-pipeline.ts` and `layer-checkouts.ts` are only true when control sits beside the core's `packages/worker-fleet`, at depth two under the core.
       - name: Lay control at `CONTROL_REF` over the core's own `packages/control`
@@ -125,10 +134,24 @@ jobs:
           mkdir packages/control
           git -C "$RUNNER_TEMP/control" archive --format=tar HEAD src ansible CLAUDE.md README.md | tar -x -C packages/control
           find packages/control/src -type f \( -name '*.test.ts' -o -name '*.test.mts' -o -name '*.test.mjs' \) -delete
-          cp layers.json packages/control/layers.json
         working-directory: core
-      # AFTER the install and the build, never before: both run the core's `prepare`, which lays the core's PINNED `packages/lab` (tag in `layers.json`) over this one, and that
-      # copy has no `*.test.*` and no `package.json`. Then STAGED, because the core's `packages/lab` is gitignored and a lab test that walks `git ls-files` for "every tracked source file" would
+      # THE FLEET AND THE WORKER, laid here because the core stopped laying them (a11ign/a11ign#5431: cut 4, a11ign/a11ign#5082, for the fleet and cut 6, a11ign/a11ign#5084, for the worker, both before `87d89fdec`). What `scripts/lay-layer.ts` laid was `src` less its tests and a `.layer-ref` holding the tag: the tests read the source
+      # (`laid-worker.ts` refuses a layer with no `.layer-ref`) and control's own relative imports reach `../../worker-fleet/src/...`. AFTER the install and the build, like control: laid before them the directory would be read as a workspace member (`packages/*`).
+      # Each repository holds its package at its ROOT (`source: "."` in the `layers.json` the core deleted), so the archive path is `src` for both.
+      - name: Lay the fleet at `FLEET_REF` and the worker at `WORKER_REF` as `packages/worker-fleet` and `packages/nvda-worker`
+        run: |
+          git clone --quiet --depth 1 --branch "$FLEET_REF" https://github.com/a11ign/screenreader-fleet.git "$RUNNER_TEMP/screenreader-fleet"
+          git clone --quiet --depth 1 --branch "$WORKER_REF" https://github.com/a11ign/screenreader-worker.git "$RUNNER_TEMP/screenreader-worker"
+          rm -rf packages/worker-fleet packages/nvda-worker
+          mkdir packages/worker-fleet packages/nvda-worker
+          git -C "$RUNNER_TEMP/screenreader-fleet" archive --format=tar HEAD src | tar -x -C packages/worker-fleet
+          git -C "$RUNNER_TEMP/screenreader-worker" archive --format=tar HEAD src | tar -x -C packages/nvda-worker
+          find packages/worker-fleet/src packages/nvda-worker/src -type f \( -name '*.test.ts' -o -name '*.test.mts' -o -name '*.test.mjs' \) -delete
+          echo "$FLEET_REF" > packages/worker-fleet/.layer-ref
+          echo "$WORKER_REF" > packages/nvda-worker/.layer-ref
+        working-directory: core
+      # AFTER the install and the build, never before: this repository's `package.json` names packages no registry holds, so a `packages/lab` laid first is a workspace member the install cannot resolve (it was the core's PINNED `packages/lab`, with no `package.json`, that `prepare`
+      # laid there until cut 9). Then STAGED, because the core's `packages/lab` is gitignored and a lab test that walks `git ls-files` for "every tracked source file" would
       # otherwise walk nothing. Then `@a11ign/control` installed by hand, AFTER the staging so it is not itself a tracked entry (`git ls-files` would list a directory). The lab is not a
       # workspace member, so pnpm gave it no `node_modules`, and without the package rstest cannot resolve `@a11ign/control/fleet-wake`, treats it as an external, and `require()`s a module
       # graph with a top-level `await` (7 test files, measured 2026-10-07). It was a link to the core's `packages/control` until a11ign/a11ign#3506, which made that a LAID layer: `src` and the
@@ -197,8 +220,8 @@ jobs:
   # none the shared workflow's own default is used (`node-version` 22 and `changesets-version` 3.0.3 at the sha `release.yml` pins; pnpm from this manifest's `packageManager`, which the shared workflow
   # reads first and the setup action reads too). A default is a value in ANOTHER repository, so when `release.yml`'s pin moves, re-read those two defaults there and move them in `toolchain` below.
   #
-  # NO SECOND STEP FOR THE CONSUMER'S INSTALL (the pattern's `agent-org-newest-tag` step is agent-org's): a consumer of this repository does not install it. a11ign/a11ign's `scripts/lay-layer.ts` clones
-  # the tag and copies `src`, `scripts`, `baselines`, `rule-ownership.json` and `CLAUDE.md` into the core (`layers.json`'s `lays`), and an install of this manifest cannot run at all: it names
+  # NO SECOND STEP FOR THE CONSUMER'S INSTALL (the pattern's `agent-org-newest-tag` step is agent-org's): a consumer of this repository does not install it. a11ign/a11ign's `scripts/lay-layer.ts` cloned
+  # the tag and copied `src`, `scripts`, `baselines`, `rule-ownership.json` and `CLAUDE.md` into the core (`layers.json`'s `lays`) until cut 9 (a11ign/a11ign#5087) deleted it, and an install of this manifest cannot run at all: it names
   # `@a11ign/control` and others no registry holds, and `.npmrc` sets `engine-strict` against npm. A step that installed the clone would be red on every pull request that touches a path above.
   #
   # It versions EVERY changeset in the tree, where the release versions only those no tag has consumed: a superset, so a failure the release would meet is met here (the release's `plan` step reads

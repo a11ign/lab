@@ -1,7 +1,7 @@
 /**
  * THE FILES OF THE CONTROL LAYER, which `git ls-files` cannot list (a11ign/a11ign#3506, #3972).
  *
- * `packages/control` is a LAID layer of a11ign/control: `scripts/lay-layer.ts` writes `src`, `ansible`, `CLAUDE.md` and `README.md` at the tag `layers.json` pins, `.gitignore`
+ * `packages/control` is a LAID layer of a11ign/control: this repository's `ci.yml` writes `src`, `ansible`, `CLAUDE.md` and `README.md` at `CONTROL_REF` (the core's `scripts/lay-layer.ts` did, at the tag `layers.json` pinned, until cut 9: a11ign/a11ign#5087), `.gitignore`
  * keeps the directory out of the core's index, and so a test that asks git for "every committed Ansible file" finds none of them. The guards over those files
  * (`ansible-yaml-parses`, `powershell-parses`, `checkout-dash-safety`, ...) still apply, because the files are what a worker is played; their population is the laid tree.
  *

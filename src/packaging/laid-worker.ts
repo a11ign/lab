@@ -3,12 +3,11 @@ import { join } from "node:path";
 import { coreRoot } from "../dataset-paths.ts";
 
 /**
- * A file of the screenreader-worker's SOURCE, read from where the core LAYS it (`packages/nvda-worker/`, `scripts/lay-layer.ts`), as `laid-control.ts` does for control.
+ * A file of the screenreader-worker's SOURCE, read from where it is LAID (`packages/nvda-worker/`: by this repository's `ci.yml` at `WORKER_REF`, a11ign/a11ign#5431; by the core's `scripts/lay-layer.ts` until cut 6, a11ign/a11ign#5084), as `laid-control.ts` does for control.
  *
  * The installed package cannot answer: since the worker went flat (a11ign/a11ign#4156) it publishes `dist`, `README.md` and `LICENSE`, so `layerFile` refuses
  * `src/capture-core.mjs` and a `src` beside the resolved `package.json` holds nothing. A test that asserts something about the SOURCE TEXT of a file it cannot import
- * (guidepup throws at module load without a screen reader) reads the laid copy, at the tag the core's lockfile pins (`.layer-ref`) and the same copy the core's own tests
- * import from. It refuses when the layer is not laid; it never falls back to the registry package, which holds no source.
+ * (guidepup throws at module load without a screen reader) reads the laid copy, at the tag `.layer-ref` holds (the release the core's lockfile pinned when the core laid it). It refuses when the layer is not laid; it never falls back to the registry package, which holds no source.
  */
 const LAYER = join(coreRoot("A11Y_LAID_WORKER_ROOT"), "packages/nvda-worker");
 
@@ -20,7 +19,7 @@ function laidPath(rel: string): string {
 
 /** @param rel a path inside the worker repository, from its root: `src/capture-core.mjs`, `README.md` */
 export function workerSource(rel: string): string {
-  if (!existsSync(join(LAYER, ".layer-ref"))) throw new Error(`workerSource: the screenreader-worker is not laid at ${LAYER} (no .layer-ref); \`pnpm install\` in the core lays it`);
+  if (!existsSync(join(LAYER, ".layer-ref"))) throw new Error(`workerSource: the screenreader-worker is not laid at ${LAYER} (no .layer-ref); ci.yml lays it at WORKER_REF, and a checkout lays it with \`git archive <tag> src\` and a .layer-ref holding the tag`);
   const found = laidPath(rel);
   if (!existsSync(found)) throw new Error(`workerSource: the laid worker at ${LAYER} holds no ${rel}`);
   return found;
