@@ -121,9 +121,6 @@ const NOT_A_CORPUS_READ: Record<string, string> = {
   "packages/lab/src/dataset-paths.test.ts":
     "It is the test for the path accessors themselves. It plants temp roots and asserts what the accessors "
     + "resolve; it never reads a capture.",
-  "packages/lab/src/gates/veto-audit-corpus.test.ts":
-    "Asserts an ansible command string does NOT contain a stale export path -- a comparison against a "
-    + "literal, which is what its own dataset-paths EXEMPT entry says too.",
   "packages/lab/src/training/real-page-corpus-freshness.test.ts":
     "It reads SOURCE FILES, never a capture: it walks packages/lab's own tree looking for files that both "
     + "resolve realCorpusRoot() and call readdirSync, and its only readFileSync takes a path under "
@@ -131,16 +128,6 @@ const NOT_A_CORPUS_READ: Record<string, string> = {
     + "its own header says so, and it excludes itself from its own walk for the identical reason. Note it "
     + "is the guard that polices corpus readers for age-reporting, so wiring it would have been a reader "
     + "exempting itself from a guard it does not need; the classification is what keeps that visible.",
-  "packages/lab/src/gates/exit-code-contract.test.ts":
-    "Reads SOURCE ONLY: every readFileSync/readdirSync here takes a path under REPO (the repository root, "
-    + "not a corpus root) and opens a script, a .py file, or docs/gate-exit-codes.md, to discover which "
-    + "gates declare an exit contract. It matched this scan on a single occurrence of `runsRoot()` INSIDE "
-    + "A STRING -- the INFRASTRUCTURE reason explaining that `refuseIfRunsReadonly` exits 3 for paths under "
-    + "runsRoot(). Checked rather than assumed: on origin/main this file matched neither CORPUS_PATH nor "
-    + "CORPUS_ACCESSOR at all, and became a candidate only when `agent/runs-write-guard` added that "
-    + "four-line reason. So it is the third bucket's own textbook case -- the scan matching prose about "
-    + "the corpus rather than a read of it, which is exactly why classification exists and a pure "
-    + "discovery test would be wrong to demand a guard here.",
   "packages/lab/src/runs-write-guard.test.ts":
     "Reads SOURCE ONLY, and by construction: its walk is `packages/*/src` and `packages/*/scripts` filtered "
     + "to .mjs/.ts with `.test.` excluded, and every readFileSync takes a path under REPO_ROOT from that "
@@ -149,10 +136,6 @@ const NOT_A_CORPUS_READ: Record<string, string> = {
     + "which is a string literal describing a hypothetical writer and not a call this file makes. It is "
     + "the guard that discovers runs/ WRITERS; being classified as a non-reader here is consistent with "
     + "that, not in tension with it.",
-  "packages/lab/src/packaging/derived-artifact-sweep.test.ts":
-    "#639: matched on the same two \"runs/...\" descriptive strings as its own dataset-paths.test.ts EXEMPT "
-    + "entry -- what two generators write, quoted for a human reading the sweep's classification table, "
-    + "never a corpus this file opens or reads.",
   "packages/lab/src/packaging/lab-fetch-paths.test.ts":
     "#959: resolves the path ACCESSORS (runsRoot, datasetRoot, captureRoot, realCorpusRoot) to compare "
     + "their STRINGS with lab-fetch.yml's entries -- path arithmetic, never a file under runs/. Its "

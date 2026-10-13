@@ -88,8 +88,6 @@ const SPAWNS_NPM_CLI = /\b(\w+)\(\s*["'](npx|npm)["']/g;
  * own input, none of which spawns anything.
  */
 const NPM_CLI_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
-  "packages/lab/src/gates/gate-partial-corpus-contract.test.ts":
-    '`tokens[0]?.includes("npm")` -- a string-membership check on an already-captured argv token, not a spawn',
   // THIS FILE'S OWN MUTATION/CONTROL FIXTURES, caught by its own discovery on the first real run --
   // exactly the #446 shape (`acceptance-prose.test.ts` above) reproduced one level in. Each fixture is a
   // STRING containing source text handed to `npmCliCalls`/`callsBareNpmCli` as data to classify, never

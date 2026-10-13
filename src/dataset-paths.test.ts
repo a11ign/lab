@@ -133,9 +133,6 @@ const EXEMPT: Record<string, string> = {
   "packages/lab/src/packaging/row-claim.test.ts":
     "#1373: the same planted fixture records `prune-worktrees.test.ts` planted (now in a11ign/agent-org), for row-claim decline's remover "
     + "(removeClaimedWorktree), inside a temp repository's linked worktree -- never the dataset's runs root.",
-  "packages/lab/src/gates/veto-audit-corpus.test.ts":
-    "Checks that an ansible command string does NOT contain a stale export path -- comparing against "
-    + "another file's output, not resolving its own.",
   "packages/lab/scripts/lab-inventory.ts":
     "The runs/ literal is inside a human-readable report line (\"no runs/model-* to speak of\") describing "
     + "what was NOT found, not a path this file resolves -- RUNS itself already comes from runsRoot().",
@@ -158,11 +155,6 @@ const EXEMPT: Record<string, string> = {
     + "imports the published cli package the other way), and anchored on process.cwd() rather than this "
     + "module's own location on purpose: witness is the one write path meant for someone running the "
     + "PUBLISHED package outside this repo, whose runs/ is wherever they typed the command.",
-  "packages/lab/src/packaging/derived-artifact-sweep.test.ts":
-    "#639: its CLASSIFICATION table's `produces` field for two dataset generators states "
-    + "\"runs/screenreader-dataset/** (gitignored)\" and \"runs/screenreader-acceptance/** (gitignored)\" "
-    + "as plain descriptive strings -- what those generators write, quoted for a human reading the sweep's "
-    + "own classification, never a path this file resolves or reads for itself.",
   "packages/control/src/fleet-watch.ts":
     "ADR 0012: @a11ign/control is deliberately dependency-free and cannot import @a11ign/lab -- the same "
     + "direction dataset-paths.mjs's own header already exempts lab-job.mjs/lab-pipeline.mjs for. Its "
