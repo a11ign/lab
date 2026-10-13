@@ -20,6 +20,42 @@ test("the core is laid at a full commit sha, never a branch", () => {
   assert.match(ci, /ref: "\$\{\{ env\.CORE_REF \}\}"/, "the checkout uses the pin");
 });
 
+// The first control tag that has `src/lab-carried.ts` (control#87, measured 2026-10-13: `git cat-file -e v0.5.3:src/lab-carried.ts` fails, `v0.13.15:src/lab-carried.ts` succeeds). A lab test that imports it
+// fails `tsc` at any older tag, so this is the floor under `CONTROL_REF`, not a preference (a11ign/a11ign#5400, #5379).
+const FIRST_CONTROL_WITH_LAB_CARRIED = [0, 13, 15];
+
+function versionAtLeast(version: string, floor: number[]): boolean {
+  const parts = version.replace(/^v/, "").split(".").map(Number);
+  for (let i = 0; i < floor.length; i += 1) {
+    if (parts[i] !== floor[i]) return parts[i] > floor[i];
+  }
+  return true;
+}
+
+test("control is laid at a release tag this file names, at or after the first one that carries `src/lab-carried.ts` (a11ign/a11ign#5400)", () => {
+  const pin = /^ {2}CONTROL_REF: ([^\s]+)$/m.exec(ci);
+  assert.ok(pin, "positive control: the declaration is found");
+  assert.match(pin[1], /^v\d+\.\d+\.\d+$/, "a release tag, never a branch");
+  assert.ok(versionAtLeast(pin[1], FIRST_CONTROL_WITH_LAB_CARRIED), `${pin[1]} predates control v0.13.15, which first has src/lab-carried.ts`);
+  assert.ok(versionAtLeast("v0.13.15", FIRST_CONTROL_WITH_LAB_CARRIED) && !versionAtLeast("v0.13.14", FIRST_CONTROL_WITH_LAB_CARRIED) && !versionAtLeast("v0.5.3", FIRST_CONTROL_WITH_LAB_CARRIED), "positive control: the comparison separates v0.13.15 from the tag the core used to lay");
+  assert.match(ci, /git clone [^\n]*--branch "\$CONTROL_REF" https:\/\/github\.com\/a11ign\/control\.git "\$RUNNER_TEMP\/control"\n/, "the clone uses the declaration");
+  assert.doesNotMatch(ci, /\.layer-ref/, "the core's pin no longer decides which control is laid: cut 9 deleted the file that wrote it");
+  assert.doesNotMatch(ci, /raw\.githubusercontent\.com\/a11ign\/control/, "the manifest is read from the clone, not fetched at a ref the core names");
+});
+
+test("control is laid AFTER the install and the build, which lay the core's own pin back, and BEFORE the lab is laid and linked to it", () => {
+  const lay = ci.indexOf("git clone --quiet --depth 1 --branch \"$CONTROL_REF\"");
+  assert.ok(lay > 0, "positive control: the control step is found");
+  assert.ok(lay > ci.indexOf("pnpm install --no-frozen-lockfile"), "laid after the install");
+  assert.ok(lay > ci.indexOf("pnpm run build"), "laid after the build");
+  assert.ok(lay < ci.indexOf("rm -rf packages/lab"), "laid before the lab, whose step copies the manifest out of the clone");
+  assert.match(ci, /rm -rf packages\/control\n {10}mkdir packages\/control\n/, "the core's laid copy is replaced, not merged into");
+  // What the core's `lay-layer.ts` laid at its pin: `src`, `ansible` and the two docs, no `package.json`, no `.git`, and no test (laid whole, four lab guards that walk `packages/control` went red).
+  assert.match(ci, /archive --format=tar HEAD src ansible CLAUDE\.md README\.md \| tar -x -C packages\/control\n/, "only what the core laid: no `.git`, no manifest, no `scripts/`");
+  assert.match(ci, /\n {10}cp layers\.json packages\/control\/layers\.json\n/, "and the core's declaration beside it, which `referenced-scripts.test.ts` reads as the laid layer's");
+  assert.match(ci, /find packages\/control\/src -type f \\\( -name '\*\.test\.ts' -o -name '\*\.test\.mts' -o -name '\*\.test\.mjs' \\\) -delete\n/, "and not its own tests");
+});
+
 test("the tool is resolved at the newest release tag by the core's resolver, with no tag held here (a11ign/a11ign#4427)", () => {
   const resolve = 'node scripts/agent-org-newest-tag.ts --dest="$RUNNER_TEMP/agent-org"';
   const step = ci.indexOf(resolve);
@@ -27,7 +63,8 @@ test("the tool is resolved at the newest release tag by the core's resolver, wit
   assert.ok(step < ci.indexOf("pnpm exec eslint"), "resolved before the lint");
   assert.ok(step < ci.indexOf("pnpm exec rstest run"), "resolved before the tests");
   assert.doesNotMatch(ci, /AGENT_ORG_PIN/, "no pin: the newest tag is what the tests read the tool at");
-  assert.doesNotMatch(ci, /\bv\d+\.\d+\.\d+\b/, "and no release tag is written in the code");
+  // `CONTROL_REF` is the one release tag written here, and it is control's, pinned above; the line is dropped so this still reads every other place a tag could hide.
+  assert.doesNotMatch(ci.replace(/^ {2}CONTROL_REF: .*$/m, ""), /\bv\d+\.\d+\.\d+\b/, "and no release tag is written in the code");
 });
 
 test("this repository's package replaces the core's own AFTER the install and the build, and before anything reads it", () => {
@@ -42,9 +79,9 @@ test("this repository's package replaces the core's own AFTER the install and th
 
 test("the laid package is staged, then given its `@a11ign/control` package, in that order", () => {
   // Staged because the core's `packages/lab` is gitignored and the lab's tests walk `git ls-files`; the package comes AFTER, so it is not a tracked entry.
-  // It is control's own manifest plus a link to the laid `src`, because since a11ign/a11ign#3506 the core's `packages/control` is a laid layer with NO `package.json`: a plain link has no `exports` to resolve `@a11ign/control/fleet-wake` through.
+  // It is control's own manifest (read from the clone at `CONTROL_REF`) plus a link to the laid `src`, because since a11ign/a11ign#3506 the core's `packages/control` is a laid layer with NO `package.json`: a plain link has no `exports` to resolve `@a11ign/control/fleet-wake` through.
   const stage = ci.indexOf("git add -f packages/lab");
-  const manifest = ci.indexOf('/package.json" -o "$control/package.json"');
+  const manifest = ci.indexOf('cp "$RUNNER_TEMP/control/package.json" "$control/package.json"');
   const src = ci.indexOf('ln -s ../../../../control/src "$control/src"');
   assert.ok(stage > 0, "positive control: the staging is found");
   assert.ok(manifest > stage, "the manifest comes after the staging");

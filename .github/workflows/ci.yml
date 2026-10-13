@@ -13,7 +13,7 @@
 # THE LAB IS NOT A MEMBER OF THE CORE'S WORKSPACE ANY MORE (a11ign/a11ign#3505: `pnpm-workspace.yaml` excludes `!packages/lab`), and three consequences are built into the steps below, each of
 # which was a red run before it was a comment: (1) the core's `pnpm install` LAYS its own pinned `packages/lab`, WITHOUT the `*.test.*` files and the manifest, over whatever was put there, so
 # the lab's package is laid AFTER the install and the build, not before ("No test files found"); (2) `packages/lab` is untracked in the core, and the lab's tests walk `git ls-files`, so it is
-# staged with `git add -f`; (3) the lab has no `node_modules` of its own, so `@a11ign/control` (a package no registry holds) is assembled by hand: control's own manifest at the laid tag, and `src` linked to the core's laid `packages/control/src`
+# staged with `git add -f`; (3) the lab has no `node_modules` of its own, so `@a11ign/control` (a package no registry holds) is assembled by hand: control's own manifest at `CONTROL_REF` (the tag this file names, a11ign/a11ign#5400, laid over the core's `packages/control`), and `src` linked to that `packages/control/src`
 # (what the workspace link was, before #3506 laid control without a manifest). The core's tsconfig EXCLUDES `packages/lab`, so the core's `tsc` does not check it: the lab has its own, `packages/lab/tsconfig.json`, run in the core: it is this repository's ONE tsconfig, and its `scripts/**/*.ts` population is this repository's own tests (a11ign/a11ign#3927, #4215). The lint exemptions the core used to hold for the lab are not held any more: the lab's tests pin their populations.
 #
 # BUMPING `CORE_REF` IS A PULL REQUEST, and the only way the core's changes reach this repository's CI: Dependabot cannot read a commit pin, so `src/packaging/ci-composition.test.ts` holds
@@ -51,6 +51,11 @@ env:
   # a11ign/a11ign#4798: MOVED to `da027c092c6ce17609599da8eaaefe2f1d3735d8` (core `origin/main` when this was read, past core #4801 at `81c6680ad`, the merge after which the core's `package.json` names no `packages/lab/scripts/*.mjs`: 34 lines at `c18c2dab7`, 0 here), in the SAME pull request that deletes the 35 one-release shims: a pin that still named them would red `referenced-scripts.test.ts` the moment they went. The comment above describes the previous pin, which this bump supersedes.
   # a11ign/a11ign#4865: MOVED to `36c354839ac064126aa92874307558672a69940a` (core #4859, the merge that hands the live-body step's reader the pull request's author, a11ign/a11ign#4857), 10 commits past `da027c092` (`compare` reads `ahead_by=10`). lab#75 gave `acceptance-reads-the-live-body.test.ts` an exempt author and only half of a11ign/a11ign#4854's fix reached this repository's CI: the core half lives in the step, so at `da027c092` the leg stayed red on `clause 1: the step prints the LIVE body` and `a body that tries to end the value early` (run 38068241483, `Test Files 1 failed | 221 passed`). The EARLIEST core commit that holds #4859, so nothing between it and a later sha was taken on. The comment above describes the previous pin, which this bump supersedes.
   CORE_REF: 2b8489a8d79a32e5fa6195c134f0afb3e51e93d0
+  # a11ign/a11ign#5400: THE CONTROL THIS REPOSITORY'S TESTS RUN AGAINST, named HERE and no longer by the core. Until now control was laid at whatever tag the core's `layers.json` pinned at `CORE_REF` (v0.5.3), and cut 9 (a11ign/a11ign#5087, 2026-10-12)
+  # deleted that file, so no core commit pins control at or after v0.13.15, where `src/lab-carried.ts` first exists (control#87): a lab test importing it failed `tsc` and took `checks (own)` red (a11ign/a11ign#5379). Moving `CORE_REF` cannot reach it.
+  # A TAG of a11ign/control, cloned over the core's laid `packages/control` by the step below: control is private and published nowhere (ADR 0045 item 3, "Control stays private"), so a checkout at a ref is the only way to lay it. The FLOOR is v0.13.15,
+  # which `ci-composition.test.ts` pins; raise it in a pull request that runs this job at the new tag, the way `CORE_REF` is raised. Dependabot cannot read it (a ref in an `env` value), so nothing moves it by itself.
+  CONTROL_REF: v0.13.15
 
 jobs:
   # A releasable change needs a changeset or a `no-release:` line (a11ign/a11ign#4127, the class fix of #4084: screenreader-worker#25 and #26 changed shipped code with no changeset and released
@@ -108,13 +113,27 @@ jobs:
       # The packages' `dist` is what `@a11ign/*` imports resolve to, in the typecheck and in the tests alike: unbuilt, both fail on the first import (the monorepo's `pretest` does this).
       - run: pnpm run build
         working-directory: core
+      # CONTROL AT THE TAG THIS FILE NAMES (`CONTROL_REF`, a11ign/a11ign#5400), laid over the core's own `packages/control` AFTER the install and the build, for the reason the next step gives: both run `prepare`, which lays the core's
+      # pinned control (v0.5.3) back. What is laid is what the core's `scripts/lay-layer.ts` laid at the pin (`lays` in `layers.json`: `src`, `ansible`, `CLAUDE.md`, `README.md`, and `src` LESS its own tests, its `TESTS` pattern), because the
+      # lab's own guards walk `packages/control` for runs/-resolving files, corpus readers and referenced programs: laid whole, with control's tests and `.git`, four of them went red (measured 2026-10-13, 1,656 tests, 4 failed; 0 with the layer as the core lays it). `layers.json` is the core's own copy, which `lay-layer` writes there (`declares`) and `referenced-scripts.test.ts` reads as `LAID_DECLARATION`. There is NO manifest in it, as before:
+      # one there would make a `packages/*` workspace member of it, and the manifest is read from the clone by the next step. The path stays `packages/control` because control's own relative imports reach it: `../../worker-fleet/src/...` in `fleet-playbook.ts` and
+      # `lab-pipeline.ts` (control v0.13.15) and `../../../` in `lab-pipeline.ts` and `layer-checkouts.ts` are only true when control sits beside the core's `packages/worker-fleet`, at depth two under the core.
+      - name: Lay control at `CONTROL_REF` over the core's own `packages/control`
+        run: |
+          git clone --quiet --depth 1 --branch "$CONTROL_REF" https://github.com/a11ign/control.git "$RUNNER_TEMP/control"
+          rm -rf packages/control
+          mkdir packages/control
+          git -C "$RUNNER_TEMP/control" archive --format=tar HEAD src ansible CLAUDE.md README.md | tar -x -C packages/control
+          find packages/control/src -type f \( -name '*.test.ts' -o -name '*.test.mts' -o -name '*.test.mjs' \) -delete
+          cp layers.json packages/control/layers.json
+        working-directory: core
       # AFTER the install and the build, never before: both run the core's `prepare`, which lays the core's PINNED `packages/lab` (tag in `layers.json`) over this one, and that
       # copy has no `*.test.*` and no `package.json`. Then STAGED, because the core's `packages/lab` is gitignored and a lab test that walks `git ls-files` for "every tracked source file" would
       # otherwise walk nothing. Then `@a11ign/control` installed by hand, AFTER the staging so it is not itself a tracked entry (`git ls-files` would list a directory). The lab is not a
       # workspace member, so pnpm gave it no `node_modules`, and without the package rstest cannot resolve `@a11ign/control/fleet-wake`, treats it as an external, and `require()`s a module
       # graph with a top-level `await` (7 test files, measured 2026-10-07). It was a link to the core's `packages/control` until a11ign/a11ign#3506, which made that a LAID layer: `src` and the
       # playbooks, and NO `package.json`, so a link has no `exports` to resolve a subpath through (the same 7 files, measured at core `d8d9a02fc`, a11ign/a11ign#3972). The package is what a workspace
-      # used to be: the manifest control publishes at the tag the core laid (`.layer-ref`, written by the lay), and `src` linked from where it was laid. Since a11ign/a11ign#4345 control is FLAT, so its manifest is at the repository ROOT at the laid tag (measured: `raw.githubusercontent.com/a11ign/control/v0.1.14/package.json` is 200, `.../v0.1.14/packages/control/package.json` is 404), while the core still writes `.layer-ref` under `packages/control`.
+      # used to be: the manifest control publishes at `CONTROL_REF` (read from the clone the step above made, where it was a `curl` of raw.githubusercontent.com at the core's `.layer-ref` until a11ign/a11ign#5400), and `src` linked from where it was laid. Since a11ign/a11ign#4345 control is FLAT, so its manifest is at the repository ROOT.
       # The whole repository is laid, `.github/` and the changesets included: this repository's own tests (`src/packaging/*.test.ts`) read its workflows by relative path, and they are collected by the
       # same `packages/lab/**/*.test.ts` below. Only `.git` stays behind, which would make the laid directory a repository of its own.
       - name: Lay this repository over the core's own `packages/lab`, stage it, and install `@a11ign/control` beside it
@@ -126,7 +145,7 @@ jobs:
           git add -f packages/lab
           control=packages/lab/node_modules/@a11ign/control
           mkdir -p "$control"
-          curl -fsSL "https://raw.githubusercontent.com/a11ign/control/$(cat packages/control/.layer-ref)/package.json" -o "$control/package.json"
+          cp "$RUNNER_TEMP/control/package.json" "$control/package.json"
           ln -s ../../../../control/src "$control/src"
         working-directory: core
       # This repository's own tests import `@a11ign/toolchain/mjs-ratchet` and `/layout-check`, which the toolchain the core pins (0.1.3) does not have. The version the manifest names, installed by the

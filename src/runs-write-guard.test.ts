@@ -120,6 +120,18 @@ const EXEMPT: Record<string, string> = {
     + "ledger write became a staging-file-plus-rename (#3208). It cannot call refuseIfRunsReadonly: "
     + "`@a11ign/control` does not depend on `@a11ign/lab`, and adding that edge for one env var is a larger "
     + "change than the guard is worth here. `A11Y_RUNS_READONLY=1` is for lab/corpus tooling.",
+  "packages/control/src/fleet-build-incident.ts":
+    "a11ign/a11ign#5400: laid since CONTROL_REF moved to v0.13.15. Writes the open Windows-build incident's own state (runs/fleet-build-incident-state.json) "
+    + "on the control plane's timer, never the corpus the guard protects. The same reason fleet-watch.ts gives: `@a11ign/control` does not depend on "
+    + "`@a11ign/lab`, so it cannot call refuseIfRunsReadonly, and `A11Y_RUNS_READONLY=1` is for lab/corpus tooling.",
+  "packages/control/src/fleet-converge.ts":
+    "a11ign/a11ign#5400: laid since CONTROL_REF moved to v0.13.15. Writes one result file (runs/fleet-converge-last-run.json, staging file plus rename) "
+    + "for the converge run's caller, never the corpus the guard protects. The same reason fleet-watch.ts gives: `@a11ign/control` does not depend on "
+    + "`@a11ign/lab`, so it cannot call refuseIfRunsReadonly.",
+  "packages/control/src/fleet-playbook.ts":
+    "a11ign/a11ign#5400: laid at v0.13.15, where PATCH_RUN_RECORD (runs/fleet-patch-last-run.json) is written when `fleet:patch --apply` completes: a "
+    + "one-field ledger of the last run, never the corpus the guard protects. The same reason fleet-watch.ts gives: `@a11ign/control` does not depend on "
+    + "`@a11ign/lab`, so it cannot call refuseIfRunsReadonly.",
   "packages/cli/src/cli.ts":
     "Cannot call refuseIfRunsReadonly without importing dataset-paths.mjs, which would recreate the #199 "
     + "cycle dataset-paths.test.ts's own EXEMPT entry for this file already documents (a11ign/cli is "

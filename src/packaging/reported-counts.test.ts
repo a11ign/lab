@@ -111,6 +111,11 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "git-spawn-classification.test.ts: files.length",
   "git-spawn-classification.test.ts: spawningGit.length",
   "guest-paths-are-measured.test.ts: named.length",
+  // #5379, and a PRECONDITION rather than a stand-in: the dispatching-gate count changes whenever a gate is
+  // added, so there is no right number to assert. The `>= 2` answers only "did discovery find a dispatching
+  // gate at all", a positive control for the walk; the verdict is the equality after it (`deepEqual(offenders,
+  // [])`) on the catalogue's `--local` flags.
+  "lab-job-catalogue-scripts.test.ts: dispatching.length",
   // #2703, and both are PRECONDITIONS rather than stand-ins: the tree's file count and the number of
   // tree-wide guards inside lab change with every row, so there is no right number to assert. Each floor
   // answers only "did the walk read a population at all"; the verdicts are the equalities after them
