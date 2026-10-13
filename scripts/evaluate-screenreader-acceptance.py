@@ -1121,8 +1121,9 @@ def assert_disjoint(training: Any, acceptance: list[dict[str, Any]], training_da
         raise RuntimeError("acceptance data overlaps training: " + json.dumps({"cases": overlap_cases, "families": overlap_families}))
 
 
-# `packages/` is source: tracked, reviewed, and released. `runs/` is where a run's output belongs.
-TRACKED_SOURCE_DIR = "packages"
+# `packages/` is source: tracked, reviewed, and released. `node_modules/` holds the installed scorer package, where
+# the shipped model's report lives since lab#96: an installed package, not run output. `runs/` is where a run's output belongs.
+SOURCE_DIRS = ("packages", "node_modules")
 
 
 def refuse_to_stamp_source_tree(report_path: Path) -> None:
@@ -1144,15 +1145,16 @@ def refuse_to_stamp_source_tree(report_path: Path) -> None:
     into an output directory, and this repo reaches its lab exclusively by pulling into that tree.
     """
     parts = report_path.resolve().parts
-    if TRACKED_SOURCE_DIR not in parts:
+    source_dir = next((d for d in SOURCE_DIRS if d in parts), None)
+    if source_dir is None:
         return
     raise SystemExit(
-        f"refusing to stamp a verdict into {report_path}: it is inside {TRACKED_SOURCE_DIR}/, which is "
-        "tracked source, not run output.\n"
+        f"refusing to stamp a verdict into {report_path}: it is inside {source_dir}/, which is "
+        "tracked source or an installed package, not run output.\n"
         "Scoring the shipped model is fine; rewriting its release record is not — that record describes "
         "what was true when those weights shipped.\n"
         "Copy the model to runs/ and score the copy:\n"
-        "  cp -r packages/scorer/models/screenreader-scorer runs/model-shipped\n"
+        "  cp -r node_modules/@a11ign/scorer/models/screenreader-scorer runs/model-shipped\n"
         "  ... --model runs/model-shipped --training-report runs/model-shipped/training-report.json\n"
         "A dirty packages/ also stops the lab pulling, which is how it ran 17 commits behind for days."
     )

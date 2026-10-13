@@ -77,3 +77,22 @@ def test_a_passing_candidate_is_stamped_verified(tmp_path):
     assert stamped["generalisationVerified"] is True
     # Rebuilt, not emptied: a pass here must not erase a blocker some other gate recorded.
     assert stamped["releaseBlockedBy"] == ["calibration: something else"]
+
+
+def test_refuses_to_stamp_a_report_inside_the_installed_scorer_package():
+    # The shipped model moved out of packages/ into the installed scorer package (lab#96). The guard matched
+    # only `packages/`, so it let this path through and the verdict was stamped into the shipped record.
+    evaluator = load_evaluator()
+    installed_report = Path("node_modules/@a11ign/scorer/models/screenreader-scorer/training-report.json")
+    with pytest.raises(SystemExit) as refusal:
+        evaluator.refuse_to_stamp_source_tree(installed_report)
+    assert "installed package" in str(refusal.value), (
+        f"the refusal must say what the directory is, or the next reader routes around it: {refusal.value}"
+    )
+
+
+def test_still_allows_stamping_a_shipped_model_copy_under_runs():
+    # The control: the copy `training:evaluate-acceptance:shipped` scores lives here, and a guard that refuses
+    # it makes the shipped gate unrunnable. Path check only; nothing is written.
+    evaluator = load_evaluator()
+    evaluator.refuse_to_stamp_source_tree(Path("runs/model-shipped/training-report.json"))
