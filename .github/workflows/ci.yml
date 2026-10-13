@@ -293,9 +293,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # No pipe: Actions' default `bash -e` has no `pipefail`, so `node --test | tee` takes `tee`'s status and a failed fixture test beside a printed LIVE PASS exits 0
-          # (the core's reviewer-5352). The test's own status is kept and returned; `refusal-owners-are-open.test.ts` runs this block.
+          # (the core's reviewer-5352). The test's own status is kept and returned; `src/packaging/refusal-owners-are-open.test.ts` runs this block.
           status=0
-          node --test scripts/refusal-owners-are-open.test.ts > "$RUNNER_TEMP/refusal-owners.out" 2>&1 || status=$?
+          node --test src/packaging/refusal-owners-are-open.test.ts > "$RUNNER_TEMP/refusal-owners.out" 2>&1 || status=$?
           cat "$RUNNER_TEMP/refusal-owners.out"
           [ "$status" -eq 0 ] || { echo "::error::refusal-owners-are-open.test.ts exited $status"; exit "$status"; }
           grep -q "LIVE PASS: " "$RUNNER_TEMP/refusal-owners.out" || { echo "::error::the live read printed no LIVE PASS line: it was skipped or found no owner"; exit 1; }

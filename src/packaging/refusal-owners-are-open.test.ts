@@ -2,7 +2,7 @@
  * A RELEASE GATE'S REFUSAL NAMES AN OPEN OWNING ROW (a11ign/a11ign#5351, following the core's #5333). A `REFUSED ... #<n>` string that points at a closed
  * issue fails here, naming the script and the number.
  *
- * Acceptance: `node --test scripts/refusal-owners-are-open.test.ts`.
+ * Acceptance: `node --test src/packaging/refusal-owners-are-open.test.ts`.
  *
  * TWO HALVES. The fixture half drives the reader over the 2026-10-13 `gate:core-held` string (`a11ign/a11ign#5179`, closed on 2026-10-12 after fixing a
  * DIFFERENT gate) with the owner closed, open and unreadable, so each verdict is a reading of a reader that CAN give the other. The live half reads the real
@@ -25,9 +25,9 @@ import { fileURLToPath } from "node:url";
 import {
   describe, failures, findings, ownersOf, readIssueState, refusalsInPackageJson, refusalsInTree,
   type IssueRef, type StateRead,
-} from "./refusal-owners-are-open.ts";
+} from "../../scripts/refusal-owners-are-open.ts";
 
-const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const FLAG = "A11Y_CHECK_REFUSAL_OWNERS";
 const CORE = "a11ign/a11ign";
 /** The row the string named until 2026-10-13 (closed 2026-10-12), the change it cites, and the one name that is open and must not be rescued by a citation. */
@@ -171,7 +171,7 @@ function runStepWithNode(step: string, node: { code: number; output: string }): 
 
 test("ci.yml's refusalOwners step exits red when the test fails, even though a LIVE PASS line was printed", () => {
   const step = refusalOwnersStep();
-  assert.match(step, /node --test scripts\/refusal-owners-are-open\.test\.ts/, "the extracted block is the one that runs this test");
+  assert.match(step, /node --test src\/packaging\/refusal-owners-are-open\.test\.ts/, "the extracted block is the one that runs this test");
   const live = "  LIVE PASS: package.json script \"gate:core-held\" names a11ign/a11ign#4425: a11ign/a11ign#4425 is open";
   // A fixture assertion fails (exit 1) while the opt-in live test prints its line. Under `| tee` this exited 0 (the core's reviewer-5352).
   assert.notEqual(runStepWithNode(step, { code: 1, output: `not ok 3 - fixture\n${live}` }), 0);
@@ -189,7 +189,7 @@ test("the job BLOCKS: `gate` needs refusalOwners and fails unless it succeeded (
 
 test("LIVE: every owner a refusal names in this tree is an OPEN issue", {
   skip: process.env[FLAG] === "1" ? false
-    : `opt-in: \`${FLAG}=1 node --test scripts/refusal-owners-are-open.test.ts\` asks GitHub; the reader above ran on fixtures and read no live issue`,
+    : `opt-in: \`${FLAG}=1 node --test src/packaging/refusal-owners-are-open.test.ts\` asks GitHub; the reader above ran on fixtures and read no live issue`,
 }, () => {
   const all = findings(refusalsInTree(REPO_ROOT), readIssueState());
   assert.ok(all.length > 0, "the reader found no owner at all, so there is nothing for this read to certify");
