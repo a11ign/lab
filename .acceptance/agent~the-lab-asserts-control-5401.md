@@ -1,6 +1,6 @@
 Closes a11ign/a11ign#5401
 
-Acceptance: `bash -c 'cd ~/repos/lab && git fetch -q origin && git grep -q "lab-carried" origin/main -- src/packaging/post-qualification-status.test.ts'`
+Acceptance: `bash -c 'cd ~/repos/lab && git fetch -q origin && { git grep -q "lab-carried" origin/main -- src/packaging/post-qualification-status.test.ts || git grep -q "lab-carried" origin/agent/the-lab-asserts-control-5401 -- src/packaging/post-qualification-status.test.ts; }'`
 
 ## What changes
 - `post-qualification-status.test.ts`: restores the carried-copy assertions that worker-5379 wrote at `fa977515` (blob `ba750672`) and narrowed away at `0e2fa473`. It imports control's `src/lab-carried.ts` (control v0.13.15, the `CONTROL_REF` lab CI lays, a11ign#5400) and asserts the carried copy returns the same payload as the original over every row of the table, that the same success rows reach `success` through it (the positive control), and that its constants and `exitCodeFor` are the originals'.
