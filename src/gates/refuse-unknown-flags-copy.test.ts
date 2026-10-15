@@ -24,9 +24,11 @@ const COPY = new URL("../../scripts/refuse-unknown-flags.ts", import.meta.url).h
 // The one pinned difference: the shared function's hint, which the copy does not print.
 const DID_YOU_MEAN = / — did you mean \S+\?/g;
 
+type Case = { name: string; argv: string[]; exit: number; known?: string[]; elsewhere?: boolean };
+
 const KNOWN = ["--json", "--timeout="];
 // `exit` is pinned for the shared function too, so two copies that agree on something wrong (both exiting 0) still fail.
-const CASES = [
+const CASES: Case[] = [
   { name: "no flags", argv: [], exit: 0 },
   { name: "a known flag", argv: ["--json"], exit: 0 },
   { name: "a known --name=value", argv: ["--timeout=30"], exit: 0 },
@@ -40,13 +42,13 @@ const CASES = [
 
 // The driver is the entry point, so its `entry` is its own URL, as a real command passes `import.meta.url`. Both copies run
 // under the file name `driver.mjs`, which the default `command` prints, so that name cannot be the difference.
-const driverSource = (moduleUrl) => [
+const driverSource = (moduleUrl: string): string => [
   `import { refuseUnknownFlags } from ${JSON.stringify(moduleUrl)};`,
   "const { known, elsewhere } = JSON.parse(process.env.CASE);",
   'refuseUnknownFlags(known, { entry: elsewhere ? "file:///not-the-invoked-file.mjs" : import.meta.url });',
 ].join("\n");
 
-function runDriver(root, label, moduleUrl, testCase) {
+function runDriver(root: string, label: string, moduleUrl: string, testCase: Case) {
   const dir = join(root, label);
   mkdirSync(dir);
   const driver = join(dir, "driver.mjs");
@@ -59,7 +61,7 @@ function runDriver(root, label, moduleUrl, testCase) {
   return { status: result.status, stderr: result.stderr };
 }
 
-function runBoth(testCase) {
+function runBoth(testCase: Case) {
   const root = mkdtempSync(join(tmpdir(), "refuse-copy-"));
   try {
     return {
