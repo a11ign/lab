@@ -725,10 +725,7 @@ function entryRun({ viewFails = false, state = "OPEN", mergeFails = false, editF
   rowLabel = "session:worker-4", deliberate = "clear" }: { viewFails?: boolean; state?: string; mergeFails?: boolean;
   editFails?: boolean; rowLabel?: string; deliberate?: DeliberateCase } = {}) {
   const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push([cmd, ...args]);
-    const deliberateAnswer = deliberateReadAnswer(args, deliberate, rowLabel);
-    if (deliberateAnswer !== undefined) return deliberateAnswer;
+  const answer = (args: string[]) => {
     if (args[0] === "pr" && args[1] === "view") {
       if (viewFails) throw new Error("gh: HTTP 502 on pr view");
       return args.some((arg) => arg.startsWith("labels,body,state"))
@@ -747,6 +744,11 @@ function entryRun({ viewFails = false, state = "OPEN", mergeFails = false, editF
       return "";
     }
     return "";
+  };
+  // The deliberate reads are answered first: a branch in `answer` would be one too many for `complexity` (max 15).
+  const run = (cmd: string, args: string[]) => {
+    calls.push([cmd, ...args]);
+    return deliberateReadAnswer(args, deliberate, rowLabel) ?? answer(args);
   };
   return { run, calls };
 }
