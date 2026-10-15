@@ -34,17 +34,17 @@
 // not a duplicate -- there is deliberately no separate "is this new" check here to skip.
 import { execFile } from "node:child_process";
 import { copyFileSync, existsSync, realpathSync, unlinkSync } from "node:fs";
-import { basename, extname, resolve } from "node:path";
+import { basename, dirname, extname, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
+import { refuseUnknownFlags } from "./refuse-unknown-flags.ts";
 import type { Loose } from "../src/capture/loose.ts";
 
 const run = promisify(execFile);
 
 /**
  * The script this unit releases with, by the path of THIS file's own directory and not by the `corpus:release` script of whatever directory the unit was started in: the unit
- * keeps the core's working directory (`runs/` and `packages/control` are there), and that directory's `package.json` is not this repository's (a11ign/a11ign#5176).
+ * keeps the core's working directory (`runs/` is there), and that directory's `package.json` is not this repository's (a11ign/a11ign#5176).
  */
 const CORPUS_RELEASE = fileURLToPath(new URL("./corpus-release.ts", import.meta.url));
 
@@ -111,11 +111,20 @@ export function fetchFailureRefusal(error: Loose): string {
     + `--- stderr ---\n${stderr}\n`;
 }
 
+/**
+ * The control layer's `ansible/` directory. The core no longer holds the control layer, so a unit started in the core's
+ * working directory found no playbook (a11ign/a11ign#5501): the layer is `$A11Y_CONTROL_DIR`, else the checkout beside this
+ * one, which is `~/repos/control` on the host and the layer's own directory where CI lays the lab beside it.
+ */
+export function controlAnsibleDir(env: NodeJS.ProcessEnv = process.env): string {
+  const layer = env.A11Y_CONTROL_DIR ?? resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "control");
+  return resolve(layer, "ansible");
+}
+
 async function fetchLatestArchive() {
-  return await run("ansible-playbook",
-    ["packages/control/ansible/lab-fetch.yml", "-e", "artifact=corpus-archive"],
-    { env: { ...process.env, ANSIBLE_CONFIG: resolve("packages/control/ansible/ansible.cfg") },
-      maxBuffer: 1 << 24 });
+  const ansible = controlAnsibleDir();
+  return await run("ansible-playbook", [resolve(ansible, "lab-fetch.yml"), "-e", "artifact=corpus-archive"],
+    { env: { ...process.env, ANSIBLE_CONFIG: resolve(ansible, "ansible.cfg") }, maxBuffer: 1 << 24 });
 }
 
 async function main() {

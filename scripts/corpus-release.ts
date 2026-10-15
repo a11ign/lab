@@ -36,7 +36,7 @@ import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { resolve, basename, join } from "node:path";
-import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
+import { refuseUnknownFlags } from "./refuse-unknown-flags.ts";
 import type { Loose } from "../src/capture/loose.ts";
 
 const run = promisify(execFile);

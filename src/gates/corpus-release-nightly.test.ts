@@ -12,7 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -22,6 +22,7 @@ import {
   flattenedFetchPath,
   missingFleetEnvRefusal,
   fetchFailureRefusal,
+  controlAnsibleDir,
 } from "../../scripts/corpus-release-nightly.ts";
 
 test("recovers the real snapshot name from lab-fetch.yml's own debug line", () => {
@@ -151,4 +152,54 @@ test("#1911: a long Ansible stdout is cut to its tail, where the failing task an
   const refusal = fetchFailureRefusal({ stdout, stderr: "" });
   assert.match(refusal, /line 499/);
   assert.doesNotMatch(refusal, /line 0\n/);
+});
+
+// The unit runs these two scripts from the lab's own checkout, which holds no node_modules (a11ign/a11ign#5501): a
+// package import fails its ExecStartPre load check on every firing. So load them as the unit does -- from a directory
+// with no node_modules above it -- rather than reading their text.
+// A name of its own: this directory lives in a temp dir and is no edge into the layer (layer-edges.test.ts).
+const BARE_SCRIPT_DIR = "release-scripts";
+const STANDALONE_SCRIPTS = ["corpus-release-nightly.ts", "corpus-release.ts", "refuse-unknown-flags.ts"];
+const packageSpecifiers = (source: string) =>
+  [...source.matchAll(/^import\s(?!type\b)[^"']*["']([^"']+)["']/gm)].map((m) => m[1])
+    .filter((specifier) => !specifier.startsWith("node:") && !specifier.startsWith("."));
+
+test("the nightly release scripts LOAD from a directory with no node_modules, as the unit loads them", () => {
+  const bare = mkdtempSync(join(tmpdir(), "corpus-standalone-"));
+  try {
+    mkdirSync(join(bare, BARE_SCRIPT_DIR));
+    for (const name of STANDALONE_SCRIPTS) {
+      writeFileSync(join(bare, BARE_SCRIPT_DIR, name), readFileSync(new URL(`../../scripts/${name}`, import.meta.url)));
+    }
+    for (const name of ["corpus-release-nightly.ts", "corpus-release.ts"]) {
+      const result = spawnSync(process.execPath, ["-e", `import(${JSON.stringify(join(bare, BARE_SCRIPT_DIR, name))})`],
+        { cwd: bare, encoding: "utf8" });
+      assert.equal(result.status, 0, `${name} did not load with no node_modules:\n${result.stderr}`);
+    }
+  } finally {
+    rmSync(bare, { recursive: true, force: true });
+  }
+});
+
+test("the load check is not vacuous: a script importing a package FAILS to load from the same directory", () => {
+  const bare = mkdtempSync(join(tmpdir(), "corpus-standalone-"));
+  try {
+    writeFileSync(join(bare, "needs-package.ts"), 'import "@a11ign/screenreader-fleet/cli-flags";\n');
+    const result = spawnSync(process.execPath, ["-e", `import(${JSON.stringify(join(bare, "needs-package.ts"))})`],
+      { cwd: bare, encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /ERR_MODULE_NOT_FOUND/);
+  } finally {
+    rmSync(bare, { recursive: true, force: true });
+  }
+});
+
+test("the standalone-import marker notices a package import (positive control)", () => {
+  assert.deepEqual(packageSpecifiers('import { x } from "@a11ign/screenreader-fleet/cli-flags";\nimport { y } from "./y.ts";'),
+    ["@a11ign/screenreader-fleet/cli-flags"]);
+});
+
+test("the playbook is read from the control layer beside the lab, or $A11Y_CONTROL_DIR, never the working directory", () => {
+  assert.equal(controlAnsibleDir({ A11Y_CONTROL_DIR: "/x/control" }), "/x/control/ansible");
+  assert.equal(controlAnsibleDir({}), resolve(import.meta.dirname, "..", "..", "..", "control", "ansible"));
 });
