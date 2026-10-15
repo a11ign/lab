@@ -175,5 +175,5 @@ test("the standalone-import marker notices a package import (positive control)",
 
 test("the playbook is read from the control layer beside the lab, or $A11Y_CONTROL_DIR, never the working directory", () => {
   assert.equal(controlAnsibleDir({ A11Y_CONTROL_DIR: "/x/control" }), "/x/control/ansible");
-  assert.equal(controlAnsibleDir({}), resolve(import.meta.dirname, "../../../control/ansible"));
+  assert.equal(controlAnsibleDir({}), resolve(import.meta.dirname, "..", "..", "..", "control", "ansible"));
 });
