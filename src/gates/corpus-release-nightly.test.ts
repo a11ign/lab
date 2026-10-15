@@ -22,6 +22,7 @@ import {
   flattenedFetchPath,
   missingFleetEnvRefusal,
   fetchFailureRefusal,
+  controlAnsibleDir,
 } from "../../scripts/corpus-release-nightly.ts";
 
 test("recovers the real snapshot name from lab-fetch.yml's own debug line", () => {
@@ -170,4 +171,9 @@ test("the nightly release scripts import no package, so they load from a checkou
 test("the standalone-import marker notices a package import (positive control)", () => {
   assert.deepEqual(packageSpecifiers('import { x } from "@a11ign/screenreader-fleet/cli-flags";\nimport { y } from "./y.ts";'),
     ["@a11ign/screenreader-fleet/cli-flags"]);
+});
+
+test("the playbook is read from the control layer beside the lab, or $A11Y_CONTROL_DIR, never the working directory", () => {
+  assert.equal(controlAnsibleDir({ A11Y_CONTROL_DIR: "/x/control" }), "/x/control/ansible");
+  assert.equal(controlAnsibleDir({}), resolve(import.meta.dirname, "../../../control/ansible"));
 });

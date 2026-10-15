@@ -111,11 +111,20 @@ export function fetchFailureRefusal(error: Loose): string {
     + `--- stderr ---\n${stderr}\n`;
 }
 
+/**
+ * The control layer's `ansible/` directory. The core no longer holds `packages/control`, so a unit started in the core's
+ * working directory found no playbook (a11ign/a11ign#5501): the layer is `$A11Y_CONTROL_DIR`, else the checkout beside this
+ * one, which is `~/repos/control` on the host and `packages/control` where CI lays the lab under `packages/lab`.
+ */
+export function controlAnsibleDir(env: NodeJS.ProcessEnv = process.env): string {
+  const layer = env.A11Y_CONTROL_DIR ?? fileURLToPath(new URL("../../control", import.meta.url));
+  return resolve(layer, "ansible");
+}
+
 async function fetchLatestArchive() {
-  return await run("ansible-playbook",
-    ["packages/control/ansible/lab-fetch.yml", "-e", "artifact=corpus-archive"],
-    { env: { ...process.env, ANSIBLE_CONFIG: resolve("packages/control/ansible/ansible.cfg") },
-      maxBuffer: 1 << 24 });
+  const ansible = controlAnsibleDir();
+  return await run("ansible-playbook", [resolve(ansible, "lab-fetch.yml"), "-e", "artifact=corpus-archive"],
+    { env: { ...process.env, ANSIBLE_CONFIG: resolve(ansible, "ansible.cfg") }, maxBuffer: 1 << 24 });
 }
 
 async function main() {
