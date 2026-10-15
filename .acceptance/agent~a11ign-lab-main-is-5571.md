@@ -4,7 +4,7 @@ Acceptance: `node --test --test-skip-pattern='#1453 ACCEPTANCE' --test-skip-patt
 
 ## What changes
 
-The `run` stubs in `arm-pr.test.ts` answer the reads `deliberateRefusalVerdict` makes (agent-org#1501): the pull request as an org author whose head is the branch tip, the branch ref, no reviews, no added files, a comparison of one commit ahead, the row #725 as `session:worker-4`, and the closing references of a `Closes a11ign/a11ign#725` body (the cross-repo form, which GitHub honours). Two new cases: `refused` (the branch has moved past the head) asserts exit `DONE` and no arming write, and `cannot-ask` (the pull request is unreadable) asserts exit `CANNOT_ASK` and no write at all. The refusal posts its announcement comment by design; the test does not count that comment as a write.
+The `run` stubs in `arm-pr.test.ts` answer the reads `deliberateRefusalVerdict` makes (agent-org#1501): the pull request as an org author whose head is the branch tip, the branch ref, no reviews, no added files, a comparison of one commit ahead, the row #725 as `session:worker-4`, and a body whose closing line names row #725 in the cross-repo form (which GitHub honours). Two new cases: `refused` (the branch has moved past the head) asserts exit `DONE` and no arming write, and `cannot-ask` (the pull request is unreadable) asserts exit `CANNOT_ASK` and no write at all. The refusal posts its announcement comment by design; the test does not count that comment as a write.
 
 ## Evidence
 
