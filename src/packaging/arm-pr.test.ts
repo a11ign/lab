@@ -676,17 +676,60 @@ test("#1453 STRUCTURAL: arm-pr.mjs declares no session-name array -- a typed lis
 // guard. A throw there escaped `main`, and Node exited 1 -- the code this script already uses for a REFUSED label -- for
 // a PR that IS armed, and `arm-pr: armed #N` was never printed. These drive `runArmPr`, the path the workflow runs.
 
+/**
+ * agent-org#1501: the PR the arming door reads is ONE pull request, and `deliberateRefusalVerdict` reads it again over REST, so the two answers must agree. A `Closes`
+ * GitHub honours is the cross-repo form (a row in the tracker, a11ign/a11ign#725), and the head is the branch tip unless a case says otherwise.
+ */
+const ORG_AUTHOR = "a11ign-ai-workers";
+const REPO = "org/repo";
+const CLOSES_BODY = "Closes a11ign/a11ign#725\n";
+const HEAD_REF = "agent/worker-4-725";
+const TIP = "a".repeat(40);
+const STALE_TIP = "c".repeat(40);
+
+/** `clear`: the verdict arms. `refused`: the branch has moved past the head. `cannot-ask`: the pull request itself cannot be read. */
+type DeliberateCase = "clear" | "refused" | "cannot-ask";
+
+/**
+ * The reads `deliberateRefusalVerdict` makes for #817, answered for `verdict`. `undefined` for any other call, so the caller's own answer stands. The
+ * census of these reads is the verdict's own: the pull, the branch ref, the reviews, the comparison, the added files, the closing references, and the row.
+ */
+function deliberateReadAnswer(args: string[], verdict: DeliberateCase, rowLabel: string): string | undefined {
+  if (args[0] !== "api") return undefined;
+  const query = args.find((arg) => arg.startsWith("query="));
+  if (query !== undefined) {
+    if (!query.includes("closingIssuesReferences(first:20)")) return undefined;
+    return JSON.stringify({ data: { repository: { pullRequest: { closingIssuesReferences: { nodes: [
+      { number: 725, title: "row", repository: { nameWithOwner: "a11ign/a11ign" }, labels: { nodes: [{ name: rowLabel }] } }] } } } } });
+  }
+  const path = args.find((arg) => arg.startsWith("repos/")) ?? "";
+  if (path === `repos/${REPO}/pulls/817`) {
+    if (verdict === "cannot-ask") throw new Error("gh: HTTP 502 on the pull request");
+    return JSON.stringify({ number: 817, state: "open", user: { login: ORG_AUTHOR }, labels: [], body: CLOSES_BODY,
+      head: { sha: TIP, ref: HEAD_REF, repo: { full_name: REPO } }, base: { repo: { full_name: REPO } } });
+  }
+  if (path === `repos/${REPO}/git/ref/heads/${HEAD_REF}`) {
+    return JSON.stringify({ object: { sha: verdict === "refused" ? STALE_TIP : TIP } });
+  }
+  if (path === `repos/${REPO}/pulls/817/reviews`) return "";
+  if (path.startsWith(`repos/${REPO}/compare/`)) {
+    return JSON.stringify({ status: "ahead", commits: [{ sha: TIP, parents: [{ sha: "b".repeat(40) }] }] });
+  }
+  if (path === `repos/${REPO}/pulls/817/files`) return "";
+  if (path === "repos/a11ign/a11ign/issues/725") return JSON.stringify({ number: 725, body: "", labels: [{ name: rowLabel }], state: "open" });
+  return undefined;
+}
+
 /** A `gh` for the whole entry point, recording every call. The row #725 carries `rowLabel`. */
 function entryRun({ viewFails = false, state = "OPEN", mergeFails = false, editFails = false,
-  rowLabel = "session:worker-4" }: { viewFails?: boolean; state?: string; mergeFails?: boolean;
-  editFails?: boolean; rowLabel?: string } = {}) {
+  rowLabel = "session:worker-4", deliberate = "clear" }: { viewFails?: boolean; state?: string; mergeFails?: boolean;
+  editFails?: boolean; rowLabel?: string; deliberate?: DeliberateCase } = {}) {
   const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push([cmd, ...args]);
+  const answer = (args: string[]) => {
     if (args[0] === "pr" && args[1] === "view") {
       if (viewFails) throw new Error("gh: HTTP 502 on pr view");
       return args.some((arg) => arg.startsWith("labels,body,state"))
-        ? JSON.stringify({ labels: [], body: "Closes #725\n", state })
+        ? JSON.stringify({ labels: [], body: CLOSES_BODY, state })
         : JSON.stringify({ state });
     }
     if (args[0] === "pr" && args[1] === "merge") {
@@ -701,6 +744,11 @@ function entryRun({ viewFails = false, state = "OPEN", mergeFails = false, editF
       return "";
     }
     return "";
+  };
+  // The deliberate reads are answered first: a branch in `answer` would be one too many for `complexity` (max 15).
+  const run = (cmd: string, args: string[]) => {
+    calls.push([cmd, ...args]);
+    return deliberateReadAnswer(args, deliberate, rowLabel) ?? answer(args);
   };
   return { run, calls };
 }
@@ -775,6 +823,27 @@ test("#1478: a missing --pr exits CANNOT_ASK before any call", () => {
   assert.equal(stub.calls.length, 0);
 });
 
+/** A call that arms, labels or enqueues: the writes a refused or unreadable PR must not make. A comment is the refusal's announcement, not an arming write. */
+const isArmingWrite = (call: string[]) => (call[1] === "pr" && (call[2] === "merge" || call[2] === "edit"))
+  || call.some((arg) => arg.includes("mutation"));
+
+test("#1501 REFUSED: a head that is NOT the branch tip is refused by the arming door -- exit DONE, and nothing is armed, labelled or enqueued", () => {
+  const stub = entryRun({ deliberate: "refused" });
+  const { code, log } = entry(stub);
+  assert.equal(code, EXIT.DONE, "a refusal is a DONE, as a hold is: the PR waits for a push or an edit");
+  assert.ok(log.some((line) => /arm-pr: NOT arming #817 -- GITHUB'S HEAD IS NOT THE BRANCH TIP/.test(line)), "the refusal names the PR it did not arm, and why");
+  assert.deepEqual(stub.calls.filter(isArmingWrite), [], "no merge, no label edit, no queue mutation");
+});
+
+test("#1501 CANNOT ASK: a pull request the verdict cannot read is a refusal to arm -- exit CANNOT_ASK, and nothing is written at all", () => {
+  const stub = entryRun({ deliberate: "cannot-ask" });
+  const { code, error } = entry(stub);
+  assert.equal(code, EXIT.CANNOT_ASK, "a read that failed is not a pull request that passed");
+  assert.match(error.join("\n"), /arm-pr: NOT arming #817 -- could not read #817/);
+  assert.deepEqual(stub.calls.filter((call) => call[1] === "pr" && ["comment", "merge", "edit"].includes(call[2] ?? "")), []);
+  assert.deepEqual(stub.calls.filter(isArmingWrite), []);
+});
+
 test("#1478: the script's header documents every exit code, the partial-success code included", () => {
   assert.deepEqual(EXIT, { DONE: 0, REFUSED: 1, CANNOT_ASK: 2, ARMED_THEN_LABEL_FAILED: 3, JUMP_UNCONFIRMED: 4 });
   const source = readFileSync(toolUrl("src/arm-pr.mjs"), "utf8");
@@ -846,6 +915,9 @@ function jumpRun({ body, runs = RED_MAIN, pages, seats = [seat(), queuedAt(1)], 
     return "";
   };
   const run = (cmd: string, args: string[]) => {
+    // agent-org#1501: the deliberate verdict's reads are answered as a clear PR, but are the arming door's, not the jump's probes, so they are not recorded.
+    const deliberateAnswer = deliberateReadAnswer(args, "clear", "session:worker-4");
+    if (deliberateAnswer !== undefined) return deliberateAnswer;
     calls.push([cmd, ...args]);
     const route = `${args[0]} ${args[1]}`;
     if (route === "pr view") return JSON.stringify({ labels: [], body, state: "OPEN" });
