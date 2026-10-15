@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import {
   describe, failures, findings, ownersOf, readIssueState, refusalsInPackageJson, refusalsInTree,
   type IssueRef, type StateRead,
-} from "../../scripts/refusal-owners-are-open.ts";
+} from "@a11ign/toolchain/refusal-owners-are-open";
 
 const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const FLAG = "A11Y_CHECK_REFUSAL_OWNERS";
@@ -191,7 +191,7 @@ test("LIVE: every owner a refusal names in this tree is an OPEN issue", {
   skip: process.env[FLAG] === "1" ? false
     : `opt-in: \`${FLAG}=1 node --test src/packaging/refusal-owners-are-open.test.ts\` asks GitHub; the reader above ran on fixtures and read no live issue`,
 }, () => {
-  const all = findings(refusalsInTree(REPO_ROOT), readIssueState());
+  const all = findings(refusalsInTree(REPO_ROOT), readIssueState("a11ign/lab"));
   assert.ok(all.length > 0, "the reader found no owner at all, so there is nothing for this read to certify");
   assert.deepEqual(failures(all).map(describe), []);
   for (const finding of all) console.log(`  LIVE PASS: ${finding.refusal.file} ${finding.refusal.where} names ${finding.repo ?? ""}#${finding.number}: ${finding.why}`);
