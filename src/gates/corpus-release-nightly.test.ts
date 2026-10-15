@@ -162,7 +162,7 @@ const packageSpecifiers = (source: string) =>
 
 test("the nightly release scripts import no package, so they load from a checkout with no node_modules", () => {
   for (const name of STANDALONE_SCRIPTS) {
-    const source = readFileSync(resolve(REPO_ROOT, "scripts", name), "utf8");
+    const source = readFileSync(new URL(`../../scripts/${name}`, import.meta.url), "utf8");
     assert.deepEqual(packageSpecifiers(source), [], `${name} imports a package the lab's checkout cannot resolve`);
   }
 });
