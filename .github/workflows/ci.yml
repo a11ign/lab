@@ -314,12 +314,12 @@ jobs:
           bounded pnpm dlx "@changesets/cli@$CHANGESETS_VERSION" version
 
   # A RELEASE GATE'S REFUSAL NAMES AN OPEN OWNING ROW, READ LIVE (a11ign/a11ign#5351, after the core's #5333). `gate:core-held` said "whether a release may proceed without them is
-  # a11ign/a11ign#5179", and #5179 closed on 2026-10-12 after fixing a different gate: an owner on paper and nobody looking. `scripts/refusal-owners-are-open.ts` (the core's reader,
-  # copied: the core does not publish it and ADR 0045 forbids a reach into its tree) finds every owner a `REFUSED` string in `package.json` names, reading `a11ign/a11ign#n` in the
+  # a11ign/a11ign#5179", and #5179 closed on 2026-10-12 after fixing a different gate: an owner on paper and nobody looking. `@a11ign/toolchain/refusal-owners-are-open` (the
+  # core's reader, published by the toolchain this repository imports, because ADR 0045 forbids a reach into the core's tree) finds every owner a `REFUSED` string in `package.json` names, reading `a11ign/a11ign#n` in the
   # core, and this job asks GitHub whether each is open. IT BLOCKS: it is in `gate`'s `needs`, and a refusal naming a closed row holds every merge until somebody re-points it, which is
   # the intent. It reads the tree UNDER TEST, so the pull request that re-points the refusal turns it green itself. An issue it cannot read is CANNOT_TELL and red, never open.
-  # `A11Y_CHECK_REFUSAL_OWNERS=1` names the instrument; the grep below is what stops an opt-in test that SKIPPED from standing in for one that read. No `node_modules`, no core checkout:
-  # the reader and its test import only `node:` modules, so this is not another leg of `checks`.
+  # `A11Y_CHECK_REFUSAL_OWNERS=1` names the instrument; the grep below is what stops an opt-in test that SKIPPED from standing in for one that read. No core checkout: the reader is the
+  # toolchain's (`@a11ign/toolchain/refusal-owners-are-open`, a11ign/agent-org#1498), linked in below, so this is not another leg of `checks`.
   refusalOwners:
     runs-on: ubuntu-latest
     permissions:
@@ -329,6 +329,14 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with: { node-version: 22 }
+      # The test imports the reader from the toolchain this repository names, and this job installs no dependencies. The same install as the layout check, beside the checkout: npm
+      # installs the toolchain into the runner's temp directory, and the symlink makes it resolvable from the checkout's `node_modules`.
+      - name: Link the toolchain this repository names
+        run: |
+          version=$(jq -r '.devDependencies["@a11ign/toolchain"]' package.json)
+          npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$RUNNER_TEMP/toolchain" "@a11ign/toolchain@$version"
+          mkdir -p node_modules/@a11ign
+          ln -s "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain" node_modules/@a11ign/toolchain
       - name: Every owner a refusal names is an open issue
         env:
           A11Y_CHECK_REFUSAL_OWNERS: "1"
