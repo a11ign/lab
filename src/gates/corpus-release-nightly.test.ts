@@ -12,7 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -155,16 +155,40 @@ test("#1911: a long Ansible stdout is cut to its tail, where the failing task an
 });
 
 // The unit runs these two scripts from the lab's own checkout, which holds no node_modules (a11ign/a11ign#5501): a
-// package import fails its ExecStartPre load check on every firing. Each specifier must be `node:` or relative.
-const STANDALONE_SCRIPTS = ["corpus-release-nightly.ts", "corpus-release.ts"];
+// package import fails its ExecStartPre load check on every firing. So load them as the unit does -- from a directory
+// with no node_modules above it -- rather than reading their text.
+const STANDALONE_SCRIPTS = ["corpus-release-nightly.ts", "corpus-release.ts", "refuse-unknown-flags.ts"];
 const packageSpecifiers = (source: string) =>
   [...source.matchAll(/^import\s(?!type\b)[^"']*["']([^"']+)["']/gm)].map((m) => m[1])
     .filter((specifier) => !specifier.startsWith("node:") && !specifier.startsWith("."));
 
-test("the nightly release scripts import no package, so they load from a checkout with no node_modules", () => {
-  for (const name of STANDALONE_SCRIPTS) {
-    const source = readFileSync(new URL(`../../scripts/${name}`, import.meta.url), "utf8");
-    assert.deepEqual(packageSpecifiers(source), [], `${name} imports a package the lab's checkout cannot resolve`);
+test("the nightly release scripts LOAD from a directory with no node_modules, as the unit loads them", () => {
+  const bare = mkdtempSync(join(tmpdir(), "corpus-standalone-"));
+  try {
+    mkdirSync(join(bare, "scripts"));
+    for (const name of STANDALONE_SCRIPTS) {
+      writeFileSync(join(bare, "scripts", name), readFileSync(new URL(`../../scripts/${name}`, import.meta.url)));
+    }
+    for (const name of ["corpus-release-nightly.ts", "corpus-release.ts"]) {
+      const result = spawnSync(process.execPath, ["-e", `import(${JSON.stringify(join(bare, "scripts", name))})`],
+        { cwd: bare, encoding: "utf8" });
+      assert.equal(result.status, 0, `${name} did not load with no node_modules:\n${result.stderr}`);
+    }
+  } finally {
+    rmSync(bare, { recursive: true, force: true });
+  }
+});
+
+test("the load check is not vacuous: a script importing a package FAILS to load from the same directory", () => {
+  const bare = mkdtempSync(join(tmpdir(), "corpus-standalone-"));
+  try {
+    writeFileSync(join(bare, "needs-package.ts"), 'import "@a11ign/screenreader-fleet/cli-flags";\n');
+    const result = spawnSync(process.execPath, ["-e", `import(${JSON.stringify(join(bare, "needs-package.ts"))})`],
+      { cwd: bare, encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /ERR_MODULE_NOT_FOUND/);
+  } finally {
+    rmSync(bare, { recursive: true, force: true });
   }
 });
 
