@@ -37,7 +37,7 @@ import { copyFileSync, existsSync, realpathSync, unlinkSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
+import { refuseUnknownFlags } from "./refuse-unknown-flags.ts";
 import type { Loose } from "../src/capture/loose.ts";
 
 const run = promisify(execFile);

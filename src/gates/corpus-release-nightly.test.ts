@@ -152,3 +152,22 @@ test("#1911: a long Ansible stdout is cut to its tail, where the failing task an
   assert.match(refusal, /line 499/);
   assert.doesNotMatch(refusal, /line 0\n/);
 });
+
+// The unit runs these two scripts from the lab's own checkout, which holds no node_modules (a11ign/a11ign#5501): a
+// package import fails its ExecStartPre load check on every firing. Each specifier must be `node:` or relative.
+const STANDALONE_SCRIPTS = ["corpus-release-nightly.ts", "corpus-release.ts"];
+const packageSpecifiers = (source: string) =>
+  [...source.matchAll(/^import\s(?!type\b)[^"']*["']([^"']+)["']/gm)].map((m) => m[1])
+    .filter((specifier) => !specifier.startsWith("node:") && !specifier.startsWith("."));
+
+test("the nightly release scripts import no package, so they load from a checkout with no node_modules", () => {
+  for (const name of STANDALONE_SCRIPTS) {
+    const source = readFileSync(resolve(REPO_ROOT, "scripts", name), "utf8");
+    assert.deepEqual(packageSpecifiers(source), [], `${name} imports a package the lab's checkout cannot resolve`);
+  }
+});
+
+test("the standalone-import marker notices a package import (positive control)", () => {
+  assert.deepEqual(packageSpecifiers('import { x } from "@a11ign/screenreader-fleet/cli-flags";\nimport { y } from "./y.ts";'),
+    ["@a11ign/screenreader-fleet/cli-flags"]);
+});
