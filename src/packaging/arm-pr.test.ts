@@ -829,7 +829,7 @@ test("#1501 REFUSED: a head that is NOT the branch tip is refused by the arming 
   const stub = entryRun({ deliberate: "refused" });
   const { code, log } = entry(stub);
   assert.equal(code, EXIT.DONE, "a refusal is a DONE, as a hold is: the PR waits for a push or an edit");
-  assert.ok(log.some((line) => /arm-pr: NOT arming #817 -- .*/.test(line)), "the refusal names the PR it did not arm");
+  assert.ok(log.some((line) => /arm-pr: NOT arming #817 -- GITHUB'S HEAD IS NOT THE BRANCH TIP/.test(line)), "the refusal names the PR it did not arm, and why");
   assert.deepEqual(stub.calls.filter(isArmingWrite), [], "no merge, no label edit, no queue mutation");
 });
 
