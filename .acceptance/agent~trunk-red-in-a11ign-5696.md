@@ -1,4 +1,4 @@
-Closes: none -- the row lives in a11ign/a11ign and the PR in a11ign/lab
+Closes a11ign/a11ign#5696
 
 Acceptance:
 ```bash
