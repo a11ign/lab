@@ -4,7 +4,7 @@ Hand-run: the command reads the author's own a11y-witness checkout (`$HOME/repos
 
 Acceptance:
 ```bash
-T=/tmp/row-5696-$$ && mkdir -p "$T/packages" && for p in "$HOME"/repos/a11y-witness/packages/*; do [ "$(basename "$p")" = lab ] || ln -s "$p" "$T/packages/"; done \
+T=$(mktemp -d) && mkdir "$T/packages" && for p in "$HOME"/repos/a11y-witness/packages/*; do [ "$(basename "$p")" = lab ] || ln -s "$p" "$T/packages/"; done \
   && ln -s "$HOME/repos/a11y-witness/node_modules" "$T/node_modules" && mkdir "$T/packages/lab" \
   && git ls-files -z | xargs -0 cp --parents -t "$T/packages/lab" \
   && cd "$T/packages/lab" && AGENT_ORG_HOST="$HOME/repos/a11y-witness/.agent-org/host.json" AGENT_ORG_TOOL="$HOME/repos/agent-org" node --test src/packaging/row-claim.test.ts
