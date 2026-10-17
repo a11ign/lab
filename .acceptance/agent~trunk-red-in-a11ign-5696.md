@@ -1,5 +1,7 @@
 Closes a11ign/a11ign#5696
 
+Hand-run: the command reads the author's own a11y-witness checkout (`$HOME/repos/a11y-witness`: `packages/`, `node_modules`, `.agent-org/host.json`) and the agent-org tool at `$HOME/repos/agent-org`. The CI runner has none of these, so the acceptance job cannot run it; a human with that layout runs it and the output is pasted under `## Hand-run output` in the PR body.
+
 Acceptance:
 ```bash
 T=$(mktemp -d) && mkdir "$T/packages" && for p in "$HOME"/repos/a11y-witness/packages/*; do [ "$(basename "$p")" = lab ] || ln -s "$p" "$T/packages/"; done \
