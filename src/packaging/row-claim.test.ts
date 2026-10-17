@@ -231,7 +231,8 @@ const labelsSetBy = (args: string[]) => args.filter((a) => a.startsWith("labels[
 
 // #3942 (agent-org 0.61.0): `declineRow` re-reads the row and REFUSES to report DECLINED over an OPEN row left in no state label. A decline removes
 // `in-progress`, so a fixture that stands for "a row somebody claimed" must say what state it goes back to: `was-ready` (restores `ready`) or a state
-// label the claim never removed, which is what a row claimed from `backlog` carries all along. These fixtures carry the second, the one that leaves
+// label the row is still in. The claim no longer keeps `backlog` (agent-org's `labelSetForClaim` removes `ready` and `backlog`, #2151), so this constant
+// stands only for "a state label is still on the row", which is all the refusal reads. These fixtures carry it, the one that leaves
 // nothing to restore, so the tests that say "does NOT invent `ready`" still mean it.
 const STATE_KEPT_THROUGH_CLAIM = "backlog";
 
@@ -278,11 +279,12 @@ function boardRun(initial: string[], { number = 176, state = "OPEN", interleave,
 }
 
 test("claimRow claims a genuinely unclaimed row: reads, writes, re-reads, confirms", () => {
-  const { run, board, labelSets } = boardRun(["backlog"], { number: 55 });
+  // The claim removes `ready` and `backlog` and keeps every other label: `lane:any` is the control that the claim does not clear the whole row.
+  const { run, board, labelSets } = boardRun(["backlog", "lane:any"], { number: 55 });
   const result = claimRow(55, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { claimed: true, statusMoved: true });
   assert.equal(labelSets().length, 1, "must have written the claim, in ONE request");
-  assert.deepEqual(board.labels.sort(), ["backlog", CLAIM_LABEL, "session:worker-contracts", STARTED_LABEL].sort());
+  assert.deepEqual(board.labels.sort(), ["lane:any", CLAIM_LABEL, "session:worker-contracts", STARTED_LABEL].sort());
 });
 
 // --- #707: claim-time enforcement of the three required template fields ---
@@ -700,14 +702,15 @@ test("#749 ACCEPTANCE: EVERY label the claim writes is created, derived from wha
 test("#2151 ACCEPTANCE: the claim's label write is ONE request, and `ready` is not in it -- the row is never "
   + "observable with both `ready` and `in-progress`", () => {
   const seen: string[][] = [];
-  const { run, calls } = boardRun([READY_LABEL, "backlog"], { number: 2151, interleave: (_read, board) => {
+  // `lane:any` rides through the claim as the positive control: `ready` and `backlog` go, every other label stays.
+  const { run, calls } = boardRun([READY_LABEL, "backlog", "lane:any"], { number: 2151, interleave: (_read, board) => {
     seen.push([...board.labels]);
   } });
   assert.equal(claimRow(2151, "worker-18", { run, moveStatus: () => ({ moved: true }) }).claimed, true);
   assert.equal(calls.filter(isLabelSet).length, 1);
   assert.equal(calls.filter((a) => a[1] === "edit").length, 0, "no `gh issue edit` may write the claim's labels");
   assert.deepEqual(labelsSetBy(calls.find(isLabelSet)!).sort(),
-    ["backlog", CLAIM_LABEL, "session:worker-18", STARTED_LABEL, WAS_READY_LABEL].sort());
+    ["lane:any", CLAIM_LABEL, "session:worker-18", STARTED_LABEL, WAS_READY_LABEL].sort());
   assert.deepEqual(seen.filter((labels) => labels.includes(READY_LABEL) && labels.includes(CLAIM_LABEL)), [],
     "at no read may the row carry both `ready` and `in-progress`");
   assert.ok(seen.some((labels) => labels.includes(CLAIM_LABEL)), "the read after the write saw the claim");
