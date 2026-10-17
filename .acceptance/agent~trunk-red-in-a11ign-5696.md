@@ -1,4 +1,4 @@
-Closes none — the row lives in a11ign/a11ign (#5696) and this pull request in a11ign/lab, so it cannot close the row.
+Closes: none — the row lives in a11ign/a11ign (#5696) and this pull request in a11ign/lab, so it cannot close the row.
 
 Acceptance: `cd ~/repos/lab && pnpm exec rstest run --config scripts/rstest/rstest.config.ts src/packaging/row-claim.test.ts`
 
