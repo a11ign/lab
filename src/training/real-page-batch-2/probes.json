@@ -1,0 +1,849 @@
+[
+ {
+  "url": "https://data.southwark.gov.uk/economy-and-employment/map/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://data.southwark.gov.uk/economy-and-employment/map/",
+  "at": "2026-10-21T21:28:11.651Z"
+ },
+ {
+  "url": "https://caselaw.nationalarchives.gov.uk/accessibility-statement",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://caselaw.nationalarchives.gov.uk/accessibility-statement",
+  "at": "2026-10-21T21:28:11.779Z"
+ },
+ {
+  "url": "https://www.nhs.uk/conditions/dementia/living-with-dementia/communication/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nhs.uk/conditions/dementia/living-with-dementia/communication/",
+  "at": "2026-10-21T21:28:11.878Z"
+ },
+ {
+  "url": "https://design-patterns.service.justice.gov.uk/components/pagination/examples/prev-next/",
+  "status": 200,
+  "contentType": "text/html",
+  "final": "https://design-patterns.service.justice.gov.uk/components/pagination/examples/prev-next/",
+  "at": "2026-10-21T21:28:11.936Z"
+ },
+ {
+  "url": "https://www.historicenvironment.scot/visit/all/biggar-gasworks-museum/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.historicenvironment.scot/visit/all/biggar-gasworks-museum/",
+  "at": "2026-10-21T21:28:11.980Z"
+ },
+ {
+  "url": "https://www.nrscotland.gov.uk/learning-and-events/research-guides/census-1841/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nrscotland.gov.uk/learning-and-events/research-guides/census-1841/",
+  "at": "2026-10-21T21:28:12.052Z"
+ },
+ {
+  "url": "https://service-manual.nhs.uk/design-system/components/warning-callout",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://service-manual.nhs.uk/design-system/components/warning-callout",
+  "at": "2026-10-21T21:28:12.158Z"
+ },
+ {
+  "url": "https://weather.metoffice.gov.uk/observations/tcby0ekf5",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://weather.metoffice.gov.uk/observations/tcby0ekf5",
+  "at": "2026-10-21T21:28:12.197Z"
+ },
+ {
+  "url": "https://european-union.europa.eu/principles-countries-history/eu-countries/slovakia_en",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://european-union.europa.eu/principles-countries-history/eu-countries/slovakia_en",
+  "at": "2026-10-21T21:28:12.359Z"
+ },
+ {
+  "url": "https://www.ofgem.gov.uk/energy-policy-and-regulation/engagement/forums-and-working-groups/extension-contestability-sub-group",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.ofgem.gov.uk/energy-policy-and-regulation/engagement/forums-and-working-groups/extension-contestability-sub-group",
+  "at": "2026-10-21T21:28:12.445Z"
+ },
+ {
+  "url": "https://www.scotcourts.gov.uk/about-us/news/news/2026/april/debt-actions-make-up-over-a-quarter-of-civil-business",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.scotcourts.gov.uk/about-us/news/news/2026/april/debt-actions-make-up-over-a-quarter-of-civil-business",
+  "at": "2026-10-21T21:28:13.262Z"
+ },
+ {
+  "url": "https://events.bl.uk/events/refugees-journey-a-drama-workshop",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://events.bl.uk/events/refugees-journey-a-drama-workshop",
+  "at": "2026-10-21T21:28:13.360Z"
+ },
+ {
+  "url": "https://design-system.service.gov.uk/components/cookie-banner/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://design-system.service.gov.uk/components/cookie-banner/",
+  "at": "2026-10-21T21:28:14.221Z"
+ },
+ {
+  "url": "https://www.nls.uk/about-us/plans-and-policies/corporate-documents/enquiry-policy/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nls.uk/about-us/plans-and-policies/corporate-documents/enquiry-policy/",
+  "at": "2026-10-21T21:28:14.409Z"
+ },
+ {
+  "url": "https://sheffield.ac.uk/inclusion/religion-belief-and-no-belief/muslim-students/support",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://sheffield.ac.uk/inclusion/religion-belief-and-no-belief/muslim-students/support",
+  "at": "2026-10-21T21:28:14.509Z"
+ },
+ {
+  "url": "https://www.gov.scot/publications/greenhouse-gas-emissions-reporting-local-authorities-scottish-public-bodies-research-scope-3-group-3-emissions/pages/2/",
+  "status": 200,
+  "contentType": "text/html;charset=UTF-8",
+  "final": "https://www.gov.scot/publications/greenhouse-gas-emissions-reporting-local-authorities-scottish-public-bodies-research-scope-3-group-3-emissions/pages/2/",
+  "at": "2026-10-21T21:28:14.544Z"
+ },
+ {
+  "url": "https://www.transport.gov.scot/news/improved-road-safety-measures-for-charleston/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.transport.gov.scot/news/improved-road-safety-measures-for-charleston/",
+  "at": "2026-10-21T21:28:14.761Z"
+ },
+ {
+  "url": "https://www.gov.uk/employment-tribunal-decisions/e-peers-v-a-collins-2414201-slash-2021",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.gov.uk/employment-tribunal-decisions/e-peers-v-a-collins-2414201-slash-2021",
+  "at": "2026-10-21T21:28:15.051Z"
+ },
+ {
+  "url": "https://www.lbhf.gov.uk/housing/resident-involvement/estate-inspections/estate-inspection-reports-2025-2026/q1/philpot-square",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.lbhf.gov.uk/housing/resident-involvement/estate-inspections/estate-inspection-reports-2025-2026/q1/philpot-square",
+  "at": "2026-10-21T21:28:15.135Z"
+ },
+ {
+  "url": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/international-transfers/using-an-exception/what-are-the-exceptions/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/international-transfers/using-an-exception/what-are-the-exceptions/",
+  "at": "2026-10-21T21:28:15.681Z"
+ },
+ {
+  "url": "https://www.mygov.scot/energy-performance-certificates",
+  "status": 200,
+  "contentType": "text/html;charset=UTF-8",
+  "final": "https://www.mygov.scot/energy-performance-certificates",
+  "at": "2026-10-21T21:28:15.860Z"
+ },
+ {
+  "url": "https://www.nidirect.gov.uk/services/broadband-and-mobile-checker",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.nidirect.gov.uk/services/broadband-and-mobile-checker",
+  "at": "2026-10-21T21:28:15.951Z"
+ },
+ {
+  "url": "https://www.gov.wales/written-statement-provision-veterans-mental-health-wales",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.gov.wales/written-statement-provision-veterans-mental-health-wales",
+  "at": "2026-10-21T21:28:15.984Z"
+ },
+ {
+  "url": "https://www.nationalarchives.gov.uk/explore-the-collection/stories/medieval-irish-roll-with-hidden-grievances/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nationalarchives.gov.uk/explore-the-collection/stories/medieval-irish-roll-with-hidden-grievances/",
+  "at": "2026-10-21T21:28:16.280Z"
+ },
+ {
+  "url": "https://www.networkrail.co.uk/stories/love-the-railway-heritage-railways/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.networkrail.co.uk/stories/love-the-railway-heritage-railways/",
+  "at": "2026-10-21T21:28:16.690Z"
+ },
+ {
+  "url": "https://data.southwark.gov.uk/population-and-equalities/map/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://data.southwark.gov.uk/population-and-equalities/map/",
+  "at": "2026-10-21T21:28:16.766Z"
+ },
+ {
+  "url": "https://caselaw.nationalarchives.gov.uk/uksc/2010/38",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://caselaw.nationalarchives.gov.uk/uksc/2010/38",
+  "at": "2026-10-21T21:28:16.843Z"
+ },
+ {
+  "url": "https://www.nhs.uk/nhs-services/gps/health-services-for-someone-else-family-carer-access/apply-for-family-carer-access-nhs-app/accessibility-statement/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nhs.uk/nhs-services/gps/health-services-for-someone-else-family-carer-access/apply-for-family-carer-access-nhs-app/accessibility-statement/",
+  "at": "2026-10-21T21:28:17.078Z"
+ },
+ {
+  "url": "https://design-patterns.service.justice.gov.uk/production/moj-frontend/",
+  "status": 200,
+  "contentType": "text/html",
+  "final": "https://design-patterns.service.justice.gov.uk/production/moj-frontend/",
+  "at": "2026-10-21T21:28:17.136Z"
+ },
+ {
+  "url": "https://www.historicenvironment.scot/visit/all/blackhammer-chambered-cairn/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.historicenvironment.scot/visit/all/blackhammer-chambered-cairn/",
+  "at": "2026-10-21T21:28:17.185Z"
+ },
+ {
+  "url": "https://www.nrscotland.gov.uk/registration/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nrscotland.gov.uk/registration/",
+  "at": "2026-10-21T21:28:17.269Z"
+ },
+ {
+  "url": "https://service-manual.nhs.uk/content/how-to-write-good-questions-for-forms/test-your-questions",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://service-manual.nhs.uk/content/how-to-write-good-questions-for-forms/test-your-questions",
+  "at": "2026-10-21T21:28:17.360Z"
+ },
+ {
+  "url": "https://weather.metoffice.gov.uk/observations/r1qbtmxef",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://weather.metoffice.gov.uk/observations/r1qbtmxef",
+  "at": "2026-10-21T21:28:17.426Z"
+ },
+ {
+  "url": "https://european-union.europa.eu/principles-countries-history/eu-enlargement_en",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://european-union.europa.eu/principles-countries-history/eu-enlargement_en",
+  "at": "2026-10-21T21:28:17.490Z"
+ },
+ {
+  "url": "https://www.ofgem.gov.uk/energy-policy-and-regulation/engagement/forums-and-working-groups/citizens-energy-forum",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.ofgem.gov.uk/energy-policy-and-regulation/engagement/forums-and-working-groups/citizens-energy-forum",
+  "at": "2026-10-21T21:28:17.567Z"
+ },
+ {
+  "url": "https://www.scotcourts.gov.uk/about-us/news/news/2023/december/prohibition-of-dropped-footway-parking-double-parking-and-pavement-parking",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.scotcourts.gov.uk/about-us/news/news/2023/december/prohibition-of-dropped-footway-parking-double-parking-and-pavement-parking",
+  "at": "2026-10-21T21:28:18.390Z"
+ },
+ {
+  "url": "https://events.bl.uk/sitemap",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://events.bl.uk/sitemap",
+  "at": "2026-10-21T21:28:18.482Z"
+ },
+ {
+  "url": "https://design-system.service.gov.uk/patterns/bank-details/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://design-system.service.gov.uk/patterns/bank-details/",
+  "at": "2026-10-21T21:28:19.381Z"
+ },
+ {
+  "url": "https://www.nls.uk/collections/stories/scottish-history/james-vi-and-the-union-of-the-crowns/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nls.uk/collections/stories/scottish-history/james-vi-and-the-union-of-the-crowns/",
+  "at": "2026-10-21T21:28:19.560Z"
+ },
+ {
+  "url": "https://sheffield.ac.uk/speri/news/our-doctoral-researchers-network-has-big-plans-year",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://sheffield.ac.uk/speri/news/our-doctoral-researchers-network-has-big-plans-year",
+  "at": "2026-10-21T21:28:19.657Z"
+ },
+ {
+  "url": "https://www.gov.scot/publications/january-2026-open-market-review-superfast-ultrafast-gigabit-capable-broadband-infrastructure-scotland-outcome-report/pages/4/",
+  "status": 200,
+  "contentType": "text/html;charset=UTF-8",
+  "final": "https://www.gov.scot/publications/january-2026-open-market-review-superfast-ultrafast-gigabit-capable-broadband-infrastructure-scotland-outcome-report/pages/4/",
+  "at": "2026-10-21T21:28:19.689Z"
+ },
+ {
+  "url": "https://www.transport.gov.scot/news/m74-junction-3a-daldowie-weekend-closure/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.transport.gov.scot/news/m74-junction-3a-daldowie-weekend-closure/",
+  "at": "2026-10-21T21:28:19.839Z"
+ },
+ {
+  "url": "https://www.gov.uk/government/publications/treaties-monthly-bulletin-february-2013",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.gov.uk/government/publications/treaties-monthly-bulletin-february-2013",
+  "at": "2026-10-21T21:28:19.913Z"
+ },
+ {
+  "url": "https://www.lbhf.gov.uk/housing/resident-involvement/estate-inspections/estate-inspection-reports-2025-2026/q2/lytton-estate-burne-jones-samuel-richardson-glenallen-houses-the-grange",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.lbhf.gov.uk/housing/resident-involvement/estate-inspections/estate-inspection-reports-2025-2026/q2/lytton-estate-burne-jones-samuel-richardson-glenallen-houses-the-grange",
+  "at": "2026-10-21T21:28:20.008Z"
+ },
+ {
+  "url": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/individual-rights/right-of-access/when-can-an-exemption-apply-to-information-about-other-people-in-a-sar/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/individual-rights/right-of-access/when-can-an-exemption-apply-to-information-about-other-people-in-a-sar/",
+  "at": "2026-10-21T21:28:20.493Z"
+ },
+ {
+  "url": "https://www.mygov.scot/seafarer-rights",
+  "status": 200,
+  "contentType": "text/html;charset=UTF-8",
+  "final": "https://www.mygov.scot/seafarer-rights",
+  "at": "2026-10-21T21:28:20.676Z"
+ },
+ {
+  "url": "https://www.nidirect.gov.uk/articles/safety-workplace-pension-schemes",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.nidirect.gov.uk/articles/safety-workplace-pension-schemes",
+  "at": "2026-10-21T21:28:20.751Z"
+ },
+ {
+  "url": "https://www.gov.wales/written-statement-accessibility-welsh-law",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.gov.wales/written-statement-accessibility-welsh-law",
+  "at": "2026-10-21T21:28:20.854Z"
+ },
+ {
+  "url": "https://www.nationalarchives.gov.uk/professional-guidance-and-services/our-research-and-academic-collaboration/our-research-projects/research-projects/from-our-students/lgbtq-histories-and-colonial-office-records/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nationalarchives.gov.uk/professional-guidance-and-services/our-research-and-academic-collaboration/our-research-projects/research-projects/from-our-students/lgbtq-histories-and-colonial-office-records/",
+  "at": "2026-10-21T21:28:21.196Z"
+ },
+ {
+  "url": "https://www.networkrail.co.uk/stories/winning-design-to-improve-smaller-stations/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.networkrail.co.uk/stories/winning-design-to-improve-smaller-stations/",
+  "at": "2026-10-21T21:28:21.586Z"
+ },
+ {
+  "url": "https://data.southwark.gov.uk/news/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://data.southwark.gov.uk/news/",
+  "at": "2026-10-21T21:28:22.951Z"
+ },
+ {
+  "url": "https://caselaw.nationalarchives.gov.uk/uksc/2010/26",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://caselaw.nationalarchives.gov.uk/uksc/2010/26",
+  "at": "2026-10-21T21:28:23.018Z"
+ },
+ {
+  "url": "https://www.nhs.uk/medicines/insulin/biphasic-insulin/how-and-when-to-take-biphasic-insulin/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nhs.uk/medicines/insulin/biphasic-insulin/how-and-when-to-take-biphasic-insulin/",
+  "at": "2026-10-21T21:28:23.294Z"
+ },
+ {
+  "url": "https://design-patterns.service.justice.gov.uk/components/badge/examples/urgent/",
+  "status": 200,
+  "contentType": "text/html",
+  "final": "https://design-patterns.service.justice.gov.uk/components/badge/examples/urgent/",
+  "at": "2026-10-21T21:28:23.391Z"
+ },
+ {
+  "url": "https://www.historicenvironment.scot/visit/all/doune-castle/shop/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.historicenvironment.scot/visit/all/doune-castle/shop/",
+  "at": "2026-10-21T21:28:23.439Z"
+ },
+ {
+  "url": "https://www.nrscotland.gov.uk/learning-and-events/first-world-war/battle-of-the-somme-1916/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nrscotland.gov.uk/learning-and-events/first-world-war/battle-of-the-somme-1916/",
+  "at": "2026-10-21T21:28:25.426Z"
+ },
+ {
+  "url": "https://service-manual.nhs.uk/standards-and-technology/service-standard-points/10-define-what-success-looks-like-and-be-open-about-how-your-service-is-performing",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://service-manual.nhs.uk/standards-and-technology/service-standard-points/10-define-what-success-looks-like-and-be-open-about-how-your-service-is-performing",
+  "at": "2026-10-21T21:28:25.554Z"
+ },
+ {
+  "url": "https://weather.metoffice.gov.uk/observations/xcbzchbyz",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://weather.metoffice.gov.uk/observations/xcbzchbyz",
+  "at": "2026-10-21T21:28:25.590Z"
+ },
+ {
+  "url": "https://european-union.europa.eu/languages-our-websites_en",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://european-union.europa.eu/languages-our-websites_en",
+  "at": "2026-10-21T21:28:25.732Z"
+ },
+ {
+  "url": "https://www.ofgem.gov.uk/cy/feed-tariffs-fit/contacts-guidance-and-resources/public-reports-and-data-fit/feed-tariffs-quarterly-report",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.ofgem.gov.uk/cy/feed-tariffs-fit/contacts-guidance-and-resources/public-reports-and-data-fit/feed-tariffs-quarterly-report",
+  "at": "2026-10-21T21:28:25.817Z"
+ },
+ {
+  "url": "https://www.scotcourts.gov.uk/about-us/news/news/2023/march/new-local-taxation-chamber-to-be-established-on-1st-april",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.scotcourts.gov.uk/about-us/news/news/2023/march/new-local-taxation-chamber-to-be-established-on-1st-april",
+  "at": "2026-10-21T21:28:26.919Z"
+ },
+ {
+  "url": "https://events.bl.uk/events/making-artists-books",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://events.bl.uk/events/making-artists-books",
+  "at": "2026-10-21T21:28:27.868Z"
+ },
+ {
+  "url": "https://design-system.service.gov.uk/components/inset-text/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://design-system.service.gov.uk/components/inset-text/",
+  "at": "2026-10-21T21:28:27.940Z"
+ },
+ {
+  "url": "https://www.nls.uk/privacy/fundraising/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nls.uk/privacy/fundraising/",
+  "at": "2026-10-21T21:28:28.129Z"
+ },
+ {
+  "url": "https://sheffield.ac.uk/smph/people/academic/clinical-medicine/david-g-kiely",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://sheffield.ac.uk/smph/people/academic/clinical-medicine/david-g-kiely",
+  "at": "2026-10-21T21:28:28.238Z"
+ },
+ {
+  "url": "https://www.gov.scot/publications/children-young-peoples-neurodevelopment-support-fund-2026-27-supporting-guidance/pages/10/",
+  "status": 200,
+  "contentType": "text/html;charset=UTF-8",
+  "final": "https://www.gov.scot/publications/children-young-peoples-neurodevelopment-support-fund-2026-27-supporting-guidance/pages/10/",
+  "at": "2026-10-21T21:28:28.272Z"
+ },
+ {
+  "url": "https://www.transport.gov.scot/news/a9-safety-camera-data-published/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.transport.gov.scot/news/a9-safety-camera-data-published/",
+  "at": "2026-10-21T21:28:28.368Z"
+ },
+ {
+  "url": "https://www.gov.uk/government/news/culture-secretary-appoints-four-new-board-members-at-the-sports-grounds-safety-authority",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.gov.uk/government/news/culture-secretary-appoints-four-new-board-members-at-the-sports-grounds-safety-authority",
+  "at": "2026-10-21T21:28:28.456Z"
+ },
+ {
+  "url": "https://www.lbhf.gov.uk/housing/resident-involvement/estate-inspections/estate-inspection-reports-2025-2026/q1/bellamy-close",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.lbhf.gov.uk/housing/resident-involvement/estate-inspections/estate-inspection-reports-2025-2026/q1/bellamy-close",
+  "at": "2026-10-21T21:28:28.533Z"
+ },
+ {
+  "url": "https://ico.org.uk/for-the-public/your-right-to-get-your-data-deleted/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://ico.org.uk/for-the-public/your-right-to-get-your-data-deleted/",
+  "at": "2026-10-21T21:28:28.977Z"
+ },
+ {
+  "url": "https://www.mygov.scot/non-disclosure-agreements-nda",
+  "status": 200,
+  "contentType": "text/html;charset=UTF-8",
+  "final": "https://www.mygov.scot/non-disclosure-agreements-nda",
+  "at": "2026-10-21T21:28:29.039Z"
+ },
+ {
+  "url": "https://www.nidirect.gov.uk/articles/using-scaffolding-safely",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.nidirect.gov.uk/articles/using-scaffolding-safely",
+  "at": "2026-10-21T21:28:29.141Z"
+ },
+ {
+  "url": "https://www.gov.wales/written-statement-publication-national-school-categorisation-system-categories-year-four",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.gov.wales/written-statement-publication-national-school-categorisation-system-categories-year-four",
+  "at": "2026-10-21T21:28:29.171Z"
+ },
+ {
+  "url": "https://www.nationalarchives.gov.uk/explore-the-collection/explore-by-time-period/second-world-war/operation-overlord-and-d-day/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nationalarchives.gov.uk/explore-the-collection/explore-by-time-period/second-world-war/operation-overlord-and-d-day/",
+  "at": "2026-10-21T21:28:29.291Z"
+ },
+ {
+  "url": "https://www.networkrail.co.uk/stories/rail-companies-urge-customers-to-re-plan-journeys-as-storms-threaten-major-disruption/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.networkrail.co.uk/stories/rail-companies-urge-customers-to-re-plan-journeys-as-storms-threaten-major-disruption/",
+  "at": "2026-10-21T21:28:29.727Z"
+ },
+ {
+  "url": "https://data.southwark.gov.uk/economy-and-employment/reports/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://data.southwark.gov.uk/economy-and-employment/reports/",
+  "at": "2026-10-21T21:28:29.792Z"
+ },
+ {
+  "url": "https://caselaw.nationalarchives.gov.uk/permissions-and-licensing",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://caselaw.nationalarchives.gov.uk/permissions-and-licensing",
+  "at": "2026-10-21T21:28:29.917Z"
+ },
+ {
+  "url": "https://www.nhs.uk/contraception/methods-of-contraception/contraceptive-diaphragm-or-cap/side-effects-and-risks/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nhs.uk/contraception/methods-of-contraception/contraceptive-diaphragm-or-cap/side-effects-and-risks/",
+  "at": "2026-10-21T21:28:30.004Z"
+ },
+ {
+  "url": "https://design-patterns.service.justice.gov.uk/components/pagination/examples/all-variants/",
+  "status": 200,
+  "contentType": "text/html",
+  "final": "https://design-patterns.service.justice.gov.uk/components/pagination/examples/all-variants/",
+  "at": "2026-10-21T21:28:30.357Z"
+ },
+ {
+  "url": "https://www.historicenvironment.scot/visit/all/chesters-hill-fort/history-and-stories/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.historicenvironment.scot/visit/all/chesters-hill-fort/history-and-stories/",
+  "at": "2026-10-21T21:28:30.392Z"
+ },
+ {
+  "url": "https://www.nrscotland.gov.uk/learning-and-events/research-guides/valuation-rolls-indexes/what-problems-will-i-face-when-searching-the-valuation-rolls/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nrscotland.gov.uk/learning-and-events/research-guides/valuation-rolls-indexes/?section=what-problems-will-i-face-when-searching-the-valuation-rolls",
+  "at": "2026-10-21T21:28:30.469Z"
+ },
+ {
+  "url": "https://www.nrscotland.gov.uk/statistics-and-data/nhs-central-register/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nrscotland.gov.uk/statistics-and-data/nhs-central-register/",
+  "at": "2026-10-21T21:28:30.706Z"
+ },
+ {
+  "url": "https://service-manual.nhs.uk/community-and-contribution/feed-back-or-share-insights",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://service-manual.nhs.uk/community-and-contribution/feed-back-or-share-insights",
+  "at": "2026-10-21T21:28:32.537Z"
+ },
+ {
+  "url": "https://weather.metoffice.gov.uk/observations/ub1fk8vf1",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://weather.metoffice.gov.uk/observations/ub1fk8vf1",
+  "at": "2026-10-21T21:28:32.604Z"
+ },
+ {
+  "url": "https://european-union.europa.eu/institutions-law-budget/institutions-and-bodies/search-all-eu-institutions-and-bodies/european-central-bank-ecb_en",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://european-union.europa.eu/institutions-law-budget/institutions-and-bodies/search-all-eu-institutions-and-bodies/european-central-bank-ecb_en",
+  "at": "2026-10-21T21:28:32.769Z"
+ },
+ {
+  "url": "https://www.ofgem.gov.uk/energy-company-obligation-eco/contacts-guidance-and-resources/eco-public-reports-and-data",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.ofgem.gov.uk/energy-company-obligation-eco/contacts-guidance-and-resources/eco-public-reports-and-data",
+  "at": "2026-10-21T21:28:32.854Z"
+ },
+ {
+  "url": "https://www.scotcourts.gov.uk/about-us/news/news/2024/may/scts-gender-pay-gap-report-published",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.scotcourts.gov.uk/about-us/news/news/2024/may/scts-gender-pay-gap-report-published",
+  "at": "2026-10-21T21:28:32.887Z"
+ },
+ {
+  "url": "https://events.bl.uk/profile/fernando-pizarro",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://events.bl.uk/profile/fernando-pizarro",
+  "at": "2026-10-21T21:28:33.918Z"
+ },
+ {
+  "url": "https://design-system.service.gov.uk/cookies/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://design-system.service.gov.uk/cookies/",
+  "at": "2026-10-21T21:28:34.455Z"
+ },
+ {
+  "url": "https://www.nls.uk/collections/stories/printing-and-publishing/the-scotsman/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nls.uk/collections/stories/printing-and-publishing/the-scotsman/",
+  "at": "2026-10-21T21:28:34.763Z"
+ },
+ {
+  "url": "https://sheffield.ac.uk/ijc/people/professional-services-staff/nastaran-bozorgzad-arbab",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://sheffield.ac.uk/ijc/people/professional-services-staff/nastaran-bozorgzad-arbab",
+  "at": "2026-10-21T21:28:34.888Z"
+ },
+ {
+  "url": "https://www.gov.scot/publications/benefit-take-up-strategy-2026-2031-icia/pages/3/",
+  "status": 200,
+  "contentType": "text/html;charset=UTF-8",
+  "final": "https://www.gov.scot/publications/benefit-take-up-strategy-2026-2031-icia/pages/3/",
+  "at": "2026-10-21T21:28:35.455Z"
+ },
+ {
+  "url": "https://www.transport.gov.scot/news/major-progress-on-haudagain-improvement-scheme/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.transport.gov.scot/news/major-progress-on-haudagain-improvement-scheme/",
+  "at": "2026-10-21T21:28:35.675Z"
+ },
+ {
+  "url": "https://www.gov.uk/government/news/paralympic-sculpture-presented-to-competition-winner",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.gov.uk/government/news/paralympic-sculpture-presented-to-competition-winner",
+  "at": "2026-10-21T21:28:35.746Z"
+ },
+ {
+  "url": "https://www.lbhf.gov.uk/housing/resident-involvement/estate-inspections/estate-inspection-reports-2025-2026/q1/emlyn-gardens-beverley-crane-lea-longford-mole-wandle-courts",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.lbhf.gov.uk/housing/resident-involvement/estate-inspections/estate-inspection-reports-2025-2026/q1/emlyn-gardens-beverley-crane-lea-longford-mole-wandle-courts",
+  "at": "2026-10-21T21:28:35.817Z"
+ },
+ {
+  "url": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/exemptions/a-guide-to-the-data-protection-exemptions/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/exemptions/a-guide-to-the-data-protection-exemptions/",
+  "at": "2026-10-21T21:28:36.276Z"
+ },
+ {
+  "url": "https://www.mygov.scot/apply-for-blue-badge",
+  "status": 200,
+  "contentType": "text/html;charset=UTF-8",
+  "final": "https://www.mygov.scot/apply-for-blue-badge",
+  "at": "2026-10-21T21:28:36.980Z"
+ },
+ {
+  "url": "https://www.nidirect.gov.uk/articles/making-planning-application",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.nidirect.gov.uk/articles/making-planning-application",
+  "at": "2026-10-21T21:28:37.053Z"
+ },
+ {
+  "url": "https://www.gov.wales/written-statement-independent-qc-investigation",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.gov.wales/written-statement-independent-qc-investigation",
+  "at": "2026-10-21T21:28:37.086Z"
+ },
+ {
+  "url": "https://www.nationalarchives.gov.uk/explore-the-collection/stories/revealing-the-corrupt-record-in-14th-century-ireland/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nationalarchives.gov.uk/explore-the-collection/stories/revealing-the-corrupt-record-in-14th-century-ireland/",
+  "at": "2026-10-21T21:28:37.471Z"
+ },
+ {
+  "url": "https://www.networkrail.co.uk/stories/four-years-on-im-reminded-by-that-one-decision-to-go-on-the-railway/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.networkrail.co.uk/stories/four-years-on-im-reminded-by-that-one-decision-to-go-on-the-railway/",
+  "at": "2026-10-21T21:28:38.980Z"
+ },
+ {
+  "url": "https://data.southwark.gov.uk/resources/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://data.southwark.gov.uk/resources/",
+  "at": "2026-10-21T21:28:39.045Z"
+ },
+ {
+  "url": "https://caselaw.nationalarchives.gov.uk/courts-and-tribunals/ukftt/credit",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://caselaw.nationalarchives.gov.uk/courts-and-tribunals/ukftt/credit",
+  "at": "2026-10-21T21:28:39.156Z"
+ },
+ {
+  "url": "https://www.nhs.uk/medicines/nystatin/taking-or-using-nystatin-with-other-medicines-and-herbal-supplements/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nhs.uk/medicines/nystatin/taking-or-using-nystatin-with-other-medicines-and-herbal-supplements/",
+  "at": "2026-10-21T21:28:39.376Z"
+ },
+ {
+  "url": "https://design-patterns.service.justice.gov.uk/components/search/",
+  "status": 200,
+  "contentType": "text/html",
+  "final": "https://design-patterns.service.justice.gov.uk/components/search/",
+  "at": "2026-10-21T21:28:39.444Z"
+ },
+ {
+  "url": "https://www.historicenvironment.scot/visit/all/cnoc-freiceadain-long-cairns/history-and-stories/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.historicenvironment.scot/visit/all/cnoc-freiceadain-long-cairns/history-and-stories/",
+  "at": "2026-10-21T21:28:39.492Z"
+ },
+ {
+  "url": "https://www.nrscotland.gov.uk/learning-and-events/research-guides/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nrscotland.gov.uk/learning-and-events/research-guides/",
+  "at": "2026-10-21T21:28:39.562Z"
+ },
+ {
+  "url": "https://service-manual.nhs.uk/design-system/patterns/hub-page",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://service-manual.nhs.uk/design-system/patterns/hub-page",
+  "at": "2026-10-21T21:28:39.652Z"
+ },
+ {
+  "url": "https://weather.metoffice.gov.uk/observations/u1h1et5j1",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://weather.metoffice.gov.uk/observations/u1h1et5j1",
+  "at": "2026-10-21T21:28:39.684Z"
+ },
+ {
+  "url": "https://european-union.europa.eu/contact-eu/social-media-channels_en",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://european-union.europa.eu/contact-eu/social-media-channels_en",
+  "at": "2026-10-21T21:28:39.833Z"
+ },
+ {
+  "url": "https://www.ofgem.gov.uk/cy/energy-policy-and-regulation/engagement/forums-and-working-groups/riio-ed1-online-stakeholder-forum",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://www.ofgem.gov.uk/cy/energy-policy-and-regulation/engagement/forums-and-working-groups/riio-ed1-online-stakeholder-forum",
+  "at": "2026-10-21T21:28:39.905Z"
+ },
+ {
+  "url": "https://www.scotcourts.gov.uk/about-us/news/news/2024/february/success-for-scts-at-international-technology-awards",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.scotcourts.gov.uk/about-us/news/news/2024/february/success-for-scts-at-international-technology-awards",
+  "at": "2026-10-21T21:28:40.778Z"
+ },
+ {
+  "url": "https://events.bl.uk/events/self-guided-school-visits",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://events.bl.uk/events/self-guided-school-visits",
+  "at": "2026-10-21T21:28:40.877Z"
+ },
+ {
+  "url": "https://design-system.service.gov.uk/patterns/interruption-pages/",
+  "status": 200,
+  "contentType": "text/html; charset=UTF-8",
+  "final": "https://design-system.service.gov.uk/patterns/interruption-pages/",
+  "at": "2026-10-21T21:28:40.943Z"
+ },
+ {
+  "url": "https://www.nls.uk/tools-for-research/introduction-to-estate-papers/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.nls.uk/tools-for-research/introduction-to-estate-papers/",
+  "at": "2026-10-21T21:28:41.137Z"
+ },
+ {
+  "url": "https://sheffield.ac.uk/mac/news/one-watch-engineering-student-wins-best-paper-award-leading-international-technical-conference",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://sheffield.ac.uk/mac/news/one-watch-engineering-student-wins-best-paper-award-leading-international-technical-conference",
+  "at": "2026-10-21T21:28:41.230Z"
+ },
+ {
+  "url": "https://www.gov.scot/publications/enhancing-accessibility-adaptability-usability-scotlands-homes-consultation-analysis-report/pages/5/",
+  "status": 200,
+  "contentType": "text/html;charset=UTF-8",
+  "final": "https://www.gov.scot/publications/enhancing-accessibility-adaptability-usability-scotlands-homes-consultation-analysis-report/pages/5/",
+  "at": "2026-10-21T21:28:41.983Z"
+ },
+ {
+  "url": "https://www.transport.gov.scot/news/forth-road-bridge-reopens/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.transport.gov.scot/news/forth-road-bridge-reopens/",
+  "at": "2026-10-21T21:28:42.146Z"
+ },
+ {
+  "url": "https://www.gov.uk/government/news/support-to-the-uks-regulators",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.gov.uk/government/news/support-to-the-uks-regulators",
+  "at": "2026-10-21T21:28:42.223Z"
+ },
+ {
+  "url": "https://www.lbhf.gov.uk/housing/resident-involvement/estate-inspections/estate-inspection-reports-2025-2026/q2/lintaine-court",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://www.lbhf.gov.uk/housing/resident-involvement/estate-inspections/estate-inspection-reports-2025-2026/q2/lintaine-court",
+  "at": "2026-10-21T21:28:42.300Z"
+ },
+ {
+  "url": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/international-transfers/appropriate-safeguards/what-are-standard-data-protection-clauses-the-uk-idta-and-the-addendum/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "final": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/international-transfers/appropriate-safeguards/what-are-standard-data-protection-clauses-the-uk-idta-and-the-addendum/",
+  "at": "2026-10-21T21:28:42.922Z"
+ }
+]

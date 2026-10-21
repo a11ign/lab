@@ -84,6 +84,11 @@ const EXEMPT: { file: string; count: number; reason: string }[] = [
       + "contract and refuses to guess at a wire format.",
   },
   {
+    file: "packages/lab/scripts/build-real-page-batch.ts", count: 1,
+    reason: "the same shape as audit-corpus-urls.ts above: sitemaps and pages of real third-party government "
+      + "websites, fetched politely with the browser user-agent, never a capture worker's JSON API.",
+  },
+  {
     file: "packages/lab/scripts/evidence-check.ts", count: 1,
     reason: "the dataset PAGE SERVER's raw HTML, read for a title check -- the same shape as "
       + "capture-screenreader-dataset.mjs's exemption below, independently arrived at.",
