@@ -147,7 +147,7 @@ function takenByTheCorpus(): Set<string> {
 /** Offline: the entries again, from the committed pool and probes. */
 async function printCommitted() {
   const drawn = await selectBatchTwo(
-    readJson<Pool>(POOL_FILE), replayProber(readJson<Probe[]>(PROBES_FILE)), BATCH_2_SEED, takenByTheCorpus(),
+    readJson<Pool>(POOL_FILE), replayProber(readJson<Probe[]>(PROBES_FILE)), { seed: BATCH_2_SEED, taken: takenByTheCorpus() },
   );
   process.stdout.write(`${printEntries(drawn)}\n`);
 }
@@ -168,7 +168,7 @@ async function buildFresh() {
     process.stderr.write(`  ${origin}: ${count} candidate(s)${entry.note ? ` (${entry.note})` : ""}\n`);
   }
   const probes: Probe[] = [];
-  const drawn = await selectBatchTwo(pool, liveProber(probes), BATCH_2_SEED, takenByTheCorpus());
+  const drawn = await selectBatchTwo(pool, liveProber(probes), { seed: BATCH_2_SEED, taken: takenByTheCorpus() });
   writeJson(POOL_FILE, pool);
   writeJson(PROBES_FILE, probes);
   if (drawn.length < BATCH_2_SIZE) {

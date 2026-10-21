@@ -197,16 +197,21 @@ export function evalFixtureUrls(root: string): string[] {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) walk(path);
-      else if (entry.name.endsWith(".json")) {
-        try {
-          const url = (JSON.parse(readFileSync(path, "utf8")) as { url?: unknown }).url;
-          if (typeof url === "string") urls.push(url);
-        } catch { /* a fixture that is not a capture is not a test page */ }
-      }
+      else if (entry.name.endsWith(".json")) urls.push(...urlOfFixture(path));
     }
   };
   walk(root);
   return urls;
+}
+
+/** The `url` an eval fixture records, as a list of zero or one; a file that is not a capture has none. */
+function urlOfFixture(path: string): string[] {
+  try {
+    const url = (JSON.parse(readFileSync(path, "utf8")) as { url?: unknown }).url;
+    return typeof url === "string" ? [url] : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -231,6 +236,13 @@ const byKey = <T>(key: (item: T) => string) => (a: T, b: T) => {
   return x < y ? -1 : x > y ? 1 : 0;
 };
 
+/** What the draw is held to: the seed, the addresses it must not repeat, and how many to take. */
+export interface DrawRule {
+  seed: string;
+  taken: ReadonlySet<string>;
+  size?: number;
+}
+
 /**
  * THE DRAW. Pure over its inputs: the live build passes a prober that records each probe; the test passes the
  * committed `probes.json`, and a probe missing from it throws rather than falling back to the network.
@@ -244,13 +256,8 @@ const byKey = <T>(key: (item: T) => string) => (a: T, b: T) => {
  *
  * Returns fewer than `size` when the pools run out; it never widens itself to make up the number.
  */
-export async function selectBatchTwo(
-  pool: Pool,
-  probe: Prober,
-  seed: string,
-  taken: ReadonlySet<string>,
-  size: number = BATCH_2_SIZE,
-): Promise<Drawn[]> {
+export async function selectBatchTwo(pool: Pool, probe: Prober, rule: DrawRule): Promise<Drawn[]> {
+  const { seed, taken, size = BATCH_2_SIZE } = rule;
   const queues = orderedQueues(pool, seed);
   const tried = new Set<string>();
   const drawn: Drawn[] = [];

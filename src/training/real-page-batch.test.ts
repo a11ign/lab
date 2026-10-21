@@ -42,7 +42,7 @@ test("the eval fixture directory really does yield test URLs, or the duplicate c
 // --- Reproduced from the seed ------------------------------------------------------------------------
 
 test("BATCH_2_PAGES is exactly the draw the seed makes over the committed pool and probes, in order", async () => {
-  const drawn = await selectBatchTwo(pool, replayProber(probes), BATCH_2_SEED, taken);
+  const drawn = await selectBatchTwo(pool, replayProber(probes), { seed: BATCH_2_SEED, taken });
   assert.deepEqual(BATCH_2_PAGES.map((p) => p.url), drawn.map((d) => d.url));
   assert.deepEqual(BATCH_2_PAGES.map((p) => p.drawnFrom), drawn.map((d) => d.drawnFrom));
 });
@@ -69,8 +69,8 @@ test("a replayed probe that is missing from the record fails, and never reaches 
 });
 
 test("CONTROL: a different seed draws a different list", async () => {
-  const other = await selectBatchTwo(pool, accepting, "not-the-seed", taken);
-  const same = await selectBatchTwo(pool, accepting, BATCH_2_SEED, taken);
+  const other = await selectBatchTwo(pool, accepting, { seed: "not-the-seed", taken });
+  const same = await selectBatchTwo(pool, accepting, { seed: BATCH_2_SEED, taken });
   assert.equal(other.length, BATCH_2_SIZE);
   assert.notDeepEqual(other.map((d) => d.url), same.map((d) => d.url));
 });
@@ -90,14 +90,14 @@ test("CONTROL: a planted duplicate (a corpus url with a trailing slash) is refus
     }],
   };
   const probed: string[] = [];
-  const drawn = await selectBatchTwo(planted, async (url) => { probed.push(url); return accepting(url); }, BATCH_2_SEED, taken);
+  const drawn = await selectBatchTwo(planted, async (url) => { probed.push(url); return accepting(url); }, { seed: BATCH_2_SEED, taken });
   assert.deepEqual(drawn.map((d) => d.url), [`${origin}/a-page-nobody-has`]);
   assert.deepEqual(probed, [`${origin}/a-page-nobody-has`]);
 });
 
 test("CONTROL: a planted 404 removes that candidate, and the next in hash order takes its place", async () => {
-  const first = (await selectBatchTwo(pool, accepting, BATCH_2_SEED, taken, pool.origins.length))[0];
-  const after = await selectBatchTwo(pool, answering(404, first.url), BATCH_2_SEED, taken, pool.origins.length);
+  const first = (await selectBatchTwo(pool, accepting, { seed: BATCH_2_SEED, taken, size: pool.origins.length }))[0];
+  const after = await selectBatchTwo(pool, answering(404, first.url), { seed: BATCH_2_SEED, taken, size: pool.origins.length });
   assert.ok(!after.some((d) => d.url === first.url), "the 404 candidate was still drawn");
   const ordered = pool.origins.find((o) => o.origin === first.origin)!.sitemaps
     .flatMap((s) => s.candidates)
@@ -115,14 +115,14 @@ test("CONTROL: the draw stops at the size asked for and never widens itself to m
       candidates: ["https://a.example/1", "https://a.example/2"],
     }] }],
   };
-  assert.equal((await selectBatchTwo(tiny, accepting, BATCH_2_SEED, new Set(), 5)).length, 2);
-  assert.equal((await selectBatchTwo(tiny, accepting, BATCH_2_SEED, new Set(), 1)).length, 1);
+  assert.equal((await selectBatchTwo(tiny, accepting, { seed: BATCH_2_SEED, taken: new Set(), size: 5 })).length, 2);
+  assert.equal((await selectBatchTwo(tiny, accepting, { seed: BATCH_2_SEED, taken: new Set(), size: 1 })).length, 1);
 });
 
 test("CONTROL: the draw visits every publisher before it visits one twice", async () => {
   const withCandidates = pool.origins.filter((o) => o.sitemaps.some((s) => s.candidates.length > 0));
   assert.ok(withCandidates.length > 1 && withCandidates.length < BATCH_2_SIZE);
-  const drawn = await selectBatchTwo(pool, accepting, BATCH_2_SEED, taken, withCandidates.length);
+  const drawn = await selectBatchTwo(pool, accepting, { seed: BATCH_2_SEED, taken, size: withCandidates.length });
   assert.equal(drawn.length, withCandidates.length);
   assert.equal(new Set(drawn.map((d) => d.origin)).size, drawn.length);
 });
