@@ -92,7 +92,7 @@
     "@a11ign/evidence": "0.5.0",
     "@a11ign/judge": "0.5.6",
     "@a11ign/scorer": "0.3.6",
-    "@a11ign/screenreader-fleet": "^0.11.0",
+    "@a11ign/screenreader-fleet": "^0.13.1",
     "@a11ign/screenreader-worker": "^0.13.0"
   },
   "devDependencies": {
