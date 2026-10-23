@@ -7,7 +7,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +38,40 @@ const answering = (status: number, only: string): Prober => async (url) =>
 test("the eval fixture directory really does yield test URLs, or the duplicate check below is vacuous", () => {
   assert.ok(testUrls.length >= 20, `expected the eval fixtures to yield test URLs, got ${testUrls.length}`);
   assert.ok(testUrls.some((u) => u.includes("w3.org")), "expected at least one real W3C page in the test set");
+});
+
+// --- The duplicate guard fails closed -----------------------------------------------------------------
+
+/** A fixture directory holding the given files (a nested one included), written as given. */
+function fixtureDir(files: Record<string, string>): string {
+  const root = mkdtempSync(join(tmpdir(), "eval-fixtures-"));
+  for (const [name, body] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, name)), { recursive: true });
+    writeFileSync(join(root, name), body);
+  }
+  return root;
+}
+
+test("CONTROL: a malformed eval fixture stops the guard, naming the file, and is never read as having no url", () => {
+  const root = fixtureDir({ "ok.json": '{"url":"https://a.example/x"}', "nested/broken.json": '{"url": "https://b.example/y"' });
+  assert.throws(() => evalFixtureUrls(root), (error: Error) => /nested[\\/]broken\.json/.test(error.message) && /refusing to draw/.test(error.message));
+});
+
+test("CONTROL: an empty fixture file stops the guard too", () => {
+  assert.throws(() => evalFixtureUrls(fixtureDir({ "empty.json": "" })), /empty\.json/);
+});
+
+test("the same guard reads valid JSON: a capture gives its url, valid JSON that records none gives nothing (the passing twins)", () => {
+  const root = fixtureDir({
+    "a.json": '{"url":"https://a.example/x"}',
+    "nested/b.json": '{"url":"https://b.example/y","other":1}',
+    "no-url.json": '{"name":"not a capture"}',
+    "null.json": "null",
+    "list.json": "[1,2]",
+    "non-string.json": '{"url":42}',
+    "notes.txt": "not json, and not read",
+  });
+  assert.deepEqual(evalFixtureUrls(root).sort(), ["https://a.example/x", "https://b.example/y"]);
 });
 
 // --- Reproduced from the seed ------------------------------------------------------------------------

@@ -204,14 +204,20 @@ export function evalFixtureUrls(root: string): string[] {
   return urls;
 }
 
-/** The `url` an eval fixture records, as a list of zero or one; a file that is not a capture has none. */
+/**
+ * The `url` an eval fixture records, as a list of zero or one. Valid JSON that records no `url` is not a capture and has none;
+ * a file that cannot be read or parsed throws, naming the file: a fixture the guard cannot read is one it cannot protect, so the
+ * draw stops rather than risk repeating it.
+ */
 function urlOfFixture(path: string): string[] {
+  let parsed: unknown;
   try {
-    const url = (JSON.parse(readFileSync(path, "utf8")) as { url?: unknown }).url;
-    return typeof url === "string" ? [url] : [];
-  } catch {
-    return [];
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new Error(`eval fixture ${path} cannot be read as JSON (${error instanceof Error ? error.message : String(error)}): refusing to draw without it`, { cause: error });
   }
+  const url = typeof parsed === "object" && parsed !== null ? (parsed as { url?: unknown }).url : undefined;
+  return typeof url === "string" ? [url] : [];
 }
 
 /**
