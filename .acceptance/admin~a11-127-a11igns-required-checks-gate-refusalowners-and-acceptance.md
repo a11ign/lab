@@ -5,10 +5,16 @@ Retires the old gate's `refusalOwners` job from lab's CI and moves the arm bot's
 Acceptance: `ci.yml` has no `refusalOwners` job and `gate` needs only `changeset, checks, release-dry-run`; the arm bot clears a refusal for `Cross-repo-red: A11-1` and refuses `#5`, `owner/repo#5` and a missing line, and never asks GitHub for an issue.
 
 ```bash
-! grep -n "refusalOwners\|refusal-owners" .github/workflows/ci.yml
-grep -n "needs: \[changeset, checks, release-dry-run\]" .github/workflows/ci.yml
+! grep -nE "refusalOwners|refusal-owners" .github/workflows/ci.yml
+grep -nF 'needs: [changeset, checks, release-dry-run]' .github/workflows/ci.yml
 test ! -e src/packaging/refusal-owners-are-open.test.ts
-node --test src/packaging/auto-arm-cross-repo-red.test.ts src/packaging/cross-repo-tests.test.ts
+# The auto-arm test reads the workflow with `yaml`, which a bare checkout does not have: lay it in for the run, and take it out again.
+deps=$(mktemp -d)
+npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$deps" yaml@2 >/dev/null
+mkdir -p node_modules && ln -s "$deps/node_modules/yaml" node_modules/yaml
+node --test src/packaging/auto-arm-cross-repo-red.test.ts src/packaging/cross-repo-tests.test.ts; status=$?
+rm -f node_modules/yaml && rmdir node_modules 2>/dev/null; rm -rf "${deps:?}"
+exit "$status"
 ```
 
-The two test files read only the workflow YAML and run the arm bot's shell under `bash` and `jq` against a fake `gh`, so they need no install. Their ticket-key cases fail on the base `ci.yml` and `auto-arm.yml`.
+The two test files read only the workflow YAML and run the arm bot's shell under `bash` and `jq` against a fake `gh`; the block lays `yaml` in for them, since they import it, and removes it afterwards. Their ticket-key cases fail on the base `ci.yml` and `auto-arm.yml`.
