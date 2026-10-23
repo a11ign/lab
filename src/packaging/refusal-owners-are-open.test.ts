@@ -10,9 +10,9 @@
  * its `GH_TOKEN`), and prints every owner it found. Without the flag it is SKIPPED with its reason, and `ci.yml` asserts the LIVE PASS line, so a skip that
  * fires always cannot pass for the check.
  *
- * POSITIVE CONTROLS, named where the emptiness assertions are: "the real tree names no closed owner" is only a reading if the reader finds an owner in it,
- * which `the real tree's gate:core-held is found, with a qualified owner` pins; and every `failures` assertion has its passing twin beside it on the same
- * fixture.
+ * POSITIVE CONTROLS: the reader is only a reading if it finds an owner where there is one, which `a script without REFUSED is not a refusal, and one with it is found` pins on
+ * the 2026-10-13 string; every `failures` assertion has its passing twin beside it on the same fixture. The real tree has named no owner since `gate:core-held` was retired
+ * (A11-127), so the live read prints how many it found, zero included.
  */
 // no-token: gh -- the fixture half spawns nothing: `readIssueState` takes a runner here, and the one read of GitHub is the opt-in LIVE test below
 import { test } from "node:test";
@@ -129,15 +129,6 @@ test("the live reader maps what GitHub answers: open, closed, anything else and 
   assert.match(failing.why, /o\/r#5179 could not be read: Error: gh: HTTP 404$/, "the reason is the first line of the failure, with the repository and number");
 });
 
-test("the real tree's gate:core-held is found, with a qualified owner (the positive control for the live read's emptiness)", () => {
-  const refusals = refusalsInTree(REPO_ROOT);
-  const coreHeld = refusals.find((refusal) => refusal.where === 'script "gate:core-held"');
-  assert.ok(coreHeld, "package.json carries the gate:core-held refusal this check exists for");
-  const owners = ownersOf(coreHeld.text);
-  assert.ok(owners.length > 0, "the gate:core-held refusal names an owner, so the live read has something to read");
-  assert.ok(owners.every((owner) => owner.repo === CORE), "its owner is read in the core, where the row lives: a bare `#n` here would be read in the lab");
-});
-
 const CI_STEP_NAME = "Every owner a refusal names is an open issue";
 /** `rwxr-xr-x`: the stub `node` has to be executable. */
 const EXECUTABLE = 0o755;
@@ -172,7 +163,7 @@ function runStepWithNode(step: string, node: { code: number; output: string }): 
 test("ci.yml's refusalOwners step exits red when the test fails, even though a LIVE PASS line was printed", () => {
   const step = refusalOwnersStep();
   assert.match(step, /node --test src\/packaging\/refusal-owners-are-open\.test\.ts/, "the extracted block is the one that runs this test");
-  const live = "  LIVE PASS: package.json script \"gate:core-held\" names a11ign/a11ign#4425: a11ign/a11ign#4425 is open";
+  const live = "  LIVE PASS: 0 owner(s) named by a REFUSED string in this tree, none closed or unreadable";
   // A fixture assertion fails (exit 1) while the opt-in live test prints its line. Under `| tee` this exited 0 (the core's reviewer-5352).
   assert.notEqual(runStepWithNode(step, { code: 1, output: `not ok 3 - fixture\n${live}` }), 0);
   // The passing twin on the same wrapper, and the way a green exit still must not pass: no line (a skipped live test).
@@ -192,7 +183,8 @@ test("LIVE: every owner a refusal names in this tree is an OPEN issue", {
     : `opt-in: \`${FLAG}=1 node --test src/packaging/refusal-owners-are-open.test.ts\` asks GitHub; the reader above ran on fixtures and read no live issue`,
 }, () => {
   const all = findings(refusalsInTree(REPO_ROOT), readIssueState("a11ign/lab"));
-  assert.ok(all.length > 0, "the reader found no owner at all, so there is nothing for this read to certify");
   assert.deepEqual(failures(all).map(describe), []);
+  // Always printed, even when the tree has no refusal (gate:core-held was retired, A11-127): the CI step greps for it so a SKIPPED live test cannot stand in for one that read.
+  console.log(`  LIVE PASS: ${all.length} owner(s) named by a REFUSED string in this tree, none closed or unreadable`);
   for (const finding of all) console.log(`  LIVE PASS: ${finding.refusal.file} ${finding.refusal.where} names ${finding.repo ?? ""}#${finding.number}: ${finding.why}`);
 });

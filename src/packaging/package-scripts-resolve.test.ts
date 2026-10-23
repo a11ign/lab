@@ -77,10 +77,12 @@ test("every script a manifest script or a root workflow step runs by name is one
   assert.deepEqual(unresolved, []);
 });
 
-test("the composites end in the stage that names what the lab cannot run, so a pass is never claimed for them", () => {
+test("the composites end in the lab's own last stage: the gate:core-held refusal is retired (A11-127), so no composite chains to it", () => {
   const scripts = scriptsOf(LAB_ROOT);
-  assert.match(scripts["release:gate"], /run gate:core-held -- scorer:migration gate:isolation$/);
-  assert.match(scripts["candidate:gate"], /run gate:core-held -- scorer:migration scorer:retired-heads gate:isolation$/);
+  assert.ok(!Object.hasOwn(scripts, "gate:core-held"), "the refusal script is gone");
+  assert.match(scripts["release:gate"], /run eval:gate$/);
+  assert.match(scripts["candidate:gate"], /run rules:real-pages$/);
+  assert.doesNotMatch(JSON.stringify(scripts), /gate:core-held/);
   assert.match(scripts["promote:gated"], /^node "\$npm_execpath" run --silent candidate:gate && node "\$npm_execpath" run --silent promote:model --$/);
 });
 
