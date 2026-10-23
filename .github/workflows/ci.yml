@@ -348,7 +348,7 @@ jobs:
           node --test src/packaging/refusal-owners-are-open.test.ts > "$RUNNER_TEMP/refusal-owners.out" 2>&1 || status=$?
           cat "$RUNNER_TEMP/refusal-owners.out"
           [ "$status" -eq 0 ] || { echo "::error::refusal-owners-are-open.test.ts exited $status"; exit "$status"; }
-          grep -q "LIVE PASS: " "$RUNNER_TEMP/refusal-owners.out" || { echo "::error::the live read printed no LIVE PASS line: it was skipped or found no owner"; exit 1; }
+          grep -q "LIVE PASS: " "$RUNNER_TEMP/refusal-owners.out" || { echo "::error::the live read printed no LIVE PASS line: it was skipped"; exit 1; }
 
   # THE REQUIRED CHECK. `main`'s protection and the `merge-queue-main` ruleset name `gate`, so it stays the one check that answers for the run. It waits for every job above and accepts `success`
   # ONLY: `always()` because a job whose need failed is SKIPPED, and a skipped required check counts as passed; and no `skipped` allowance, because the changeset job succeeds on a merge-group
