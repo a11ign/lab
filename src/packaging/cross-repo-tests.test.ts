@@ -49,8 +49,8 @@ test("ci.yml runs both legs, only `cross-repo` may fail without failing the job,
   assert.match(ci, /^ {2}push:\n {4}branches: \[main\]$/m);
   assert.match(ci, /^ {2}schedule:\n {4}- cron: "[^"]+"$/m);
   assert.match(ci, /cross-repo-tests\.ts --scope=\$\{\{ matrix\.scope \}\}/);
-  assert.match(ci, /^ {2}gate:\n {4}needs: \[changeset, checks, release-dry-run, refusalOwners\]$/m, "the required check still waits for `checks`, for the release dry run (a11ign/a11ign#5063) and for the refusal-owner read (a11ign/a11ign#5351)");
+  assert.match(ci, /^ {2}gate:\n {4}needs: \[changeset, checks, release-dry-run\]$/m, "the required check still waits for `checks` and for the release dry run (a11ign/a11ign#5063), and no longer for the refusal-owner read, which was retired with the old gate (A11-127)");
   assert.match(ci, /"\$\{\{ needs\.release-dry-run\.result \}\}" != "success"/, "`gate` reads the dry run's result, not only waits for it: a job a gate needs and never reads is excused by its own failure");
-  assert.match(ci, /"\$\{\{ needs\.refusalOwners\.result \}\}" != "success"/, "`gate` reads the refusal-owner job's result too, and a skip does not pass (a11ign/a11ign#5351)");
+  assert.doesNotMatch(ci, /refusalOwners/, "the refusal-owner job is retired, so neither `gate` nor any job names it (A11-127)");
   assert.match(readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8"), /read -ra selection/);
 });
