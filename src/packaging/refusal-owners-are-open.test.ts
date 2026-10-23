@@ -10,15 +10,15 @@
  * its `GH_TOKEN`), and prints every owner it found. Without the flag it is SKIPPED with its reason, and `ci.yml` asserts the LIVE PASS line, so a skip that
  * fires always cannot pass for the check.
  *
- * POSITIVE CONTROLS, named where the emptiness assertions are: "the real tree names no closed owner" is only a reading if the reader finds an owner in it,
- * which `the real tree's gate:core-held is found, with a qualified owner` pins; and every `failures` assertion has its passing twin beside it on the same
- * fixture.
+ * POSITIVE CONTROLS: the reader is only a reading if it finds an owner where there is one, which `a script without REFUSED is not a refusal, and one with it is found` pins on
+ * the 2026-10-13 string; every `failures` assertion has its passing twin beside it on the same fixture. The real tree has named no owner since `gate:core-held` was retired
+ * (A11-127), so the live read prints how many it found, zero included.
  */
 // no-token: gh -- the fixture half spawns nothing: `readIssueState` takes a runner here, and the one read of GitHub is the opt-in LIVE test below
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -127,16 +127,6 @@ test("the live reader maps what GitHub answers: open, closed, anything else and 
   const failing = readIssueState("o/r", () => { throw new Error("gh: HTTP 404\nsecond line"); })({ repo: null, number: OLD_OWNER });
   assert.equal(failing.code, "CANNOT_TELL");
   assert.match(failing.why, /o\/r#5179 could not be read: Error: gh: HTTP 404$/, "the reason is the first line of the failure, with the repository and number");
-});
-
-test("the tree reader finds a REFUSED string in a tree that has one (the positive control for the real tree being empty since gate:core-held was retired, A11-127)", () => {
-  const root = mkdtempSync(join(tmpdir(), "refusal-owners-tree-"));
-  mkdirSync(join(root, ".github/workflows"), { recursive: true });
-  writeFileSync(join(root, "package.json"), packageJson(CORE_HELD_2026_10_13));
-  writeFileSync(join(root, ".github/workflows/release.yml"), "name: release\n");
-  const found = refusalsInTree(root);
-  assert.deepEqual(found.map((refusal) => refusal.where), ['script "gate:core-held"']);
-  assert.deepEqual(ownersOf(found[0].text), [{ repo: CORE, number: OLD_OWNER }]);
 });
 
 const CI_STEP_NAME = "Every owner a refusal names is an open issue";
