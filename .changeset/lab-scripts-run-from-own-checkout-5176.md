@@ -1,5 +1,0 @@
----
-"@a11ign/lab": patch
----
-
-The lab's scripts and sources no longer import the core by a relative path (a11ign/a11ign#5176, epic #4425 done-when 3). Twelve files reached `../../../scripts/…` and `../../../control/src/…`, which resolved only while the core laid the lab under its `packages/`; nothing lays it since a11ign/a11ign#5087, so each failed with `ERR_MODULE_NOT_FOUND` from the lab's own checkout. `pnpmCliInvocation` is imported from `@a11ign/toolchain/lib/npm-cli-executable` (seven files), `probeWorker`, `wakeFleet` and `layerRoot` from `@a11ign/control/fleet-wake` and `/layer-checkouts` (four files), and `scripts/tool-source.ts` resolves the tool itself (`$AGENT_ORG_TOOL`, else a host file) instead of importing the core's `agent-org-newest-tag.ts`. `corpus-release-nightly.ts` runs `corpus-release.ts` by the path of its own directory rather than `pnpm run corpus:release` in whatever directory the unit started in. `src/packaging/no-relative-core-imports.test.ts` refuses a non-test file whose relative specifier resolves outside the lab, with a negative control for each direction.
