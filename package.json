@@ -99,7 +99,7 @@
     "@a11ign/control": "0.1.0",
     "@a11ign/toolchain": "0.10.2",
     "@changesets/cli": "3.0.3",
-    "@guidepup/guidepup": "0.35.0",
+    "@guidepup/guidepup": "0.36.3",
     "@rstest/core": "^0.12.3",
     "@rstest/coverage-v8": "^0.12.3",
     "@types/node": "^26.6.4",
