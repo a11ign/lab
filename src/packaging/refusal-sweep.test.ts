@@ -17,7 +17,6 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const WORKFLOWS_DIR = join(REPO_ROOT, ".github", "workflows");
@@ -84,7 +83,10 @@ function hitsIn(sources: { file: string; text: string }[]): string[] {
 
 // ---- the accounting ----------------------------------------------------------------------------------------------
 
-/** `file:phrase` -> the gate cause that wakes that session for it. A refusal on this list has an owner the org WILL wake. */
+/**
+ * `file:phrase` -> the gate cause that wakes that session for it. A refusal on this list has an owner the org WILL wake. That a cause is one the gate declares
+ * was read from the tool's `cause-declaration.mjs` until A11-180 took the tool out of this repository's tests; the list is empty, so nothing is unchecked yet.
+ */
 const MAPPED_TO_A_CAUSE: Record<string, string> = {};
 /**
  * SHRINK-ONLY: `file:phrase` -> why no delivery is owed. Adding one is a decision, and `EXEMPT_CEILING` is pinned to this
@@ -103,16 +105,6 @@ function unaccounted(hits: string[], keys: string[]): string[] {
 /** What is wrong with an exemption map: a reason too short to be one. */
 function reasonProblems(exempt: Record<string, string>): string[] {
   return Object.entries(exempt).filter(([, why]) => why.trim().length <= 20).map(([key]) => `${key} needs a reason`);
-}
-
-/**
- * What is wrong with a mapping: a cause the gate does not declare. READ AS TEXT from `cause-declaration.mjs` in the installed
- * tool (reached by path), never imported.
- */
-const DECLARED_CAUSES_SOURCE = readFileSync(toolPath("src/cause-declaration.mjs"), "utf8");
-function causeProblems(mapped: Record<string, string>): string[] {
-  return Object.entries(mapped).filter(([, cause]) => !DECLARED_CAUSES_SOURCE.includes(`"${cause}"`))
-    .map(([key, cause]) => `${key} -> ${cause} is not a declared cause`);
 }
 
 // ---- the positive controls ---------------------------------------------------------------------------------------
@@ -176,13 +168,10 @@ test("#2940 sweep: a planted new \"Tell `product-manager` ...\" in a tool file m
     "an exemption for a DIFFERENT file does not cover it");
 });
 
-test("#2940 sweep: an exemption with no reason is refused, and a mapping to an undeclared cause is refused", () => {
+test("#2940 sweep: an exemption with no reason is refused", () => {
   assert.deepEqual(reasonProblems({ "a.mjs:tell ceo": "" }), ["a.mjs:tell ceo needs a reason"]);
   assert.deepEqual(reasonProblems({ "a.mjs:tell ceo": "too short" }), ["a.mjs:tell ceo needs a reason"]);
   assert.deepEqual(reasonProblems(EXEMPT_WITH_A_REASON), [], "the real list passes the check the planted ones fail");
-  assert.deepEqual(causeProblems({ "a.mjs:tell ceo": "no-such-cause" }), ["a.mjs:tell ceo -> no-such-cause is not a declared cause"]);
-  assert.deepEqual(causeProblems({ "a.mjs:tell ceo": "closes-unresolved-repo-wide" }), [], "the control: a real cause is accepted");
-  assert.deepEqual(causeProblems(MAPPED_TO_A_CAUSE), []);
 });
 
 test("#2940 sweep: the exemption ceiling only moves down, because it is pinned to the list and not above it", () => {

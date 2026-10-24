@@ -289,6 +289,8 @@ const RESERVED_BY_A_ROW: readonly RegExp[] = [
   /^packages\/lab\/src\/packaging\/(work-gate)\.test\.ts$/,
   // a11ign#5435 RETIRES these two cross-repo guards with the rest of the copied-core guards (a11ign#4425 phase 3): their Regions still name them.
   /^packages\/lab\/src\/packaging\/(control-plane-checkout-is-one-fact|repo-identity-consolidated)\.test\.ts$/,
+  // A11-180 DELETES the lab tests that loaded a11ign/agent-org's internal modules (the old GitHub-row org), so the Regions that filed these two no longer find them on disk. Listed by name: a misspelt path is still refused.
+  /^packages\/lab\/src\/packaging\/(arm-pr|row-claim)\.test\.ts$/,
 ];
 
 /** The paths each appendix entry's Region lists: the lines of the FIRST fenced block under its `## Region`. */

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { checkLayout, checkLayoutTree } from "@a11ign/toolchain/layout-check";
+import { parse as parseYaml } from "yaml";
 import { workflowCode } from "./workflow-code.ts";
 
 const ci = workflowCode("ci.yml");
@@ -92,15 +93,52 @@ test("the fleet and the worker are laid AFTER the install and the build, and BEF
   assert.ok(lay > ci.indexOf("git clone --quiet --depth 1 --branch \"$CONTROL_REF\""), "after control, so the three layers are laid in one order");
 });
 
-test("the tool is resolved at the newest release tag by the core's resolver, with no tag held here (a11ign/a11ign#4427)", () => {
-  const resolve = 'node scripts/agent-org-newest-tag.ts --dest="$RUNNER_TEMP/agent-org"';
-  const step = ci.indexOf(resolve);
-  assert.ok(step > 0, "positive control: the resolver step is found");
-  assert.ok(step < ci.indexOf("pnpm exec eslint"), "resolved before the lint");
-  assert.ok(step < ci.indexOf("pnpm exec rstest run"), "resolved before the tests");
-  assert.doesNotMatch(ci, /AGENT_ORG_PIN/, "no pin: the newest tag is what the tests read the tool at");
+test("ci.yml resolves no agent-org: no clone, no newest-tag step, no tool variable, and no release tag written in the code (A11-180)", () => {
+  // The tool was cloned at its NEWEST release tag for the legs that tested agent-org's internal modules, so every agent-org release could turn a lab pull request red with no lab change (lab#149, v0.284.0).
+  assert.doesNotMatch(ci, /agent-org-newest-tag/, "the core's resolver is not run");
+  assert.doesNotMatch(ci, /AGENT_ORG_TOOL/, "and nothing exports where the tool is");
+  assert.doesNotMatch(ci, /a11ign\/agent-org/, "and agent-org is not a checkout or a clone");
+  assert.doesNotMatch(ci, /AGENT_ORG_PIN/, "no pin of it either");
   // `CONTROL_REF`, `FLEET_REF` and `WORKER_REF` are the release tags written here, each the layer's own and pinned by the tests around this one; their lines are dropped so this still reads every other place a tag could hide.
   assert.doesNotMatch(ci.replace(/^ {2}(?:CONTROL|FLEET|WORKER)_REF: .*$/gm, ""), /\bv\d+\.\d+\.\d+\b/, "and no release tag is written in the code");
+});
+
+type Ci = { on: Record<string, unknown>; jobs: Record<string, { name?: string; "continue-on-error"?: unknown; strategy?: unknown; needs?: string[]; steps?: Array<{ name?: string; run?: string; if?: string }> }> };
+const doc = parseYaml(ci) as Ci;
+
+test("`checks` is ONE job: no matrix and no `continue-on-error`, so a red test is a red `gate` (A11-180)", () => {
+  const checks = doc.jobs.checks;
+  assert.ok(checks, "positive control: the job is found");
+  assert.equal(checks.strategy, undefined, "no matrix: there is no second leg to select tests for");
+  assert.equal(checks["continue-on-error"], undefined, "and no job that may fail where `gate` cannot see it");
+  assert.equal(checks.name, undefined, "so the check is called `checks`, the job id, and no `checks (<scope>)` is left for a reader to look for");
+  assert.deepEqual(Object.entries(doc.jobs).filter(([, job]) => job["continue-on-error"] !== undefined).map(([id]) => id), [], "and no job in the file is excused its failure");
+  assert.doesNotMatch(ci, /matrix\./, "nothing reads a matrix");
+});
+
+test("the tests run every test file of the laid package, by one include, and the lab's lint and typecheck run unconditionally (A11-180)", () => {
+  const steps = doc.jobs.checks.steps ?? [];
+  const tests = steps.filter((step) => /pnpm exec rstest run/.test(step.run ?? ""));
+  assert.equal(tests.length, 1, "one step runs the tests");
+  assert.match(tests[0].run!, /--include 'packages\/lab\/\*\*\/\*\.test\.ts'/, "all of the lab's tests: none is selected out for a moving tree");
+  assert.equal(tests[0].if, undefined);
+  assert.doesNotMatch(tests[0].run!, /--exclude|--scope|selection/, "and none is left out");
+  // The lab's lint and typecheck were `own`-leg only, because a failure in the leg of tests that read another repository would say nothing about those tests. There is one leg now.
+  for (const command of ["pnpm exec eslint --no-ignore packages/lab", "pnpm exec tsc -p packages/lab/tsconfig.json --noEmit"]) {
+    const step = steps.find((candidate) => candidate.run === command);
+    assert.ok(step, `${command} is a step`);
+    assert.equal(step.if, undefined, `${command} has no condition`);
+  }
+});
+
+test("ci.yml also runs on push to main and nightly, and `gate` waits for `checks` and reads its result (A11-180)", () => {
+  assert.match(ci, /^ {2}push:\n {4}branches: \[main\]$/m);
+  assert.match(ci, /^ {2}schedule:\n {4}- cron: "[^"]+"$/m);
+  assert.deepEqual(doc.jobs.gate.needs, ["changeset", "checks", "release-dry-run", "refusalOwners"], "the required check waits for `checks`, for the release dry run (a11ign/a11ign#5063) and for the refusal-owner read (a11ign/a11ign#5351)");
+  assert.match(ci, /"\$\{\{ needs\.checks\.result \}\}" != "success"/, "`gate` reads the result of `checks`: a job a gate needs and never reads is excused by its own failure");
+  assert.match(ci, /"\$\{\{ needs\.release-dry-run\.result \}\}" != "success"/, "`gate` reads the dry run's result, not only waits for it");
+  assert.match(ci, /"\$\{\{ needs\.refusalOwners\.result \}\}" != "success"/, "`gate` reads the refusal-owner job's result too, and a skip does not pass (a11ign/a11ign#5351)");
+  for (const need of doc.jobs.gate.needs ?? []) assert.ok(doc.jobs[need], `${need} is a job of this file`);
 });
 
 test("this repository's package replaces the core's own AFTER the install and the build, and before anything reads it", () => {
@@ -133,9 +171,7 @@ test("the lab is linted with the ignore removed, and typechecked by its own prog
   assert.match(ci, /pnpm exec eslint --no-ignore packages\/lab\n/);
   assert.doesNotMatch(ci, /pnpm exec tsc --noEmit\n {8}working-directory: core/);
   // The lab's own program, run in the core, after the lab is laid (a11ign/a11ign#3927): the core's excludes `packages/lab`, so only this one reads the lab's `src`.
-  // Both run in the `own` leg only: the cross-repo leg is the tests, and a lint or type failure there would say nothing about the tests it reads.
-  assert.match(ci, /pnpm exec eslint --no-ignore packages\/lab\n {8}if: matrix\.scope == 'own'\n/);
-  const typecheck = ci.indexOf("pnpm exec tsc -p packages/lab/tsconfig.json --noEmit\n        if: matrix.scope == 'own'\n        working-directory: core");
+  const typecheck = ci.indexOf("pnpm exec tsc -p packages/lab/tsconfig.json --noEmit\n        working-directory: core");
   assert.ok(typecheck > ci.indexOf("cp -R ../lab/. packages/lab"), "the lab's typecheck runs after it is laid");
   assert.ok(typecheck < ci.indexOf("pnpm exec rstest run"), "and before the tests, so a type failure reads red without waiting for the suite");
 });

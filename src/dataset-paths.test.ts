@@ -130,9 +130,6 @@ const EXEMPT: Record<string, string> = {
     + "a fixture path under a temp root this test plants, not a read of the real corpus. (promote-model.ts "
     + "itself is not in this list: it uses A11Y_PROMOTE_ROOT, which this scan does not look for, and its "
     + "one bare \"runs\" has no trailing slash, so it never matches the signature in the first place.)",
-  "packages/lab/src/packaging/row-claim.test.ts":
-    "#1373: the same planted fixture records `prune-worktrees.test.ts` planted (now in a11ign/agent-org), for row-claim decline's remover "
-    + "(removeClaimedWorktree), inside a temp repository's linked worktree -- never the dataset's runs root.",
   "packages/lab/scripts/lab-inventory.ts":
     "The runs/ literal is inside a human-readable report line (\"no runs/model-* to speak of\") describing "
     + "what was NOT found, not a path this file resolves -- RUNS itself already comes from runsRoot().",
@@ -178,10 +175,6 @@ const EXEMPT: Record<string, string> = {
     "a11ign/a11ign#5400: laid since CONTROL_REF moved to v0.13.15. The identical shape, one file over -- ADR 0012's @a11ign/control cannot import "
     + "@a11ign/lab, and `RESULT_PATH` (runs/fleet-converge-last-run.json) is the one result a converge run writes for its caller, as "
     + "runs/fleet-wake-proof.json is, not a dataset root this module owns.",
-  "packages/lab/src/packaging/acceptance-check-at-filing.test.ts":
-    "#1973: the same literals, as the expected VALUES the refusal above must name -- a test that read "
-    + "them from dataset-paths.mjs would be asserting the checker against its own source and could not "
-    + "fail. They are pinned against lab-fetch.yml instead, which is the file that actually decides them.",
 };
 
 test("the discovery walk finds a realistic slice of the repo's own source", () => {

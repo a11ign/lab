@@ -1,4 +1,4 @@
-// no-token: gh -- reads docs/mutant-replay.md and pr-open.mjs as text; nothing spawns and nothing reaches GitHub
+// no-token: gh -- reads docs/mutant-replay.md as text; nothing spawns and nothing reaches GitHub
 /**
  * #2415: THE REPLAY RECORD AND THE CODE CANNOT DISAGREE.
  *
@@ -9,13 +9,13 @@
  *   1. the record NAMES all three PRs at the commits the reviewer refused, quoting the path the reviewer named, and says for
  *      each whether a survivor covered it and which operators found it (operators that exist in `OPERATORS`);
  *   2. its verdict is `SHIP` exactly when at least 2 of the 3 were found;
- *   3. the wiring in `pr-open.mjs` is present exactly when the verdict is `SHIP`, and the generator is registered as an
- *      npm script only then (`ceo`: unwired means unwired).
+ *   3. the generator is registered as an npm script only when the verdict is `SHIP` (`ceo`: unwired means unwired). The wiring in the tool's `pr-open.mjs`
+ *      was read here too until A11-180: that file is agent-org's, and this repository no longer loads agent-org.
  *
  * A HALF is not a find: `Found:` is `yes`, `half` or `no`, and only `yes` counts. The strict reading is `ceo`'s, because
  * the looser one (file, line and kind) lets the author of the operators decide what counts as found.
  *
- * Both directions of (2) and (3) are checked by `verdictFor` and `wiredIn` against fixtures, because a check that
+ * Both directions of (2) and (3) are checked by `verdictFor` and `registeredIn` against fixtures, because a check that
  * has only ever read the one record in the tree has only ever been shown to agree with it.
  */
 import { test } from "node:test";
@@ -23,11 +23,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { OPERATORS } from "../../../guards/src/mutant-survivors.ts";
-import { toolPath } from "../../scripts/tool-source.ts";
 
 const REPO = join(import.meta.dirname, "../../../..");
 const RECORD = readFileSync(join(REPO, "docs/mutant-replay.md"), "utf8");
-const PR_OPEN = readFileSync(toolPath("src/pr-open.mjs"), "utf8");
 
 /** The three refusals the row names, at the commits the reviewer refused (2026-09-24). */
 const REFUSED: Record<string, string> = { "2384": "9eee4fdb", "2368": "011da083", "2392": "0c929352" };
@@ -59,9 +57,6 @@ function verdictOf(text: string): "SHIP" | "NULL RESULT" | null {
 
 /** What the verdict MUST be for a count of paths found. */
 const verdictFor = (found: number) => (found >= MIN_FOUND ? "SHIP" : "NULL RESULT");
-
-/** Whether `pr-open.mjs`, as text, imports the generator. */
-const wiredIn = (source: string) => /mutant-survivors\.mjs|A11Y_SURVIVORS_BUDGET|## Survivors/.test(source);
 
 /** Whether a `package.json` registers the generator as a script. */
 const registeredIn = (packageJson: string) => Object.values(JSON.parse(packageJson).scripts ?? {}).some((c) => /mutant-survivors/.test(String(c)));
@@ -97,10 +92,6 @@ test("each replay says whether a survivor covered the path, and a `yes` names th
 test("the verdict is SHIP only when at least 2 of the 3 were found, and the stated count is the counted one", () => {
   assert.equal(verdictOf(RECORD), verdictFor(found), `${found} of 3 found`);
   assert.match(RECORD, new RegExp(`^Found: ${found} of 3\\b`, "m"));
-});
-
-test("the wiring in pr-open.mjs is present exactly when the verdict is SHIP", () => {
-  assert.equal(wiredIn(PR_OPEN), verdictOf(RECORD) === "SHIP");
 });
 
 test("the generator is an npm script only when the verdict is SHIP (the root package.json is the one that registers scripts)", () => {
@@ -155,13 +146,6 @@ test("a half is read as a half and is not counted: two exact plus a half is 2, o
   assert.equal(half.filter((r) => r.found === "yes").length, 1);
   assert.equal(verdictFor(half.filter((r) => r.found === "yes").length), "NULL RESULT");
   assert.equal(replaysIn(fixture("SHIP", ["yes", "half", "yes"])).filter((r) => r.found === "yes").length, 2);
-});
-
-test("wiredIn sees the import, the budget variable and the section heading, and none of them in a source without them", () => {
-  assert.equal(wiredIn('import { survivorsFor } from "../../guards/src/mutant-survivors.mjs";'), true);
-  assert.equal(wiredIn("const budget = env.A11Y_SURVIVORS_BUDGET;"), true);
-  assert.equal(wiredIn("body + '\\n\\n## Survivors\\n'"), true);
-  assert.equal(wiredIn('import { sandboxGitEnv } from "../../guards/src/git-env.ts";'), false);
 });
 
 test("registeredIn sees a script that runs the generator, and not one that does not", () => {
