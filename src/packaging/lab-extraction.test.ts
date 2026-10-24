@@ -14,7 +14,7 @@
  *      one `checkout-path` edge to a path the core does not have, are each REFUSED.
  *   4. (Retired by #3904.) The edges INTO lab were the delete's (#3505); the delete is done, and the core's guard cannot see an edge into a package that is laid, untracked,
  *      and not there. The lab's own baseline holds the edges FROM lab only.
- *   5. The tree-wide guards, by count: the ones inside `packages/lab` move, the ones outside stay and are still discovered when lab is absent.
+ *   5. (Retired by A11-180.) The tree-wide guards, by count, were counted with the core's `tree-wide-guards.ts`, which loads a11ign/agent-org; this repository's tests no longer load agent-org.
  *   6. The first commit's leak scan: the TREE carries nothing `scripts/history-purge-replacements.txt` would redact and no credential shape, and the
  *      package's history carries neither once the cut's `--replace-text` and `--replace-message` have run (it does need both: 10 diff lines and 7
  *      message lines, each with a positive control). THE CONTROL: an internal address and a token each REFUSE, and the cut removes the first only.
@@ -31,7 +31,6 @@ import { tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
-import { treeWideGuardFiles } from "../../../guards/src/tree-wide-guards.ts";
 import { applyReplacementRules, parseReplacementRules } from "../../../../scripts/history-purge-rehearsal.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -172,14 +171,16 @@ test("the baseline gives no edge to #2703: every edge out of lab is decided", ()
   assert.deepEqual(undecided(baseline), []);
   // Was 600 over 620 edges; the tests that read the tool now import scripts/tool-source.ts instead of the core's agent-org-newest-tag.mjs (a11ign/a11ign#4427), which leaves 590, so the floor is 500.
   // Then 540: a11ign/a11ign#5435 retired the 110 cross-repo guards that read the core's tree, and their 110 edges went with them, so the floor is 400.
-  assert.ok(outOfLab(baseline).length > 400, "too few edges out of lab read: the baseline was read wrongly");
+  // Then 376: A11-180 deleted the tests that loaded agent-org, and their 52 edges went with them, so the floor is 300.
+  assert.ok(outOfLab(baseline).length > 300, "too few edges out of lab read: the baseline was read wrongly");
 });
 
 test("every checkout-path edge out of lab names a path the core has, so laying the core beside lab resolves it", () => {
   const baseline = outOfLab(baselineOf(REPO_ROOT));
   // Was 513 of 592: the 56 edges to the eight modules the core deleted and the toolchain publishes (`@a11ign/toolchain/lib/*`) left the baseline with the swap (a11ign/a11ign#4822), which leaves 457, so the floor is 400.
   // Then 454 of 540, and 356 of 430 once a11ign/a11ign#5435 retired the 110 cross-repo guards and their edges: the floor is 300.
-  assert.ok(baseline.filter((e) => e.disposition === "checkout-path").length > 300, "too few checkout-path edges: this row's decision was not read");
+  // Then 306 of 376 once A11-180 deleted the tests that loaded agent-org: the floor is 250.
+  assert.ok(baseline.filter((e) => e.disposition === "checkout-path").length > 250, "too few checkout-path edges: this row's decision was not read");
   assert.deepEqual(unresolvable(baseline, coreHas), []);
 });
 
@@ -187,42 +188,6 @@ test("control: an edge still owned by #2703 and a checkout-path edge to a path t
   const baseline = [edge({}), edge({ to: "scripts/gone.mjs" }), edge({ disposition: THIS_ROW, to: "scripts/y.mjs" })];
   assert.deepEqual(undecided(baseline), [`${LAB}/src/a.test.ts -> scripts/y.mjs`]);
   assert.deepEqual(unresolvable(baseline, (path) => path === "scripts/x.mjs"), [`${LAB}/src/a.test.ts -> scripts/gone.mjs`]);
-});
-
-// ---- 5. the tree-wide guards, by count ---------------------------------------------------------------------
-
-const inLab = (path: string) => path.startsWith(`${LAB}/`);
-const trackedTests = (): string[] => execFileSync("git", ["ls-files", "*.test.ts"], { cwd: REPO_ROOT, encoding: "utf8", env: sandboxGitEnv() }).split("\n").filter(Boolean);
-
-/** The guards a population over `tracked` finds. `lsFiles` is the seam `treeWideGuardFiles` offers: the discovery is the product's own. */
-const guardsOver = (tracked: string[]) => treeWideGuardFiles({ lsFiles: () => tracked.join("\n") });
-
-test("the tree-wide guards outside lab are found without lab present, and the ones inside it are exactly what leaves", () => {
-  const tracked = trackedTests();
-  const all = guardsOver(tracked);
-  const stay = guardsOver(tracked.filter((path) => !inLab(path)));
-  const move = guardsOver(tracked.filter(inLab));
-  assert.ok(move.length > 15, `only ${move.length} tree-wide guards inside lab: the population was read wrongly`);
-  assert.ok(stay.length > 0, "no tree-wide guard outside lab: the product would be left with none");
-  assert.deepEqual(stay, all.filter((path) => !inLab(path)));
-  assert.deepEqual([...stay, ...move].sort(), all);
-  assert.deepEqual(stay.filter(inLab), []);
-});
-
-test("control: a guard inside lab is counted as leaving, one outside as staying, and a file that never calls the marker as neither", () => {
-  // The discoverer reads the marker's import off the comment-stripped source since #4718, so each fixture spells it; `imports` resolves nothing here.
-  const marker = 'import { declareTreeWideGuard } from "@a11ign/toolchain/lib/tree-wide-guard";\n';
-  const files: Record<string, string> = {
-    [`${LAB}/src/a.test.ts`]: `${marker}declareTreeWideGuard();\n`,
-    "packages/judge/src/b.test.ts": `${marker}declareTreeWideGuard();\n`,
-    [`${LAB}/src/c.test.ts`]: `${marker}// declareTreeWideGuard();\n`,
-  };
-  const found = (tracked: string[]) => treeWideGuardFiles({
-    lsFiles: () => tracked.join("\n"), readFile: (path) => files[path], imports: () => [],
-  });
-  const tracked = Object.keys(files);
-  assert.deepEqual(found(tracked.filter(inLab)), [`${LAB}/src/a.test.ts`]);
-  assert.deepEqual(found(tracked.filter((path) => !inLab(path))), ["packages/judge/src/b.test.ts"]);
 });
 
 // ---- 6. the first commit's leak scan ----------------------------------------------------------------------

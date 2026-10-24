@@ -7,6 +7,8 @@ import { parse as parseYaml } from "yaml";
 import { workflowCode } from "./workflow-code.ts";
 
 const ci = workflowCode("ci.yml");
+type Ci = { jobs: Record<string, { name?: string; "continue-on-error"?: unknown; strategy?: unknown; needs?: string[]; steps?: Array<{ name?: string; run?: string; if?: string }> }> };
+const doc = parseYaml(ci) as Ci;
 
 test("the job the protection requires exists, named `gate`, and runs on the queue's branches too", () => {
   assert.match(ci, /^ {2}gate:$/m);
@@ -102,9 +104,6 @@ test("ci.yml resolves no agent-org: no clone, no newest-tag step, no tool variab
   // `CONTROL_REF`, `FLEET_REF` and `WORKER_REF` are the release tags written here, each the layer's own and pinned by the tests around this one; their lines are dropped so this still reads every other place a tag could hide.
   assert.doesNotMatch(ci.replace(/^ {2}(?:CONTROL|FLEET|WORKER)_REF: .*$/gm, ""), /\bv\d+\.\d+\.\d+\b/, "and no release tag is written in the code");
 });
-
-type Ci = { on: Record<string, unknown>; jobs: Record<string, { name?: string; "continue-on-error"?: unknown; strategy?: unknown; needs?: string[]; steps?: Array<{ name?: string; run?: string; if?: string }> }> };
-const doc = parseYaml(ci) as Ci;
 
 test("`checks` is ONE job: no matrix and no `continue-on-error`, so a red test is a red `gate` (A11-180)", () => {
   const checks = doc.jobs.checks;

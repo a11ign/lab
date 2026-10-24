@@ -105,12 +105,10 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   // gate at all", a positive control for the walk; the verdict is the equality after it (`deepEqual(offenders,
   // [])`) on the catalogue's `--local` flags.
   "lab-job-catalogue-scripts.test.ts: dispatching.length",
-  // #2703, and both are PRECONDITIONS rather than stand-ins: the tree's file count and the number of
-  // tree-wide guards inside lab change with every row, so there is no right number to assert. Each floor
-  // answers only "did the walk read a population at all"; the verdicts are the equalities after them
-  // (`deepEqual(stay, all.filter(...))`, `deepEqual(…treeRefusals…, [])`), each with its own control.
+  // #2703: a PRECONDITION rather than a stand-in: the tree's file count changes with every row, so there is no right number to assert. The floor
+  // answers only "did the walk read a population at all"; the verdict is the equality after it (`deepEqual(…treeRefusals…, [])`), with its own control.
+  // (A second entry here counted the tree-wide guards inside lab; A11-180 retired that test with the core's `tree-wide-guards.ts`, which loads agent-org.)
   "lab-extraction.test.ts: files.length",
-  "lab-extraction.test.ts: move.length",
   "licence-boundary.test.ts: obliged.length",
   "local-import-closure.test.ts: files.length",
   "npm-cli-windows-spawn.test.ts: files.length",
@@ -126,7 +124,6 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "tracker-writer-population.test.ts: examined",
   "tracker-writer-population.test.ts: sending.length",
   "tree-wide-guard-walk.test.ts: found.length",
-  "tree-wide-guards.test.ts: files.length",
   "user-facing-docs-file-facts.test.ts: names.length",
   "workflow-commands.test.ts: seen.length",
   "workflow-path-coverage.test.ts: sourceDirectories().length",

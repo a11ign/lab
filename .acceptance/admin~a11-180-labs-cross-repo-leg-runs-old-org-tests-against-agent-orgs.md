@@ -1,8 +1,8 @@
 Closes A11-180
 
-Retires lab's `checks (cross-repo)` leg and what read it. `ci.yml` has one `checks` job (no matrix, no `continue-on-error`, no agent-org clone), and `gate` still needs it. The tests that loaded agent-org's internal modules are deleted, not ported: 22 whole files, and the cases in 9 more that read agent-org (the pull request body lists each). `scripts/cross-repo-tests.ts` and its test are deleted. `auto-arm.yml` is kept, because it still arms lab pull requests (lab#141, armed by `octo-sts[bot]` on 2026-10-23), and loses the cross-repo refusal and the `Cross-repo-red:` exit, so a pull request is armed with no row and no ticket key. `auto-arm.sts.yaml` drops `actions: read`.
+Retires lab's `checks (cross-repo)` leg and what read it. `ci.yml` has one `checks` job (no matrix, no `continue-on-error`, no agent-org clone), and `gate` still needs it. The tests that loaded agent-org's internal modules are deleted, not ported: 33 whole files, and the cases in 10 more that read agent-org, directly or through the core's scripts (the pull request body lists each). `scripts/cross-repo-tests.ts` and its test are deleted. `auto-arm.yml` is kept, because it still arms lab pull requests (lab#141, armed by `octo-sts[bot]` on 2026-10-23), and loses the cross-repo refusal and the `Cross-repo-red:` exit, so a pull request is armed with no row and no ticket key. `auto-arm.sts.yaml` drops `actions: read`.
 
-Acceptance: the removed leg, selector, refusal and grant are gone from the tree, no test loads the tool, and the composition tests that pin this pass.
+Acceptance: the removed leg, selector, refusal and grant are gone from the tree, no test loads the tool, and the composition tests that pin this pass. The whole suite also passes with the tool nowhere (`$AGENT_ORG_TOOL` unset and the core's `.agent-org/host.json` naming no existing `tool`), which is what a runner has; the pull request body gives the run.
 
 ```bash
 set -e
