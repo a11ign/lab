@@ -15,7 +15,8 @@
 # such a pull request merges and puts `main` red (lab#92 on 2026-10-12: the leg `failure` on its head, the newest push run's `success`, merged
 # anyway). a11ign/agent-org#1045 refuses that in agent-org's own arming doors, and this repository arms through neither, so the same rule is here,
 # as a smaller shell form of its `crossRepoRedVerdict`: the head's leg is `failure` AND it fails a test FILE the newest completed push run of
-# `ci.yml` on `main` did not. `Cross-repo-red: #n` or `owner/repo#n` in the body, naming an OPEN row, is the exit. A trunk leg that is red too is
+# `ci.yml` on `main` did not. `Cross-repo-red: <ticket>` in the body, naming the Linear ticket that greens the leg (`A11-123`), is the exit; it is read by its shape and no tracker is asked,
+# because CI holds no Linear credential (A11-127: rows live in Linear, and the GitHub copies a row's `#n` named are closed). A trunk leg that is red too is
 # compared file by file from the two job logs (a11ign/a11ign#5192, which first read it `clear` because the arming token could not read a log),
 # so a pull request adding a second red file to a red `main` is refused and one failing only the file `main` already fails is not. A log that
 # cannot be read, or names no failing file, is `cannot` and leaves the pull request unarmed: it is never an inherited red. The log is the one read
@@ -116,21 +117,17 @@ env:
       printf '%s\n' "$files"
     }
 
-    # 0 when a `Cross-repo-red: #n` / `owner/repo#n` line of the body names an OPEN row; otherwise says why not and returns 1.
-    declared_row_open() {
-      local rows row state why="" row_re='^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#([0-9]+)$'
-      rows=$(printf '%s\n' "$1" | tr -d '\r' | { grep -iE '^[[:space:]]*Cross-repo-red:' || true; } | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
-      [ -n "$rows" ] || { echo "its body carries no \`Cross-repo-red:\` line"; return 1; }
-      while IFS= read -r row; do
-        if [[ "$row" =~ $row_re ]]; then
-          state=$(gh api "repos/${BASH_REMATCH[1]:-$GH_REPO}/issues/${BASH_REMATCH[2]}" --jq .state 2>/dev/null) || state=""
-          [ "$state" = open ] && return 0
-          why="$why; \`$row\` is ${state:-absent or unreadable}, not open"
-        else
-          why="$why; \`$row\` is not \`#n\` or \`owner/repo#n\`"
-        fi
-      done <<<"$rows"
-      echo "its \`Cross-repo-red:\` row does not stand${why}"
+    # 0 when a `Cross-repo-red: <ticket>` line of the body names a ticket key (`A11-123`); otherwise says why not and returns 1. Read by SHAPE: CI holds no Linear
+    # credential, so whether the ticket is open is not asked (A11-127).
+    declared_ticket() {
+      local declarations declared why="" ticket_re='^[A-Z][A-Z0-9]*-[0-9]+$'
+      declarations=$(printf '%s\n' "$1" | tr -d '\r' | { grep -iE '^[[:space:]]*Cross-repo-red:' || true; } | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
+      [ -n "$declarations" ] || { echo "its body carries no \`Cross-repo-red:\` line"; return 1; }
+      while IFS= read -r declared; do
+        [[ "$declared" =~ $ticket_re ]] && return 0
+        why="$why; \`$declared\` is not a ticket key such as \`A11-123\`"
+      done <<<"$declarations"
+      echo "its \`Cross-repo-red:\` line names no ticket${why}"
       return 1
     }
 
@@ -166,7 +163,7 @@ env:
           ;;
         *) echo "cannot|the newest trunk run $trunk read its leg as ${tconclusion:-unfinished}, which says nothing to compare with"; return 0 ;;
       esac
-      if declared=$(declared_row_open "$body"); then echo "clear|-"; return 0; fi
+      if declared=$(declared_ticket "$body"); then echo "clear|-"; return 0; fi
       echo "red|$newly, and $declared"
     }
 
@@ -194,7 +191,7 @@ env:
         clear) return 0 ;;
         red)
           echo "AUTO-ARM: NOT arming #$1 -- its \`$CROSS_LEG\` leg newly fails: $why"
-          post_refusal "$1" "<!-- arm-refused: cross-repo-red -->" "**Not armed.** The \`$CROSS_LEG\` leg of this pull request fails, and $why."$'\n\n'"That leg is \`continue-on-error\`, so \`gate\` reads green and the merge would put \`main\` red. Add a line \`Cross-repo-red: <row>\` to the body naming the OPEN row that greens it (\`#n\`, or \`owner/repo#n\` for a core-side row); editing the body asks again."
+          post_refusal "$1" "<!-- arm-refused: cross-repo-red -->" "**Not armed.** The \`$CROSS_LEG\` leg of this pull request fails, and $why."$'\n\n'"That leg is \`continue-on-error\`, so \`gate\` reads green and the merge would put \`main\` red. Add a line \`Cross-repo-red: <ticket>\` to the body naming the ticket that greens it (a key such as \`A11-123\`); editing the body asks again."
           ;;
         *) echo "AUTO-ARM: leaving #$1 unarmed -- $why" ;;
       esac

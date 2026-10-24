@@ -38,14 +38,15 @@ case "$path" in
     esac
     echo "gh: HTTP 403: Must have admin rights to Repository." >&2; exit 1 ;;
   repos/*/issues/*/comments*) printf '%s' "$COMMENTS" ;;
-  repos/*/issues/*) [ -n "$ROW_STATE" ] && printf '%s' "$ROW_STATE" || exit 1 ;;
+  # The exit names a ticket and is read by its shape: a call for an issue is a regression to the old open-row read, which no row can answer now.
+  repos/*/issues/*) echo "fake gh: the exit must not read an issue: $*" >&2; exit 1 ;;
   *) echo "fake gh: unexpected $*" >&2; exit 1 ;;
 esac
 `;
 
 /** `headLog` and `trunkLog`: the job log of each leg; absent is a log the token cannot read (a 403). */
 type World = { leg?: { status: string; conclusion: string | null }; trunk?: "success" | "failure" | "cancelled" | "none"; trunkLeg?: string;
-  body?: string; row?: string; comments?: string; headLog?: string; trunkLog?: string };
+  body?: string; comments?: string; headLog?: string; trunkLog?: string };
 
 const ESC = String.fromCharCode(27);
 /** A job log as the runner serves it: a timestamp on every line, and rstest painting the directory, the file and the `>` separately. */
@@ -84,7 +85,7 @@ function drive(world: World, script: string): { out: string; posted: string; sta
       CHECKS_JSON: JSON.stringify({ total_count: checks.length, check_runs: checks }),
       RUNS_JSON: JSON.stringify({ workflow_runs: runs }),
       JOBS_JSON: JSON.stringify({ total_count: jobs.length, jobs }),
-      COMMENTS: world.comments ?? "", ROW_STATE: world.row ?? "",
+      COMMENTS: world.comments ?? "",
       ...(world.headLog === undefined ? {} : { HEAD_LOG: world.headLog }),
       ...(world.trunkLog === undefined ? {} : { TRUNK_LOG: world.trunkLog }),
     },
@@ -122,10 +123,10 @@ test("a red trunk leg whose logs cannot be told is `cannot`, never an inherited 
   assert.match(drive({ ...both, headLog: rstestLog([EDGES]), trunkLog: "" }, "cross_repo_verdict 5").out, /^cannot\|.*job 12 names no failing test file/);
 });
 
-test("a file new on a red main is exempt only through an OPEN declared row, as a red on a green main is", () => {
+test("a file new on a red main is exempt only through a declared ticket, as a red on a green main is", () => {
   const world = { ...RED_HEAD, trunk: "failure", trunkLeg: "failure", trunkLog: rstestLog([EDGES]), headLog: rstestLog([EDGES, OTHER]) } as const;
-  assert.equal(verdict({ ...world, body: "Cross-repo-red: a11ign/a11ign#5188", row: "open" }), "clear");
-  assert.equal(verdict({ ...world, body: "Cross-repo-red: a11ign/a11ign#5188", row: "closed" }), "red");
+  assert.equal(verdict({ ...world, body: "Cross-repo-red: A11-123" }), "clear");
+  assert.equal(verdict({ ...world, body: "Cross-repo-red: a11ign/a11ign#5188" }), "red");
 });
 
 test("a leg that is green, skipped or cancelled on the head is clear: only `failure` is a red", () => {
@@ -146,14 +147,18 @@ test("a trunk that cannot be compared with is `cannot`, which is a refusal and n
   assert.equal(verdict({ ...RED_HEAD, trunk: "success", trunkLeg: "cancelled" }), "cannot", "a cancelled trunk leg says nothing to compare with");
 });
 
-test("a `Cross-repo-red:` line names the exit only when its row is OPEN", () => {
+test("a `Cross-repo-red:` line names the exit only when it names a ticket key, read by shape (A11-127)", () => {
   const base = { ...RED_HEAD, trunk: "success", trunkLeg: "success" } as const;
-  assert.equal(verdict({ ...base, body: "Cross-repo-red: a11ign/a11ign#5188", row: "open" }), "clear");
-  assert.equal(verdict({ ...base, body: "Cross-repo-red: #7\r\n", row: "open" }), "clear", "a CRLF body reads the same");
-  assert.equal(verdict({ ...base, body: "Cross-repo-red: a11ign/a11ign#5188", row: "closed" }), "red");
-  assert.equal(verdict({ ...base, body: "Cross-repo-red: a11ign/a11ign#5188", row: "" }), "red", "a row that cannot be read does not stand");
-  assert.equal(verdict({ ...base, body: "Cross-repo-red: soon", row: "open" }), "red", "a malformed declaration is not one");
+  assert.equal(verdict({ ...base, body: "Cross-repo-red: A11-1" }), "clear");
+  assert.equal(verdict({ ...base, body: "Cross-repo-red: NBF-123\r\n" }), "clear", "a CRLF body reads the same");
+  assert.equal(verdict({ ...base, body: "Cross-repo-red: #5" }), "red", "a GitHub row is no exit: rows live in Linear and the copies are closed");
+  assert.equal(verdict({ ...base, body: "Cross-repo-red: a11ign/a11ign#5188" }), "red");
+  assert.equal(verdict({ ...base, body: "Cross-repo-red: soon" }), "red", "a malformed declaration is not one");
+  assert.equal(verdict({ ...base, body: "Cross-repo-red: A11-1 and more" }), "red", "the whole line is the key");
+  assert.equal(verdict({ ...base, body: "Cross-repo-red: a11-1" }), "red", "a key is upper case");
+  assert.equal(verdict({ ...base, body: "no declaration here" }), "red");
   assert.match(drive({ ...base, body: "no declaration here" }, "cross_repo_verdict 5").out, /carries no `Cross-repo-red:` line/);
+  assert.match(drive({ ...base, body: "Cross-repo-red: #5" }, "cross_repo_verdict 5").out, /names no ticket; `#5` is not a ticket key/);
 });
 
 test("a refusal is posted ONCE, leaves the pull request unarmed (exit 1) and says what to add", () => {
@@ -161,7 +166,7 @@ test("a refusal is posted ONCE, leaves the pull request unarmed (exit 1) and say
   const first = drive(base, 'cross_repo_gate 5; echo "rc=$?"');
   assert.match(first.out, /rc=1$/);
   assert.ok(first.posted.includes(MARKER), "the refusal is posted under its marker");
-  assert.match(first.posted, /Cross-repo-red: <row>/);
+  assert.match(first.posted, /Cross-repo-red: <ticket>/);
   const again = drive({ ...base, comments: `earlier\n${MARKER}\nbody` }, 'cross_repo_gate 5; echo "rc=$?"');
   assert.match(again.out, /rc=1$/);
   assert.equal(again.posted, "", "a refusal already on the pull request is not said again");
