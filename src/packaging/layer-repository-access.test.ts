@@ -14,13 +14,13 @@
  * spawns `gh` and this one is a row's Acceptance command, run by a job with no token. Nothing here changes
  * GitHub: the downgrade is an org-admin act, the chairman's (`docs/repository-access.md`).
  *
- * The wrapper and `host-units.mjs` live in `a11ign/agent-org` (the checkout `.agent-org/host.json` names), so they
- * are read as TEXT and edited by nobody here.
+ * The wrapper and `host-units.mjs` live in `a11ign/agent-org`. They were read here as text, from the tool at its newest release, until A11-180: this repository's
+ * tests no longer load agent-org, so that the wrapper names no repository and that `host-units.mjs`'s "write, not admin" sentence agrees with the declaration are
+ * a11ign/agent-org's to hold.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { toolPath } from "../../scripts/tool-source.ts";
 
 const rootFile = (path: string) => readFileSync(new URL(`../../../../${path}`, import.meta.url), "utf8");
 
@@ -119,37 +119,3 @@ test("#3124: the other refusals each fire alone -- a missing role, an unknown ro
 test("#3124: the bots team is declared at `push` on a layer, never admin", () => {
   assert.equal(declaration().teams.bots.layer, "push");
 });
-
-/**
- * The repositories a text NAMES, which is not the issues it CITES: `a11ign/a11ign#4148` in a comment is a pointer to a tracker row (the wrapper's ledger comment cites one
- * since agent-org#741), and a per-repository table is the `owner/repo` with no `#number` after it. The citations are taken out first, because a lookahead on the name alone
- * backtracks to a shorter prefix and still matches.
- */
-function repositoriesNamed(text: string): string[] {
-  return text.replace(/\b[\w.-]+\/[\w.-]+#\d+/g, "").match(/a11ign\/[a-z][\w.-]*/g) ?? [];
-}
-
-test("#3124: the gh wrapper names no repository, and does name accounts (the control that the read saw it)", () => {
-  const wrapper = readFileSync(toolPath("host/gh"), "utf8");
-  assert.match(wrapper, /a11ign-ai-workers/, "positive control: the wrapper is the real file and names accounts");
-  assert.match(wrapper, /a11ign-ai-leads/, "positive control: ...both of the accounts it routes to");
-  assert.deepEqual(repositoriesNamed(wrapper), [], "a repository named in the wrapper is a per-repository table");
-});
-
-test("#3124: the repository reader skips an issue citation and still sees a repository named as a table entry", () => {
-  assert.deepEqual(repositoriesNamed("# see a11ign/a11ign#4148 for why"), [], "a citation of a tracker row is not a repository table");
-  assert.deepEqual(repositoriesNamed('case "$repo" in a11ign/a11ign) token=x ;; esac'), ["a11ign/a11ign"], "positive control: a table entry is seen");
-  assert.deepEqual(repositoriesNamed("a11ign/lab#12 and a11ign/lab"), ["a11ign/lab"], "a citation beside a table entry hides nothing");
-});
-
-test("#3124: host-units.mjs's \"write, not admin\" sentence and the declaration agree about a11ign-ai-leads", () => {
-  const sentences = readFileSync(toolPath("src/host-units.mjs"), "utf8")
-    .split("\n")
-    .filter((line) => line.includes("write, not admin"));
-  assert.ok(sentences.length > 0, "positive control: the sentence is still there to be pinned");
-  const unnamed = sentences.filter((line) => !line.includes("a11ign-ai-leads"));
-  assert.deepEqual(unnamed, [], "each occurrence is about the leads account, which is what the declaration is compared to");
-  const roles = Object.entries(declaration().repositories).map(([repo, held]) => `${repo}:${held["a11ign-ai-leads"]}`);
-  assert.deepEqual(roles.filter((entry) => !entry.endsWith(":write")), [], "the declaration says write, as the sentence does");
-});
-

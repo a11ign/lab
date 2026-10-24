@@ -29,7 +29,7 @@ on:
     types: [opened, synchronize, reopened, edited]
   merge_group:
   # A red lab baseline must be red on `main` the hour it happens, not found by the next pull request (a11ign/a11ign#4588, chairman, 2026-10-09: this file ran on `pull_request` only, lab's last merge
-  # was 13:21Z and nothing noticed that `main` had gone red). `push` is the merge itself; `schedule` is the nightly run, because the tool at its newest tag and the registry move when no commit does.
+  # was 13:21Z and nothing noticed that `main` had gone red). `push` is the merge itself; `schedule` is the nightly run, because the registry moves when no commit does.
   push:
     branches: [main]
   schedule:
@@ -56,7 +56,7 @@ env:
   # Why THIS sha and not core `main`: it is the floor the row names, and each commit after it moves what the lab's tests read (11 more at the time of writing). Measured on the laid layout at this sha, before the pull request's test changes: 3 of 1,660 `own` tests failed and `tsc` had 5 errors.
   CORE_REF: 87d89fdec2c26b9fb3d2e8dd99160ec8c52f9dc1
   # a11ign/a11ign#5400: THE CONTROL THIS REPOSITORY'S TESTS RUN AGAINST, named HERE and no longer by the core. Until now control was laid at whatever tag the core's `layers.json` pinned at `CORE_REF` (v0.5.3), and cut 9 (a11ign/a11ign#5087, 2026-10-12)
-  # deleted that file, so no core commit pins control at or after v0.13.15, where `src/lab-carried.ts` first exists (control#87): a lab test importing it failed `tsc` and took `checks (own)` red (a11ign/a11ign#5379). Moving `CORE_REF` cannot reach it.
+  # deleted that file, so no core commit pins control at or after v0.13.15, where `src/lab-carried.ts` first exists (control#87): a lab test importing it failed `tsc` and took `checks` red (a11ign/a11ign#5379). Moving `CORE_REF` cannot reach it.
   # A TAG of a11ign/control, cloned over the core's laid `packages/control` by the step below: control is private and published nowhere (ADR 0045 item 3, "Control stays private"), so a checkout at a ref is the only way to lay it. The FLOOR is v0.13.15,
   # which `ci-composition.test.ts` pins; raise it in a pull request that runs this job at the new tag, the way `CORE_REF` is raised. Dependabot cannot read it (a ref in an `env` value), so nothing moves it by itself.
   CONTROL_REF: v0.13.15
@@ -82,18 +82,13 @@ jobs:
     with:
       releasable-paths: src/ scripts/ baselines/ rule-ownership.json CLAUDE.md
 
-  # TWO LEGS, ONE JOB (a11ign/a11ign#4588, chairman, 2026-10-09). `own` is the tests that read nothing outside this repository's tree and `cross-repo` is the ones that do (`scripts/cross-repo-tests.ts` says
-  # which, and why): the core's workflows and baselines, and the tool at its newest tag, which move when no lab commit does. A `cross-repo` leg that goes red is reported as its own check and never blocks:
-  # `continue-on-error` makes `needs.checks.result` read `success` when only that leg failed, and `gate`, the one required check, reads that. Its tests are retired one by one under
-  # a11ign/a11ign#4425 phase 3 (published packages, no live reads), and the leg goes with the last of them. Lint and the typecheck run in `own` only: they are about this repository's files.
+  # ONE JOB, AND IT READS NO OTHER REPOSITORY AT A MOVING REF (A11-180). Until then `checks` was two legs (a11ign/a11ign#4588), and the second ran the tests that read the tool, a11ign/agent-org,
+  # at its NEWEST release tag, as a `continue-on-error` leg that `gate` could not see. Those tests exercised the old GitHub-row org through agent-org's internal modules, so every agent-org release could
+  # turn a lab pull request red with no lab change (lab#149: 12 files, 340 tests, against v0.284.0), and a repository that loads another's internals breaks ADR 0045. They are deleted, and the tool is not cloned here.
+  # What is left reads only trees this file pins by sha or tag (`CORE_REF`, `CONTROL_REF`, `FLEET_REF`, `WORKER_REF`), which no pull request elsewhere can move, so all of it is one required job: `gate` waits for it and
+  # a red test is a red `gate`. `ci-composition.test.ts` pins that this file clones no agent-org and has no leg that may fail unseen.
   checks:
-    name: checks (${{ matrix.scope }})
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.scope == 'cross-repo' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        scope: [own, cross-repo]
     steps:
       - uses: actions/checkout@v7
         with: { path: lab }
@@ -178,29 +173,18 @@ jobs:
           mkdir -p packages/lab/node_modules/@a11ign
           ln -s "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain" packages/lab/node_modules/@a11ign/toolchain
         working-directory: core
-      # The core's packaging tests read the TOOL (a11ign/agent-org) by path, and `/home/agent/repos/agent-org` is a host's, not a runner's: the core's own jobs clone it at the newest release tag and export where
-      # (`scripts/agent-org-newest-tag.ts`, #3534; `.mjs` until core #4393 renamed it), which is what this step runs, in the core, where the script lives. Without it 53 test files of `packages/lab/src/packaging` fail on `Cannot find module '/home/agent/repos/agent-org/...'`
-      # (measured on the sync pull request, a11ign/a11ign#3791). It was PINNED to `v0.87.9` from lab#39 until `CORE_REF` moved past a11ign/a11ign#4408, #4409 and #4411 (#4372, #4427).
-      - name: The tool at the newest release tag, cloned for this run, with `agent-org` on PATH (a11ign/a11ign#3534)
-        run: node scripts/agent-org-newest-tag.ts --dest="$RUNNER_TEMP/agent-org"
-        working-directory: core
       # Lint runs before the tests so a style failure reads red without waiting for the suite. `--no-ignore`, because the core's eslint config IGNORES `packages/lab/**` (it is a laid copy of
       # another repository there), and a plain `eslint packages/lab` over an ignored path lints nothing and exits 0.
       - run: pnpm exec eslint --no-ignore packages/lab
-        if: matrix.scope == 'own'
         working-directory: core
       # The core's `tsc --noEmit` is NOT run: its tsconfig excludes `packages/lab` (the laid copy is not the core's to typecheck), so it would check the core and say nothing about the lab. The lab's own
       # program is `packages/lab/tsconfig.json`, which extends the core's and includes the lab's `src`, `scripts`, `nightly` and `tests` (a11ign/a11ign#3927). It lives INSIDE `packages/lab`: a second tsconfig
       # laid at the core's root is a file naming lab's paths, which the layer-edge test reads as a new edge.
       - run: pnpm exec tsc -p packages/lab/tsconfig.json --noEmit
-        if: matrix.scope == 'own'
         working-directory: core
       # The package's tests AND this repository's own (`src/packaging/*.test.ts`: the workflows, the arming filter, the composition above, the .mjs ratchet), which are typechecked by the program above and run here too.
-      # The selection is read into an array, not expanded from a string: `read -ra` splits on spaces and does not glob, so the `**` stays a pattern for rstest to read.
-      - name: The tests of this leg
-        run: |
-          read -ra selection < <(node packages/lab/scripts/cross-repo-tests.ts --scope=${{ matrix.scope }})
-          pnpm exec rstest run --config scripts/rstest/rstest.config.ts "${selection[@]}"
+      - name: The tests
+        run: pnpm exec rstest run --config scripts/rstest/rstest.config.ts --include 'packages/lab/**/*.test.ts'
         working-directory: core
 
   # A PULL REQUEST THAT CHANGES HOW THIS TREE INSTALLS DRY-RUNS THE RELEASE'S VERSION STEP (a11ign/agent-org#888; chairman, a11ign/agent-org#885 class 3 and a11ign/a11ign#4988; this repository's row
@@ -220,7 +204,7 @@ jobs:
   # none the shared workflow's own default is used (`node-version` 22 and `changesets-version` 3.0.3 at the sha `release.yml` pins; pnpm from this manifest's `packageManager`, which the shared workflow
   # reads first and the setup action reads too). A default is a value in ANOTHER repository, so when `release.yml`'s pin moves, re-read those two defaults there and move them in `toolchain` below.
   #
-  # NO SECOND STEP FOR THE CONSUMER'S INSTALL (the pattern's `agent-org-newest-tag` step is agent-org's): a consumer of this repository does not install it. a11ign/a11ign's `scripts/lay-layer.ts` cloned
+  # NO SECOND STEP FOR THE CONSUMER'S INSTALL: a consumer of this repository does not install it. a11ign/a11ign's `scripts/lay-layer.ts` cloned
   # the tag and copied `src`, `scripts`, `baselines`, `rule-ownership.json` and `CLAUDE.md` into the core (`layers.json`'s `lays`) until cut 9 (a11ign/a11ign#5087) deleted it, and an install of this manifest cannot run at all: it names
   # `@a11ign/control` and others no registry holds, and `.npmrc` sets `engine-strict` against npm. A step that installed the clone would be red on every pull request that touches a path above.
   #

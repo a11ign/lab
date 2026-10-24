@@ -12,20 +12,17 @@
  * `permissions` are the token's and not a step's, so what this pins is where the token is HANDED: to one step, with the
  * checkout's own persisted credential switched off so it is not also lying in `.git/config`.
  *
- * Every assertion reads the PARSED workflow. The reading step's shell is RUN against a stub `gh`. The checks are functions
- * taking a workflow, so the same function that passes the real file is shown failing the wiring this row replaced.
+ * Every assertion reads the PARSED workflow. The checks are functions taking a workflow, so the same function that passes the real file is shown failing the
+ * wiring this row replaced. The reading step's shell was also RUN here against a stub `gh` until A11-180: the reader imports `acceptance-commands` from the tool at
+ * its newest release, and this repository's tests no longer load the tool.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { toolRoot } from "../../../../scripts/agent-org-newest-tag.ts";
 
-const EXECUTABLE = 0o755;
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const REAL = readFileSync(join(REPO_ROOT, ".github/workflows/reusable-acceptance.yml"), "utf8");
 
@@ -167,100 +164,4 @@ test("the read moved before the build FAILS, so the window is not the job's setu
   const block = REAL.slice(REAL.indexOf(stepStart), REAL.indexOf(end));
   const moved = REAL.replace(block, "").replace("      - run: pnpm install --frozen-lockfile --ignore-scripts\n", `${block}      - run: pnpm install --frozen-lockfile --ignore-scripts\n`);
   assert.ok(problems(parse(moved)).some((p) => /after the build/.test(p)), JSON.stringify(problems(parse(moved))));
-});
-
-// --- the reading step's own shell, run against a stub `gh` -------------------------------------------------------------
-
-type Outcome = { status: number | null; log: string; output: string };
-
-/**
- * The author the step is run as. Since ADR 0044 the tool hands the live body on only for an exempt author (a dependency bot), and the step passes
- * `PR_AUTHOR` to the reader (a11ign/a11ign#4857), so a test that wants the whole body back must run as one. It is NOT the default: with this author
- * and no `Acceptance:` line the step waits out its re-read loop (18 reads, 5 seconds apart, measured 90.5 s), so a test whose body has none keeps the
- * author out.
- */
-const DEPENDABOT_AUTHOR = { PR_AUTHOR: "dependabot[bot]" };
-
-/** Runs the step's `run:` as bash. The stub answers only the call for THIS pull request, so a wrong endpoint reads as a failure. */
-function readLive({ body, exitCode = 0, env = {} }: { body: string; exitCode?: number; env?: Record<string, string> }): Outcome {
-  const dir = mkdtempSync(join(tmpdir(), "live-body-"));
-  try {
-    const gh = join(dir, "gh");
-    writeFileSync(gh, [
-      "#!/bin/bash",
-      // The step also asks for the labels of each row the body closes (#4138): one `api repos/<repo>/issues/<n>` call per row, answered with none.
-      'case "$1 $2" in "api repos/o/r/pulls/7") ;; "api repos/"*"/issues/"*) printf "[]"; exit 0 ;; *) echo "unexpected: $*" >&2; exit 64 ;; esac',
-      'if [ "$FAKE_EXIT" != 0 ]; then echo "HTTP 502" >&2; exit "$FAKE_EXIT"; fi',
-      'printf "%s" "$FAKE_BODY"',
-    ].join("\n"));
-    chmodSync(gh, EXECUTABLE);
-    const reader = stepsOf(parse(REAL)).find((step) => step.id === "live-body")!;
-    const output = join(dir, "output");
-    writeFileSync(output, "");
-    const host = join(dir, "host.json");
-    writeFileSync(host, JSON.stringify({ primary: "lab", projects: [{ id: "lab", checkout: REPO_ROOT.replace(/\/$/, "") }] }));
-    const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", reader.run!], {
-      encoding: "utf8",
-      // The step asks the tool which source the `Acceptance:` family is read from (ADR 0044), and hands on only the `Closes` line unless the answer is "the
-      // body", which the tool gives for an exempt author alone (`PR_AUTHOR`, `DEPENDABOT_AUTHOR`) and for that author whether or not the diff can be
-      // read. So the step runs in this scratch directory, no checkout and no added file, and what it hands on is decided by the author the test gives it
-      // and not by whether the pull request RUNNING THE TEST adds an acceptance file (every product pull request does). The tool finds its project from
-      // the host file when it is not inside one, so that file names this repository as the project.
-      cwd: dir,
-      // `AGENT_ORG_TOOL` is exported by the step that clones the tool (`agent-org-newest-tag.ts`), and the reader imports `acceptance-commands` from it
-      // to work out which rows the body closes; `node` is found beside the one running this test, which is not always in /usr/bin.
-      env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, AGENT_ORG_TOOL: toolRoot(), AGENT_ORG_HOST: host, GITHUB_OUTPUT: output, REPO: "o/r", PR_NUMBER: "7", FAKE_BODY: body, FAKE_EXIT: String(exitCode), ...env },
-    });
-    return { status: result.status, log: `${result.stdout}${result.stderr}`, output: readFileSync(output, "utf8") };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-/** What a later step sees for `outputs.body`, parsed the way the runner parses a `name<<delimiter` block. */
-function outputBody(output: string): string {
-  const lines = output.split("\n");
-  const [name, delimiter] = lines[0].split("<<");
-  assert.equal(name, "body");
-  const end = lines.indexOf(delimiter, 1);
-  // Since #4138 the step ends by writing the labels of the rows the body closes; that one line is the only thing allowed after the delimiter,
-  // and a body line that ended the value early would show up here as anything else.
-  const after = lines.slice(end + 1).filter((line) => line !== "");
-  assert.equal(after.length, 1, `exactly one output is written after the delimiter: ${JSON.stringify(after)}`);
-  assert.match(after[0], /^row-labels=\{.*\}$/, "and it is the row-labels output");
-  return lines.slice(1, end).join("\n");
-}
-
-const LIVE = "deps: bump tsx\n\nAcceptance:\n```bash\npnpm test\n```\n\nCloses: none — dependency bump";
-
-test("clause 1: the step prints the LIVE body, which differs from the payload's", () => {
-  const payload = "Bumps tsx from 4.22.4 to 4.23.15.";
-  const outcome = readLive({ body: LIVE, env: DEPENDABOT_AUTHOR });
-  assert.equal(outcome.status, 0, outcome.log);
-  assert.equal(outputBody(outcome.output), LIVE);
-  assert.notEqual(outputBody(outcome.output), payload);
-});
-
-test("a body that tries to end the value early or set another output stays one value", () => {
-  // The `Acceptance:` line is what lets a dependency bot's body through the step's re-read loop at once; the lines around it are the attack.
-  const hostile = `first\nEOF\nbody<<EOF\nGITHUB_ENV=pwned\nAcceptance:\nsecond`;
-  const outcome = readLive({ body: hostile, env: DEPENDABOT_AUTHOR });
-  assert.equal(outcome.status, 0, outcome.log);
-  assert.equal(outputBody(outcome.output), hostile);
-});
-
-test("clause 3: a failed read is a refusal that names the reason, and writes no output", () => {
-  const outcome = readLive({ body: LIVE, exitCode: 1 });
-  assert.notEqual(outcome.status, 0);
-  assert.match(outcome.log, /could not read the live body of o\/r#7; refusing to fall back to the event payload's body/);
-  assert.equal(outcome.output, "");
-});
-
-test("clause 3: an empty, null-as-empty or whitespace-only body is a refusal, never a pass", () => {
-  for (const body of ["", "  \n\t\n"]) {
-    const outcome = readLive({ body });
-    assert.notEqual(outcome.status, 0, JSON.stringify(body));
-    assert.match(outcome.log, /is empty; refusing to fall back/);
-    assert.equal(outcome.output, "");
-  }
 });

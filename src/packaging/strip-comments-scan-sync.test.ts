@@ -69,8 +69,8 @@
  * ## Why the offender count can be `0` without an exemption list
  *
  * Three files — `nvda-worker/src/browser-session.mjs`, `nvda-worker/src/powershell.mjs` and
- * `lab/src/packaging/ready-label-audit.test.ts` — still have `//` lines in their stripped output, and all
- * three are CORRECT: the lines are browser JS, C# and a fixture written inside real template literals, so
+ * `lab/src/packaging/ready-label-audit.test.ts` (deleted by A11-180) — still had `//` lines in their stripped output, and all
+ * three were CORRECT: the lines are browser JS, C# and a fixture written inside real template literals, so
  * they are string content and removing them would corrupt the string. Rather than name them in an
  * allowlist that rots, the offender test asks the parser the same question and charges a file only where
  * the two answers DIFFER. A fourth such file is legitimate and silent; a real desync is not.
@@ -175,15 +175,13 @@ test("the walk finds a non-trivial population -- vacuity guard for the scan itse
     + "that figure is a reading at a commit rather than a property of the repository)");
 });
 
-test("the leading-comment counter is not vacuous: real files DO carry comment-shaped lines through, and "
-  + "that is the population the offender test filters", () => {
-  // Without this, `offenders is empty` would also pass if `leadingCommentLines` counted nothing at all.
-  // Three files legitimately carry `//` lines into the stripped output (browser JS, C# and a fixture, each
-  // inside a real template literal) -- a floor of 1, because the point is that the counter counts.
-  const carried = trackedSourceFiles().filter((f) => leadingCommentLines(stripComments(read(f))) > 0);
-  assert.ok(carried.length >= 1,
-    "no tracked file carries a `//` line into the stripped output at all -- the counter is broken, and "
-    + "the offender assertion below would then be passing by counting nothing");
+test("the leading-comment counter is not vacuous: a `//` line inside a template literal is string content, so it is carried through and counted", () => {
+  // Without this, `offenders is empty` would also pass if `leadingCommentLines` counted nothing at all. The tree used to supply the sighted case (browser JS, C# and a fixture,
+  // each inside a real template literal), and A11-180 deleted the last of the lab's own (`ready-label-audit.test.ts`) with the tests that loaded agent-org, so the case is built here.
+  const insideATemplate = "export const page = `\n// browser JS: string content, which removing would corrupt\nrun();\n`;\n";
+  assert.equal(leadingCommentLines(stripComments(insideATemplate)), 1, "the stripper keeps the line, because it is inside a string");
+  assert.equal(leadingCommentLines(commentsRemovedByTheParser("f.ts", insideATemplate)), 1, "and the parser agrees it is not a comment");
+  assert.equal(leadingCommentLines(stripComments("// a real comment\nexport const x = 1;\n")), 0, "while a real comment line is gone: the counter distinguishes the two");
 });
 
 test("MUTATION: the offender comparison CHARGES a scan that left the comment behind", () => {

@@ -20,7 +20,6 @@ import {
   QUALIFICATION_CONTEXT, QUALIFICATION_GATE, qualificationStatus,
 } from "../gates/qualification-status.ts";
 import { exitCodeFor, gateVerdict } from "../gates/verdict.ts";
-import { QUALIFICATION_CONTEXT as READ_CONTEXT } from "../../../../scripts/release-reads-qualification.ts";
 import {
   EXIT, parseArgs, postQualificationStatus, renderResult, requireFullSha,
 } from "../../../control/src/post-qualification-status.ts";
@@ -69,11 +68,6 @@ for (const row of TABLE) {
     assert.ok(payload.description.length <= GITHUB_DESCRIPTION_LIMIT, payload.description);
   });
 }
-
-test("the context is the one the release READS, not a second spelling of it", () => {
-  assert.equal(QUALIFICATION_CONTEXT, READ_CONTEXT);
-  assert.equal(READ_CONTEXT, "qualification", "positive control: the reader's own constant is not empty or renamed");
-});
 
 test("POSITIVE CONTROL: the table reaches success, and ONLY through a PASS reading", () => {
   const successes = TABLE.filter((row) => row.state === "success").map((row) => row.name);

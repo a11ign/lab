@@ -39,10 +39,10 @@ function mints(policy: typeof POLICY, claims: { sub: string; job_workflow_ref: s
     && fullMatch(policy.event_name, claims.event_name);
 }
 
-test("a11ign/a11ign#4199: the policy grants pull-request write, contents write and actions READ, and nothing else (a11ign/a11ign#5192)", () => {
+test("a11ign/a11ign#4199: the policy grants pull-request write and contents write, and nothing else (A11-180 dropped `actions: read`)", () => {
   const permissions = withoutComments(policyText).split("permissions:")[1]!.split("\n").map((l) => l.trim()).filter(Boolean);
-  // `actions: read` is the job log the cross-repo refusal compares file by file; `actions: write` would let the token re-run or cancel runs.
-  assert.deepEqual(permissions, ["pull_requests: write", "contents: write", "actions: read"]);
+  // `actions: read` was the job log the cross-repo refusal compared file by file (a11ign/a11ign#5192), and that refusal is gone; any `actions` grant (`write` would let the token re-run or cancel runs) is refused.
+  assert.deepEqual(permissions, ["pull_requests: write", "contents: write"]);
 });
 
 test("a11ign/a11ign#4199: the policy mints for the runs of main's copy of this workflow and refuses the ones that are not its own", () => {

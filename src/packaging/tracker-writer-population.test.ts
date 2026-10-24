@@ -26,17 +26,15 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { toolExportPath } from "../../../../scripts/agent-org-newest-tag.ts";
 
 import { TRACKER_WRITERS, TRACKER_WRITER_DIRS, sendsABody, bodyFromArgv, assertNoLeakInArgv }
   from "../../../guards/src/leak-patterns.ts";
-import { localImports, stripComments } from "@a11ign/toolchain/lib/local-import-closure";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 // #2975 PR 3: the tool left this tree, and with it ten of the eleven declared writers. The census now covers what the project authors
-// (`scripts/`, `packages/guards/src`), and the guard those writers REACH is the INSTALLED tool's `lib/leak-patterns.mjs` (see below). The same census
-// over the tool's own writers is a11ign/agent-org's to hold, where `tracker-writer-spawn-guard.test.ts` already lives.
+// (`scripts/`, `packages/guards/src`). That each declared writer REACHES the tool's leak guard is not read here: the guard is a file of the tool, and this repository does not
+// load the tool (A11-180). The same census over the tool's own writers is a11ign/agent-org's to hold, where `tracker-writer-spawn-guard.test.ts` already lives.
 
 /**
  * The module that DEFINES what a body-sender looks like (`sendsABody`'s pattern spells `"--body"`), so the census reads it as one. It sends nothing; it is the guard
@@ -53,30 +51,6 @@ const trackedScripts = () =>
     { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
     // #4273/#4274 renamed the core's scripts/ and guards sources to `.ts`, and TRACKER_WRITERS names them so; a `.mjs`-only census walked 46 files and no declared writer.
     .split("\n").filter((f) => /\.(mjs|ts)$/.test(f) && !f.endsWith(".test.ts") && f !== THE_DETECTOR);
-
-// #3534, then #4408: a script here takes the tool by its DECLARED EXPORT (`toolExport("board-data")`; it was `toolModule("src/board-data.mjs")` until #4408 removed that), a call
-// `localImports` does not follow, so `scripts/ci-health.ts` would read as reaching no guard though it reaches the very one it did. The walk follows that one call
-// into the tool, through the file its `exports` names, and the guard is the tool's declared `leak-patterns`.
-const INSTALLED_GUARD = toolExportPath("leak-patterns");
-const importsThroughDependency = (file: string): string[] => [
-  ...localImports(file),
-  ...[...stripComments(readFileSync(file, "utf8")).matchAll(/toolExport\(\s*["']([^"']+)["']/g)]
-    .map((m) => toolExportPath(m[1])),
-];
-
-/** Does `entry`'s local-import closure reach the guard? */
-function reachesGuard(entry: string, deps: { imports?: (f: string) => string[]; guard?: string } = {}) {
-  const imports = deps.imports ?? importsThroughDependency;
-  const guards = deps.guard ? [deps.guard] : [INSTALLED_GUARD];
-  const seen = new Set<string>();
-  const visit = (file: string) => {
-    if (seen.has(file)) return;
-    seen.add(file);
-    for (const next of imports(file)) visit(next);
-  };
-  visit(entry);
-  return guards.some((guard) => seen.has(guard));
-}
 
 /**
  * The walk, as a function of its inputs so it can be driven over a SYNTHETIC tree.
@@ -110,7 +84,8 @@ const realPopulation = () => writerPopulation({
     return hit as string;
   }),
   read: (f) => readFileSync(f, "utf8"),
-  reaches: (entry) => reachesGuard(entry),
+  // Not read from the real tree (see above): `unguarded` is driven over the synthetic tree below.
+  reaches: () => true,
 });
 
 test("#1053: every script that sends a body to GitHub is DECLARED", () => {
@@ -118,13 +93,6 @@ test("#1053: every script that sends a body to GitHub is DECLARED", () => {
   assert.deepEqual(undeclared, [],
     `${examined} scripts walked, ${sending.length} send a body; these are not in TRACKER_WRITERS. Add each `
     + "to that list deliberately — a writer nobody declared is a writer nobody checked");
-});
-
-test("#1053: every DECLARED writer reaches the leak guard through its import closure", () => {
-  const { unguarded } = realPopulation();
-  assert.deepEqual(unguarded, [],
-    "these are declared writers whose closure never reaches `leak-patterns.mjs`, so the body they send is "
-    + "checked by nothing. Guard the SPAWN HELPER they use, not the call site");
 });
 
 test("#1053: the population is real — this cannot pass having walked nothing", () => {

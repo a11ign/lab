@@ -32,9 +32,7 @@ import { execFileSync } from "node:child_process";
 import { sandboxGitEnv } from "../../../guards/src/git-env.ts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { stripComments, localImports } from "@a11ign/toolchain/lib/local-import-closure";
-import { toolRoot } from "../../../../scripts/agent-org-newest-tag.ts";
-import { toolPath } from "../../scripts/tool-source.ts";
+import { stripComments } from "@a11ign/toolchain/lib/local-import-closure";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -72,73 +70,6 @@ test("#1019: a real block comment is still blanked, and OFFSETS ARE PRESERVED", 
   assert.doesNotMatch(stripped, /perfectly ordinary/, "the block comment's text must still be gone");
   assert.match(stripped, /const a = 1;/);
   assert.match(stripped, /const b = 2;/);
-});
-
-test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and one of them is prose", () => {
-  // The real file, pinned rather than a fixture: it is the instance that found this. The point is not the
-  // number, it is the GAP -- exactly one relative specifier in that file is a `//` comment quoting an
-  // import, so the raw source always reads one higher than the truth, and that wrong number sat in #1019's
-  // own open-check until worker-judge counted independently. Pinning the gap instead of the total means
-  // the next import added to `row-claim.mjs` does not falsify a test that was never about the total.
-  //
-  // (#1014 added the thirteenth import and this assertion caught it, which is the test working. It was
-  // an exact `12` then; it is the difference now, for the reason above.)
-  const walked = localImports(toolPath("src/row-claim.mjs")).length;
-  const rawSpecifiers = new Set(
-    [...readFileSync(toolPath("src/row-claim.mjs"), "utf8").matchAll(/from\s+"(\.[^"]*)"/g)].map((m) => m[1]),
-  ).size;
-  assert.ok(walked >= 12, `expected row-claim.mjs's imports to be visible, walked ${walked}`);
-  assert.equal(rawSpecifiers - walked, 1,
-    `raw source spells ${rawSpecifiers} relative specifiers and the walk sees ${walked}: exactly one is `
-    + "the `//` comment quoting an import. A gap of 0 means the stripper stopped blanking comments; a gap "
-    + "above 1 means it started eating real ones");
-  // The one that decides what CI runs, and a SIGHTED control so this cannot pass by the walk finding
-  // nothing anywhere.
-  assert.equal(localImports(`${REPO}scripts/ci-changed.ts`).length, 5);
-  // A SIGHTED CONTROL, and the number is incidental to it: it says the walk finds this file's imports
-  // rather than nothing. It read `3` until #1969 added `./api-pool.mjs`, and the message then sent the
-  // reader after a broken walker for a count that had moved for a perfectly good reason. So it now pins
-  // the SPECIFIERS -- a control that says WHICH imports are seen cannot pass by finding nothing, and a
-  // legitimate fourth import falsifies it only by being missing from this list.
-  //
-  // #2046 IS THAT CASE, and it is the first one: the arm refusal path was made to read the ARMED state,
-  // the predicate lifted to `pr-armed-state.mjs`, and the fifth specifier below is that import. The list
-  // moved because the file did; the walk is fine. This is the failure mode the paragraph above designed
-  // for, and updating the list IS the response -- there is nothing here to fix in the walker.
-  //
-  // #2658 IS THE THIRD: the last specifier was `packages/worker-fleet/src/cli-flags.mjs`, and it is now the tool's own copy,
-  // `lib/cli-flags.mjs` (child 3g of #69: the tool imports nothing outside its package). The walk is fine, and it is
-  // the same import seen at its new address, so it moved from the end of the sorted list to its place in it.
-  //
-  // #2391 IS THE SECOND: the sixth specifier is `trunk-red.mjs`, imported so that "main is red" in the jump's
-  // grant is the gate's own `newestVerdictRun` and not a second reading of it.
-  //
-  // #2619 IS THE FOURTH (child 3d of #69): the seventh specifier is `project-vocabulary.mjs`, imported for
-  // `SESSION_PREFIX` -- the `session:` label prefix moved out of this file's own literal into the project's
-  // declared vocabulary.
-  //
-  // #2621 IS THE FIFTH (child 3e of #69): the eighth specifier is `project-roles.mjs`, imported for
-  // `roleBriefPath` -- `SESSIONS_FILE` moved from a literal `new URL("../docs/roles/...")` to the
-  // project's declared role-briefs directory.
-  //
-  // THE SIXTH IS `lane-ownership.mjs` (agent-org v0.3.0, #3254): `authorshipVerdict`, which refuses to arm a PR
-  // a lane owner's own login authored into a review-only lane. Moved here with the pin to v0.4.2 (#3151).
-  //
-  // THE SEVENTH IS THE RENAME (agent-org#435, a11ign/a11ign#4427): the tool's `src/*.mjs` are `src/*.ts` (`toolPath` returns `arm-pr.ts`). `lib/cli-flags.mjs`, which the tool kept as `.mjs` until v0.103.0, is `lib/cli-flags.ts` at v0.104.0 (agent-org#524's follow-through, measured in lab#53's `checks`). The `.ts`
-  // source also names `api-pool.ts` and `lane-ownership.ts` in TYPE positions (`import("./api-pool.ts").Pool`), which the walk reads as imports too, so the same file appears three times; the pin is
-  // WHICH files are seen, so the list is deduplicated and a legitimate extra type annotation does not falsify it.
-  //
-  // THE EIGHTH, AND WHY THIS IS A FLOOR (a11ign/a11ign#4829): `project-config.ts` is a tenth import the tool added after this list was written, and an exact `deepEqual` over a
-  // file of a repository this one does not build was red on the tool's newest tag until somebody edited it. What the control is FOR is "the walk sees real imports
-  // rather than nothing", and a SUPERSET answers that: every specifier below is still seen, so a walk that finds nothing, or stops at a type position, fails here, and an import
-  // the tool adds does not. A removal still falsifies it, and updating the list is then the response, as above.
-  const seen = new Set(localImports(toolPath("src/arm-pr.mjs")).map((p: string) => p.replace(`${toolRoot()}/`, "")));
-  const expected = ["src/acceptance-commands.ts", "src/api-pool.ts",
-    "src/lane-ownership.ts", "src/lib/cli-flags.ts", "src/pr-armed-state.ts",
-    "src/pr-hold-state.ts", "src/project-roles.ts",
-    "src/project-vocabulary.ts", "src/trunk-red.ts"];
-  assert.deepEqual(expected.filter((file) => !seen.has(file)), [],
-    "arm-pr.mjs's local imports must all be visible to the walk");
 });
 
 test("#1019 THE VACUITY FLOOR: no tracked file loses a local import to the stripper", () => {
