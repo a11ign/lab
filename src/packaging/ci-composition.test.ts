@@ -130,14 +130,21 @@ test("the tests run every test file of the laid package, by one include, and the
   }
 });
 
-test("ci.yml also runs on push to main and nightly, and `gate` waits for `checks` and reads its result (A11-180)", () => {
+test("ci.yml also runs on push to main and nightly (A11-180)", () => {
   assert.match(ci, /^ {2}push:\n {4}branches: \[main\]$/m);
   assert.match(ci, /^ {2}schedule:\n {4}- cron: "[^"]+"$/m);
-  assert.deepEqual(doc.jobs.gate.needs, ["changeset", "checks", "release-dry-run", "refusalOwners"], "the required check waits for `checks`, for the release dry run (a11ign/a11ign#5063) and for the refusal-owner read (a11ign/a11ign#5351)");
-  assert.match(ci, /"\$\{\{ needs\.checks\.result \}\}" != "success"/, "`gate` reads the result of `checks`: a job a gate needs and never reads is excused by its own failure");
-  assert.match(ci, /"\$\{\{ needs\.release-dry-run\.result \}\}" != "success"/, "`gate` reads the dry run's result, not only waits for it");
-  assert.match(ci, /"\$\{\{ needs\.refusalOwners\.result \}\}" != "success"/, "`gate` reads the refusal-owner job's result too, and a skip does not pass (a11ign/a11ign#5351)");
-  for (const need of doc.jobs.gate.needs ?? []) assert.ok(doc.jobs[need], `${need} is a job of this file`);
+});
+
+// Read from the parsed workflow, not from its text: the retirement is a fact about which jobs exist and what `gate` waits for and reads (A11-127), and a comment or a renamed step must not move it.
+test("`refusalOwners` is retired, `gate` waits for `checks` and the other jobs it reads, and reads every one of them (A11-127, A11-180)", () => {
+  const gate = doc.jobs.gate;
+  assert.ok(gate, "control: `gate` is found, so the reads below are not over an empty workflow");
+  assert.ok(!("refusalOwners" in doc.jobs), "the refusal-owner job is retired with the old gate: rows live in Linear, so it could only fail");
+  assert.deepEqual(gate.needs, ["changeset", "checks", "release-dry-run"], "the required check waits for `checks` and for the release dry run (a11ign/a11ign#5063), and for nothing retired");
+  for (const need of gate.needs ?? []) assert.ok(need in doc.jobs, `\`gate\` waits for \`${need}\`, which is not a job of ci.yml`);
+  const run = (gate.steps ?? []).map((step) => step.run ?? "").join("\n");
+  const read = [...run.matchAll(/needs\.([A-Za-z0-9_-]+)\.result/g)].map((match) => match[1]).sort();
+  assert.deepEqual([...new Set(read)], [...(gate.needs ?? [])].sort(), "`gate` reads the result of every job it waits for and of no other: a job it needs and never reads is excused by its own failure, and a read of a job it does not need is always empty");
 });
 
 test("this repository's package replaces the core's own AFTER the install and the build, and before anything reads it", () => {

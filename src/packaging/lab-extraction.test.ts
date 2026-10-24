@@ -136,7 +136,8 @@ const SELF = `${LAB}/src/packaging/lab-extraction.test.ts`;
 test("the manifest names every @a11ign/ package the code imports, each at a published version", () => {
   const refusals = nameRefusals(REPO_ROOT).filter((refusal) => !isFixtureTree(refusal.file) && refusal.file !== SELF);
   assert.deepEqual([...new Set(refusals.map((refusal) => refusal.file))], [...WRITTEN_AS_FIXTURE_TEXT]);
-  assert.ok(sourceFilesUnder(REPO_ROOT).length > 500, "too few source files walked: the scan read the wrong place");
+  // Was 500 over 536 files; A11-180 deleted 36 of them (the tests that loaded agent-org, the selector and a helper), which leaves 500, so the floor is 400.
+  assert.ok(sourceFilesUnder(REPO_ROOT).length > 400, "too few source files walked: the scan read the wrong place");
 });
 
 test("control: an undeclared sibling package and a dependency that is a path are each REFUSED", async () => {
