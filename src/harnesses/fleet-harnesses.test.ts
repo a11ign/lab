@@ -10,10 +10,11 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { format } from "node:util";
 
+import type { Loose } from "../capture/loose.ts";
 import { scratchDir as tempDir } from "../fleet/scratch-dir.ts";
 import { stubFleet, manifestFixture, writeResults } from "../fleet/stub-fleet.ts";
 import { REPO_ROOT } from "../dataset-paths.ts";
@@ -355,6 +356,69 @@ test("capture:check captures a page whose identity is NOT confirmed again, on it
   assert.match(run.out, /attempt 1\/4: page identity NOT confirmed/);
   assert.match(run.out, /FAIL {2}page identity NOT confirmed after 4 attempts/);
   assert.match(run.out, /CAPTURE CHECK\(S\) FAILED/);
+});
+
+/** A capture of each tutorial page that its identity check and its own assertions accept, so a clean run of the check ends `ALL CAPTURE CHECKS PASSED`. */
+function acceptedCapture(page: string): Loose {
+  const base: Loose = capture("link, Home", "heading, level 1, City Library FAQ password Newsletter Email address", "button, Sign up");
+  const diagnostics = [{ event: "documentReady", ok: true, title: "t" }];
+  const structure = { ...base.structure, headings: ["a", "b", "c"], landmarks: ["main"] };
+  const withState = (control: string, after: string) => ({ ...base, diagnostics, structure, interaction: { ...base.interaction, stateChanges: [{ control, after }] } });
+  switch (page) {
+    case "structure-good.html": return { ...base, diagnostics, structure };
+    case "structure-bad.html": return { ...base, diagnostics, structure: { ...base.structure, headings: [], landmarks: [] } };
+    case "disclosure-good.html": return withState("menu button collapsed", "menu button expanded");
+    case "disclosure-bad.html": return withState("menu button collapsed", "menu button collapsed");
+    default: return { ...base, diagnostics, structure, interaction: { ...base.interaction, formChanges: [{ control: "Sign up button" }] } };
+  }
+}
+
+/**
+ * A capture-check run of two jobs, collected one at a time as a person following the printed hints would: the first confirms five pages and asks for the sixth again, the second
+ * confirms it. `between` runs after the first collect, on the file that holds what the first job settled.
+ */
+async function twoJobCheck(between: (settledPath: string) => void) {
+  const cases = checkCases(BASE);
+  const lastId = cases.at(-1)!.id;
+  const seed = rig({ ids: [], fixtures: {} });
+  const manifestFor = (job: string, ids: string[], attempt: number) => manifestFixture({
+    job, recaptureOf: attempt > 1 ? "fj-1" : null, boxes: [{ name: "w1" }],
+    captures: ids.map((id) => ({ case: id, group: id, url: `${BASE}/${id}`, box: "w1", attempt, body: {} })),
+  });
+  const first = writeResults(seed.results("fj-1"), manifestFor("fj-1", cases.map((c) => c.id), 1), Object.fromEntries(cases.map((c) => [c.id, c.id === lastId ? capture("Cannot reach this site") : acceptedCapture(c.id)])));
+  const second = writeResults(seed.results("fj-2"), manifestFor("fj-2", [lastId], 2), { [lastId]: acceptedCapture(lastId) });
+  const r = rig({ ids: ["fj-1", "fj-2"], fixtures: { "fj-1": first, "fj-2": second } });
+  const runId = `run-${Math.random().toString(36).slice(2)}`;
+  const spec = { root: r.pending, kind: "capture-check", hint: String, deps: r.deps, collect: checkCollector(), stopExit: stopExitWith(2) };
+  const refuse = async () => { throw new Error("a collect submits nothing of its own"); };
+  await quietly(() => runFleetClient({ ...spec, argv: ["--boxes=2", "--label=A11-263"], prepare: async () => ({ cases, groups: {}, extra: { runId } }) }));
+  await quietly(() => runFleetClient({ ...spec, argv: ["--collect=fj-1"], prepare: refuse }));
+  between(join(String(process.env.RUNS_ROOT), "repeat-captures", "capture-check", `${runId}.settled.json`));
+  const last = await quietly(() => runFleetClient({ ...spec, argv: ["--collect=fj-2"], prepare: refuse }));
+  return { ...last, said: last.out + r.err.join("") };
+}
+
+test("capture:check carries what its first job settled into the re-capture's verdict: with the state intact the run PASSES", async () => {
+  const run = await twoJobCheck((settledPath) => assert.ok(existsSync(settledPath), "the first job left its settled state where the second reads it"));
+  assert.equal(run.result, 0, run.said);
+  assert.match(run.said, /ALL CAPTURE CHECKS PASSED/);
+});
+
+test("capture:check FAILS CLOSED when the state of an earlier job is gone: a page nobody recorded a verdict for is a failure, never a pass", async () => {
+  const run = await twoJobCheck((settledPath) => rmSync(settledPath));
+  assert.equal(run.result, 1, "five pages have no verdict, so the check cannot end in a pass");
+  assert.match(run.out, /FAIL {2}structure-good\.html: no verdict was recorded for it/);
+  assert.match(run.out, /5 CAPTURE CHECK\(S\) FAILED/);
+  assert.doesNotMatch(run.out, /ALL CAPTURE CHECKS PASSED/);
+});
+
+test("capture:check refuses to judge on a settled state it cannot read: malformed state is an error, exit 2, never an empty one", async () => {
+  for (const damage of ["{not json", "[1,2]", '{"structure-good.html":"0"}', '{"structure-good.html":-1}']) {
+    const run = await twoJobCheck((settledPath) => writeFileSync(settledPath, damage));
+    assert.equal(run.result, 2, `${damage}: could not answer, not a verdict`);
+    assert.match(run.said, /settled state of run .* is malformed/);
+    assert.doesNotMatch(run.said, /ALL CAPTURE CHECKS PASSED/);
+  }
 });
 
 // ---- the one-box harnesses — one group, in the order the measurement needs ----------------------------------------------------------------------------------

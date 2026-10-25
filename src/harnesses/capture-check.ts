@@ -23,7 +23,7 @@ import { requestJson } from "@a11ign/screenreader-fleet/worker-http";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { refuseIfRunsReadonly, repeatCapturesRoot } from "../dataset-paths.ts";
 import { LEFT_THE_FLEET, pagesBaseUrl, whyNoCapture } from "../fleet/fleet-job.ts";
-import type { FleetCase } from "../fleet/fleet-job.ts";
+import type { FetchedJob, FleetCase, ManifestCapture } from "../fleet/fleet-job.ts";
 import type { Collector } from "../fleet/capture-flow.ts";
 import { holdingPages, runFleetClient, slugOf, stopExitWith } from "../fleet/harness-flow.ts";
 import type { Loose } from "../capture/loose.ts";
@@ -291,8 +291,44 @@ export function checkCases(base: string): FleetCase[] {
 /** How many assertions each page has failed, across the job and its re-captures: a re-capture is a job of its own, and a `--collect` another process. */
 type Settled = Record<string, number>;
 const settledFile = (runId: string): string => resolve(fleetRoot(), `${runId}.settled.json`);
+/**
+ * What the earlier jobs of this run settled. No file is the START of a run, and that is the only case that reads as empty: a file that cannot be read, or is not a count per page, is
+ * an error, because reading it as empty would let a run whose earlier failures were lost end as `ALL CAPTURE CHECKS PASSED`.
+ */
 function readSettled(runId: string): Settled {
-  try { return JSON.parse(readFileSync(settledFile(runId), "utf8")) as Settled; } catch { return {}; }
+  let text: string;
+  try {
+    text = readFileSync(settledFile(runId), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw new Error(`the settled state of run ${runId} cannot be read (${(error as Error).message}); its earlier results are not known, so this run cannot be judged`, { cause: error });
+  }
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { parsed = null; }
+  const counts = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? Object.values(parsed) : null;
+  if (!counts || !counts.every((n) => Number.isInteger(n) && (n as number) >= 0)) {
+    throw new Error(`the settled state of run ${runId} (${settledFile(runId)}) is malformed; its earlier results are not known, so this run cannot be judged`);
+  }
+  return parsed as Settled;
+}
+
+/**
+ * One page of a job: its assertions when its identity is confirmed (`settled`: how many failed), else a re-capture while it has attempts left, else a failure (`settled: 1`).
+ */
+function judgeCapture(check: Loose, entry: ManifestCapture, fetched: FetchedJob): { settled: number } | { again: true } {
+  process.stdout.write(`\n=== ${check.page} ===\n`);
+  const record = fetched.record(entry);
+  const result = (entry.status === "done" ? record?.capture : null) as Loose | null;
+  if (!result || result.error) {
+    console.log(`  attempt ${entry.attempt}/${MAX_ATTEMPTS}: capture threw: ${whyNoCapture(entry, record)}`);
+  } else if (check.signature.test(capturedText(result))) {
+    return { settled: judgeResult(check, result) }; // genuinely read the target page
+  } else {
+    console.log(`  attempt ${entry.attempt}/${MAX_ATTEMPTS}: page identity NOT confirmed (${check.signature}) — ${identityFailureCause(result)}`);
+  }
+  if (entry.attempt < MAX_ATTEMPTS && !LEFT_THE_FLEET.test(entry.error ?? "")) return { again: true };
+  console.log(`  FAIL  page identity NOT confirmed after ${entry.attempt} attempts (could not read the target page)`);
+  return { settled: 1 };
 }
 
 /**
@@ -307,28 +343,17 @@ export function checkCollector(): Collector {
     for (const check of CHECKS) {
       const entry = fetched.manifest.captures.find((c) => c.case === caseIdOf(check));
       if (!entry) continue;
-      process.stdout.write(`\n=== ${check.page} ===\n`);
-      const record = fetched.record(entry);
-      const result = (entry.status === "done" ? record?.capture : null) as Loose | null;
-      if (!result || result.error) {
-        console.log(`  attempt ${entry.attempt}/${MAX_ATTEMPTS}: capture threw: ${whyNoCapture(entry, record)}`);
-      } else if (check.signature.test(capturedText(result))) {
-        settled[check.page] = judgeResult(check, result); // genuinely read the target page
-        continue;
-      } else {
-        console.log(`  attempt ${entry.attempt}/${MAX_ATTEMPTS}: page identity NOT confirmed (${check.signature}) — ${identityFailureCause(result)}`);
-      }
-      if (entry.attempt < MAX_ATTEMPTS && !LEFT_THE_FLEET.test(entry.error ?? "")) {
-        again.push(entry.case ?? caseIdOf(check));
-      } else {
-        console.log(`  FAIL  page identity NOT confirmed after ${entry.attempt} attempts (could not read the target page)`);
-        settled[check.page] = 1;
-      }
+      const verdict = judgeCapture(check, entry, fetched);
+      if ("settled" in verdict) settled[check.page] = verdict.settled;
+      else again.push(entry.case ?? caseIdOf(check));
     }
     mkdirSync(fleetRoot(), { recursive: true });
     writeFileSync(settledFile(runId), `${JSON.stringify(settled)}\n`, "utf8");
     if (again.length) return { recapture: again, exit: 0 };
-    const failures = Object.values(settled).reduce((sum, n) => sum + n, 0);
+    // EVERY PAGE MUST HAVE A VERDICT. A page with none was judged by an earlier job whose state is gone, and a sum over what is left would pass it.
+    const unsettled = CHECKS.filter((check) => !(check.page in settled));
+    for (const check of unsettled) console.log(`  FAIL  ${check.page}: no verdict was recorded for it (the state of an earlier job of this run is missing)`);
+    const failures = unsettled.length + Object.values(settled).reduce((sum, n) => sum + n, 0);
     console.log(`\n${failures === 0 ? "ALL CAPTURE CHECKS PASSED" : `${failures} CAPTURE CHECK(S) FAILED`}`);
     return { recapture: [], exit: failures === 0 ? 0 : 1 };
   };
