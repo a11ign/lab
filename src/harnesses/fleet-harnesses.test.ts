@@ -8,7 +8,7 @@
  * What is driven is what each client is built from, because the clients' `main` leases a page server: the job it submits (`stabilityJob`, `probeOrderCases`, `checkCases`,
  * `occurrenceCases`, `rotationCases`, `fixtureCases`), the collector it hands the flow, and the runner (`runFleetClient`).
  */
-import { test, mock } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,16 +42,20 @@ const capture = (...phrases: string[]) => ({
   diagnostics: [],
 });
 
-/** Run a block with stdout and stderr captured. */
+/**
+ * Run a block with stdout and stderr captured. Written by hand rather than with `node:test`'s `mock`: this suite runs under rstest in CI, whose `node:test` shim has no `mock.restore`.
+ */
 async function quietly<T>(body: () => Promise<T> | T): Promise<{ result: T; out: string }> {
   const lines: string[] = [];
-  const stdout = mock.method(process.stdout, "write", (chunk: unknown) => { lines.push(String(chunk)); return true; });
-  const stderr = mock.method(process.stderr, "write", (chunk: unknown) => { lines.push(String(chunk)); return true; });
+  const originals = { stdout: process.stdout.write, stderr: process.stderr.write };
+  const capture = (chunk: unknown): boolean => { lines.push(String(chunk)); return true; };
+  process.stdout.write = capture as typeof process.stdout.write;
+  process.stderr.write = capture as typeof process.stderr.write;
   try {
     return { result: await body(), out: lines.join("") };
   } finally {
-    stdout.mock.restore();
-    stderr.mock.restore();
+    process.stdout.write = originals.stdout;
+    process.stderr.write = originals.stderr;
   }
 }
 
