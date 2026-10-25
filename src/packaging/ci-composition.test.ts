@@ -209,6 +209,15 @@ test("the layout check runs first, from the toolchain this repository names, by 
   assert.doesNotMatch(JSON.stringify(pkg.scripts) + ci, /tsx --test/);
 });
 
+test("the Dependabot config is checked on this repository's own tree, from the toolchain it names, before the core is installed (A11-253)", () => {
+  // A step and not a test: the tests run laid at a11ign's `packages/lab`, where a test would read a11ign's `.github/dependabot.yml`. `--root lab` points the check at this repository's checkout.
+  const check = ci.indexOf("/node_modules/@a11ign/toolchain/dist/dependabot-config.mjs\" --check --root lab");
+  assert.ok(check > 0, "positive control: the Dependabot check step is found");
+  assert.ok(check > ci.indexOf("/node_modules/@a11ign/toolchain/dist/layout-check.mjs\" lab"), "after the toolchain is installed by the layout step");
+  assert.ok(check < ci.indexOf("pnpm install --no-frozen-lockfile"), "before the core's install");
+  assert.doesNotMatch(ci, /npx .*dependabot-config/);
+});
+
 test("this repository's own tests run in the core's job: the toolchain is linked beside the laid package, and no root install is left", () => {
   const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { devDependencies: Record<string, string> };
   // No lockfile, because the manifest names packages no registry holds: a frozen install here could not run.
