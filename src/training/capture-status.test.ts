@@ -189,3 +189,57 @@ test("an unreadable instant is REFUSED, never silently ignored", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// --- a run the fleet job service holds (A11-263) ---------------------------------------------------------------------------------------------------------------
+//
+// The run's captures are on the control plane, so its progress file is written when a client submits and when one collects, and a quiet file between the two is the
+// NORMAL state of a healthy job. It names job IDs and no worker, so there is nothing to probe: the next command is `fleet job status <id>`.
+
+function fleetRun(over: Record<string, unknown> = {}) {
+  return {
+    startedAt: new Date(Date.now() - 6 * 3_600_000).toISOString(),
+    updatedAt: new Date(Date.now() - 5 * 3_600_000).toISOString(),
+    finishedAt: null, outcome: null, worker: null, baseUrl: "http://pages.test", total: 2, workers: [], current: [],
+    fleetJobs: [{ id: "fj-20261025T000000Z-aaaaaa", kind: "dataset", submittedAt: "2026-10-25T00:00:00.000Z" }],
+    cases: { "case-1": { status: "pending" }, "case-2": { status: "pending" } },
+    ...over,
+  };
+}
+
+test("a run the service holds is not called wedged because its file has been quiet for hours", () => {
+  const report = statusFor(fleetRun({ captureTimeoutMs: 1_000 }));
+  assert.equal(report.running, true);
+  assert.equal(report.stale, false, "a quiet file is not evidence about a job on the control plane");
+  assert.equal(report.verdict, 0);
+  assert.equal(report.next_command, "fleet job status fj-20261025T000000Z-aaaaaa", "the authority is the service, and the status command names it");
+  assert.deepEqual((report.fleet_jobs as { id: string }[]).map((job) => job.id), ["fj-20261025T000000Z-aaaaaa"]);
+});
+
+test("the control: the same file without a job ID IS stale, so the exemption belongs to the service's runs and not to every quiet file", () => {
+  const report = statusFor(fleetRun({ fleetJobs: [], captureTimeoutMs: 1_000 }));
+  assert.equal(report.stale, true);
+  assert.equal(report.verdict, 3);
+});
+
+test("a finished run that failed cases names the retry as a new submission of those cases", () => {
+  const report = statusFor(fleetRun({
+    finishedAt: new Date().toISOString(), outcome: "1 captured, 1 failed, 0 skipped, of 2 cases",
+    cases: { "case-1": { status: "captured" }, "case-2": { status: "failed", reason: "rejected after 3 attempts" } },
+  }));
+  assert.equal(report.verdict, 1);
+  assert.match(String(report.next_command), /^npm run training:capture -- --only=<the failed cases above> --no-cache --label=<ticket key>$/);
+  assert.deepEqual(report.failures, [{ id: "case-2", reason: "rejected after 3 attempts" }]);
+});
+
+test("status sends nothing to a box and prints the job it follows", () => {
+  const root = mkdtempSync(resolve(tmpdir(), "a11y-status-"));
+  try {
+    writeFileSync(resolve(root, "capture-progress.json"), JSON.stringify(fleetRun({ workers: ["a11y-worker-1"] })));
+    const text = execFileSync(process.execPath, [STATUS], { cwd: ROOT, env: { ...process.env, DATASET_ROOT: root }, encoding: "utf8" });
+    assert.match(text, /^job: +fj-20261025T000000Z-aaaaaa \(dataset, submitted 2026-10-25T00:00:00\.000Z\) +-> +fleet job status fj-20261025T000000Z-aaaaaa$/m);
+    assert.match(text, /^boxes: +a11y-worker-1$/m, "the boxes are names, never addresses");
+    assert.doesNotMatch(text, /worker now:/, "there is no worker to ask");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

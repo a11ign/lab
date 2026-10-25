@@ -47,12 +47,8 @@ const NON_CONTROL_READERS: Record<string, string> = {
   "packages/lab/src/gates/fleet.ts":
     "Reads A11Y_WORKERS FIRST and falls back to the inventory, so it works on the lab where the file is "
     + "gone. This is the module that broke; the fallback is the fix.",
-  "packages/lab/src/training/capture-real-pages.mjs":
-    "UNVERIFIED — runs on the lab and reaches the reader. Must gain the same A11Y_WORKERS-first fallback; "
-    + "until it does this entry records a known exposure rather than a cleared one.",
-  "packages/lab/src/training/capture-screenreader-dataset.mjs":
-    "UNVERIFIED — same exposure as its sibling above, and it is the corpus capture path, so a silent "
-    + "empty fleet here is the most expensive version of this defect.",
+  // `capture-real-pages.mjs` and `capture-screenreader-dataset.mjs` were classified here as exposed until they gained the same fallback. They submit to the fleet job
+  // service now (A11-263) and read no inventory and no address at all, so there is nothing to classify.
 };
 
 test("nothing outside packages/control reaches the inventory unless it is classified", () => {

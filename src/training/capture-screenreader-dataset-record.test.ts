@@ -94,13 +94,13 @@ test("control: a record that CAN be written reports nothing", async () => {
   assert.deepEqual((await record({ named: [A], participants: [A] })).reported, []);
 });
 
-test("the dataset script records into the file real-pages does, before it captures, and not through the guard", () => {
+test("the dataset script records into the file real-pages does, from the job's manifest at collect, and not through the guard", () => {
   assert.match(script, /captureRunsFile\(runsRoot\(\)\)/, "the same file as capture-real-pages.mjs");
   assert.match(realPages, /captureRunsFile\(runsRoot\(\)\)/, "control: the pattern matches the script it is copied from");
-  const recorded = script.indexOf("await recordDatasetRun(run, checked");
-  const captured = script.indexOf("await captureDataset(cases, done, checked, lease)");
-  assert.ok(recorded > 0 && captured > recorded, "recorded after the pool is checked and before the first case");
-  assert.match(script, /recordNobodyThenFail\(run, error\)/, "a run that finds nobody records too");
+  // The record is the job's: the boxes the manifest names, each dropped one excluded, and the job ID. It is written when the job is COLLECTED, by the collector, which is
+  // where the manifest is read; a run that finds nobody leaves its record through the same path, as a job that failed is a stop with the service's reason.
+  assert.match(script, /runRecordFromManifest\(\{ startedAt, manifest \}\)/, "the run is recorded from the manifest");
+  assert.match(script, /recordRun: \(manifest\) => recordRun\(\{ startedAt, manifest \}\)/, "and handed to the collector, which writes it once per run");
   assert.ok(!GUARD_IMPORT.test(script), "the ruling: the dataset capture is not put behind the guard");
   assert.ok(GUARD_IMPORT.test(realPages), "control: the same pattern does find the guard where it is wired");
 });

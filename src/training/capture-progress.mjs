@@ -66,6 +66,11 @@ export function beginRun({ root, worker, baseUrl, cases, captureTimeoutMs }) {
      * @type {string[]}
      */
     workers: [],
+    /**
+     * The fleet jobs this run submitted (A11-263), newest last. The run is the SERVICE's, so it is followed by job ID: `fleet job status <id>`.
+     * @type {{ id: string, kind: string, submittedAt: string }[]}
+     */
+    fleetJobs: [],
     // A LIST, because with a worker pool there are several cases in flight at once. Readers
     // must tolerate the old single-object shape from runs recorded before pooling.
     /**
@@ -78,12 +83,49 @@ export function beginRun({ root, worker, baseUrl, cases, captureTimeoutMs }) {
      * Per case: its status and whatever the outcome carried -- a `reason` for a skip or a failure, a
      * `phrases` count for a capture. Inferred from the initial literal it is `{ status: string }` alone,
      * so every one of those outcomes reads as an unknown property on a shape nothing declared.
-     * @type {Record<string, { status: string, reason?: string, phrases?: number,
+     * @type {Record<string, { status: string, reason?: string, phrases?: number | Record<string, number>,
      *                         variant?: string|null, worker?: string|null, startedAt?: string }>}
      */
     cases: Object.fromEntries(cases.map((/** @type {{ id: string }} */ c) => [c.id, { status: "pending" }])),
   };
 
+  return recorder(path, state);
+}
+
+/**
+ * Pick up the run a previous process began, to record what a later `--collect` finds (A11-263). A client that submits a job and exits leaves this file behind
+ * with every case pending; the process that collects it carries on from there and never begins a second run over it.
+ *
+ * @param {string} root
+ */
+export function continueRun(root) {
+  const path = progressPath(root);
+  const state = readProgress(root);
+  if (!state) throw new Error("there is no capture run in " + path + " to carry on: the run that submitted this job is not recorded here");
+  state.fleetJobs ??= [];
+  return recorder(path, /** @type {any} */ (state));
+}
+
+/**
+ * The state as the file holds it, for a caller that tallies a run without reading the file back.
+ * @typedef {{ startedAt: string, updatedAt: string, finishedAt: string | null, outcome: string | null, worker?: string | null, baseUrl?: string | null,
+ *   captureTimeoutMs?: number, total: number, workers: string[], fleetJobs: { id: string, kind: string, submittedAt: string }[],
+ *   current: { id: string, variant: string | null, worker: string | null, startedAt: string }[],
+ *   cases: Record<string, { status: string, reason?: string, phrases?: number | Record<string, number>, variant?: string | null, worker?: string | null, startedAt?: string }> }} RunState
+ */
+
+/**
+ * What `beginRun` and `continueRun` return: the recorder a capture client drives.
+ * @typedef {ReturnType<typeof recorder>} RunRecorder
+ */
+
+/**
+ * The recorder over a state: every method persists immediately, because the value of this file is that it survives the process.
+ *
+ * @param {string} path
+ * @param {any} state
+ */
+function recorder(path, state) {
   // Tolerates the pre-pool shape, where `current` was a single object or null.
   const current = () => (Array.isArray(state.current) ? state.current : state.current ? [state.current] : []);
 
@@ -95,6 +137,10 @@ export function beginRun({ root, worker, baseUrl, cases, captureTimeoutMs }) {
 
   return {
     path,
+    /** The state as the recorder holds it now, copied, so a caller can tally a run without reading the file back. @returns {RunState} */
+    snapshot() {
+      return JSON.parse(JSON.stringify(state));
+    },
     /** @param {string} id @param {string} reason */
     skipped(id, reason) {
       state.cases[id] = { status: "skipped", reason };
@@ -105,23 +151,36 @@ export function beginRun({ root, worker, baseUrl, cases, captureTimeoutMs }) {
       state.workers = workers;
       save();
     },
+    /** @param {{ id: string, kind: string, submittedAt: string }} job */
+    addFleetJob(job) {
+      state.fleetJobs = [...(state.fleetJobs ?? []).filter((/** @type {{ id: string }} */ j) => j.id !== job.id), job];
+      save();
+    },
+    /**
+     * A case whose capture is on the service again (a re-capture, or a resubmission): in flight, with the reason it is.
+     * @param {string} id @param {string} reason
+     */
+    recapturing(id, reason) {
+      state.cases[id] = { status: "capturing", reason };
+      save();
+    },
     /** @param {string} id @param {string} variant @param {string|null} [worker] */
     startCase(id, variant, worker = null) {
       const entry = { id, variant, worker, startedAt: new Date().toISOString() };
-      state.current = [...current().filter((c) => c.id !== id), entry];
+      state.current = [...current().filter((/** @type {{ id: string }} */ c) => c.id !== id), entry];
       state.cases[id] = { ...state.cases[id], status: "capturing" };
       save();
     },
-    /** @param {string} id @param {number} phrases */
+    /** @param {string} id @param {number | Record<string, number>} phrases a count, or one per variant of a pair */
     captured(id, phrases) {
       state.cases[id] = { status: "captured", phrases };
-      state.current = current().filter((c) => c.id !== id);
+      state.current = current().filter((/** @type {{ id: string }} */ c) => c.id !== id);
       save();
     },
     /** @param {string} id @param {string} reason */
     failed(id, reason) {
       state.cases[id] = { status: "failed", reason };
-      state.current = current().filter((c) => c.id !== id);
+      state.current = current().filter((/** @type {{ id: string }} */ c) => c.id !== id);
       save();
     },
     /** @param {string} outcome */
@@ -168,6 +227,10 @@ export function stalenessMs(progress, now) {
   // crash is a worse version of the same mistake. `readProgress` returns null for a run that never
   // started, so this is reachable from every caller that does not guard first.
   if (!progress || progress.finishedAt || !progress.updatedAt) return null;
+  // A RUN THE SERVICE HOLDS CANNOT BE TOLD FROM THIS FILE (A11-263). Its captures are on the control plane and this file is written when a client submits and when one
+  // collects, so a quiet file between the two is the normal state of a healthy job and says nothing about it. `fleet job status <id>` is the authority, and the
+  // status command names it.
+  if (progress.fleetJobs?.length) return null;
   return now - Date.parse(progress.updatedAt);
 }
 

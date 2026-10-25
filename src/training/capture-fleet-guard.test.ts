@@ -19,7 +19,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { assertOneBrowserAcross, EXIT_FLEET_INCONSISTENT } from "./capture-fleet-guard.mjs";
+import { assertOneBrowserAcross, EXIT_FLEET_INCONSISTENT, manifestProbe } from "./capture-fleet-guard.mjs";
 import { fleetConsistency, MUST_MATCH, REPORTED_ONLY } from "@a11ign/screenreader-fleet/fleet-consistency";
 
 /**
@@ -549,4 +549,30 @@ test("the production binding's argv: fleet:patch --apply --limit=<name>, and the
     ["/core", "npm", "run", "fleet:provision", "--", "--display-mode=1024x768", "--limit=a11y-worker-6"],
   ]);
   await assert.rejects(binding.patch(workerUrl(9)), /no inventory name known/);
+});
+
+// ---- over a job's MANIFEST (A11-263) --------------------------------------------------------------------------------------------------------------------------
+
+test("the split check runs over a job's manifest: two builds are refused, one build passes, and a box that was not read is not a fault", async () => {
+  const manifestOf = (builds: Record<string, string | null>) => ({
+    boxes: Object.entries(builds).map(([name, build]) => ({ name, environment: build === null ? null : { ...ENVIRONMENT, browserVersion: build } })),
+  });
+  const exits: number[] = [];
+  const report: string[] = [];
+  const check = (builds: Record<string, string | null>) => assertOneBrowserAcross(Object.keys(builds), "at collect", {
+    probe: manifestProbe(manifestOf(builds)), report: (t) => void report.push(t), exit: (code) => void exits.push(code), allowUncheckedFields: true,
+  });
+
+  await check({ w1: "151", w2: "151", w3: "151" });
+  assert.deepEqual(exits, [], "control: three boxes on one build pass");
+
+  await check({ w1: "151", w2: "150" });
+  assert.deepEqual(exits, [EXIT_FLEET_INCONSISTENT], "a split is refused with the guard's own exit");
+  assert.match(report.join(""), /FLEET INCONSISTENT at collect/);
+
+  exits.length = 0;
+  await check({ w1: "151", w2: "151", w3: null });
+  assert.deepEqual(exits, [], "a box whose health the service did not read answers nothing, which is not INCONSISTENT");
+  assert.equal(await manifestProbe(manifestOf({ w1: null }))("w1"), null);
+  assert.equal(await manifestProbe(manifestOf({ w1: "151" }))("nobody"), null, "a box the manifest does not name answers nothing");
 });

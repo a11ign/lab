@@ -81,6 +81,8 @@ const FIXED_POLICY: Record<string, string> = {
     "a deliberately curated, hand-argued policy for every real page (probeForms off, probeNavigation on, "
     + "etc.) -- not derived from a per-page probe declaration, so there is nothing a prefix-forward could "
     + "pick up that isn't already named",
+  "packages/lab/src/training/capture-local-vm.ts":
+    "the local UTM worker VM route of training:capture: it sends the body its caller built with captureOptions (which forwards probe* by prefix) and owns no body of its own",
   "packages/lab/src/training/repeat-capture.mjs":
     "every field is wired to its own named CLI flag (--probe-forms, --probe-focus, ...); a new probe "
     + "needs a new flag, which is a visible addition, not a silent drop",

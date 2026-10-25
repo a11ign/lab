@@ -142,17 +142,26 @@ test("a single named worker, itself the one down: still refuses (one worker IS t
 
 /**
  * Closed ELSEWHERE, not silently dropped: `capture-check.ts`, `stability-gate.ts` and
- * `gate-probe-order.ts` also take `--worker=`, and `evidence-check.ts` also takes one positionally --
- * but all four are catalogued `lab-job.yml` jobs (`capture-check`, `stability`/`gate-stability`,
- * `gate-probe-order`, `evidence-check`), so they wake THROUGH `lab:job` already (#2655's table, rows 4, 5,
+ * `gate-probe-order.ts` also take `--worker=` -- but all three are catalogued `lab-job.yml` jobs (`capture-check`,
+ * `stability`/`gate-stability`, `gate-probe-order`), so they wake THROUGH `lab:job` already (#2655's table, rows 4, 5,
  * 10). A census that also flagged them would ask this row to fix a defect closed by a different one.
  */
 const CLOSED_ELSEWHERE = new Set([
   "packages/lab/src/harnesses/capture-check.ts",
   "packages/lab/scripts/stability-gate.ts",
   "packages/lab/scripts/gate-probe-order.ts",
-  "packages/lab/scripts/evidence-check.ts",
 ]);
+
+/**
+ * A client that SUBMITS TO THE FLEET JOB SERVICE (A11-263) names no worker and wakes none: the service wakes the boxes it is given, and the client's `--worker=` is ignored or
+ * refused through `workerAddressNotice`. It is out of this census for that reason, and `moved clients` below asserts the reason holds for each of them.
+ */
+const SUBMITS_TO_THE_SERVICE = /\bworkerAddressNotice\(/;
+const MOVED_CLIENTS = [
+  "packages/lab/scripts/evidence-check.ts",
+  "packages/lab/src/training/capture-real-pages.mjs",
+  "packages/lab/src/training/capture-screenreader-dataset.mjs",
+].sort();
 
 /** The module itself, and its own test: a wake call cannot call itself, and prose mentioning the two
  *  signals below is not an entry that needs one. */
@@ -191,6 +200,7 @@ function namesAWorkerDirectly(text: string): boolean {
 function discoverByHandEntries(): string[] {
   return candidateFiles()
     .filter((path) => !SELF.has(path) && !CLOSED_ELSEWHERE.has(path))
+    .filter((path) => !SUBMITS_TO_THE_SERVICE.test(readFileSync(join(REPO, path), "utf8")))
     .filter((path) => namesAWorkerDirectly(readFileSync(join(REPO, path), "utf8")))
     .sort();
 }
@@ -200,8 +210,6 @@ const REGION_ENTRIES = [
   "packages/lab/src/harnesses/capture-fixtures.ts",
   "packages/lab/src/harnesses/occurrence-verdict-stability.ts",
   "packages/lab/src/harnesses/page-identity-rate.ts",
-  "packages/lab/src/training/capture-real-pages.mjs",
-  "packages/lab/src/training/capture-screenreader-dataset.mjs",
   "packages/lab/src/training/repeat-capture.mjs",
 ].sort();
 
@@ -223,8 +231,6 @@ const DISPATCH_MARKER: Record<string, string> = {
   "packages/lab/src/harnesses/capture-fixtures.ts": "await captureOverWorker(url, worker, steps)",
   "packages/lab/src/harnesses/occurrence-verdict-stability.ts": "await capture(base, variant)",
   "packages/lab/src/harnesses/page-identity-rate.ts": "await runRounds(base, ROUNDS)",
-  "packages/lab/src/training/capture-real-pages.mjs": "await captureAcrossPool(toCapture, workers)",
-  "packages/lab/src/training/capture-screenreader-dataset.mjs": "await captureDataset(cases, done, checked, lease)",
   "packages/lab/src/training/repeat-capture.mjs": "await captureWithRetry()",
 };
 
@@ -244,6 +250,17 @@ for (const path of REGION_ENTRIES) {
       `${path} dispatches at offset ${dispatchIndex} before its wake call at offset ${callIndex}`);
   });
 }
+
+test("moved clients: each is out of the census because it submits to the service, and wakes nothing by hand", () => {
+  assert.ok(MOVED_CLIENTS.length > 0, "the list this loop walks is empty, so the assertions below compare nothing");
+  const discovered = new Set(discoverByHandEntries());
+  for (const path of MOVED_CLIENTS) {
+    const text = readFileSync(join(REPO, path), "utf8");
+    assert.match(text, SUBMITS_TO_THE_SERVICE, `${path} must route a worker address through workerAddressNotice, or it is not out of the census for the reason this test states`);
+    assert.doesNotMatch(text, /wake-by-hand|wakeNamedWorkers/, `${path} submits to the service, which wakes the boxes it is given; waking by hand as well would be a second, unbooked path`);
+    assert.ok(!discovered.has(path), `${path} is in the census although it submits to the service`);
+  }
+});
 
 test("relative-import sanity: REPO resolves to the checkout root, not this file's own directory", () => {
   assert.ok(readdirSync(REPO).includes("packages"), "REPO must point at the checkout root");
