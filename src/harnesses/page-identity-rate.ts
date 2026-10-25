@@ -2,7 +2,12 @@
 /**
  * How often does a capture read the WRONG PAGE? A rate, measured on the risky path.
  *
- *   npm run identity:rate -- --worker=http://REDACTED-INTERNAL-ADDRESS:8765 [--rounds=20]
+ *   npm run identity:rate -- --box=a11y-worker-14 --label=<ticket key> --wait=2h [--rounds=20]
+ *   npm run identity:rate -- --collect[=<job ID>]          # read a job that has finished
+ *
+ * It SUBMITS the rotation to the fleet job service as ONE group (A11-263): rounds x 3 captures, A→B→C→A..., on ONE box, in that order. That is what the measurement needs, because every
+ * capture after the first must navigate an ALREADY-OPEN window on the same machine, and the service holds a group to one box and sends it one case after another. The box is a NAME
+ * (`--box=`), never an address, and `--boxes=1` when none is named.
  *
  * ## Why this exists
  *
@@ -34,12 +39,14 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
+import { join as joinPath } from "node:path";
 import { leasePageServer } from "../training/page-server.mjs";
-import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
-import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11ign/screenreader-fleet/worker-http";
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
-import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
-import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
+import { refuseIfRunsReadonly, repeatCapturesRoot } from "../dataset-paths.ts";
+import { pagesBaseUrl, whyNoCapture } from "../fleet/fleet-job.ts";
+import type { FleetCase } from "../fleet/fleet-job.ts";
+import type { Collector } from "../fleet/capture-flow.ts";
+import { holdingPages, runFleetClient, stopExitWith } from "../fleet/harness-flow.ts";
 import type { Loose } from "../capture/loose.ts";
 
 /**
@@ -48,12 +55,8 @@ import type { Loose } from "../capture/loose.ts";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--worker=", "--rounds="], { entry: import.meta.url, command: "npm run identity:rate" });
+refuseUnknownFlags(["--box=", "--boxes=", "--label=", "--wait=", "--collect", "--worker=", "--rounds="], { entry: import.meta.url, command: "npm run identity:rate" });
 
-// audit §9 "argv parsing": both were their own copy of the fifteen-file idiom. `?? ""` on WORKER preserves
-// the original empty-string-when-missing exactly, since it reaches `String(WORKER)` downstream and
-// `String(undefined)` is the literal text "undefined", not "".
-const WORKER = flagValue(process.argv, "worker") ?? "";
 const ROUNDS = Number(flagValue(process.argv, "rounds") || 20);
 const STEPS = 10;
 const pagesDir = join(dirname(fileURLToPath(import.meta.url)), "../eval/pages/tutorials");
@@ -105,35 +108,22 @@ function selfTest() {
   process.stdout.write(`  classifier self-test: 4/4 (it detects a constructed stale read)\n`);
 }
 
-/**
- * Longer than the worker's own hard timeout, deliberately.
- *
- * The client must not give up before the server's bounded failure, or the worker's diagnosis — the fault code
- * it worked out and put in the response — is replaced by a transport error that says only "no answer". Same
- * rule as every deadline in the capture path: it has to exceed the slowest honest answer, because a check that
- * stops listening turns a finding into silence.
- *
- * This comment used to note that `fetch`'s ~300 s headers timeout was "close enough to lose the race, which is
- * exactly what happened" — and then raised the AbortSignal, which does not govern that timeout at all. So the
- * race was still lost, at 300 s, whatever this number said. `requestJson` is the actual remedy; see
- * worker-http.mjs for the measurement.
- */
+/** What a capture of the rotation is told: the page, and how many steps. The service adds `url`. */
+const BODY = { steps: STEPS };
 
-async function captureOnce(base: Loose, page: Loose) {
-  let body;
-  try {
-    const response = await captureTolerantly({
-      worker: String(WORKER),
-      body: { url: `${base}/${page}`, steps: STEPS },
-      timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
-    });
-    body = response.json ?? {};
-  } catch (error) {
-    // One unreachable capture must not end a 60-capture measurement. An unhandled rejection here threw away
-    // a whole run's evidence for a single timed-out request.
-    return { error: `transport: ${(error as Error)?.message ?? error}` };
+/** The rotation as the cases of ONE group, in order: round after round of A, B, C. IDs carry the position (`000.structure-good.html`), so the order is the file's and the report reads it back. */
+export function rotationCases(base: string, rounds: number): FleetCase[] {
+  const cases: FleetCase[] = [];
+  for (let index = 0; index < rounds * PAGES.length; index += 1) {
+    const { page } = PAGES[index % PAGES.length];
+    cases.push({ id: `${String(index).padStart(3, "0")}.${page}`, url: `${base}/${page}`, body: { ...BODY }, group: "identity-rotation" });
   }
-  if (body.error) return { error: String(body.error) };
+  return cases;
+}
+
+/** One capture of the rotation, read from its record: what it heard and which marks it carries, or the error that took its place. */
+function readCapture(body: Loose | undefined, why: string) {
+  if (!body || body.error) return { error: String(body?.error ?? why) };
   const marks = (body.diagnostics ?? []).filter((m: Loose) => m && typeof m === "object");
   return {
     transcript: body.transcript ?? [],
@@ -176,22 +166,21 @@ function report(tally: Loose, reusedCount: Loose, refreshedCount: Loose, total: 
 }
 
 /**
- * Capture every page in rotation `rounds` times, classifying each against its predecessor.
+ * Classify every capture of the rotation against its predecessor, in order.
  *
- * Separated from `main` so the narrative there reads as setup, measurement, report — this function is the
- * measurement, and it is the only place that knows a capture's outcome depends on what came before it.
+ * Separated from `main` so the narrative there reads as setup, measurement, report — this function is the measurement, and it is the only place that knows a capture's outcome depends on
+ * what came before it. It reads the captures the job took; it sends nothing.
  */
-async function runRounds(base: Loose, rounds: Loose) {
-  const tally = { correct: 0, "wrong-page": 0, silent: 0, unrecognised: 0, error: 0 };
+function classifyRotation(results: ReturnType<typeof readCapture>[]) {
+  const tally: Record<string, number> = { correct: 0, "wrong-page": 0, silent: 0, unrecognised: 0, error: 0 };
   const counts = { reused: 0, refreshed: 0, total: 0 };
   let previous = null;
 
-  for (let index = 0; index < rounds * PAGES.length; index += 1) {
+  for (const [index, result] of results.entries()) {
     const want = PAGES[index % PAGES.length];
-    const result = await captureOnce(base, want.page);
     counts.total += 1;
 
-    if (result.error) {
+    if ("error" in result && result.error) {
       tally.error += 1;
       process.stdout.write(`  ${String(index).padStart(3)} ${want.page.padEnd(28)}`
         + ` ERROR ${result.error.slice(0, 62)}\n`);
@@ -201,12 +190,13 @@ async function runRounds(base: Loose, rounds: Loose) {
       continue;
     }
 
-    if (result.reused) counts.reused += 1;
-    if (result.refreshed) counts.refreshed += 1;
-    const outcome = classifyCapture({ transcript: result.transcript, want, previous });
+    const read = result as Exclude<typeof result, { error: string }>;
+    if (read.reused) counts.reused += 1;
+    if (read.refreshed) counts.refreshed += 1;
+    const outcome = classifyCapture({ transcript: read.transcript, want, previous });
     tally[outcome] += 1;
     process.stdout.write(`  ${String(index).padStart(3)} ${want.page.padEnd(28)}`
-      + ` ${result.reused ? "reused " : "fresh  "} ${outcome.padEnd(13)}${flagFor(outcome, previous)}\n`);
+      + ` ${read.reused ? "reused " : "fresh  "} ${outcome.padEnd(13)}${flagFor(outcome, previous)}\n`);
     previous = want;
   }
   return { tally, counts };
@@ -219,56 +209,53 @@ function flagFor(outcome: Loose, previous: Loose) {
   return `  <-- ${outcome.toUpperCase()}${from}`;
 }
 
+const JOB_KIND = "identity-rate";
+const FLEET_ROOT = joinPath(repeatCapturesRoot(), "identity-rate");
+
+export function rotationCollector(): Collector {
+  return async (fetched) => {
+    // In the order the rotation ran: the position is in the case's ID.
+    const entries = fetched.manifest.captures.filter((c) => c.case).sort((a, b) => String(a.case).localeCompare(String(b.case), undefined, { numeric: true }));
+    const results = entries.map((entry) => readCapture(
+      (entry.status === "done" ? fetched.record(entry)?.capture : undefined) as Loose | undefined,
+      entry.status === "done" ? "no record came back" : whyNoCapture(entry, fetched.record(entry)),
+    ));
+    const { tally, counts } = classifyRotation(results);
+    process.stdout.write(`  on ${[...new Set(entries.map((e) => e.box))].join(", ") || "no box"}\n`);
+    const wrong = report(tally, counts.reused, counts.refreshed, counts.total);
+
+    // A run with no reused-window captures MEASURED NOTHING, and it used to say "0/0" and exit 0 — which reads
+    // as a clean result. Found by running it against a worker whose speech channel had died: 3 of 3 captures
+    // errored, the rate printed 0/0, and the exit code said success. That is this repo's own rule about checks
+    // that report success having examined nothing, in a tool written to enforce it.
+    if (counts.reused === 0) {
+      process.stdout.write("\n  MEASURED NOTHING: no capture navigated an already-open window, so the fault under\n"
+        + "  test could not occur and this run is not evidence about it. Check the worker before rerunning.\n");
+      return { recapture: [], exit: 3 };
+    }
+    // Exit non-zero on a wrong page: this is a gate as well as a measurement, and reading evidence from the
+    // wrong page is the most damaging failure available to a tool that makes accessibility claims.
+    return { recapture: [], exit: wrong > 0 ? 1 : 0 };
+  };
+}
+
 async function main() {
-  // Validated, not merely present. A truthiness check passes `http://:8765`, and this harness derives the
-  // page-server base FROM the worker address (`hostPagesBase`), so a malformed one produces a wrong pages
-  // URL as well as a wrong worker — captured error pages, which is corrupted evidence rather than an
-  // obvious outage.
-  try {
-    assertWorkerUrl(WORKER, { source: "--worker" });
-  } catch (error) {
-    process.stderr.write(`${(error as Error).message}\n`
-      + "usage: npm run identity:rate -- --worker=http://<guest-ip>:8765 [--rounds=20]\n");
-    process.exit(2);
-  }
-  // Run BY HAND, `--worker` never goes through `lab:job`'s own wake -- #2655's table, row 11.
-  // #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
-  // safe as-is, because `--worker` names exactly ONE worker here -- refusing IS the down worker, and there
-  // is no wider pool to narrow the run to.
-  const wake = await wakeNamedWorkers([WORKER]);
-  if (!wake.ok) {
-    process.stderr.write(`${wake.refusal}\n`);
-    process.exit(2);
-  }
+  refuseIfRunsReadonly(FLEET_ROOT);
   selfTest();
-
   const port = Number(process.env.DATASET_PAGES_PORT || 5050);
-  const lease = await leasePageServer({ root: pagesDir, port, probePath: PAGES[0].page });
-  // The guest reaches the host on the .1 of its own subnet — the same derivation capture-check uses.
-  const base = hostPagesBase(WORKER, port);
-
-  let measured;
-  try {
-    measured = await runRounds(base, ROUNDS);
-  } finally {
-    await lease.release();
-  }
-
-  const { tally, counts } = measured;
-  const wrong = report(tally, counts.reused, counts.refreshed, counts.total);
-
-  // A run with no reused-window captures MEASURED NOTHING, and it used to say "0/0" and exit 0 — which reads
-  // as a clean result. Found by running it against a worker whose speech channel had died: 3 of 3 captures
-  // errored, the rate printed 0/0, and the exit code said success. That is this repo's own rule about checks
-  // that report success having examined nothing, in a tool written to enforce it.
-  if (counts.reused === 0) {
-    process.stdout.write("\n  MEASURED NOTHING: no capture navigated an already-open window, so the fault under\n"
-      + "  test could not occur and this run is not evidence about it. Check the worker before rerunning.\n");
-    process.exit(3);
-  }
-  // Exit non-zero on a wrong page: this is a gate as well as a measurement, and reading evidence from the
-  // wrong page is the most damaging failure available to a tool that makes accessibility claims.
-  process.exit(wrong > 0 ? 1 : 0);
+  const exit = await runFleetClient({
+    argv: process.argv.slice(2), root: FLEET_ROOT, kind: JOB_KIND, oneBox: {},
+    hint: (job) => `npm run identity:rate -- --collect=${job}`,
+    // Exit 1 means "a wrong page was read" and 3 "measured nothing" here: a job that failed or was cancelled measured nothing.
+    stopExit: stopExitWith(3),
+    prepare: async () => {
+      const lease = await leasePageServer({ root: pagesDir, port, probePath: PAGES[0].page });
+      // The BOXES fetch these pages, from this host's address on their subnet.
+      return holdingPages(lease, () => ({ cases: rotationCases(pagesBaseUrl(process.env, port), ROUNDS), groups: { "identity-rotation": {} } }));
+    },
+    collect: rotationCollector(),
+  });
+  process.exit(exit);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();

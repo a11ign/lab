@@ -15,14 +15,15 @@ export const WALK_SCOPE = ["packages/lab"];
 await declareWalkScope(import.meta.url);
 
 /**
- * A worker address is validated where it ENTERS the program, and every client does it.
+ * NO LAB FILE READS A WORKER ADDRESS FOR THE FLEET (A11-263).
  *
- * `--worker=http://:8765` reached a real run: four capture shards spent 29 minutes against an unparseable address
- * while every worker sat idle, and the run recorded "worker never became ready" as a failure of the PAGE. A validator
- * is only worth anything if every client calls it, so this is a DISCOVERY test rather than a list: a hardcoded list
- * of clients checks the places somebody already thought of.
+ * This was a rule that every client validate the address it took: `--worker=http://:8765` reached a real run, four capture shards spent 29 minutes against an unparseable address while every
+ * worker sat idle, and the run recorded "worker never became ready" as a failure of the PAGE. The remedy was a validator at the entry of every client.
  *
- * The validator's own tests (`assertWorkerUrl` accepts, normalises and refuses) live with it, in the fleet repository.
+ * Every lab client now SUBMITS a fleet job, and the service names boxes and never gives an address (A11-243). So there is no address to validate: a client that still names `--worker=` hands it to
+ * `workerAddressNotice` (directly, or through `runFleetClient`, which calls it), which ignores it with one line when `A11Y_FLEET_BOXES` is set (the job catalogue still passes the old addresses
+ * until the lab on the lab host reads the new variables) and refuses it, naming the new form, when it is not. What the test keeps is the other direction: a file that names `--worker=` and
+ * also validates an address with `assertWorkerUrl` is a file that still dispatches to one. The validator's own tests live with it, in the fleet repository.
  */
 const LAB = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -31,34 +32,38 @@ function workerArgClients(): Array<[string, string]> {
   return sourceFiles({ root: LAB }).filter(([, src]) => src.includes('"--worker="'));
 }
 
-test("every client that takes --worker validates it", () => {
+/** The files among `clients` that handle the argument as the fleet route requires, and the ones that do not. */
+export function addressFaults(clients: Array<[string, string]>): string[] {
+  const faults: string[] = [];
+  for (const [name, src] of clients) {
+    if (!/workerAddressNotice\(|runFleetClient\(/.test(src)) faults.push(`${name} reads --worker but neither routes it through workerAddressNotice nor submits through runFleetClient`);
+    if (/assertWorkerUrl/.test(src)) faults.push(`${name} validates an address for a box; a client that submits a fleet job takes no address`);
+  }
+  return faults;
+}
+
+test("no lab file reads a worker address for the fleet", () => {
   const clients = workerArgClients();
 
   // A discovery finding nothing passes every assertion below in perfect silence, which is this repo's own
-  // rule about a check that reports success having examined nothing. Measured at the move: 7 lab files.
+  // rule about a check that reports success having examined nothing. Eleven lab files name the flag.
   // The message names no count: a floor that also REPORTS its subject is refused by `reported-counts.test.ts`.
-  assert.ok(clients.length >= 3,
+  assert.ok(clients.length >= 10,
     "found too few --worker clients; the discovery walk is broken, not the codebase clean");
 
-  for (const [name, src] of clients) {
-    // A client that submits to the fleet job service takes no address at all (A11-263): it ignores `--worker=` with a line, or refuses it, through `fleet-job.ts`, so
-    // there is no address to validate. Either way the argument is dealt with where it ENTERS the program.
-    assert.match(src, /assertWorkerUrl|workerAddressNotice\(/,
-      `${name} reads --worker but neither validates it nor routes it through workerAddressNotice. A truthiness check passes \`http://:8765\`, and the `
-      + "cost of that is 5 minutes per page of readiness timeout recorded as a failure of the page.");
-  }
+  assert.deepEqual(addressFaults(clients), [],
+    "a client that submits to the fleet job service takes no worker address: it ignores `--worker=` with a line (when A11Y_FLEET_BOXES is set) or refuses it, naming the new form, "
+    + "through fleet-job.ts. A truthiness check on an address passes `http://:8765`, and the cost of that is 5 minutes per page of readiness timeout recorded as a failure of the page.");
 });
 
-test("a client that submits to the fleet job service never reads a worker address for a box", () => {
-  // The positive control is the floor above; this is the other direction. `workerAddressNotice` ignores or refuses an address, so a file that calls it and then
-  // validates an address with `assertWorkerUrl` as well is a file that still dispatches to one. The three clients that moved in A11-263 are named, and each must do only the former.
-  const moved = ["capture-screenreader-dataset.mjs", "capture-real-pages.mjs"];
-  const found = workerArgClients().filter(([name]) => moved.some((file) => name.endsWith(file)));
-  assert.equal(found.length, moved.length, "the discovery must find the moved clients, or this test compares nothing");
-  for (const [name, src] of found) {
-    assert.match(src, /workerAddressNotice\(/, `${name} must route a worker address through workerAddressNotice`);
-    assert.doesNotMatch(src, /assertWorkerUrl/, `${name} submits to the service and must not validate an address for a box`);
-  }
+test("the check can fail: a client that validates an address, or never routes the flag, is named", () => {
+  // The positive control for the assertion above, run on seeded sources rather than on the tree, so it proves the detector sees both shapes.
+  const validates: Array<[string, string]> = [["seed-a.ts", 'refuseUnknownFlags(["--worker="]); workerAddressNotice({}); assertWorkerUrl(x);']];
+  const ignores: Array<[string, string]> = [["seed-b.ts", 'refuseUnknownFlags(["--worker="]); doNothing();']];
+  const sound: Array<[string, string]> = [["seed-c.ts", 'refuseUnknownFlags(["--worker="]); await runFleetClient({});']];
+  assert.equal(addressFaults(validates).length, 1);
+  assert.equal(addressFaults(ignores).length, 1);
+  assert.deepEqual(addressFaults(sound), []);
 });
 
 test("no client rolls its own worker-URL check instead of calling the shared one", () => {
@@ -66,6 +71,6 @@ test("no client rolls its own worker-URL check instead of calling the shared one
   // inventory reader, one source walk.
   for (const [name, src] of workerArgClients()) {
     assert.ok(!/new URL\((?:WORKER|worker)/.test(src),
-      `${name} parses the worker address itself — call assertWorkerUrl so there is one definition`);
+      `${name} parses the worker address itself — a client that submits a fleet job takes no address`);
   }
 });

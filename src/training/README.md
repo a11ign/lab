@@ -273,6 +273,26 @@ Use pnpm run training:capture --only=filter-status to recapture a subset.
 The generated run directory is ignored by Git; source cases and the pipeline
 remain reviewable in this directory.
 
+## The gates and the one-box harnesses
+
+`gate:stability`, `gate:probe-order`, `capture:check` (its worker mode), `training:repeat`, `eval:capture` (its worker mode), `identity:rate`, `verdict:stability`
+and `bench:capture` SUBMIT their captures to the same service, and follow the same flow as `training:capture`: `--label=<ticket key>` (required),
+`--boxes=` or `--box=<name>`, `--wait=<duration>`, and `--collect[=<job ID>]`; with no wait they print the job ID and exit 75. What each submits is the shape of
+its measurement, held to one box in order by the service:
+
+| Client | The job |
+| --- | --- |
+| `gate:stability` | one job, a **group per canary**: the canary's repeats (same page, same body, fresh NVDA) on one box, the canaries spread over the boxes |
+| `gate:probe-order` | a **group of three per page**: A1, B (`probeOrder: "focus-first"`), A2. A page whose captures failed is submitted again, whole, once; a second failure is INCONCLUSIVE (exit 2) |
+| `capture:check` | six cases, each with its own body; a page whose identity is not confirmed is a `fleet job recapture`, up to four attempts in all |
+| `training:repeat` | one group of `--times` repeats; a transient fault is captured again on the same box, up to three attempts |
+| `eval:capture`, `identity:rate`, `verdict:stability`, `bench:capture` | one group, in the order the measurement needs: the fixtures of a set; rounds of A→B→C; good then bad, three each; N samples |
+
+A box is **named, never addressed**: `--box=a11y-worker-14` (or the name as the positional where the harness took an address). An address, `--worker=` or `A11Y_WORKER`
+is ignored with one line when `A11Y_FLEET_BOXES` is set and refused, naming the new form, when it is not. A gate that is dispatched to the lab (`lab:job`) gets its boxes,
+label and wait from the job catalogue. The gates exit INCONCLUSIVE (2) when their job failed, and `training:repeat` prints `sockets recovered` and `polls survived` as
+`not reported`: the service owns the transport and its records carry neither count, so the report says the metric is missing rather than zero.
+
 ## What cannot run on this Mac
 
 The generator and exporter run locally, but NVDA capture requires the

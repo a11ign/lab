@@ -115,7 +115,8 @@ const CHECKED = MJS.filter((path) =>
 // b23ac008 (a11ign/a11ign#4788 deleted six of the shims). The core's own tracked `.mjs` are 10 unmarked isolation fixtures at 989c2bcc3 and at c18c2dab7, so by elimination the other 25 of
 // the 69 were the LAID layers' (control, nvda-worker, worker-fleet), and the pins core c18c2dab7 lays carry no `.mjs` at all: its whole population is this repository's 79 plus those
 // 10 fixtures, 89, of which 44 are marked. Measured by this test at core c18c2dab7 with lab b23ac008 laid (Node 24.21.0). The 25 is the difference, not a count of the layers' files at 989c2bcc3.
-const AT_LEAST = 44; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
+// 44 -> 42 (A11-263): `wake-by-hand.mjs` and `worker-pool.mjs`, both marked, were DELETED with their last callers (the gates and one-box harnesses submit fleet jobs now); no file lost its marker.
+const AT_LEAST = 42; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
 
 test("the typechecked `.mjs` count never falls", () => {
   assert.ok(CHECKED.length >= AT_LEAST,

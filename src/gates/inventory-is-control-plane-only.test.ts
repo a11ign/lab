@@ -44,26 +44,21 @@ const READER = "inventoryWorkerUrls";
  * receives it, derived from the inventory on the control plane where the file actually lives.
  */
 const NON_CONTROL_READERS: Record<string, string> = {
-  "packages/lab/src/gates/fleet.ts":
-    "Reads A11Y_WORKERS FIRST and falls back to the inventory, so it works on the lab where the file is "
-    + "gone. This is the module that broke; the fallback is the fix.",
-  // `capture-real-pages.mjs` and `capture-screenreader-dataset.mjs` were classified here as exposed until they gained the same fallback. They submit to the fleet job
-  // service now (A11-263) and read no inventory and no address at all, so there is nothing to classify.
+  // `packages/lab/src/gates/fleet.ts` was the module that broke (`gate:stability` died on the lab with "no workers in inventory.yml"): it read A11Y_WORKERS first and fell back to the
+  // inventory. The gates SUBMIT a fleet job now (A11-263), which names boxes and never gives an address, so `gateWorkers` is gone with the pool and `fleet.ts` reads no inventory at all.
+  // `capture-real-pages.mjs` and `capture-screenreader-dataset.mjs` were classified here as exposed until they gained the same fallback; they read none either.
 };
 
 test("nothing outside packages/control reaches the inventory unless it is classified", () => {
-  const reaching = tracked().filter((f) => {
-    if (f.startsWith("packages/control/")) return false;
-    if (/\.test\.(ts|mjs|js)$/.test(f)) return false;
-    try { return readFileSync(join(REPO, f), "utf8").includes(READER); } catch { return false; }
-  }).sort();
+  const mentions = (f: string): boolean => { try { return readFileSync(join(REPO, f), "utf8").includes(READER); } catch { return false; } };
+  const all = tracked();
 
-  // ANTI-VACUITY: the reader must be found SOMEWHERE, or a rename has made this examine nothing.
-  assert.ok(reaching.length > 0,
-    `no file outside packages/control mentions ${READER}; has it been renamed? This test would then pass `
-    + "having checked nothing, which is the defect it exists for.");
+  // ANTI-VACUITY, on the population and on the detector. No lab file reaches the reader any more (the gates submit a fleet job, A11-263), so "the reader is found somewhere outside control"
+  // can no longer be the control: the walk must be real, and the detector must be able to see the reader in a source that has it.
+  assert.ok(all.length > 100, "the walk found almost no source files; it examined nothing, which is the defect this test exists for");
+  assert.ok(`const workers = ${READER}();`.includes(READER), "the detector cannot see the reader it is looking for");
 
-  const unclassified = reaching.filter((f) => !(f in NON_CONTROL_READERS));
+  const unclassified = all.filter((f) => !f.startsWith("packages/control/") && !/\.test\.(ts|mjs|js)$/.test(f) && mentions(f) && !(f in NON_CONTROL_READERS)).sort();
   assert.deepEqual(unclassified, [],
     "these reach the inventory from outside packages/control and are classified nowhere. `inventory.yml` "
     + "is gitignored, so a pull DELETES it from their machine: each must work without it (read "
@@ -79,11 +74,9 @@ test("the classification names no file that has gone", () => {
   }
 });
 
-test("the gate falls back to A11Y_WORKERS, which is the whole remedy", async () => {
-  const { gateWorkers } = await import("./fleet.ts");
-  const got = gateWorkers(undefined, { env: { A11Y_WORKERS: "http://a:8765,http://b:8765" }, inventory: () => [] });
-  assert.deepEqual(got.workers, ["http://a:8765", "http://b:8765"]);
-  assert.match(got.scope, /from A11Y_WORKERS/, "the scope must SAY where the fleet came from");
-  assert.throws(() => gateWorkers(undefined, { env: {}, inventory: () => [] }),
-    /a gate cannot examine nothing/, "with neither source it must still refuse, not examine nothing");
+test("the gates read no inventory and choose no boxes: they submit a job, and the service books them", () => {
+  // The remedy this test used to prove -- `gateWorkers` falling back to A11Y_WORKERS -- is gone with the thing it protected. What replaces it is the absence: `fleet.ts` mentions neither the
+  // reader nor the variable, so a pull that deletes `inventory.yml` from the lab cannot take a gate down.
+  const source = readFileSync(join(REPO, "packages/lab/src/gates/fleet.ts"), "utf8");
+  assert.doesNotMatch(source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""), /inventoryWorkerUrls|A11Y_WORKERS|gateWorkers|acrossFleet/, "fleet.ts chooses boxes or reads the inventory again");
 });

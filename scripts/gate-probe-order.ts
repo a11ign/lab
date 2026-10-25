@@ -33,19 +33,19 @@ import { resolve } from "node:path";
 import { compareCapture } from "../src/capture/evidence-diff.ts";
 import { probeStates } from "@a11ign/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
-import { guestReachableUrl } from "@a11ign/screenreader-fleet";
-import { assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
-  from "@a11ign/screenreader-fleet/worker-http";
 import { renderVerdict, exitCodeFor } from "../src/gates/verdict.ts";
-import { datasetRoot } from "../src/dataset-paths.ts";
-import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
-  from "../src/gates/fleet.ts";
+import { datasetRoot, refuseIfRunsReadonly, repeatCapturesRoot } from "../src/dataset-paths.ts";
+import { fleetVerdict, renderShards } from "../src/gates/fleet.ts";
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
+import { holdingPages, runFleetClient, slugOf, stopExitWith } from "../src/fleet/harness-flow.ts";
+import { reachableFromBoxes, whyNoCapture } from "../src/fleet/fleet-job.ts";
+import type { FleetCase, FleetGroups } from "../src/fleet/fleet-job.ts";
+import type { Collector } from "../src/fleet/capture-flow.ts";
 import type { Loose } from "../src/capture/loose.ts";
 
-refuseUnknownFlags(["--worker=", "--pages=", "--json", LOCAL_FLAG],
+// `--worker=` is named so that an address is dealt with in words (`fleet-job.ts`): ignored when `A11Y_FLEET_BOXES` is set, refused, naming the new form, when it is not.
+refuseUnknownFlags(["--worker=", "--pages=", "--json", "--boxes=", "--label=", "--wait=", "--collect", LOCAL_FLAG],
   { entry: import.meta.url, command: "npm run gate:probe-order" });
 
 /**
@@ -57,7 +57,7 @@ refuseUnknownFlags(["--worker=", "--pages=", "--json", LOCAL_FLAG],
 const CAPTURES_PER_PAGE = 3;
 
 /** Pages whose evidence must not depend on probe order, each with what it exists to catch. */
-const PAGES = [
+export const PAGES = [
   {
     path: "image-missing-alt-behind-consent/good",
     reason: "a CONFORMANT page behind a consent banner that confines Tab — the shape that refuted three "
@@ -113,34 +113,36 @@ const PAGES = [
 const arg = (name: string) =>
   process.argv.find((a) => a.startsWith(`${name}=`))?.slice(name.length + 1);
 
+/** The body of each capture of a page. B changes ONLY the probe order, so any difference it shows is the order's. */
+const BODY = { task: "Read the page and reach its controls.", probeFocus: true, probeForms: false, probeNavigation: false };
+
+/** A1, B, A2: the control brackets the treatment, in the order they must run. Named as data so the order is visible at the top of the file. */
+const ORDER = [
+  { key: "a1", body: { ...BODY } },
+  { key: "b", body: { ...BODY, probeOrder: "focus-first" } },
+  { key: "a2", body: { ...BODY } },
+] as const;
+
+const groupOf = (page: Loose): string => slugOf(page.url ?? page.path);
+
 /**
- * Through `requestJson`, never a bare `fetch`. It carries the headers cap and the budget ladder that undici
- * otherwise ignores silently — `budget-ladder.test.ts` DISCOVERS every capture client and refuses a new one
- * that rolls its own, which is how it caught this file.
+ * The cases of a set of pages: ONE GROUP of three per page, A1, B and A2 in that order, so the service holds all three to one box and sends them one after another.
  *
- * @param {string} worker @param {string} url @param {string | undefined} probeOrder
+ * EVERY CAPTURE OF A PAGE STAYS ON ONE BOX. Splitting them would make a difference between orders indistinguishable from a difference between machines -- the exact conflation this gate
+ * exists to detect, arriving through the scheduler instead of through the probes.
  */
-async function capture(worker: string, url: string, probeOrder: string | undefined) {
-  try {
-    const { status, json } = await captureTolerantly({
-      worker,
-      body: { url, task: "Read the page and reach its controls.", probeFocus: true,
-        probeForms: false, probeNavigation: false, ...(probeOrder ? { probeOrder } : {}) },
-      timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
-    });
-    if (status !== 200) return { error: `${status} ${JSON.stringify(json).slice(0, 160)}` };
-    return { capture: json };
-  } catch (error) {
-    // A NETWORK FAULT IS NOT AN ORDERING FAULT, and letting it throw made this gate say so. It crashed with
-    // `read ETIMEDOUT` on a live site and exited 1 — which in this gate MEANS "the evidence depends on
-    // probe order". One exit code for two unrelated events, which is the defect this whole plan is about,
-    // in the gate written to find it.
-    //
-    // Caught and returned so the page becomes INCONCLUSIVE and the pages that DID capture keep their
-    // verdicts. Live sites are reachable-until-they-are-not, and a gate that loses four good comparisons
-    // because the fifth timed out is one nobody runs.
-    return { error: `capture failed: ${error instanceof Error ? error.message : String(error)}` };
+export function probeOrderCases(pages: readonly Loose[], base: string): { cases: FleetCase[]; groups: FleetGroups } {
+  const cases: FleetCase[] = [];
+  const groups: FleetGroups = {};
+  for (const page of pages) {
+    // A corpus path is served from the leased page server; a real page is fetched from the live web and needs no base. Named `url` vs `path` rather than inferred, so an absolute URL cannot be
+    // silently concatenated onto localhost -- which is the failure that returns Edge's own error page and compares identical under both orders.
+    const url = page.url ?? `${base}/${page.path}.html`;
+    const group = groupOf(page);
+    for (const { key, body } of ORDER) cases.push({ id: `${group}.${key}`, url, body: { ...body }, group });
+    groups[group] = {};
   }
+  return { cases, groups };
 }
 
 /**
@@ -175,46 +177,83 @@ function pageChangedUnderProbes(capture: Loose) {
 
 async function main() {
   // THE CONTROL PLANE IS THE DEFAULT; this returns only under `--local`. See gates/dispatch.mjs.
-  const { controlPlane } = await dispatchUnlessLocal({ job: "gate-probe-order", argv: process.argv.slice(2) });
-  // EVERY WORKER BY DEFAULT, work SHARDED across them. This demanded `--worker` and refused without one,
-  // so it captured 10 times on one box while the rest of the fleet idled -- and at twenty boxes that is
-  // nineteen idle. Naming one stays available as the escape hatch.
-  const named = arg("--worker");
-  // VALIDATED, not merely truthy. `http://:8765` is a truthy string that `new URL` rejects, and the cost of
-  // accepting it was measured at 29 minutes of readiness timeout recorded as a failure of the PAGE.
-  if (named) assertWorkerUrl(named);
-  const { workers, scope } = gateWorkers(named);
-
-  // LEASED, NOT ASSUMED, and this is not housekeeping — it is the difference between a gate and a false
-  // pass. Edge serves its OWN error page when the port is dead, so two probe orders against nothing would
-  // compare IDENTICAL and this would report PASS. That exact failure is on record here: a run whose page
-  // server was stopped underneath it read a dead port for 46 captures and every one "succeeded".
-  //
-  // `probePath` names a page that must actually be served, so "serving" means serving THIS dataset rather
-  // than merely holding the port. Released in the `finally`, so a gate that throws leaves the host as it
-  // found it, and the lease is refcounted so a concurrent run is not torn down.
-  const pages = await leasePageServer({
-    root: resolve(datasetRoot(), "pages"),
-    port: 5050,
-    probePath: `${PAGES[0].path}.html`,
+  const controlPlane = (await dispatchUnlessLocal({ job: "gate-probe-order", argv: process.argv.slice(2) })).controlPlane;
+  // The pending file is written under `runs/`: `A11Y_RUNS_READONLY=1` asks "would this have touched it" without letting it.
+  refuseIfRunsReadonly(repeatCapturesRoot());
+  const exit = await runFleetClient({
+    argv: process.argv.slice(2), root: resolve(repeatCapturesRoot(), "probe-order"), kind: "gate-probe-order",
+    hint: (job) => `npm run gate:probe-order -- ${LOCAL_FLAG} --collect=${job}`,
+    // Exit 1 means "the evidence depends on probe order" here, so a job that failed, was cancelled or could not be reached is INCONCLUSIVE (2). The run's own 75 and 124 are kept.
+    stopExit: stopExitWith(2),
+    prepare: async () => {
+      // LEASED, NOT ASSUMED, and this is not housekeeping -- it is the difference between a gate and a false pass. Edge serves its OWN error page when the port is dead, so two probe orders against
+      // nothing would compare IDENTICAL and this would report PASS. That exact failure is on record here: a run whose page server was stopped underneath it read a dead port for 46 captures and
+      // every one "succeeded". `probePath` names a page that must actually be served, so "serving" means serving THIS dataset rather than merely holding the port. Released when the run ends.
+      const pages = await leasePageServer({ root: resolve(datasetRoot(), "pages"), port: 5050, probePath: `${PAGES[0].path}.html` });
+      return holdingPages(pages, () => {
+        // The BOXES fetch these pages and a box's localhost is not ours: a localhost URL is made the address the boxes reach this host on. Reused rather than re-derived, because deriving it
+        // independently is how "every capture fetched the GUEST's localhost" happened once already.
+        const base = arg("--pages") ?? reachableFromBoxes(pages.url);
+        process.stdout.write(`${PAGES.length} pages x ${CAPTURES_PER_PAGE} captures, one group each (a box holds all three of a page)\n`);
+        return { ...probeOrderCases(PAGES, base), extra: { round: 1, base, settled: {} } };
+      });
+    },
+    collect: probeOrderCollector(controlPlane),
   });
-  try {
-    // The GUEST fetches these pages and its localhost is not ours. `guestReachableUrl` owns that rewrite —
-    // it is reused rather than re-derived here, because deriving it independently is how "every capture
-    // fetched the GUEST's localhost" happened once already. The worker is named rather than leased, so the
-    // lease is stated as `explicit` with a release that does nothing: there is nothing here to put back.
-    // EVERY CAPTURE OF A PAGE STAYS ON ONE BOX. Splitting them would make a difference between orders
-    // indistinguishable from a difference between machines -- the exact conflation this gate exists to
-    // detect, arriving through the scheduler instead of through the probes. So the unit handed to the pool
-    // is a PAGE, carrying all of its captures.
-    process.stdout.write(`${scope}\n`);
-    const outcomes = await acrossFleet(PAGES, workers, (page, worker) =>
-      comparePage(page, worker, arg("--pages") ?? baseFor(pages, worker)));
-    process.stdout.write(`\nWHERE THE WORK LANDED\n${renderShards(outcomes)}\n`);
-    return report_(outcomes, workers.length, controlPlane);
-  } finally {
-    await pages.release();
+  process.exit(exit);
+}
+
+/** What each page came to: the box that took it, and either its judged result or why it has none. */
+type PageOutcome = { worker: string; result: Loose | null; error: string | null };
+
+/** How many times a page is submitted: the first, and one more, whole, in a new job. A second failure is INCONCLUSIVE. */
+const PAGE_ROUNDS = 2;
+
+/** What the job took of ONE page: its three captures by key, or why they are not all there. A network fault is not an ordering fault: the page becomes INCONCLUSIVE and the others keep their verdicts. */
+function takenOf(group: string, fetched: Parameters<Collector>[0]): { worker: string; taken: Record<string, Loose>; error: string | null } | null {
+  const entries = fetched.manifest.captures.filter((c) => c.group === group);
+  if (!entries.length) return null;
+  const taken: Record<string, Loose> = {};
+  let error: string | null = null;
+  for (const { key } of ORDER) {
+    const entry = entries.find((c) => c.case === `${group}.${key}`);
+    const record = entry ? fetched.record(entry) : null;
+    const body = record?.capture as Loose | undefined;
+    if (entry?.status === "done" && body && !body.error) taken[key] = body;
+    else error ??= entry ? whyNoCapture(entry, record) : `no capture of ${key} came back`;
   }
+  return { worker: entries[0]?.box ?? "(no box took it)", taken, error };
+}
+
+/**
+ * The collector. It judges each page from its three captures, and a page whose captures failed is submitted again, WHOLE, in one new job -- once.
+ *
+ * This replaces "moved to another worker until every worker has failed", which the service cannot express: it never names a box it was not asked for, and a re-capture is pinned to the box its
+ * group was taken on. One retry keeps it bounded, and a second failure is INCONCLUSIVE (exit 2): "could not capture it" is never "agrees".
+ */
+/** `controlPlane` is where the run was driven from, kept in the verdict's provenance. */
+export function probeOrderCollector(controlPlane = ""): Collector {
+  return async (fetched, pending) => {
+    const extra = pending.extra as { round: number; base: string; settled: Record<string, PageOutcome> };
+    const outcomes: Record<string, PageOutcome> = { ...extra.settled };
+    const retry: Loose[] = [];
+    for (const page of PAGES) {
+      const group = groupOf(page);
+      const found = takenOf(group, fetched);
+      if (!found) continue;
+      const { worker, taken, error } = found;
+      if (error === null) outcomes[group] = { worker, result: judgePage(page, worker, taken), error: null };
+      else if (extra.round < PAGE_ROUNDS) retry.push(page);
+      else outcomes[group] = { worker, result: null, error };
+    }
+    if (retry.length) {
+      process.stdout.write(`${retry.length} page(s) could not be captured all three ways; submitting ${retry.length === 1 ? "it" : "them"} again, whole, once: ${retry.map(groupOf).join(", ")}\n`);
+      return { recapture: [], resubmit: { ...probeOrderCases(retry, extra.base), names: {}, extra: { round: extra.round + 1, base: extra.base, settled: outcomes } }, exit: 0 };
+    }
+    return { recapture: [], exit: reportOutcomes(controlPlane, PAGES.map((page) => ({
+      item: page, ...(outcomes[groupOf(page)] ?? { worker: "(no box took it)", result: null, error: "the job holds no capture of this page" }),
+    }))) };
+  };
 }
 
 /** Presentation only — extracted because the comparison and the rendering are different jobs. */
@@ -242,28 +281,14 @@ function report(results: Loose[]) {
   }
 }
 
-/** The page-server base URL as THIS box can reach it. Derived per worker; localhost is not shared. */
-function baseFor(pages: Loose, worker: string) {
-  // The GUEST fetches these pages and its localhost is not ours. `guestReachableUrl` owns that rewrite --
-  // reused rather than re-derived, because deriving it independently is how "every capture fetched the
-  // GUEST's localhost" happened once already. The worker is named rather than leased, so the lease is
-  // stated as `explicit` with a release that does nothing: there is nothing here to put back.
-  return guestReachableUrl(pages.url, { worker, source: "explicit", release: async () => {} });
-}
-
 /**
- * ONE page, in BOTH probe orders, on ONE box.
+ * ONE page, judged from its three captures: A1, B and A2, which the service took on ONE box.
  *
- * The two captures must share a machine: a difference between orders and a difference between machines
- * would otherwise be indistinguishable, which is the conflation this gate exists to detect arriving
- * through the scheduler rather than through the probes.
+ * The three must share a machine: a difference between orders and a difference between machines would otherwise be indistinguishable, which is the conflation this gate exists to detect
+ * arriving through the scheduler rather than through the probes.
  */
-async function comparePage(page: Loose, worker: string, base: string) {
-  // A corpus path is served from the leased page server; a real page is fetched from the live web and
-  // needs no base. Named `url` vs `path` rather than inferred, so an absolute URL cannot be silently
-  // concatenated onto localhost -- which is the failure that returns Edge's own error page and compares
-  // identical under both orders.
-  const url = page.url ?? `${base}/${page.path}.html`;
+export function judgePage(page: Loose, worker: string, taken: Record<string, Loose>) {
+  const { a1, b, a2 } = { a1: { capture: taken.a1 }, b: { capture: taken.b }, a2: { capture: taken.a2 } };
   // THREE CAPTURES: A1, B, A2. The gate used to take two, changing the probe order AND letting time pass,
   // so a difference could be either -- a textbook confound. On `tfl.gov.uk` the clock ticked 22:43 -> 22:47
   // and a disruption banner appeared between them, and the gate could not tell that from an ordering fault.
@@ -273,15 +298,6 @@ async function comparePage(page: Loose, worker: string, base: string) {
   // now. The control BRACKETS the treatment rather than following it, so it spans a longer window
   // (t=0->2 against t=0->1) and therefore slightly over-states drift -- conservative in the right
   // direction for a tool that asserts: it cannot invent an ordering fault, it may miss a marginal one.
-  const a1 = await capture(worker, url, undefined);
-  const b = await capture(worker, url, "focus-first");
-  const a2 = await capture(worker, url, undefined);
-  const failed = [a1, b, a2].find((c: Loose) => c.error);
-  // INCONCLUSIVE, never a pass. A page that could not be captured all three ways was not compared, and
-  // "not compared" reading as "agrees" is the defect this whole plan is about, one layer out. THROWN so it
-  // reduces the fleet's coverage, rather than returned as a result that looks judged.
-  if (failed) throw new Error(failed.error);
-
   const treatment = compareCapture((a1.capture as never), (b.capture as never));
   const control = compareCapture((a1.capture as never), (a2.capture as never));
   const ordering = differencesNotExplainedBy(treatment, control);
@@ -368,8 +384,9 @@ export function classifyMovers(judged: Array<{ page: string; verdict: string; }>
  * luck, not evidence for the remedy — the shape that let an inert `refreshBrowseBuffer` collect three
  * green runs.
  */
-function report_(outcomes: Loose[], workerCount: number,
-  controlPlane: string) {
+function reportOutcomes(controlPlane: string, outcomes: Loose[]): number {
+  process.stdout.write(`\nWHERE THE WORK LANDED\n${renderShards(outcomes)}\n`);
+  const workerCount = new Set(outcomes.map((o) => o.worker)).size;
   const judged = outcomes.filter((o) => o.result).map((o) => o.result);
   report(judged);
   for (const o of outcomes.filter((x) => !x.result)) {
@@ -447,7 +464,7 @@ function report_(outcomes: Loose[], workerCount: number,
     { of: PAGES.length - expectedMovers.length - liveMovers.length, what: `corpus pages and live sites, each captured ${CAPTURES_PER_PAGE}x (control, treatment, control)`,
       workers: workerCount, failed: differing.length, controlPlane });
   process.stdout.write(`\n${renderVerdict(verdict)}\n`);
-  process.exit(exitCodeFor(verdict));
+  return exitCodeFor(verdict);
 }
 
 

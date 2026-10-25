@@ -24,7 +24,28 @@ const MOVED = [
   "src/fleet/capture-flow.ts",
   "src/training/wait-for-capture.mjs",
   "src/training/capture-status.mjs",
+  // Step 4: the gates and the one-box harnesses, and the modules they are built from.
+  "src/fleet/harness-flow.ts",
+  "src/training/repeat-capture.mjs",
+  "src/training/repeat-fleet.ts",
+  "src/training/repeat-analysis.ts",
+  "scripts/stability-gate.ts",
+  "scripts/gate-probe-order.ts",
+  "scripts/bench-capture.ts",
+  "src/gates/fleet.ts",
+  "src/harnesses/capture-check.ts",
+  "src/harnesses/capture-fixtures.ts",
+  "src/harnesses/occurrence-verdict-stability.ts",
+  "src/harnesses/page-identity-rate.ts",
 ];
+
+/**
+ * What a moved file is allowed to contain, with the reason. `capture-check.ts` keeps its IN-PROCESS mode (CI's `capture-regression.yml`, and the boxes' own `a11ycheck` task), which asks
+ * whether a worker is serving on THIS machine with a 2 s local `/health` probe (`workerIsServing`): it sends no capture and waits on no job.
+ */
+const ALLOWED: Record<string, string[]> = {
+  "src/harnesses/capture-check.ts": ["a worker's /health read"],
+};
 
 /** What a moved file must not contain, and why each is a wait or a capture the service owns. */
 const FORBIDDEN: [string, RegExp][] = [
@@ -65,11 +86,11 @@ test("the scan sees each thing it is looking for: seeded into a source, it is fo
 });
 
 test("no moved client contains a wait, a poll, a pgrep, a capture of its own or a pool", () => {
-  assert.ok(MOVED.length >= 8, "the list this loop walks is the population");
+  assert.ok(MOVED.length >= 20, "the list this loop walks is the population");
   for (const file of MOVED) {
     const source = readFileSync(join(LAB, file), "utf8");
     assert.ok(source.length > 0, `${file} does not exist`);
-    assert.deepEqual(found(source), [], `${file} waits or captures on its own. Submit a job and wait once with \`fleet job wait\` through fleet-job.ts (waitOnce); the service books the boxes.`);
+    assert.deepEqual(found(source).filter((what) => !(ALLOWED[file] ?? []).includes(what)), [], `${file} waits or captures on its own. Submit a job and wait once with \`fleet job wait\` through fleet-job.ts (waitOnce); the service books the boxes.`);
   }
 });
 

@@ -22,42 +22,44 @@
 // confirmation. Every page below is present because of a specific mechanism it can exercise, and that
 // reason is recorded next to it. Add pages the same way.
 //
-// This delegates to `training:repeat` rather than reimplementing its comparison, which is the same
+// This shares `training:repeat`'s comparison (`src/training/repeat-analysis.ts`) rather than reimplementing it, which is the same
 // point in miniature: the tool already existed and hand-rolled substitutes were worse.
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+//
+// ## How it captures (A11-263)
+//
+// It SUBMITS one fleet job with a GROUP per canary: the canary's `--times` repeats are cases of the same page and body, and the service holds a
+// group to one box and captures it in order, so a canary's repeats are never split across machines (that would answer "are the boxes
+// interchangeable?" while looking like an answer to this question) and the canaries spread across the boxes the job booked. It records the job ID,
+// waits once if it was told to (`--wait=`, `A11Y_FLEET_WAIT`), and reads the captures from the manifest; with no wait it prints the ID and exits 75.
+// A transient failure is captured again on the same box (`fleet job recapture`), as `training:repeat` always did.
+//
+//   pnpm run gate:stability -- --local --label=<ticket key> --wait=2h      # submit, wait once, judge
+//   pnpm run gate:stability -- --local --collect[=<job ID>]                # judge a job that has finished
+import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
-// Resolved from THIS module. It was the cwd-relative `"src/training/repeat-capture.mjs"`, which stopped
-// existing when M8 moved the corpus pipeline into this package — and `gate:stability` is the check that must
-// pass before any corpus run, so it failing with "Command failed" is exactly the confusing symptom the comment
-// below warns about.
-const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs", import.meta.url));
-
-import { guestReachableUrl } from "@a11ign/screenreader-fleet";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { renderVerdict, exitCodeFor, crashVerdict } from "../src/gates/verdict.ts";
-import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
-  from "../src/gates/fleet.ts";
+import { fleetVerdict, renderShards } from "../src/gates/fleet.ts";
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.ts";
-import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "../src/gates/stability-canary.ts";
+import { varianceLines, canaryOutDir, unstableDetail } from "../src/gates/stability-canary.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { assertWorkerUrl } from "@a11ign/screenreader-fleet/worker-http";
-import { datasetRoot, repeatCapturesRoot } from "../src/dataset-paths.ts";
-import { pnpmCliInvocation } from "@a11ign/toolchain/lib/npm-cli-executable";
+import { datasetRoot, refuseIfRunsReadonly, repeatCapturesRoot } from "../src/dataset-paths.ts";
+import { holdingPages, runFleetClient, slugOf, stopExitWith } from "../src/fleet/harness-flow.ts";
+import { reachableFromBoxes } from "../src/fleet/fleet-job.ts";
+import { analyseRepeats } from "../src/training/repeat-analysis.ts";
+import { TRANSPORT_NOT_REPORTED } from "../src/training/repeat-analysis.ts";
+import { clearRepeatSet, repeatBody, repeatCollector, repeatJob } from "../src/training/repeat-fleet.ts";
+import type { RepeatSet, RepeatTarget } from "../src/training/repeat-fleet.ts";
 import type { Loose } from "../src/capture/loose.ts";
 
 /**
- * the canaries that must pass before a corpus run. `--probe-forms`, `--task` and `--url` appear in
- * this file because it PASSES them to repeat-capture; they are not its own.
+ * the canaries that must pass before a corpus run. `--probe-forms`, `--task` and `--url` are the canaries' own fields, not flags of this gate.
  *
- * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success. `--worker=` is named so that an address is dealt with in words
+ * (`fleet-job.ts`): it is ignored when `A11Y_FLEET_BOXES` is set and refused, naming the new form, when it is not.
  */
-refuseUnknownFlags(["--base=", "--times=", "--worker=", LOCAL_FLAG], { entry: import.meta.url, command: "pnpm run gate:stability" });
-
-const run = promisify(execFile);
-
+refuseUnknownFlags(["--base=", "--times=", "--worker=", "--boxes=", "--label=", "--wait=", "--collect", LOCAL_FLAG], { entry: import.meta.url, command: "pnpm run gate:stability" });
 
 const arg = (name: Loose, fallback: Loose) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
@@ -70,15 +72,11 @@ const RUN_ID = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}
 /**
  * This gate LEASES what it needs, rather than requiring you to have set it up.
  *
- * It could not run at all before: `repeat-capture.mjs` refuses without a worker, and the canary URLs
- * pointed at a page server nobody started — so with neither `A11Y_WORKER` nor a hand-run `pnpm exec serve`,
- * all five canaries reported "harness did not start" and the gate exited 2. A gate that a corpus run is
- * forbidden to start without, and that cannot start itself, is a gate that gets skipped; `release:gate`
- * was broken from the day it was written for the same reason, and `capture:check` went unrun for months
- * because it "cost a ceremony". This project's own rule: automate a check or lose it.
+ * It could not run at all before: the canary URLs pointed at a page server nobody started -- so all five canaries reported "harness did not start" and the gate exited 2. A gate that a corpus
+ * run is forbidden to start without, and that cannot start itself, is a gate that gets skipped; `release:gate` was broken from the day it was written for the same reason, and
+ * `capture:check` went unrun for months because it "cost a ceremony". This project's own rule: automate a check or lose it.
  *
- * Both leases put things back as they found them — a worker somebody had already started is left
- * running, and a page server somebody else is serving is left alone.
+ * The lease puts things back as it found them -- a page server somebody else is serving is left alone.
  */
 const DATASET_ROOT = datasetRoot();
 const PAGES_PORT = Number(process.env.DATASET_PAGES_PORT || 5050);
@@ -89,7 +87,7 @@ const PAGES_PORT = Number(process.env.DATASET_PAGES_PORT || 5050);
  * `reason` is not documentation. It is the thing to check before trusting a PASS: if a page cannot
  * express the fault you care about, its stability tells you nothing about that fault.
  */
-const CANARIES = [
+export const CANARIES = [
   {
     path: "form-unlabelled/good",
     reason: "auto-focuses its input, which is what surfaces Edge's autofill affordance — the exact " +
@@ -210,13 +208,6 @@ const CANARIES = [
 ];
 
 /**
- * One canary, captured `TIMES` times and judged.
- *
- * Extracted so the leases can be held in a `try/finally` around the loop without pushing the loop body
- * to four levels of nesting -- the lint gate's limit is three, and the honest fix for depth is a named
- * function rather than a suppression.
- */
-/**
  * EVERY CANARY NAMES EXACTLY ONE SOURCE, checked at load rather than trusted.
  *
  * A canary carrying `url` while `judgeCanary` destructured only `path` produced `=== undefined (5x) ===`
@@ -224,7 +215,7 @@ const CANARIES = [
  * repeats identically five times. On a gate whose entire question is "does this repeat identically", that is
  * the worst possible false pass.
  *
- * The comment describing that exact trap was already in this file, above code that did not implement it —
+ * The comment describing that exact trap was already in this file, above code that did not implement it --
  * an edit that failed halfway and was not noticed. So this is an assertion rather than a note: a canary with
  * neither field, or with both, stops the gate before it captures anything.
  */
@@ -236,165 +227,125 @@ for (const canary of CANARIES) {
   }
 }
 
-async function judgeCanary({ path, url: absolute, reason, task, probeForms, probeFocus }: Loose,
-  { base, worker, results }: Loose) {
-  // A corpus canary is served from the leased page server; a REAL page is fetched from the live web and
-  // takes no base. Explicit fields, never sniffed from the string.
-  const name = absolute ?? path;
-  const url = absolute ?? `${base}/${path}`;
-  process.stdout.write(`\n=== ${name} (${TIMES}x) ===\n    why: ${reason}\n`);
-  // Its OWN directory, per canary and per run: the shared one was overwritten by the next canary, so the
-  // captures of a failed run were gone before anyone could read why it failed (#3273).
-  const outDir = canaryOutDir({ root: repeatCapturesRoot(), runId: RUN_ID, name });
-  const args = repeatCaptureArgs({ script: REPEAT_CAPTURE, url, times: TIMES, worker, outDir,
-    probeForms, task, probeFocus });
-  try {
-    // tsx, not node: repeat-capture imports isTransient from capture-decisions.mjs, which imports the
-    // TypeScript verify.js. Under plain node that is ERR_MODULE_NOT_FOUND before a single line of output
-    // -- which is precisely how five canaries came back "Command failed" with nothing to read. The repo
-    // has hit this before with evidence-check.ts; the fix there was the same.
-    const pnpm = pnpmCliInvocation(["exec", "tsx", ...args]);
-    const { stdout } = await run(pnpm.command, pnpm.args, { maxBuffer: 1 << 24 });
-    const varies = varianceLines(stdout);
-    const usable = /(\d+)\/\d+ usable/.exec(stdout)?.[1];
-    // SURFACED, not swallowed, and ABSENCE IS NOT ZERO. This read `?? 0`, so a run where the line stopped
-    // being printed was indistinguishable from a clean one -- the "unchecked is not clean" defect, in the
-    // instrumentation written to prevent it, one day later.
-    for (const [label, what] of [["sockets recovered", "a response the worker had already completed"],
-      ["polls survived", "a transport failure the async path absorbed"]]) {
-      const found = new RegExp(`${label}: (\\d+)`).exec(stdout);
-      if (!found) {
-        process.stdout.write(`    "${label}" was NOT REPORTED by this capture — the metric is missing, `
-          + "which is not the same as zero\n");
-      } else if (Number(found[1]) > 0) {
-        process.stdout.write(`    ${found[1]} ${label} — ${what}\n`);
-      }
-    }
-    if (varies.length) {
-      results.push({ path: name, ok: false, detail: unstableDetail({ lines: varies, outDir }) });
-      process.stdout.write(varies.map((v) => `  ${v}\n`).join("") + `  captures kept in ${outDir}\n`);
-    } else if (Number(usable ?? 0) < 2) {
-      // Too few usable captures is not a PASS. A gate that passes when it could not measure is worse
-      // than no gate, because it launders "unknown" into "fine".
-      results.push({ path: name, ok: false, detail: `only ${usable ?? 0} usable capture(s) — could not judge` });
-      process.stdout.write(`  INCONCLUSIVE — only ${usable ?? 0} usable\n`);
-    } else {
-      results.push({ path: name, ok: true, detail: `${usable} usable, all fields identical` });
-      process.stdout.write(`  STABLE — ${usable} usable, all fields identical\n`);
-    }
-  } catch (error) {
-    interpretFailure(error, name, results, outDir);
+const nameOf = (canary: Loose): string => canary.url ?? canary.path;
+
+/** The group a canary is: its name, as a service case's ID can spell it. */
+const groupOf = (canary: Loose): string => slugOf(nameOf(canary));
+
+/**
+ * One canary, judged from the repeats the job took.
+ *
+ * Extracted so each canary's verdict is a function of the captures it was given and what the report says, with nothing leased or sent.
+ */
+function judgeCanary(canary: Loose, set: RepeatSet, report: ReturnType<typeof analyseRepeats>): Loose {
+  const name = nameOf(canary);
+  const outDir = set.target.outDir;
+  process.stdout.write(`\n=== ${name} (${set.target.times}x) ===\n    why: ${canary.reason}\n`);
+  // Too few usable captures is not a PASS. A gate that passes when it could not measure is worse than no gate, because it launders "unknown" into "fine".
+  if (report.tooFew) {
+    const detail = `only ${report.usable} usable capture(s) — could not judge`;
+    process.stdout.write(`  INCONCLUSIVE — ${detail}\n${report.stderr}`);
+    return { path: name, ok: false, unstable: false, detail };
   }
+  const varies = varianceLines(report.stdout);
+  if (report.exit === 0) {
+    process.stdout.write(`  STABLE — ${report.usable} usable, all fields identical\n`);
+    return { path: name, ok: true, detail: `${report.usable} usable, all fields identical` };
+  }
+  return interpretFailure(report, name, outDir, varies);
 }
 
 /**
- * What a non-zero exit from repeat-capture actually MEANS.
+ * What a non-zero exit from the analysis actually MEANS.
  *
- * Three different outcomes come back the same way -- a field varies, a capture errored, a capture heard
- * nothing -- and only the first is evidence that the pipeline is nondeterministic. Collapsing them into
- * "Command failed" once made a transient capture error read exactly like genuine instability and cost a
- * re-run to discover the page was fine. repeat-capture puts its report on stdout even when it exits 1.
+ * Three different outcomes come back the same way -- a field varies, a capture errored, a capture heard nothing -- and only the first is evidence that the pipeline is nondeterministic.
+ * Collapsing them into one failure once made a transient capture error read exactly like genuine instability and cost a re-run to discover the page was fine.
  */
-function interpretFailure(error: Loose, path: Loose, results: Loose,
-  outDir: string) {
-  const out = String(error.stdout ?? "");
-  const varies = varianceLines(out);
+function interpretFailure(report: ReturnType<typeof analyseRepeats>, path: string, outDir: string, varies: string[]): Loose {
+  const out = report.stdout;
   const empty = /(\d+) capture\(s\) heard nothing/.exec(out)?.[1];
   const failedRuns = out.split("\n").filter((l) => l.trim().startsWith("FAILED")).map((l) => l.trim());
-  // An empty stdout means the child never started -- a module resolution error, a missing file -- and
-  // that is a broken harness, not an inconclusive measurement. Say so rather than advising a re-run that
-  // will fail identically. This is exactly what five "harness did not start" canaries looked like when
-  // the gate had no worker to give them.
-  if (!out.trim()) {
-    const firstError = String(error.stderr ?? error.message).split("\n").find((l) => l.includes("Error"));
-    const detail = `harness did not start: ${firstError ?? error.message.split("\n")[0]}`;
-    results.push({ path, ok: false, unstable: false, detail });
-    process.stdout.write(`  BROKEN — ${detail}\n`);
-    return;
-  }
   const detail = varies.length ? `UNSTABLE: ${unstableDetail({ lines: varies, outDir })}`
     : empty ? `${empty} empty capture(s) — the foreground flake, not instability`
     : failedRuns.length ? `${failedRuns.length} capture(s) errored: ${failedRuns[0]}`
-    : error.message.split("\n")[0];
-  // Only a VARIES is evidence of nondeterminism. An errored or empty capture is a flake in the run, so it
-  // is reported and retried rather than treated as a verdict.
-  results.push({ path, ok: false, unstable: varies.length > 0, detail });
+    : "a capture was rejected or served another document";
+  if (varies.length) process.stdout.write(`${varies.map((v) => `  ${v}\n`).join("")}  captures kept in ${outDir}\n`);
+  // Only a VARIES is evidence of nondeterminism. An errored or empty capture is a flake in the run, so it is reported and retried rather than treated as a verdict.
   process.stdout.write(`  ${varies.length ? "UNSTABLE" : "INCONCLUSIVE"} — ${detail}\n`);
+  return { path, ok: false, unstable: varies.length > 0, detail };
+}
+
+/** The canary, as a repeat target: its group, where its captures are kept, and the body it asks the worker for. */
+function targetOf(canary: Loose, base: string): RepeatTarget {
+  const name = nameOf(canary);
+  // A corpus canary is served from the leased page server; a REAL page is fetched from the live web and takes no base. Explicit fields, never sniffed from the string.
+  const url = canary.url ?? `${base}/${canary.path}`;
+  return {
+    group: groupOf(canary), url, times: TIMES,
+    // Its OWN directory, per canary and per run: the shared one was overwritten by the next canary, so the captures of a failed run were gone before anyone could read why it failed (#3273).
+    outDir: canaryOutDir({ root: repeatCapturesRoot(), runId: RUN_ID, name }),
+    body: repeatBody({ probeForms: canary.probeForms, task: canary.task, probeFocus: canary.probeFocus }),
+  };
+}
+
+/** The job this gate submits: ONE group per canary, `TIMES` repeats of the same page and body in each. */
+export function stabilityJob(base: string, canaries: readonly Loose[] = CANARIES): ReturnType<typeof repeatJob> {
+  return repeatJob(canaries.map((canary) => targetOf(canary, base)));
 }
 
 /**
  * The gate. Everything with an effect lives in here, and NOTHING is leased at module scope.
  *
- * That distinction is not stylistic, and it is the reason this function exists. `leaseWorker` sat at
- * module scope, so merely IMPORTING this file leased a worker -- and with no `A11Y_WORKER` set the lease
- * path "finds every local worker VM, starts what is stopped". A `node -e "import('./stability-gate.ts')"`
- * therefore BOOTED a Windows VM on the developer's Mac, took ~15% of its RAM, and never released it,
- * because the import returned before the `finally` that does the releasing could ever be reached.
- *
- * That import is not hypothetical: CLAUDE.md makes it the only real check that an .mjs file still loads,
- * since neither lint nor tsc can see a ReferenceError at import. So the file most expensive to import was
- * the one the rules said to import.
+ * That distinction is not stylistic, and it is the reason this function exists. A lease at module scope meant merely IMPORTING this file leased something -- and `node -e "import('./stability-gate.ts')"`
+ * is CLAUDE.md's only real check that an .mjs file still loads, so the file most expensive to import was the one the rules said to import.
  */
 async function main() {
   // THE CONTROL PLANE IS THE DEFAULT. This returns only when `--local` was asked for; otherwise it
   // dispatches to the lab and exits with that job's status. See gates/dispatch.mjs for why a gate in
   // particular must not be able to produce an unattributable verdict.
-  const { controlPlane } = await dispatchUnlessLocal({ job: "gate-stability", argv: process.argv.slice(2) });
-  // Leased before the first canary and released in the `finally` below, so a gate that throws half way
-  // through still leaves the host as it found it. ONE page server serves every worker -- the lease is
-  // refcounted, and five boxes fetching the same corpus is exactly what it is for.
-  const pages = await leasePageServer({
-    root: resolve(DATASET_ROOT, "pages"),
-    port: PAGES_PORT,
-    probePath: `${CANARIES[0].path}.html`,
+  const controlPlane = (await dispatchUnlessLocal({ job: "gate-stability", argv: process.argv.slice(2) })).controlPlane;
+  // The captures and the pending file are written under `runs/`: `A11Y_RUNS_READONLY=1` asks "would this have touched it" without letting it.
+  refuseIfRunsReadonly(repeatCapturesRoot());
+  const exit = await runFleetClient({
+    argv: process.argv.slice(2), root: repeatCapturesRoot(), kind: "stability-gate",
+    hint: (job) => `pnpm run gate:stability -- ${LOCAL_FLAG} --collect=${job}`,
+    // A job that failed, was cancelled or could not be reached is NOT a canary found unstable: exit 1 means "a canary was UNSTABLE" here, so those are INCONCLUSIVE (2).
+    // The run's own 75 (submitted, not waited on) and 124 (the wait ran out, the job goes on) are not verdicts either and are kept.
+    stopExit: stopExitWith(2),
+    prepare: async () => {
+      // Leased before the job is submitted and released when the run ends, so a gate that throws half way through still leaves the host as it found it. ONE page server serves every box -- the
+      // lease is refcounted, and five boxes fetching the same corpus is exactly what it is for.
+      const pages = await leasePageServer({ root: resolve(DATASET_ROOT, "pages"), port: PAGES_PORT, probePath: `${CANARIES.find((c) => c.path)?.path ?? CANARIES[0].path}.html` });
+      return holdingPages(pages, () => {
+        // The BOXES fetch these pages and a box's localhost is not ours: a localhost URL is made the address the boxes reach this host on. Skipping it is how every capture came to fetch the
+        // guest's own localhost, showing Edge "localhost refused to connect" and burning three attempts per page.
+        const base = arg("base", reachableFromBoxes(pages.url));
+        const job = stabilityJob(base);
+        for (const target of job.extra.targets) clearRepeatSet(target);
+        process.stdout.write(`pages ${base} · ${CANARIES.length} canaries x ${TIMES} captures, one group each\n`);
+        return job;
+      });
+    },
+    collect: repeatCollector((sets) => reportSets(sets, controlPlane), { log: (line) => process.stdout.write(`${line}\n`) }),
   });
-  // VALIDATED, not merely truthy. `http://:8765` is a truthy string that `new URL` rejects, and a client
-  // that took it on trust spent five minutes per page in readiness timeouts recorded as a failure of the
-  // PAGE. This read `--worker` through the `arg()` helper, so the discovery test that requires exactly
-  // this could not see it until the flag was named literally in the file -- the second time that has
-  // happened today, which is the argument for naming flags literally rather than only through a helper.
-  const named = arg("worker", process.env.A11Y_WORKER);
-  if (named) assertWorkerUrl(named);
-  // EVERY WORKER BY DEFAULT. Naming one is the escape hatch, exactly as it is for a capture run.
-  const { workers, scope } = gateWorkers(named);
-  process.stdout.write(`pages ${pages.url} · ${scope}\n`);
-
-  // ONE CANARY PER MACHINE, handed to whichever box is FREE. Eight canaries over five boxes is two rounds,
-  // not eight, and over twenty boxes it is one -- and a slow box simply takes fewer. The repeats of a
-  // single canary stay on its own box; see `gates/fleet.mjs` for why that boundary is where it is.
-  try {
-    const outcomes = await acrossFleet(CANARIES, workers, (canary, worker) => judgeOne(canary, worker, pages));
-    process.stdout.write(`\nWHERE THE WORK LANDED\n${renderShards(outcomes)}\n`);
-    reportFleet(outcomes, workers.length, controlPlane);
-  } finally {
-    await pages.release().catch((e) => process.stderr.write(`page server release failed: ${e.message}\n`));
-  }
+  process.exit(exit);
 }
 
-/**
- * ONE canary, on the box it was dealt to -- all `TIMES` of its captures.
- *
- * The repeats stay together deliberately: this gate compares a page against ITSELF, so splitting its
- * captures across machines would answer a different question (are the boxes interchangeable?) while
- * looking like an answer to this one. `fleet-consistency` owns that question.
- */
-async function judgeOne(canary: Loose, worker: string, pages: Loose) {
-  // The GUEST fetches these pages, and the guest's localhost is not ours. `guestReachableUrl` rewrites the
-  // host -- skipping it is how every capture came to fetch the guest's own localhost, showing Edge
-  // "localhost refused to connect" and burning three attempts per page.
-  //
-  // A lease-shaped object with no lifecycle: these are bare-metal boxes that are always on, so there is
-  // nothing to start and nothing to restore. `guestReachableUrl` reads `hostAddress ?? derive(worker)`, and
-  // the derivation is what a NAMED worker has always taken -- hence `source: "explicit"`.
-  const base = arg("base", guestReachableUrl(pages.url,
-    { worker, source: "explicit", release: async () => undefined }));
-  const results: Loose[] = [];
-  await judgeCanary(canary, { base, worker, results });
-  const result = results[0];
-  // UNJUDGEABLE THROWS, so it reduces coverage rather than counting as a clean page. "Two captures errored"
-  // and "the page was stable" must never reach the verdict as the same thing.
-  if (result && !result.ok && !result.unstable) throw new Error(result.detail);
-  return result;
+/** Judge every canary from the repeats the job took, and say what the fleet's verdict is. */
+/** `controlPlane` is where the run was driven from, kept in the verdict's provenance. */
+export function reportSets(sets: RepeatSet[], controlPlane = ""): number {
+  const byGroup = new Map(CANARIES.map((canary) => [groupOf(canary), canary]));
+  const outcomes = sets.map((set) => {
+    const canary = byGroup.get(set.target.group);
+    if (!canary) throw new Error(`the job holds a group ${set.target.group} that is no canary of this gate: it was submitted by another version of it`);
+    const report = analyseRepeats({ raw: set.raw, errors: set.errors, times: set.target.times, reuse: false, outDir: set.target.outDir });
+    const result = judgeCanary(canary, set, report);
+    // UNJUDGEABLE IS A NULL RESULT, so it reduces coverage rather than counting as a clean page. "Two captures errored" and "the page was stable" must never reach the verdict as the same thing.
+    const unjudgeable = !result.ok && !result.unstable;
+    return { item: canary, worker: set.box ?? "(no box took it)", result: unjudgeable ? null : result, error: unjudgeable ? String(result.detail) : null };
+  });
+  process.stdout.write(`\nWHERE THE WORK LANDED\n${renderShards(outcomes)}\n`);
+  return reportFleet(outcomes, { workerCount: new Set(outcomes.map((o) => o.worker)).size, times: sets[0]?.target.times ?? TIMES, controlPlane });
 }
 
 /**
@@ -405,14 +356,16 @@ async function judgeOne(canary: Loose, worker: string, pages: Loose) {
  * judged reduces COVERAGE -- "we could not measure" and "it varied" need opposite responses, and a gate
  * that passes when it could not measure launders unknown into fine.
  */
-function reportFleet(outcomes: Loose[], workerCount: number,
-  controlPlane: string) {
+function reportFleet(outcomes: Loose[], { workerCount, times, controlPlane }: { workerCount: number; times: number; controlPlane: string }): number {
   const judged = outcomes.filter((o) => o.result);
   const unstable = judged.filter((o) => o.result.unstable);
   const unjudgeable = outcomes.filter((o) => !o.result);
 
   for (const o of unstable) process.stdout.write(`  UNSTABLE ${o.item.path ?? o.item.url} on ${o.worker}: ${o.result.detail}\n`);
   for (const o of unjudgeable) process.stdout.write(`  UNJUDGEABLE ${o.item.path ?? o.item.url} on ${o.worker}: ${o.error}\n`);
+  // SURFACED, not swallowed, and ABSENCE IS NOT ZERO. The transport counts used to be read off each capture's report and printed only when above zero, so a run where the line stopped being
+  // printed was indistinguishable from a clean one. The service owns the transport now and its records carry neither number, so the gate says so once.
+  process.stdout.write(`\n"${TRANSPORT_NOT_REPORTED.map((line) => line.split(":")[0]).join('" and "')}" were NOT REPORTED for these captures — the metric is missing, which is not the same as zero\n`);
 
   if (unjudgeable.length) {
     process.stdout.write(`\n${unjudgeable.length} canary(s) could not be judged — errored or too few `
@@ -426,13 +379,13 @@ function reportFleet(outcomes: Loose[], workerCount: number,
   }
   const verdict = fleetVerdict(outcomes, {
     of: CANARIES.length,
-    what: `${CANARIES.length} canaries x ${TIMES} captures compared by CONTENT`,
+    what: `${CANARIES.length} canaries x ${times} captures compared by CONTENT`,
     workers: workerCount,
     failed: unstable.length,
     controlPlane,
   });
   process.stdout.write(`\n${renderVerdict(verdict)}\n`);
-  process.exit(exitCodeFor(verdict));
+  return exitCodeFor(verdict);
 }
 
 /**

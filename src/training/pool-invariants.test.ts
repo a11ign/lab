@@ -18,7 +18,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { shouldEvictWorker, shouldRetireWorker, workersStillWorking } from "./capture-decisions.mjs";
@@ -87,25 +88,13 @@ test("omitting the other count keeps the old behaviour rather than crashing", ()
   );
 });
 
-test("the pool's eviction call passes both counts, and the dataset run no longer decides retirement at all", () => {
-  // The defaults above make a forgetful caller silently wrong, so the caller is checked directly. Read as
-  // text: importing the run module starts a capture, because it has no main guard.
-  //
-  // THE RETIREMENT CALL SITE MOVED OUT OF THE RUN (A11-263). Eviction counts consecutive failures, which only the pool can see, so it decides there -- and still does,
-  // for the clients that dispatch through the pool. Retirement needed the worker's vitals, which only the dataset run measured, so the pool handed it the counts and
-  // the run made the call. The run submits a fleet job now and holds no pool: the SERVICE takes a box out of a job (three captures in a row failed, or the drift
-  // record lists it) and its lease says so. So the second half of this invariant has no caller left in the lab to forget a count, and what is asserted is that
-  // it is gone, rather than a call site that cannot exist.
-  const pool = readFileSync(fileURLToPath(new URL("./worker-pool.mjs", import.meta.url)), "utf8");
-  const run = readFileSync(
-    fileURLToPath(new URL("./capture-screenreader-dataset.mjs", import.meta.url)), "utf8");
-
-  const evictCall = /shouldEvictWorker\(\{[\s\S]{0,200}?\}\)/.exec(pool)?.[0] ?? "";
-  assert.match(evictCall, /evictedCount/, "the evict call must pass evictedCount");
-  assert.match(evictCall, /retiredCount/, "the evict call must pass retiredCount");
-  assert.match(pool, /poolSize: pool\.size,\s*evictedCount: pool\.evicted\.length,\s*retiredCount: pool\.retired\.length,/,
-    "the pool must hand its counts to the degradation predicate");
-
-  assert.doesNotMatch(run, /shouldRetireWorker|drainAcrossPool|isDegraded/,
-    "the dataset run holds no pool any more: if it grows one, the retire call must pass both counts again and this test must say so");
+test("no lab client holds a worker pool any more: the service books the boxes and takes one out of a job", () => {
+  // THE POOL WENT WITH ITS LAST CALLER (A11-263, step 4). `drainAcrossPool` dealt a client's items to whichever box was free, evicted a box on a streak of failures, and handed the counts to
+  // the run, which decided retirement. Every client that held one now submits a fleet job: the SERVICE takes a box out of a job (three captures in a row failed, or the drift record lists it) and
+  // its lease says so, and a group is held to one box. So the invariant above -- both counts reach the degradation predicate -- has no caller left in the lab to forget one, and what is asserted is
+  // that none is left: a client that grew a pool again would need the counts passed again, and this test must say so.
+  const here = fileURLToPath(new URL(".", import.meta.url));
+  assert.equal(existsSync(join(here, "worker-pool.mjs")), false, "worker-pool.mjs is back: its callers must pass evictedCount and retiredCount again");
+  const run = readFileSync(join(here, "capture-screenreader-dataset.mjs"), "utf8");
+  assert.doesNotMatch(run, /shouldRetireWorker|drainAcrossPool|isDegraded/, "the dataset run holds no pool");
 });
