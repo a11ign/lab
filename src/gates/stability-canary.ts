@@ -56,25 +56,3 @@ export function canaryOutDir({ root, runId, name }: { root: string; runId: strin
 export function unstableDetail({ lines, outDir }: { lines: string[]; outDir: string; }): string {
   return `${lines.join("; ")}; captures kept in ${outDir}`;
 }
-
-/**
- * The arguments for one canary's `repeat-capture`, `--out` included.
- *
- * @param {{ script: string, url: string, times: number, worker: string, outDir: string,
- *   probeForms?: boolean, task?: string, probeFocus?: boolean }} canary
- * @returns {string[]}
- */
-export function repeatCaptureArgs({ script, url, times, worker, outDir, probeForms, task, probeFocus }: {
-        script: string; url: string; times: number; worker: string; outDir: string;
-        probeForms?: boolean; task?: string; probeFocus?: boolean;
-    }): string[] {
-  const args = [script, `--url=${url}`, `--times=${times}`, `--worker=${worker}`, `--out=${outDir}`];
-  // Opt-in per canary: a capture must never pay for evidence nobody asked for, and a probe that does not
-  // run is cheaper than one that does.
-  if (probeForms) args.push("--probe-forms", `--task=${task}`);
-  // FORWARDED, because it was not. `probeFocus` on a canary was read by nobody: the flag would have been
-  // discarded, the canary would have run without the focus probe, and it would have reported STABLE having
-  // compared an empty `focusOrder` against an empty `focusOrder`. Named here rather than remembered.
-  if (probeFocus) args.push("--probe-focus");
-  return args;
-}

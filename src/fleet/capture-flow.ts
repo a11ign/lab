@@ -138,7 +138,7 @@ function followUps(flow: Flow, from: Pending, outcome: CollectOutcome): Pending[
     jobs.push(next);
   }
   if (outcome.resubmit) {
-    jobs.push(submitJob(flow, { kind: from.kind, ...outcome.resubmit, extra: outcome.resubmit.extra ?? from.extra }));
+    jobs.push(submitJob({ ...flow, inputs: { ...flow.inputs, label } }, { kind: from.kind, ...outcome.resubmit, extra: outcome.resubmit.extra ?? from.extra }));
   }
   return jobs;
 }

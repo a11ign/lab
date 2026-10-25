@@ -2,7 +2,13 @@
 /**
  * Is an OCCURRENCE verdict stable on a flaky substrate? The last open question.
  *
- *   npm run verdict:stability -- http://REDACTED-INTERNAL-ADDRESS:8765
+ *   npm run verdict:stability -- a11y-worker-14 --label=<ticket key> --wait=30m
+ *   npm run verdict:stability -- --label=<ticket key> --wait=30m          # one box, whichever is free
+ *   npm run verdict:stability -- --collect[=<job ID>]                     # read a job that has finished
+ *
+ * It SUBMITS the six captures to the fleet job service as ONE group (A11-263): good three times, then bad three times, on ONE box, in that order. The box is a NAME (positional or
+ * `--box=`), never an address, and `--boxes=1` when none is named. It records the job ID, waits once if it was told to (`--wait=`, `A11Y_FLEET_WAIT`), and reads the verdicts from the
+ * manifest; with no wait it prints the ID and exits 75.
  *
  * The claim under test: this project's unreliability wrecks ENUMERATION but barely touches VERDICTS.
  * "There are 66 graphics" is destroyed by a sweep that stops at 5 — measured, last night. "The user was
@@ -20,34 +26,26 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { runsRoot } from "../dataset-paths.ts";
+import { refuseIfRunsReadonly, runsRoot } from "../dataset-paths.ts";
 // By name, through the `exports` control declares: a repository never reads another's source by path (ADR 0045, Decision 1, rule 2; a11ign/a11ign#5176).
 import { layerRoot } from "@a11ign/control/layer-checkouts";
 import { leasePageServer } from "../training/page-server.mjs";
-import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
-import { CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/screenreader-fleet/worker-http";
-import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
+import { pagesBaseUrl, whyNoCapture } from "../fleet/fleet-job.ts";
+import type { Collector } from "../fleet/capture-flow.ts";
+import { holdingPages, runFleetClient } from "../fleet/harness-flow.ts";
+import { ORDER, RUNS, occurrenceCases } from "./occurrence-cases.ts";
 import type { Loose } from "../capture/loose.ts";
 
 /**
- * takes its worker POSITIONALLY and no flags at all, so any flag passed to it is discarded.
+ * takes its box as a positional NAME or `--box=`, and the fleet flags. Any other flag passed to it is discarded, so an unknown one is refused.
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags([], { entry: import.meta.url, command: "npm run verdict:stability" });
+refuseUnknownFlags(["--box=", "--boxes=", "--label=", "--wait=", "--collect", "--worker="], { entry: import.meta.url, command: "npm run verdict:stability" });
 
-// This file is why the guard in budget-ladder.test.ts now DISCOVERS capture clients instead of
-// listing three: it declared 560 s and undici gave it 300 s, which is precisely the defect that
-// was "fixed" the same day -- at three call sites out of ten. IMPORTED rather than a second literal
-// now, architecture-audit.md §14.5: a local 560_000 was already below the worker's true worst case
-// once desktop preparation is counted (580 s), so this was the same defect a third time.
-const CAPTURE_TIMEOUT_MS = CAPTURE_CLIENT_TIMEOUT_MS;
-
-const WORKER = process.argv[2];
-const RUNS = 3;
-const TASK = "Submit the request without entering a reference number and understand what needs fixing.";
+// This file is why the guard in budget-ladder.test.ts DISCOVERS capture clients instead of listing three: it declared 560 s and undici gave it 300 s, which is precisely the defect that was
+// "fixed" the same day -- at three call sites out of ten. It declares no capture timeout at all now: the fleet job service sends each capture with the shared client's ceiling.
 // Resolved from this module, not the cwd — `spawned-paths.test.ts` exists because a moved script with a
 // repo-relative path dies with "Command failed" and nothing to read.
 const PAGES = join(runsRoot(), "screenreader-dataset/pages/");
@@ -86,45 +84,33 @@ function verdict(capture: Record<string, Loose>) {
   return { informed: words.length >= ACTIONABLE_WORDS, spoken: deltas.join(" | ").slice(0, 88) };
 }
 
-async function capture(base: string, variant: string) {
-  const response = await captureTolerantly({
-    worker: String(WORKER),
-    body: {
-      url: `${base}/form-error-silent/${variant}.html`,
-      task: TASK,
-      probeForms: true,
-      steps: 25,
-    },
-    timeoutMs: CAPTURE_TIMEOUT_MS,
-  });
-  const body = response.json ?? {};
-  return body.error ? { error: String(body.error).slice(0, 62) } : verdict(body);
+const JOB_KIND = "verdict-stability";
+const FLEET_ROOT = join(runsRoot(), "repeat-captures", "verdict-stability");
+
+/** The verdict of each capture, or the error that took its place, grouped by variant in run order. */
+function resultsOf(fetched: Parameters<Collector>[0]): Record<string, Loose[]> {
+  const results: Record<string, Loose[]> = { good: [], bad: [] };
+  for (const { variant, run } of ORDER) {
+    const entry = fetched.manifest.captures.find((c) => c.case === `${variant}.${run}`);
+    const record = entry ? fetched.record(entry) : null;
+    const body = record?.capture as Loose | undefined;
+    if (entry?.status === "done" && body && !body.error) results[variant]?.push(verdict(body));
+    else results[variant]?.push({ error: (body?.error ? String(body.error) : entry ? whyNoCapture(entry, record) : "no capture came back").slice(0, 62) });
+    process.stdout.write(`  captured ${variant} ${run}/${RUNS}\n`);
+  }
+  return results;
 }
 
-async function main() {
-  if (!WORKER) throw new Error("usage: npm run verdict:stability -- http://<guest-ip>:8765");
-  nvdaVocabulary(); // refuses here, before a worker is woken and a page server leased, when the layer checkout is absent
-  // Run BY HAND, this positional worker never goes through `lab:job`'s own wake -- #2655's table, row 11.
-  // #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
-  // safe as-is, because this positional argument names exactly ONE worker -- refusing IS the down worker,
-  // and there is no wider pool to narrow the run to.
-  const wake = await wakeNamedWorkers([String(WORKER)]);
-  if (!wake.ok) throw new Error(wake.refusal);
-  const lease = await leasePageServer({ root: PAGES, port: 5050, probePath: "form-error-silent/good.html" });
-  const base = hostPagesBase(WORKER);
-  const results: Record<string, Loose[]> = {};
-  try {
-    for (const variant of ["good", "bad"]) {
-      results[variant] = [];
-      for (let run = 1; run <= RUNS; run += 1) {
-        results[variant].push(await capture(base, variant));
-        process.stdout.write(`  captured ${variant} ${run}/${RUNS}\n`);
-      }
-    }
-  } finally {
-    await lease.release();
-  }
+function occurrenceCollector(): Collector {
+  return async (fetched) => {
+    const results = resultsOf(fetched);
+    process.stdout.write(`  on ${[...new Set(fetched.manifest.captures.map((c) => c.box))].join(", ") || "no box"}\n`);
+    return { recapture: [], exit: reportVerdicts(results) };
+  };
+}
 
+/** What the pair showed: for each variant, whether the user was informed on every run, and whether that was stable and correct. Returns 0 either way, as it always has. */
+function reportVerdicts(results: Record<string, Loose[]>): number {
   let allCorrect = true;
   for (const [variant, runs] of Object.entries(results)) {
     const expected = variant === "good";
@@ -148,6 +134,25 @@ async function main() {
   process.stdout.write(`\n  ${allCorrect
     ? ">>> verdicts stable AND correct: occurrence survives the substrate"
     : ">>> verdicts unstable or wrong: the unique direction has the same disease"}\n`);
+  return 0;
+}
+
+async function main() {
+  refuseIfRunsReadonly(FLEET_ROOT);
+  const argv = process.argv.slice(2);
+  const positional = argv.find((a) => !a.startsWith("--"));
+  const collecting = argv.some((a) => a === "--collect" || a.startsWith("--collect="));
+  if (!collecting) nvdaVocabulary(); // refuses here, before a page server is leased and a job submitted, when the layer checkout is absent
+  const exit = await runFleetClient({
+    argv, root: FLEET_ROOT, kind: JOB_KIND, oneBox: { positional },
+    hint: (job) => `npm run verdict:stability -- --collect=${job}`,
+    prepare: async () => {
+      const lease = await leasePageServer({ root: PAGES, port: 5050, probePath: "form-error-silent/good.html" });
+      return holdingPages(lease, () => ({ cases: occurrenceCases(pagesBaseUrl(process.env, 5050)), groups: { "form-error-silent": {} } }));
+    },
+    collect: occurrenceCollector(),
+  });
+  process.exit(exit);
 }
 
 // Only when RUN, never on import. CLAUDE.md makes `node -e "import('./this.mjs')"` the only real check

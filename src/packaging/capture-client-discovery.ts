@@ -6,7 +6,8 @@ import { readFileSync, readdirSync } from "node:fs";
  * cannot drift into disagreeing about what a capture client is.
  *
  * DISPATCHING WORK is the signature, and it has three spellings: a literal POST, a call to the shared
- * `captureTolerantly`, or SUBMITTING a fleet job (A11-263): `submitCases(`, `submitJob(` (the flow every moved client goes through, which calls `submitCases`) or `recapture(`.
+ * `captureTolerantly`, or SUBMITTING a fleet job (A11-263): `submitCases(`, `submitJob(` (the flow every moved client goes through, which calls `submitCases`), `recapture(`, or
+ * `runFleetClient(` (the one runner the gates and the one-box harnesses submit through, step 4, which calls `submitJob`).
  * Matching only the first found four clients after nine moved behind the shared one, and matching only the first two would lose every client that moved onto the service.
  * Still NOT matched: reading `/capture/<id>` to recover a lost response, which asks for work already done.
  *
@@ -27,7 +28,7 @@ export function captureClients(repo: string): string[] {
       const source = readFileSync(`${repo}${path}`, "utf8");
       const dispatches = /["'`][^"'`]*\/capture["'`][^]{0,120}?method:\s*["']POST["']/.test(source)
         || /\bcaptureTolerantly\(/.test(source)
-        || /\b(?:submitCases|submitJob|recapture)\(/.test(source);
+        || /\b(?:submitCases|submitJob|recapture|runFleetClient)\(/.test(source);
       if (dispatches) found.push(path);
     }
   }

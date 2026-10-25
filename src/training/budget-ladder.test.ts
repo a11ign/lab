@@ -209,8 +209,9 @@ test("no capture client declares a budget that undici will silently ignore", () 
   const clients = captureClients();
 
   // A discovery that finds nothing would pass every assertion below in perfect silence -- this repo's
-  // own rule about checks that report success having examined nothing. Ten clients exist today.
-  assert.ok(clients.length >= 8,
+  // own rule about checks that report success having examined nothing. A client that SENDS a capture is the shared one, the local VM route and the fleet's own comparison; every
+  // other lab client submits a fleet job (A11-263) and is counted by the census of submitters below. Three send one today.
+  assert.ok(clients.length >= 3,
     `only found ${clients.length} capture clients; the discovery walk is broken, not the codebase clean`);
 
   for (const [name, src] of clients) {
@@ -301,14 +302,26 @@ test("the shared client ceiling covers desktop preparation PLUS the hard timeout
  */
 test("a moved capture client takes its budget from its wait and declares no per-capture ceiling", () => {
   const here = dirname(fileURLToPath(import.meta.url));
+  const scripts = join(here, "..", "..", "scripts");
+  const harnesses = join(here, "..", "harnesses");
   const moved = [
     join(here, "capture-screenreader-dataset.mjs"),
     join(here, "capture-real-pages.mjs"),
-    join(here, "..", "..", "scripts", "evidence-check.ts"),
+    join(scripts, "evidence-check.ts"),
+    // Step 4: the gates and the one-box harnesses go through `runFleetClient`, which reads the wait through `fleetInputs`.
+    join(here, "repeat-capture.mjs"),
+    join(scripts, "stability-gate.ts"),
+    join(scripts, "gate-probe-order.ts"),
+    join(scripts, "bench-capture.ts"),
+    join(harnesses, "capture-check.ts"),
+    join(harnesses, "capture-fixtures.ts"),
+    join(harnesses, "occurrence-verdict-stability.ts"),
+    join(harnesses, "page-identity-rate.ts"),
   ];
   for (const file of moved) {
-    const src = readFileSync(file, "utf8");
-    assert.match(src, /fleetInputs\(/, `${file} must read its budget from its wait (fleetInputs)`);
+    // The one `timeoutMs` that is not a capture ceiling: `capture-check.ts`'s in-process mode asks whether a worker is serving on this machine with a 2 s local `/health` probe.
+    const src = readFileSync(file, "utf8").replace(/timeoutMs:\s*2000\b/g, "");
+    assert.match(src, /fleetInputs\(|runFleetClient\(/, `${file} must read its budget from its wait (fleetInputs, or runFleetClient, which reads it)`);
     assert.doesNotMatch(src, /timeoutMs:|AbortSignal\.timeout\(\s*[A-Za-z_]|DATASET_CAPTURE_TIMEOUT_MS/,
       `${file} declares a per-capture ceiling of its own; a moved client submits a job and the service owns that budget`);
   }
@@ -341,7 +354,7 @@ test("a moved capture client takes its budget from its wait and declares no per-
  */
 test("no capture client declares its own ceiling below the worker's TRUE worst case (prepare + hard timeout)", () => {
   const clients = captureClients();
-  assert.ok(clients.length >= 8, `only found ${clients.length} capture clients; the discovery walk is broken`);
+  assert.ok(clients.length >= 3, `only found ${clients.length} capture clients; the discovery walk is broken`);
   const worstCaseServerMs = DESKTOP_PREPARE_MS + CAPTURE_HARD_TIMEOUT_DEFAULT_MS;
 
   for (const [name, src] of clients) {
@@ -398,4 +411,21 @@ test("the activation rung sits INSIDE the read-through's reserve, not beside it"
   const activationStops = activationDeadline(captureDeadline, readStops);
   assert.ok(readStops < activationStops && activationStops < captureDeadline,
     `read-through ${readStops - now} < activation ${activationStops - now} < capture ${DEFAULT_BUDGET_MS}`);
+});
+
+/**
+ * THE CENSUS OF SUBMITTERS (A11-263, step 4): the clients that send no capture of their own are counted here, so the floor above can fall to the three that do without anyone
+ * reading the fall as a client lost. A lab client that dispatches a capture either sends it (and is in the walk above, with its ceiling checked) or submits a job (and is here, with
+ * its wait checked). The positive control is the population floor: it fails if the census finds nothing.
+ */
+test("every lab client that dispatches a capture is either a sender in the walk above or a submitter counted here", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const submitters = sourceFiles({ root: LAB_ROOT })
+    .filter(([path]) => /\.(mjs|ts)$/.test(path) && !/\.test\./.test(path) && !path.includes(join("src", "fleet")))
+    .filter(([, src]) => /\b(?:runFleetClient|submitJob)\(/.test(src))
+    .map(([path]) => path);
+  assert.ok(submitters.length >= 9, `only found ${submitters.length} submitters; the census is broken, not the codebase clean`);
+  const senders = captureClients().map(([path]) => path);
+  for (const path of submitters) assert.ok(!senders.includes(path), `${path} both submits a job and sends a capture itself`);
+  void here;
 });

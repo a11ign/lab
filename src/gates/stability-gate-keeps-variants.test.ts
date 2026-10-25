@@ -13,7 +13,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "./stability-canary.ts";
+import { varianceLines, canaryOutDir, unstableDetail } from "./stability-canary.ts";
+import { repeatBody } from "../training/repeat-fleet.ts";
 
 const SCRIPT = resolve(import.meta.dirname, "../../scripts/stability-gate.ts");
 
@@ -79,14 +80,14 @@ test("#3273 directory: each canary of each run gets its OWN directory", () => {
   assert.notEqual(dirs[0], "/srv/a11y-runs/repeat-captures", "never the shared root itself");
 });
 
-test("#3273 directory: it is passed to repeat-capture as --out, beside the flags it already forwarded", () => {
-  const outDir = "/runs/stability/run-a/x";
-  const args = repeatCaptureArgs({ script: "rc.mjs", url: "http://h/x", times: 5, worker: "http://w:1", outDir });
-  assert.ok(args.includes(`--out=${outDir}`));
-  assert.deepEqual(args.filter((a) => /^--(probe|task)/.test(a)), [], "no probe flag unless the canary asks");
-  const probing = repeatCaptureArgs({ script: "rc.mjs", url: "u", times: 5, worker: "w", outDir,
-    probeForms: true, task: "Do it.", probeFocus: true });
-  assert.ok(probing.includes("--probe-forms") && probing.includes("--task=Do it.") && probing.includes("--probe-focus"));
+test("#3273 directory: it reaches the repeat job as the target's outDir, and the body carries no probe unless the canary asks", () => {
+  // The directory used to travel to a child `repeat-capture` as `--out=`; the gate submits the repeats as a fleet job now (A11-263), so it travels as the target's `outDir`, which the
+  // collector writes every capture under. The wiring is read from the script (below); what is driven here is the body each repeat is sent with.
+  const plain = repeatBody({});
+  assert.deepEqual(Object.keys(plain).filter((k) => /^(probe(Forms|Focus|Navigation)|task)$/.test(k)), [], "no probe flag unless the canary asks");
+  assert.equal(plain.reuseScreenReader, false, "fresh NVDA each repeat: a repeatability test that reuses one screen reader measures a single session");
+  const probing = repeatBody({ probeForms: true, task: "Do it.", probeFocus: true });
+  assert.ok(probing.probeForms === true && probing.task === "Do it." && probing.probeFocus === true);
 });
 
 test("#3273 directory: the directory is named in the output next to any UNSTABLE", () => {
@@ -100,7 +101,7 @@ function wiringFaults(source: string): string[] {
   if (!/from "\.\.\/src\/gates\/stability-canary\.ts"/.test(source)) faults.push("does not import stability-canary.mjs");
   if (/includes\("VARIES"\)/.test(source)) faults.push("still keeps only the VARIES lines");
   if (!/canaryOutDir\(\{[^}]*runId/.test(source)) faults.push("does not give each canary of each run its own directory");
-  if (!/repeatCaptureArgs\(\{[^}]*outDir/.test(source)) faults.push("does not pass the directory to repeat-capture");
+  if (!/outDir:\s*canaryOutDir\(/.test(source)) faults.push("does not pass the directory to repeat-capture");
   if (!/unstableDetail\(/.test(source)) faults.push("does not name the directory next to UNSTABLE");
   return faults;
 }
@@ -109,9 +110,9 @@ test("#3273 wiring: stability-gate.ts uses the tested functions, and the check c
   const source = readFileSync(SCRIPT, "utf8");
   assert.deepEqual(wiringFaults(source), []);
   // Positive controls: break each thing the check looks for and it notices.
-  assert.ok(wiringFaults(source.replace(/varianceLines\(stdout\)/, 'stdout.split("\\n").filter((l) => l.includes("VARIES"))'))
+  assert.ok(wiringFaults(source.replace(/varianceLines\(report\.stdout\)/, 'report.stdout.split("\\n").filter((l) => l.includes("VARIES"))'))
     .includes("still keeps only the VARIES lines"));
-  assert.ok(wiringFaults(source.replace("repeatCaptureArgs({", "legacyArgs({"))
+  assert.ok(wiringFaults(source.replace("outDir: canaryOutDir(", "outDir: legacyDir("))
     .includes("does not pass the directory to repeat-capture"));
   assert.ok(wiringFaults(source.replace(/canaryOutDir\(\{/, "sharedDir({"))
     .includes("does not give each canary of each run its own directory"));

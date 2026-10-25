@@ -1,10 +1,15 @@
 // @ts-check
 /**
- * Recapture eval fixtures — over a live worker, or in-process on the capture guest.
+ * Recapture eval fixtures — through the fleet job service, or in-process on the capture guest.
  *
- *     npm run eval:capture -- --worker=http://192.0.2.10:8765 --set=tutorials
- *     npm run eval:capture -- --worker=http://192.0.2.10:8765 --only=menus
+ *     npm run eval:capture -- --label=<ticket key> --box=a11y-worker-14 --wait=30m --set=tutorials
+ *     npm run eval:capture -- --label=<ticket key> --wait=30m --only=menus      # one box, whichever is free
+ *     npm run eval:capture -- --collect[=<job ID>]                              # write the fixtures of a job that has finished
  *     npm run eval:capture -- --set=books            # in-process; guest only, interactive session
+ *
+ * FLEET MODE (A11-263): the fixtures of a set are ONE group of a fleet job, so they come from one box, in order, and the box is booked. The client records the job ID,
+ * waits once if it was told to (`--wait=`, `A11Y_FLEET_WAIT`), and writes `src/eval/fixtures/<set>/<name>.json` from the job's manifest; with no wait it prints the ID and exits 75.
+ * The box is a NAME (`--box=`), never an address, and `--boxes=1` when none is named.
  *
  * ## Why a worker mode exists
  *
@@ -44,12 +49,13 @@ import { mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11ign/screenreader-fleet/worker-http";
-import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
 import { leasePageServer } from "../training/page-server.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
-import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
-import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
+import { refuseIfRunsReadonly, repeatCapturesRoot } from "../dataset-paths.ts";
+import { fleetRequested, pagesBaseUrl, whyNoCapture } from "../fleet/fleet-job.ts";
+import type { FleetCase } from "../fleet/fleet-job.ts";
+import type { Collector } from "../fleet/capture-flow.ts";
+import { holdingPages, runFleetClient } from "../fleet/harness-flow.ts";
 import type { Loose } from "../capture/loose.ts";
 
 /**
@@ -58,7 +64,7 @@ import type { Loose } from "../capture/loose.ts";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--set=", "--only=", "--worker="], { entry: import.meta.url, command: "npm run eval:capture" });
+refuseUnknownFlags(["--set=", "--only=", "--steps=", "--box=", "--boxes=", "--label=", "--wait=", "--collect", "--worker="], { entry: import.meta.url, command: "npm run eval:capture" });
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EVAL_ROOT = resolve(HERE, "../eval");
@@ -85,19 +91,15 @@ function pagesIn(set: Loose) {
     .sort();
 }
 
-/** One capture, over the worker's own HTTP interface — the path production uses. */
-async function captureOverWorker(url: Loose, worker: Loose, steps: Loose) {
-  const response = await captureTolerantly({
-    worker,
-    // `probeForms` ON: these are OUR pages, written to be activated, and the interaction criteria
-    // (3.3.1, 4.1.3) are structurally unreachable without it. That is the same rule the Action follows
-    // and the opposite of the real-page corpus, where the page belongs to somebody else.
-    body: { url, steps, probeForms: true, probeFocus: true },
-    timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
-  });
-  const data = response.json ?? {};
-  if (data.error) throw new Error(`${data.error}${data.fault ? ` (fault: ${data.fault})` : ""}`);
-  return data;
+/**
+ * The body each fixture is captured with. `probeForms` ON: these are OUR pages, written to be activated, and the interaction criteria (3.3.1, 4.1.3) are structurally unreachable without
+ * it. That is the same rule the Action follows and the opposite of the real-page corpus, where the page belongs to somebody else.
+ */
+export const fixtureBody = (steps: number): Record<string, unknown> => ({ steps, probeForms: true, probeFocus: true });
+
+/** The fixtures of a set as the cases of ONE group: one box, in file order. A fixture is the ground truth `npm run eval` measures against, and a set from one machine is one population. */
+export function fixtureCases(names: readonly string[], base: string, steps: number, set: string): FleetCase[] {
+  return names.map((name) => ({ id: name, url: `${base}/${name}.html`, body: fixtureBody(steps), group: set }));
 }
 
 /** In-process, for the Windows guest. Imported lazily so this file loads on a Mac or on Linux. */
@@ -117,65 +119,89 @@ function report(name: Loose, result: Loose, outPath: Loose) {
   return outPath;
 }
 
-/**
- * Run BY HAND, `--worker` never goes through `lab:job`'s own wake -- #2655's table, row 11. In-process
- * mode (no `--worker`) names no worker and needs none.
- *
- * #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
- * safe as-is, because `--worker` names exactly ONE worker here -- refusing IS the down worker, and there
- * is no wider pool to narrow the run to.
- */
-async function wakeIfNamed(worker: string | null) {
-  if (!worker) return;
-  const wake = await wakeNamedWorkers([worker]);
-  if (!wake.ok) {
-    process.stderr.write(`${wake.refusal}\n`);
-    process.exit(2);
-  }
+/** What this client's pending files are filed under, so `--collect` reads a fixtures job and never another client's. */
+const JOB_KIND = "capture-fixtures";
+const FLEET_ROOT = resolve(repeatCapturesRoot(), "capture-fixtures");
+
+/** The collector: writes each fixture from the job's manifest, in the shape and the place `npm run eval` reads, and says what failed. */
+export function fixtureCollector(): Collector {
+  return async (fetched, pending) => {
+    const { set, outDir } = pending.extra as { set: string; outDir: string };
+    mkdirSync(outDir, { recursive: true });
+    const failed: string[] = [];
+    const entries = fetched.manifest.captures.filter((c) => c.case);
+    for (const entry of entries) {
+      const name = entry.case as string;
+      const record = fetched.record(entry);
+      const result = (entry.status === "done" ? record?.capture : null) as Loose | null;
+      if (!result || result.error) {
+        // The worker's own fault, with its code, as the old client reported it.
+        const why = result?.error ? `${result.error}${result.fault ? ` (fault: ${result.fault})` : ""}` : whyNoCapture(entry, record);
+        failed.push(`${name}: ${why.split("\n")[0]}`);
+        process.stdout.write(`  FAILED  ${name}: ${why.split("\n")[0]}\n`);
+        continue;
+      }
+      const outPath = resolve(outDir, `${name}.json`);
+      writeFileSync(outPath, `${JSON.stringify(result, null, 2)}\n`);
+      report(name, result, outPath);
+    }
+    process.stdout.write(`\n${entries.length - failed.length}/${entries.length} recaptured from ${set} on ${[...new Set(entries.map((e) => e.box))].join(", ") || "no box"}\n`);
+    for (const line of failed) process.stdout.write(`  ${line}\n`);
+    return { recapture: [], exit: failed.length ? 1 : 0 };
+  };
 }
 
 async function main() {
   const set = String(arg("set", "tutorials"));
   const only = arg("only");
   const steps = Number(arg("steps", DEFAULT_STEPS));
-  const workerArg = arg("worker", process.env.A11Y_WORKER ?? null);
-  const worker = workerArg ? assertWorkerUrl(String(workerArg), { source: "--worker" }) : null;
-  await wakeIfNamed(worker);
+  // `--box=` names a box of the fleet, so a run that gives it and no label is a fleet run that the label refusal catches, not an in-process capture that ignores the box.
+  const fleet = fleetRequested(process.argv.slice(2), process.env) || process.argv.some((a) => a.startsWith("--box=") || a.startsWith("--boxes="));
+  const collecting = process.argv.some((a) => a === "--collect" || a.startsWith("--collect="));
 
-  const names = pagesIn(set).filter((n: string) => !only || n.includes(String(only)));
-  if (!names.length) {
+  const names = collecting ? [] : pagesIn(set).filter((n: string) => !only || n.includes(String(only)));
+  if (!collecting && !names.length) {
     process.stderr.write(`no pages in ${set}${only ? ` matching --only=${only}` : ""}\n`);
     process.exit(2);
   }
   const outDir = resolve(EVAL_ROOT, "fixtures", set);
-  mkdirSync(outDir, { recursive: true });
 
-  // Leased the same way a real run does, rather than assuming somebody left a server up — a stale manual
-  // `npx serve` is how this project once began capturing Edge's error page and reporting success.
-  const lease = worker
-    ? await leasePageServer({ root: resolve(EVAL_ROOT, "pages", set), port: DEFAULT_PAGES_PORT,
-                              probePath: `${names[0]}.html` })
-    : null;
-  const base = worker ? hostPagesBase(worker, DEFAULT_PAGES_PORT) : pathToFileURL(resolve(EVAL_ROOT, "pages", set)).href;
+  if (fleet) {
+    refuseIfRunsReadonly(FLEET_ROOT);
+    process.exit(await runFleetClient({
+      argv: process.argv.slice(2), root: FLEET_ROOT, kind: JOB_KIND, oneBox: {},
+      hint: (job) => `npm run eval:capture -- --collect=${job}`,
+      prepare: async () => {
+        // Leased the same way a real run does, rather than assuming somebody left a server up — a stale manual `npx serve` is how this project once began capturing Edge's error page and
+        // reporting success. The BOXES fetch the pages, so the base is the address they reach this host on.
+        const lease = await leasePageServer({ root: resolve(EVAL_ROOT, "pages", set), port: DEFAULT_PAGES_PORT, probePath: `${names[0]}.html` });
+        return holdingPages(lease, () => {
+          const base = pagesBaseUrl(process.env, DEFAULT_PAGES_PORT);
+          process.stdout.write(`Recapturing ${names.length} fixture(s) from ${set}\n  pages ${base}\n  out   ${outDir}\n\n`);
+          return { cases: fixtureCases(names, base, steps, set), groups: { [set]: {} }, extra: { set, outDir } };
+        });
+      },
+      collect: fixtureCollector(),
+    }));
+  }
+
+  mkdirSync(outDir, { recursive: true });
+  const base = pathToFileURL(resolve(EVAL_ROOT, "pages", set)).href;
   process.stdout.write(`Recapturing ${names.length} fixture(s) from ${set}\n`
-    + `  via   ${worker ?? "in-process NVDA (this machine)"}\n  pages ${base}\n  out   ${outDir}\n\n`);
+    + `  via   in-process NVDA (this machine)\n  pages ${base}\n  out   ${outDir}\n\n`);
 
   const failed = [];
-  try {
-    for (const name of names) {
-      const url = `${base}/${name}.html`;
-      try {
-        const result = worker ? await captureOverWorker(url, worker, steps) : await captureInProcess(url, steps);
-        const outPath = resolve(outDir, `${name}.json`);
-        writeFileSync(outPath, `${JSON.stringify(result, null, 2)}\n`);
-        report(name, result, outPath);
-      } catch (error) {
-        failed.push(`${name}: ${(error as Error).message.split("\n")[0]}`);
-        process.stdout.write(`  FAILED  ${name}: ${(error as Error).message.split("\n")[0]}\n`);
-      }
+  for (const name of names) {
+    const url = `${base}/${name}.html`;
+    try {
+      const result = await captureInProcess(url, steps);
+      const outPath = resolve(outDir, `${name}.json`);
+      writeFileSync(outPath, `${JSON.stringify(result, null, 2)}\n`);
+      report(name, result, outPath);
+    } catch (error) {
+      failed.push(`${name}: ${(error as Error).message.split("\n")[0]}`);
+      process.stdout.write(`  FAILED  ${name}: ${(error as Error).message.split("\n")[0]}\n`);
     }
-  } finally {
-    if (lease) await lease.release();
   }
 
   process.stdout.write(`\n${names.length - failed.length}/${names.length} recaptured\n`);

@@ -9,28 +9,37 @@
 //
 // MUST run in an interactive desktop session with NVDA set up — see
 // .github/workflows/capture-regression.yml. Exits non-zero on any failed check.
+//
+// Two modes. IN-PROCESS (the default, and what CI's `capture-regression.yml` runs on a Windows runner) drives NVDA on this machine. FLEET MODE (`--label=`, `--boxes=`,
+// `--wait=` or `--collect`, or `A11Y_FLEET_*`) SUBMITS the six pages to the fleet job service as six cases, each with its own body, and judges the captures from the job's manifest
+// (A11-263). A page whose identity is not confirmed is a `fleet job recapture`, on the box it was taken on, until it has had four attempts in all.
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { captureWithNvda } from "@a11ign/screenreader-worker";
 import { capturedText } from "./captured-text.ts";
 import { leasePageServer } from "../training/page-server.mjs";
-import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
-import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl, requestJson } from "@a11ign/screenreader-fleet/worker-http";
-import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
-import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
+import { requestJson } from "@a11ign/screenreader-fleet/worker-http";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
+import { refuseIfRunsReadonly, repeatCapturesRoot } from "../dataset-paths.ts";
+import { LEFT_THE_FLEET, pagesBaseUrl, whyNoCapture } from "../fleet/fleet-job.ts";
+import type { FleetCase } from "../fleet/fleet-job.ts";
+import type { Collector } from "../fleet/capture-flow.ts";
+import { holdingPages, runFleetClient, slugOf, stopExitWith } from "../fleet/harness-flow.ts";
 import type { Loose } from "../capture/loose.ts";
 
 /**
  * the capture-layer regression check. `--worker=` mistyped falls back to in-process mode, which
- * REFUSES while a worker is serving — so the check reports a refusal rather than running.
+ * REFUSES while a worker is serving — so the check reports a refusal rather than running. It is named here so that an address is dealt with in words
+ * (`fleet-job.ts`): ignored when `A11Y_FLEET_BOXES` is set, refused, naming the new form, when it is not.
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--worker="], { entry: import.meta.url, command: "npm run capture:check" });
+refuseUnknownFlags(["--worker=", "--boxes=", "--label=", "--wait=", "--collect"], { entry: import.meta.url, command: "npm run capture:check" });
 
-// Drive a live WORKER over HTTP instead of NVDA in-process.
+// Drive the fleet instead of NVDA in-process.
 //
-//   npm run capture:check -- --worker=http://REDACTED-INTERNAL-ADDRESS:8765
+//   npm run capture:check -- --label=<ticket key> --boxes=1 --wait=30m
 //
 // This exists because the in-process path is why this check never ran. It refuses while a worker is
 // serving -- correctly, since NVDA is one machine-wide resource -- so running it meant stopping the
@@ -39,28 +48,9 @@ refuseUnknownFlags(["--worker="], { entry: import.meta.url, command: "npm run ca
 // does not happen: capture-core changed many times without it ever being run once.
 //
 // Nothing is lost. Every assertion below is a pure function of the capture RESULT -- transcript,
-// structure, interaction -- all of which the worker returns over HTTP. If anything the worker path is
+// structure, interaction -- all of which the worker returns, and the job's manifest carries it. If anything the worker path is
 // the better test, because it is the path production uses. The in-process mode stays the default so
 // capture-regression.yml on a Windows runner, which has no worker, is unaffected.
-const WORKER_ARG = flagValue(process.argv, "worker");
-// Validated only WHEN GIVEN: no `--worker` is a legitimate mode here (in-process NVDA, which is what
-// `capture-regression.yml` runs on a Windows runner). So absence is a mode and a malformed value is an
-// error, and those must not collapse into one check — `undefined` and `http://:8765` are both falsy.
-const WORKER = validatedWorker(WORKER_ARG);
-
-/** A clean message and exit 2, not a stack trace: a legible failure is the whole point of validating. */
-function validatedWorker(raw: Loose) {
-  if (raw === undefined) return undefined;
-  try {
-    return assertWorkerUrl(raw, { source: "--worker" });
-  } catch (error) {
-    process.stderr.write(`${(error as Error).message}\n`);
-    process.exit(2);
-  }
-}
-// `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
-// AbortSignal says, and the worker writes its status and body together at the END of a capture.
-// See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
 
 const STEPS = 40; // tutorial pages are tiny; a small read-through cap keeps it fast
 const pagesDir = join(dirname(fileURLToPath(import.meta.url)), "../eval/pages/tutorials");
@@ -185,23 +175,19 @@ function identityFailureCause(r: Loose) {
 // and RETRY until we have genuinely read the target page (or give up loudly).
 const MAX_ATTEMPTS = 4;
 
-// The guest cannot reach the host's filesystem, so worker mode serves the same pages over HTTP and
-// addresses them by the host's LAN IP -- the same reason evidence-check derives `hostPages`.
-let pagesBase: string | null = null;
+/**
+ * Whether this run is FLEET mode: it names a fleet input (`--boxes`, `--label`, `--wait`, `--collect`, `A11Y_FLEET_*`) or still gives `--worker=`, which fleet mode refuses in words.
+ * `A11Y_WORKER` and `A11Y_WORKERS` in the environment do NOT select it, as they never selected worker mode here: in-process mode is unchanged by them.
+ */
+export function fleetModeRequested(argv: readonly string[], env: NodeJS.ProcessEnv = process.env): boolean {
+  const flags = argv.some((a) => /^--(?:boxes|label|wait|worker)=/.test(a) || a === "--collect" || a.startsWith("--collect="));
+  return flags || ["A11Y_FLEET_BOXES", "A11Y_FLEET_LABEL", "A11Y_FLEET_WAIT"].some((name) => (env[name] ?? "") !== "");
+}
 
+/** In-process only: the fleet route does not capture from here, it submits the pages as a job. */
 async function captureOnce(check: Loose) {
-  if (!WORKER) {
-    return captureWithNvda(pathToFileURL(join(pagesDir, check.page)).href,
-      { steps: STEPS, probeForms: !!check.probeForms });
-  }
-  const response = await captureTolerantly({
-    worker: String(WORKER),
-    body: { url: `${pagesBase}/${check.page}`, steps: STEPS, probeForms: !!check.probeForms },
-    timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
-  });
-  const body = response.json ?? {};
-  if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(body).slice(0, 200)}`);
-  return body;
+  return captureWithNvda(pathToFileURL(join(pagesDir, check.page)).href,
+    { steps: STEPS, probeForms: !!check.probeForms });
 }
 
 async function captureConfirmed(check: Loose) {
@@ -258,13 +244,8 @@ function diagnosticsAssertions(result: Loose) {
   ];
 }
 
-async function runCheck(check: Loose) {
-  process.stdout.write(`\n=== ${check.page} ===\n`);
-  const result = await captureConfirmed(check);
-  if (!result) {
-    console.log(`  FAIL  page identity NOT confirmed after ${MAX_ATTEMPTS} attempts (could not read the target page)`);
-    return 1;
-  }
+/** The checks on a capture whose identity is confirmed: dumps what it produced, then asserts. Returns how many assertions failed. */
+function judgeResult(check: Loose, result: Loose): number {
   // Dump the full (confirmed) capture so a failure shows exactly what NVDA produced.
   console.log(`  headings:    ${JSON.stringify(result.structure.headings)}`);
   console.log(`  landmarks:   ${JSON.stringify(result.structure.landmarks)}`);
@@ -280,6 +261,98 @@ async function runCheck(check: Loose) {
     if (!passed) failed++;
   }
   return failed;
+}
+
+async function runCheck(check: Loose) {
+  process.stdout.write(`\n=== ${check.page} ===\n`);
+  const result = await captureConfirmed(check);
+  if (!result) {
+    console.log(`  FAIL  page identity NOT confirmed after ${MAX_ATTEMPTS} attempts (could not read the target page)`);
+    return 1;
+  }
+  return judgeResult(check, result);
+}
+
+// ---- Fleet mode (A11-263) -------------------------------------------------------------------------------------------------------------------------------
+
+/** What this client's pending files are filed under, so `--collect` reads a capture-check job and never another client's. */
+const JOB_KIND = "capture-check";
+/** Where this client keeps its pending files and the settled state of a check. Resolved when called, so a test can point `RUNS_ROOT` at a scratch directory. */
+const fleetRoot = (): string => resolve(repeatCapturesRoot(), "capture-check");
+
+/** A page's case: its file name, which is unique in the six and a valid case ID. */
+const caseIdOf = (check: Loose): string => slugOf(check.page);
+
+/** The six pages as six cases, each with its OWN body (`probeForms` on two of them). No group: a page needs no box beside any other, so the six spread across the boxes the job booked. */
+export function checkCases(base: string): FleetCase[] {
+  return CHECKS.map((check) => ({ id: caseIdOf(check), url: `${base}/${check.page}`, body: { steps: STEPS, probeForms: !!check.probeForms } }));
+}
+
+/** How many assertions each page has failed, across the job and its re-captures: a re-capture is a job of its own, and a `--collect` another process. */
+type Settled = Record<string, number>;
+const settledFile = (runId: string): string => resolve(fleetRoot(), `${runId}.settled.json`);
+function readSettled(runId: string): Settled {
+  try { return JSON.parse(readFileSync(settledFile(runId), "utf8")) as Settled; } catch { return {}; }
+}
+
+/**
+ * The collector: each page whose identity is confirmed is asserted on as it always was, a page whose identity is not (or whose capture failed) is a re-capture on the box it was taken
+ * on until it has had `MAX_ATTEMPTS`, and once nothing more is asked the checks are summed.
+ */
+export function checkCollector(): Collector {
+  return async (fetched, pending) => {
+    const { runId } = pending.extra as { runId: string };
+    const settled = readSettled(runId);
+    const again: string[] = [];
+    for (const check of CHECKS) {
+      const entry = fetched.manifest.captures.find((c) => c.case === caseIdOf(check));
+      if (!entry) continue;
+      process.stdout.write(`\n=== ${check.page} ===\n`);
+      const record = fetched.record(entry);
+      const result = (entry.status === "done" ? record?.capture : null) as Loose | null;
+      if (!result || result.error) {
+        console.log(`  attempt ${entry.attempt}/${MAX_ATTEMPTS}: capture threw: ${whyNoCapture(entry, record)}`);
+      } else if (check.signature.test(capturedText(result))) {
+        settled[check.page] = judgeResult(check, result); // genuinely read the target page
+        continue;
+      } else {
+        console.log(`  attempt ${entry.attempt}/${MAX_ATTEMPTS}: page identity NOT confirmed (${check.signature}) — ${identityFailureCause(result)}`);
+      }
+      if (entry.attempt < MAX_ATTEMPTS && !LEFT_THE_FLEET.test(entry.error ?? "")) {
+        again.push(entry.case ?? caseIdOf(check));
+      } else {
+        console.log(`  FAIL  page identity NOT confirmed after ${entry.attempt} attempts (could not read the target page)`);
+        settled[check.page] = 1;
+      }
+    }
+    mkdirSync(fleetRoot(), { recursive: true });
+    writeFileSync(settledFile(runId), `${JSON.stringify(settled)}\n`, "utf8");
+    if (again.length) return { recapture: again, exit: 0 };
+    const failures = Object.values(settled).reduce((sum, n) => sum + n, 0);
+    console.log(`\n${failures === 0 ? "ALL CAPTURE CHECKS PASSED" : `${failures} CAPTURE CHECK(S) FAILED`}`);
+    return { recapture: [], exit: failures === 0 ? 0 : 1 };
+  };
+}
+
+async function runOnFleet(): Promise<number> {
+  refuseIfRunsReadonly(fleetRoot());
+  const port = Number(process.env.DATASET_PAGES_PORT || 5050);
+  return runFleetClient({
+    argv: process.argv.slice(2), root: fleetRoot(), kind: JOB_KIND,
+    hint: (job) => `npm run capture:check -- --collect=${job}`,
+    // Exit 1 means "a check failed" here, so a job that failed, was cancelled or could not be reached is 2, "it could not run". The run's own 75 and 124 are kept.
+    stopExit: stopExitWith(2),
+    prepare: async () => {
+      // The pages are served over HTTP and addressed by the address the BOXES reach this host on -- the same reason evidence-check derives `hostPages`.
+      const lease = await leasePageServer({ root: pagesDir, port, probePath: CHECKS[0].page });
+      return holdingPages(lease, () => {
+        const base = pagesBaseUrl(process.env, port);
+        console.log(`Pages ${base}\n`);
+        return { cases: checkCases(base), groups: {}, extra: { runId: `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}` } };
+      });
+    },
+    collect: checkCollector(),
+  });
 }
 
 // Refuse to run alongside a live worker. NVDA is a single machine-wide resource, and this
@@ -308,8 +381,10 @@ async function workerIsServing() {
  * screen reader `a11ysrv` drives, which is the exact collision the first check below exists to prevent.
  */
 async function main() {
-  // In worker mode the worker SHOULD be serving -- that is what we are driving.
-  if (!WORKER && await workerIsServing()) {
+  // FLEET MODE: the six pages are a job, and the boxes are the service's to book. Nothing here drives NVDA, so the check below does not apply.
+  if (fleetModeRequested(process.argv.slice(2), process.env)) process.exit(await runOnFleet());
+
+  if (await workerIsServing()) {
     console.error(
       "A capture worker is already serving on this machine. It drives the same NVDA this check " +
         "would, and whichever finishes first stops the other's screen reader.\n" +
@@ -319,23 +394,8 @@ async function main() {
     process.exit(2);
   }
 
-  let lease = null;
-  if (WORKER) {
-    lease = await leasePageServer({
-      root: pagesDir,
-      port: Number(process.env.DATASET_PAGES_PORT || 5050),
-      probePath: CHECKS[0].page,
-    });
-    pagesBase = hostPagesBase(WORKER, process.env.DATASET_PAGES_PORT || 5050);
-    console.log(`Driving worker ${WORKER}\nPages ${pagesBase}\n`);
-  }
-
   let failures = 0;
-  try {
-    for (const check of CHECKS) failures += await runCheck(check);
-  } finally {
-    if (lease) await lease.release();
-  }
+  for (const check of CHECKS) failures += await runCheck(check);
 
   console.log(`\n${failures === 0 ? "ALL CAPTURE CHECKS PASSED" : `${failures} CAPTURE CHECK(S) FAILED`}`);
   process.exit(failures === 0 ? 0 : 1);

@@ -1,7 +1,13 @@
 // @ts-check
 // Measure what a capture actually costs, phase by phase.
 //
-//   npx tsx scripts/bench-capture.ts <worker-url> <page-url> [count]
+//   npx tsx scripts/bench-capture.ts <box-name> <page-url> [count] --label=<ticket key> --wait=30m
+//   npx tsx scripts/bench-capture.ts <page-url> [count] --label=<ticket key> --wait=30m      # one box, whichever is free
+//   npx tsx scripts/bench-capture.ts --collect[=<job ID>]                                    # read a job that has finished
+//
+// It SUBMITS the samples to the fleet job service as ONE group (A11-263): `count` captures of the page on ONE box, one after another, which is what a per-box timing needs. The box is a
+// NAME, never an address, and `--boxes=1` when none is named. It records the job ID, waits once if it was told to (`--wait=`, `A11Y_FLEET_WAIT`), and measures from the manifest; with no
+// wait it prints the ID and exits 75. The time a sample took is the time the SERVICE took to send it and get the answer (the manifest's `startedAt` to `finishedAt`).
 //
 // Why this exists: per-capture cost is the constraint on the training dataset. A run of 45
 // page pairs took 98 minutes, and the phase timings showed only 13 of every 50 seconds was
@@ -11,17 +17,16 @@
 // It reports phrase counts alongside the timings on purpose. A capture that got quicker by
 // reading less is not an improvement, and a suite that only asserts "it ran" stays green
 // while the evidence turns to garbage (see CLAUDE.md).
-import { setTimeout as sleep } from "node:timers/promises";
-import { CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/screenreader-fleet/worker-http";
-
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Loose } from "../src/capture/loose.ts";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { captureIn, costCause, MIN_TRIPS_FOR_A_RATE, rateAcrossPages, sweepCostsByPage, walkRate }
   from "../src/capture/sweep-costs.ts";
-import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
-import { datasetRoot, captureRoot } from "../src/dataset-paths.ts";
-import { wakeNamedWorkers } from "../src/training/wake-by-hand.mjs";
+import { datasetRoot, captureRoot, refuseIfRunsReadonly, repeatCapturesRoot } from "../src/dataset-paths.ts";
+import { reachableFromBoxes, whyNoCapture } from "../src/fleet/fleet-job.ts";
+import type { Collector } from "../src/fleet/capture-flow.ts";
+import { repeatedCases, runFleetClient, stopExitWith } from "../src/fleet/harness-flow.ts";
 
 /**
  * `--from-disk` decides whether it measures a live capture or replays one; mistyped, it silently
@@ -29,41 +34,47 @@ import { wakeNamedWorkers } from "../src/training/wake-by-hand.mjs";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--dir=", "--from-disk", "--protocol=", "--sweeps"], { entry: import.meta.url, command: "npm run bench:capture" });
+refuseUnknownFlags(["--dir=", "--from-disk", "--protocol=", "--sweeps", "--box=", "--boxes=", "--label=", "--wait=", "--collect", "--worker="], { entry: import.meta.url, command: "npm run bench:capture" });
 
-const [worker, page, countArg] = process.argv.slice(2);
+const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const fromDiskRequested = process.argv.includes("--from-disk");
+const collectRequested = process.argv.some((a) => a === "--collect" || a.startsWith("--collect="));
+/** `<box> <page> [count]`, or `<page> [count]` when no box is named (one box, whichever is free). A page is a URL, so a first argument that is not one is the box. */
+const isPage = (arg: string | undefined) => /^[a-z]+:\/\//i.test(arg ?? "");
+/** Two URLs in a row is the old `<worker-url> <page-url>`: the first is an ADDRESS, which `singleBox` refuses in words, naming `--box=`. */
+const addressFirst = isPage(positional[0]) && isPage(positional[1]);
+const pageFirst = isPage(positional[0]) && !addressFirst;
+const boxArg = pageFirst ? undefined : positional[0];
+const page = pageFirst ? positional[0] : positional[1];
+const countArg = (pageFirst ? positional[1] : positional[2]) as string | undefined;
 
 /**
- * The timing samples, and how many were thrown away.
+ * The timing samples, read from the job's manifest.
  *
- * A RECOVERED SAMPLE IS NOT A TIMING SAMPLE: its wall clock is a capture plus a socket timeout plus a
- * recovery round trip. Keeping it would make this tool report the transport as capture cost, which is the
- * misattribution that once sent an afternoon after the wrong subsystem.
+ * Timed by the service: from the moment it sent a capture to the moment it had the answer, which is the client-side wall clock this tool always measured.
  *
- * @param {string} page
+ * A RECOVERED SAMPLE IS NOT A TIMING SAMPLE, and the old client dropped the ones whose socket was lost (its wall clock was a capture plus a socket timeout plus a recovery round trip). The
+ * service owns the transport now and its records do not say which samples that happened to, so none is dropped: the report says so, rather than implying every sample was clean.
  */
-async function collectSamples(page: string) {
-  const runs = [];
-  let recovered = 0;
-  for (let i = 1; i <= COUNT; i++) {
-    const { wallMs, body, recovered: wasRecovered } = await capture(page);
-    if (wasRecovered) {
-      recovered += 1;
-      console.log(`capture ${i}/${COUNT}: EXCLUDED — response recovered after a lost socket, so its `
-        + "wall clock is not a capture cost");
-    } else {
-      const start = (body.diagnostics ?? []).find((e: Loose) => e.event === "nvdaStart");
-      runs.push({
-        wallMs,
-        costs: phaseCosts(body.diagnostics),
-        phrases: (body.transcript ?? []).length,
-        reused: !!start?.reused,
-      });
-      console.log(`capture ${i}/${COUNT}: ${(wallMs / 1000).toFixed(1)}s, ${runs.at(-1)?.phrases} phrases${runs.at(-1)?.reused ? " (NVDA reused)" : ""}`);
+function samplesFrom(fetched: Parameters<Collector>[0]) {
+  const runs: Loose[] = [];
+  const entries = fetched.manifest.captures.filter((c) => c.case).sort((a, b) => String(a.case).localeCompare(String(b.case), undefined, { numeric: true }));
+  for (const [index, entry] of entries.entries()) {
+    const record = fetched.record(entry);
+    const body = record?.capture as Loose | undefined;
+    const i = index + 1;
+    // A sample with no timing is no timing sample: counted as failed, never as a 0 s capture that drags the median down.
+    if (entry.status !== "done" || !body || body.error || !entry.startedAt || !entry.finishedAt) {
+      const why = body?.error ? String(body.error) : entry.status === "done" ? "the service recorded no start or end time" : whyNoCapture(entry, record);
+      console.log(`capture ${i}/${entries.length}: FAILED ${why.slice(0, 100)}`);
+      continue;
     }
-    if (i < COUNT) await sleep(BETWEEN_MS);
+    const wallMs = Date.parse(entry.finishedAt) - Date.parse(entry.startedAt);
+    const start = (body.diagnostics ?? []).find((e: Loose) => e.event === "nvdaStart");
+    runs.push({ wallMs, costs: phaseCosts(body.diagnostics), phrases: (body.transcript ?? []).length, reused: !!start?.reused });
+    console.log(`capture ${i}/${entries.length}: ${(wallMs / 1000).toFixed(1)}s, ${runs.at(-1)?.phrases} phrases${runs.at(-1)?.reused ? " (NVDA reused)" : ""}`);
   }
-  return { runs, recovered };
+  return runs;
 }
 
 /**
@@ -76,35 +87,16 @@ async function collectSamples(page: string) {
  */
 const IS_MAIN = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
 
-if (IS_MAIN && !process.argv.includes("--from-disk") && (!worker || !page)) {
-  console.error("usage: npx tsx scripts/bench-capture.ts <worker-url> <page-url> [count]\n" +
+if (IS_MAIN && !fromDiskRequested && !collectRequested && !page) {
+  console.error("usage: npx tsx scripts/bench-capture.ts [<box-name>] <page-url> [count] --label=<ticket key> [--wait=30m]\n" +
+    "   or: npx tsx scripts/bench-capture.ts --collect[=<job ID>]\n" +
     "   or: npx tsx scripts/bench-capture.ts --from-disk [--dir=<captures dir>]");
   process.exit(1);
 }
 const COUNT = Number(countArg || 3);
-// `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
-// AbortSignal says, and the worker writes its status and body together at the END of a capture.
-// See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
-const BETWEEN_MS = 1_000;
 
-async function capture(url: Loose) {
-  const startedAt = Date.now();
-  const response = await captureTolerantly({
-    worker,
-    body: { url, task: "Benchmark the capture cost" },
-    timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
-  });
-  const body = response.json ?? {};
-  if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(body)}`);
-  // A RECOVERED SAMPLE IS NOT A TIMING SAMPLE, and this is the one client where that matters. Its wall
-  // clock includes a socket timeout plus a recovery round trip, so counting it would inflate the very
-  // number this tool exists to measure -- and a p95 quietly poisoned by the transport is exactly the
-  // "timing number with no foundation underneath it" this repo has already chased down the wrong path.
-  //
-  // Kept rather than dropped silently: the caller reports how many were excluded, because a benchmark
-  // that discards a fifth of its samples without saying so is worse than one that fails.
-  return { wallMs: Date.now() - startedAt, body, recovered: response.recovered };
-}
+const JOB_KIND = "bench-capture";
+const FLEET_ROOT = join(repeatCapturesRoot(), "bench-capture");
 
 // Diagnostics carry cumulative atMs, so each phase's own cost is the gap from the last one.
 function phaseCosts(diagnostics: Loose) {
@@ -408,27 +400,35 @@ async function main() {
     process.exit(0);
   }
 
-  // Run BY HAND, this positional worker never goes through `lab:job`'s own wake -- #2655's table, row 11.
-  // #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
-  // safe as-is, because this positional argument names exactly ONE worker -- refusing IS the down worker,
-  // and there is no wider pool to narrow the run to.
-  const wake = await wakeNamedWorkers([worker]);
-  if (!wake.ok) {
-    console.error(wake.refusal);
-    process.exit(2);
-  }
-  const { runs, recovered } = await collectSamples(page);
-  // NEVER a silent truncation: this repo's own rule is that a bounded sample must say what it dropped, or
-  // it reads as "covered everything".
-  if (recovered) {
-    console.log(`\n${recovered} of ${COUNT} sample(s) excluded: the transport dropped a response the `
-      + `worker had completed. ${runs.length} sample(s) remain.`);
-  }
-  if (runs.length === 0) {
-    console.log("NO USABLE SAMPLES — every capture lost its socket. This is a network finding, not a "
-      + "timing one, and no median is reported rather than one computed from nothing.");
-    process.exitCode = 2;
-    return;
-  }
-  report(runs);
+  refuseIfRunsReadonly(FLEET_ROOT);
+  process.exit(await runFleetClient({
+    argv: process.argv.slice(2), root: FLEET_ROOT, kind: JOB_KIND, oneBox: { positional: boxArg },
+    hint: (job) => `npx tsx scripts/bench-capture.ts --collect=${job}`,
+    // Exit 2 here is "no usable samples", which is what a job that failed or was cancelled gave. The run's own 75 and 124 are kept.
+    stopExit: stopExitWith(2),
+    prepare: async () => ({
+      // The BOXES fetch the page, so a localhost URL is made the address they reach this host on.
+      cases: repeatedCases({ group: "bench", url: reachableFromBoxes(String(page)), body: { task: "Benchmark the capture cost" }, times: COUNT }),
+      groups: { bench: {} },
+      extra: { count: COUNT },
+    }),
+    collect: benchCollector(),
+  }));
+}
+
+/** The collector: the samples the job took, summarised as the live benchmark always summarised them. */
+export function benchCollector(): Collector {
+  return async (fetched, pending) => {
+    const count = (pending.extra as { count: number }).count;
+    const runs = samplesFrom(fetched);
+    console.log(`  on ${[...new Set(fetched.manifest.captures.map((c) => c.box))].join(", ") || "no box"}`);
+    // NEVER a silent truncation: this repo's own rule is that a bounded sample must say what it dropped, or it reads as "covered everything".
+    if (runs.length < count) console.log(`\n${count - runs.length} of ${count} sample(s) failed and are not in the figures below. ${runs.length} sample(s) remain.`);
+    if (runs.length === 0) {
+      console.log("NO USABLE SAMPLES — every capture failed. This is a finding about the box or the transport, not a timing one, and no median is reported rather than one computed from nothing.");
+      return { recapture: [], exit: 2 };
+    }
+    report(runs);
+    return { recapture: [], exit: 0 };
+  };
 }

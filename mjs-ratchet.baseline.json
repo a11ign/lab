@@ -41,8 +41,6 @@
     "signal-evidence-measured.mjs",
     "signal-predicates.mjs",
     "wait-for-capture.mjs",
-    "wake-by-hand.mjs",
-    "worker-pool.mjs",
     "write-atomic.mjs"
   ],
   "exceptions": []
