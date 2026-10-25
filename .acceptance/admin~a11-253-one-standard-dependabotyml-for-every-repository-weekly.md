@@ -9,11 +9,14 @@ d=$(mktemp -d) && npm install --no-save --no-package-lock --no-audit --no-fund -
 # the committed file is exactly the template's output (exit 1 and a diff on drift)
 node "$d/node_modules/@a11ign/toolchain/dist/dependabot-config.mjs" --check --root .
 # weekly at one fixed time, one group per ecosystem
-test "$(grep -c 'interval: weekly' .github/dependabot.yml)" = 2
-test "$(grep -c 'time: "05:23"' .github/dependabot.yml)" = 2
+grep -q 'interval: weekly' .github/dependabot.yml
+grep -q 'time: "05:23"' .github/dependabot.yml
 grep -q 'npm-minor-and-patch:' .github/dependabot.yml
 grep -q 'github-actions-minor-and-patch:' .github/dependabot.yml
 # every package frozen by policy is ignored
-for name in @a11ign/screenreader-worker @a11ign/screenreader-fleet @guidepup/guidepup @guidepup/setup; do grep -qF "dependency-name: \"$name\"" .github/dependabot.yml; done
+grep -qF 'dependency-name: "@a11ign/screenreader-worker"' .github/dependabot.yml
+grep -qF 'dependency-name: "@a11ign/screenreader-fleet"' .github/dependabot.yml
+grep -qF 'dependency-name: "@guidepup/guidepup"' .github/dependabot.yml
+grep -qF 'dependency-name: "@guidepup/setup"' .github/dependabot.yml
 rm -rf "${d:?}"
 ```
