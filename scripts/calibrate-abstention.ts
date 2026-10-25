@@ -440,7 +440,7 @@ function main() {
   const pages = calibrationPages();
   if (!pages.length) {
     process.stderr.write(`no calibration captures in ${ROOT}\n`
-      + "run: node packages/lab/src/training/capture-real-pages.mjs --role=calibration --worker=URL\n");
+      + "run: node packages/lab/src/training/capture-real-pages.mjs --role=calibration --label=<ticket key> --boxes=ready --wait=4h\n");
     process.exit(2);
   }
   process.stdout.write(`Scoring ${pages.length} calibration page(s) from ${ROOT}\n`);
