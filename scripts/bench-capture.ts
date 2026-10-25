@@ -60,21 +60,29 @@ function samplesFrom(fetched: Parameters<Collector>[0]) {
   const runs: Loose[] = [];
   const entries = fetched.manifest.captures.filter((c) => c.case).sort((a, b) => String(a.case).localeCompare(String(b.case), undefined, { numeric: true }));
   for (const [index, entry] of entries.entries()) {
-    const record = fetched.record(entry);
-    const body = record?.capture as Loose | undefined;
-    const i = index + 1;
-    // A sample with no timing is no timing sample: counted as failed, never as a 0 s capture that drags the median down.
-    if (entry.status !== "done" || !body || body.error || !entry.startedAt || !entry.finishedAt) {
-      const why = body?.error ? String(body.error) : entry.status === "done" ? "the service recorded no start or end time" : whyNoCapture(entry, record);
-      console.log(`capture ${i}/${entries.length}: FAILED ${why.slice(0, 100)}`);
+    const sample = sampleOf(entry, fetched);
+    if ("failed" in sample) {
+      console.log(`capture ${index + 1}/${entries.length}: FAILED ${sample.failed.slice(0, 100)}`);
       continue;
     }
-    const wallMs = Date.parse(entry.finishedAt) - Date.parse(entry.startedAt);
-    const start = (body.diagnostics ?? []).find((e: Loose) => e.event === "nvdaStart");
-    runs.push({ wallMs, costs: phaseCosts(body.diagnostics), phrases: (body.transcript ?? []).length, reused: !!start?.reused });
-    console.log(`capture ${i}/${entries.length}: ${(wallMs / 1000).toFixed(1)}s, ${runs.at(-1)?.phrases} phrases${runs.at(-1)?.reused ? " (NVDA reused)" : ""}`);
+    runs.push(sample);
+    console.log(`capture ${index + 1}/${entries.length}: ${(sample.wallMs / 1000).toFixed(1)}s, ${sample.phrases} phrases${sample.reused ? " (NVDA reused)" : ""}`);
   }
   return runs;
+}
+
+/**
+ * One sample read from its record, or why it is none. A sample with no timing is no timing sample: it is failed, never a 0 s capture that drags the median down.
+ */
+function sampleOf(entry: Parameters<Collector>[0]["manifest"]["captures"][number], fetched: Parameters<Collector>[0]): { failed: string } | { wallMs: number; costs: Record<string, Loose>; phrases: number; reused: boolean } {
+  const record = fetched.record(entry);
+  const body = record?.capture as Loose | undefined;
+  if (entry.status === "done" && body && !body.error && entry.startedAt && entry.finishedAt) {
+    const start = (body.diagnostics ?? []).find((e: Loose) => e.event === "nvdaStart");
+    return { wallMs: Date.parse(entry.finishedAt) - Date.parse(entry.startedAt), costs: phaseCosts(body.diagnostics), phrases: (body.transcript ?? []).length, reused: !!start?.reused };
+  }
+  if (body?.error) return { failed: String(body.error) };
+  return { failed: entry.status === "done" ? "the service recorded no start or end time" : whyNoCapture(entry, record) };
 }
 
 /**

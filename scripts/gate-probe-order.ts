@@ -209,6 +209,22 @@ type PageOutcome = { worker: string; result: Loose | null; error: string | null 
 /** How many times a page is submitted: the first, and one more, whole, in a new job. A second failure is INCONCLUSIVE. */
 const PAGE_ROUNDS = 2;
 
+/** What the job took of ONE page: its three captures by key, or why they are not all there. A network fault is not an ordering fault: the page becomes INCONCLUSIVE and the others keep their verdicts. */
+function takenOf(group: string, fetched: Parameters<Collector>[0]): { worker: string; taken: Record<string, Loose>; error: string | null } | null {
+  const entries = fetched.manifest.captures.filter((c) => c.group === group);
+  if (!entries.length) return null;
+  const taken: Record<string, Loose> = {};
+  let error: string | null = null;
+  for (const { key } of ORDER) {
+    const entry = entries.find((c) => c.case === `${group}.${key}`);
+    const record = entry ? fetched.record(entry) : null;
+    const body = record?.capture as Loose | undefined;
+    if (entry?.status === "done" && body && !body.error) taken[key] = body;
+    else error ??= entry ? whyNoCapture(entry, record) : `no capture of ${key} came back`;
+  }
+  return { worker: entries[0]?.box ?? "(no box took it)", taken, error };
+}
+
 /**
  * The collector. It judges each page from its three captures, and a page whose captures failed is submitted again, WHOLE, in one new job -- once.
  *
@@ -223,19 +239,9 @@ export function probeOrderCollector(controlPlane = ""): Collector {
     const retry: Loose[] = [];
     for (const page of PAGES) {
       const group = groupOf(page);
-      const entries = fetched.manifest.captures.filter((c) => c.group === group);
-      if (!entries.length) continue;
-      const taken: Record<string, Loose> = {};
-      let error: string | null = null;
-      for (const { key } of ORDER) {
-        const entry = entries.find((c) => c.case === `${group}.${key}`);
-        const record = entry ? fetched.record(entry) : null;
-        const body = record?.capture as Loose | undefined;
-        if (entry?.status === "done" && body && !body.error) taken[key] = body;
-        // A NETWORK FAULT IS NOT AN ORDERING FAULT: a page that could not be captured all three ways becomes INCONCLUSIVE, and the pages that DID capture keep their verdicts.
-        else error ??= entry ? whyNoCapture(entry, record) : `no capture of ${key} came back`;
-      }
-      const worker = entries[0]?.box ?? "(no box took it)";
+      const found = takenOf(group, fetched);
+      if (!found) continue;
+      const { worker, taken, error } = found;
       if (error === null) outcomes[group] = { worker, result: judgePage(page, worker, taken), error: null };
       else if (extra.round < PAGE_ROUNDS) retry.push(page);
       else outcomes[group] = { worker, result: null, error };
