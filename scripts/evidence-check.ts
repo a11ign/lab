@@ -1,7 +1,12 @@
 // @ts-check
 // Re-capture a sample of the dataset and ask whether a pipeline change altered the EVIDENCE.
 //
-//   npm run evidence:check -- <worker-url> [--sample=24] [--only=family] [--browser=chrome]
+//   npm run evidence:check -- --label=<ticket key> [--boxes=<n|ready|name,name>] [--wait=<duration>] [--sample=24] [--only=family] [--browser=chrome]
+//   npm run evidence:check -- --collect[=<job ID>]
+//
+// IT SUBMITS A FLEET JOB AND RUNS NO CAPTURE (A11-263): each sampled case is a group of its good and bad variants, which the control plane holds to one box. The client records the job ID,
+// waits once if it was told to (`A11Y_FLEET_WAIT`, `--wait=`), and builds the report from the job's manifest; without a wait it prints the ID and the collect command and exits 75.
+// A capture the pipeline would reject is a REJECTED finding here and is NOT re-captured: this tool has no opinion about that family, and says so.
 //
 // `--browser` is what turns this into the Edge-vs-Chrome experiment. The baseline on disk was captured in
 // Edge, so recapturing the same sample in Chrome and diffing field by field answers a question nobody has
@@ -36,12 +41,11 @@ import { titleOf } from "@a11ign/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { nonAuthoritativeHostNotice } from "../src/training/capture-host.mjs";
 import { hasUsableCaptureFiles } from "../src/training/capture-resume.mjs";
-import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/screenreader-fleet/worker-http";
-import { workerIsUsable } from "@a11ign/screenreader-fleet/health";
-import { drainAcrossPool } from "../src/training/worker-pool.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
+import { FleetInputError, fleetInputs, pagesBaseUrl, workerAddressNotice } from "../src/fleet/fleet-job.ts";
+import type { FetchedJob, FleetCase, FleetInputs } from "../src/fleet/fleet-job.ts";
+import { collectFlow, follow, submitJob } from "../src/fleet/capture-flow.ts";
+import type { Collector } from "../src/fleet/capture-flow.ts";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "../src/training/manifest-matches-cases.mjs";
 // #2197: a crash and a CHANGED verdict no longer share an exit code. A leaf module, so a test can read the
@@ -55,7 +59,7 @@ import type { Loose } from "../src/capture/loose.ts";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--sample=", "--only=", "--browser="], { entry: import.meta.url, command: "npm run evidence:check" });
+refuseUnknownFlags(["--sample=", "--only=", "--browser=", "--boxes=", "--label=", "--wait=", "--collect", "--worker="], { entry: import.meta.url, command: "npm run evidence:check" });
 
 // Was hardcoded to "runs/screenreader-dataset" ignoring DATASET_ROOT entirely -- the fourth spelling of
 // this default, and the only one that could not be redirected the way every other dataset tool can.
@@ -178,22 +182,19 @@ export function checkoutCommit(): { commit: string; commitError?: undefined; } |
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
 const DEFAULT_SAMPLE = 24;
 
-// EVERY positional argument is a worker. It took one, and used one, while the rest of the fleet idled.
-//
-// A single worker is still perfectly valid and is what the job catalogue passes by default — but the
-// argument for it being REQUIRED does not survive inspection. The claim was that a second guest is a second
-// variable; in fact the baseline corpus was itself captured across all four, so a single fresh worker does
-// not remove that confound, it just hides which side it is on. What actually defends the comparison is
-// fleet consistency, which `fleet:status` now proves and which was inert until the browserVersion memo was
-// fixed.
-const workers = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-const worker = workers[0];
+// A positional argument used to be a worker's address. The service books the boxes now, so one is ignored with a line when the catalogue also names the boxes
+// (`A11Y_FLEET_BOXES`), and refused, naming the new form, when it does not. The job is aimed with `--boxes=` and booked under `--label=`.
+const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const flag = (name: Loose, fallback: Loose) => {
   const found = process.argv.find((a) => a.startsWith(`--${name}=`));
   return found ? found.slice(name.length + 3) : fallback;
 };
 
 const sampleSize = Number(flag("sample", DEFAULT_SAMPLE));
+/** `--collect` collects the newest uncollected evidence-check job; `--collect=<job ID>` a named one. Undefined when the flag is absent. */
+const COLLECT = process.argv.find((arg) => arg === "--collect" || arg.startsWith("--collect="))?.slice("--collect".length + 1);
+/** What this client's pending files are filed under, so `--collect` reads an evidence-check job and never a dataset or real-page one. */
+const JOB_KIND = "evidence-check";
 const only = flag("only", null);
 // Absent means "whatever the guest is configured for", so an ordinary run is unaffected. The worker
 // validates the name against its allow-list and answers 400 for anything else.
@@ -299,47 +300,35 @@ export function stratify(cases: Loose, limit: Loose) {
   return [...byFamily.values()].slice(0, limit);
 }
 
-async function capture(testCase: Loose, variant: Loose, worker: Loose) {
-  const pageUrl = `${pagesBase()}/${testCase.id}/${variant}.html`;
-  const response = await captureTolerantly({
-    worker,
-    body: {
-      url: pageUrl,
-      task: testCase.task ?? null,
-      // Every `probe*` flag the case declares, forwarded BY PREFIX rather than by name. Naming them here
-      // made this the sixth place a probe flag has to be listed, and the previous five have dropped one
-      // twice in two days. It matters more here than most: this tool captures a case FRESH and diffs it
-      // against the baseline, so a flag it forgets produces a capture missing evidence the baseline has —
-      // reported as CHANGED, which is this tool's most expensive possible answer.
-      ...Object.fromEntries(
-        Object.entries(testCase).filter(([key, value]) => key.startsWith("probe") && value),
-      ),
-      ...(browser ? { browser } : {}),
-    },
-    timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
-  });
-  const body = response.json ?? {};
-  if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(body).slice(0, 200)}`);
-  return body;
+/**
+ * The worker's own `/capture` body for one case: its task, every `probe*` flag it declares, and the browser if one was asked for. Sent exactly; the service adds `url`.
+ */
+export function captureBody(testCase: Loose, browserName: string | null = browser) {
+  return {
+    task: testCase.task ?? null,
+    // Every `probe*` flag the case declares, forwarded BY PREFIX rather than by name. Naming them here
+    // made this the sixth place a probe flag has to be listed, and the previous five have dropped one
+    // twice in two days. It matters more here than most: this tool captures a case FRESH and diffs it
+    // against the baseline, so a flag it forgets produces a capture missing evidence the baseline has —
+    // reported as CHANGED, which is this tool's most expensive possible answer.
+    ...Object.fromEntries(
+      Object.entries(testCase).filter(([key, value]) => key.startsWith("probe") && value),
+    ),
+    ...(browserName ? { browser: browserName } : {}),
+  };
 }
 
-// The guest cannot reach the host's localhost, so the pages must be addressed by the host's LAN IP --
-// the same reason leaseWorkerPool hands back a hostAddress.
-let hostPagesCache = null;
 /**
- * The base URL the GUEST fetches dataset pages from — resolved LAZILY, on first use.
+ * The base URL the BOXES fetch dataset pages from — resolved LAZILY, on first use.
  *
- * This was `const hostPages = hostPagesBase(worker, ...)` at module scope, and `hostPagesBase` throws when
- * it cannot work out an address: "cannot work out this host's address as seen from undefined". So merely
- * IMPORTING this file threw whenever no worker argument was present, which is every import. That made
- * `node -e "import('./evidence-check.ts')"` — the only real check this repo has that an .mjs file still
- * loads — unable to distinguish a broken module from a missing argument.
- *
- * Lazy rather than threaded through `capture`, `pageTitle` and `requirePagesServed` as a parameter: three
- * signatures changed to move one constant is a worse trade than one memoised accessor.
+ * Merely IMPORTING this file used to throw whenever no worker argument was present, which made
+ * `node -e "import('./evidence-check.ts')"` — the only real check this repo has that a module still loads —
+ * unable to distinguish a broken module from a missing argument. `pagesBaseUrl` throws when it cannot work out an
+ * address, so it is asked when a run needs it and not before.
  */
+let hostPagesCache: string | null = null;
 function pagesBase() {
-  hostPagesCache ??= hostPagesBase(worker, process.env.DATASET_PAGES_PORT || 5050);
+  hostPagesCache ??= pagesBaseUrl(process.env, process.env.DATASET_PAGES_PORT || 5050);
   return hostPagesCache;
 }
 
@@ -533,53 +522,53 @@ function comparisonDetail(comparison: Loose) {
 }
 
 /**
- * Capture each case fresh across the pool and diff it against the baseline.
- *
- * Split out of `main` because it is a phase with a single job, and because `main` had grown past the
- * point where the lease, the sample, the comparison and the verdict could be read as one narrative.
- *
- * @returns {Promise<{results: object[], evicted: string[]}>}
+ * The cases a sample asks the service to capture: each sampled case is ONE group of its good and bad variants (a pair is only comparable if both halves came from the same
+ * screen reader on the same machine), and a variant with no baseline on disk is not asked for -- there is nothing to compare it with.
  */
-async function compareAcrossPool(selected: Loose): Promise<{ results: object[]; evicted: string[]; }> {
-// ONE CASE PER WORKER AT A TIME, across every worker named. This ran against a single worker while the
-// rest of the fleet sat idle — ~20 minutes for 48 captures where four boxes do it in about five. The
-// dispatch is `worker-pool.mjs`, shared with the corpus runner, because a second copy of a pool is the
-// kind of duplication that agrees right up until a worker dies.
-//
-// A case is the unit, both variants together, for the reason it always is here: a pair is only comparable
-// if both halves came from the same screen reader on the same machine.
-const results: Loose[] = [];
-// ONE `io` for the phase: the comparer and the reconciliation below read the same baselines and write to
-// the same stream, and handing them one object is what lets a test drive both halves of the report.
-const io = {
-  baselineFor: (testCase: Loose, variant: Loose) =>
-    readCapture(BASELINE, testCase.id, variant),
-  captureOn: capture,
-  titleFor: pageTitle,
-  write: (line: Loose) => process.stdout.write(line),
-};
-const compareCase = caseComparer({ results, io });
-
-const pooled = await drainAcrossPool({
-  workers,
-  items: selected,
-  prepare: async (worker) => {
-    if (!await workerIsUsable((await requestJson(`${worker.replace(/\/$/, "")}/health`, { timeoutMs: 15_000 })).json)) {
-      throw new Error("not ready");
+export function evidenceJob(
+  { selected, baseUrl, baselineFor, titleOf: titleFor = () => null as string | null }:
+  { selected: Loose[]; baseUrl: string; baselineFor: (testCase: Loose, variant: string) => unknown; titleOf?: (id: string, variant: string) => string | null },
+) {
+  const cases: FleetCase[] = [];
+  const names: Record<string, string> = {};
+  const titles: Record<string, string | null> = {};
+  for (const testCase of selected) {
+    for (const variant of ["good", "bad"]) {
+      if (!baselineFor(testCase, variant)) continue;
+      const id = `${testCase.id}.${variant}`;
+      cases.push({ id, url: `${baseUrl}/${testCase.id}/${variant}.html`, body: captureBody(testCase), group: testCase.id });
+      names[id] = `${testCase.id}.${variant}`;
+      titles[id] = titleFor(testCase.id, variant);
     }
-    return worker;
-  },
-  handle: compareCase,
-  hooks: {
-    onWorkerUnusable: (worker: Loose, error: Loose) =>
-      process.stdout.write(`  worker unusable, skipping it: ${worker} (${error.message})\n`),
-    onEvicted: (worker: Loose, { consecutiveFailures, handedBack }: Loose) =>
-      process.stdout.write(`  EVICTING ${worker} after ${consecutiveFailures} consecutive failures; `
-        + `${handedBack} case(s) go back to the queue\n`),
-  },
-});
-  countUncomparedAgainstCoverage({ selected, results, io });
-  return { results, evicted: pooled.evicted };
+  }
+  return { cases, groups: Object.fromEntries([...new Set(cases.map((c) => c.group!))].map((group) => [group, {}])), names, titles };
+}
+
+/**
+ * The comparison, done from a fetched job: every sampled case's variants are judged by the pipeline's OWN gates and compared with the baseline, on the box that captured them.
+ *
+ * A capture that did not come back is a failed variant: it leaves no result row, and `countUncomparedAgainstCoverage` counts it against coverage, so a sample that lost cases
+ * reads INCONCLUSIVE and never "safe to ship". A REJECTED capture stays a finding and is not captured again.
+ */
+export function compareFetched(
+  { fetched, selected, titles, baselineFor, write }:
+  { fetched: FetchedJob; selected: Loose[]; titles: Record<string, string | null>; baselineFor: (testCase: Loose, variant: string) => unknown; write: (line: string) => void },
+) {
+  const results: Loose[] = [];
+  const io = {
+    baselineFor,
+    captureOn: async (testCase: Loose, variant: string) => {
+      const entry = fetched.manifest.captures.find((c) => c.case === `${testCase.id}.${variant}`);
+      const record = entry ? fetched.record(entry) : null;
+      if (!entry || entry.status !== "done" || !record) throw new Error(entry?.error ?? record?.capture?.error ?? "the service returned no record for it");
+      return record.capture;
+    },
+    titleFor: async (testCase: Loose, variant: string) => titles[`${testCase.id}.${variant}`] ?? null,
+    write,
+  };
+  const compareCase = caseComparer({ results, io });
+  const boxOf = (id: string) => fetched.manifest.captures.find((c) => c.group === id)?.box ?? null;
+  return { results, io, compareCase, boxOf, selected };
 }
 
 /**
@@ -633,18 +622,60 @@ export function writeReports({ workers, results, summary,
   return { report, latest, runReport };
 }
 
-async function main() {
-  refuseIfRunsReadonly(OUT);
-  if (!worker) {
-    process.stderr.write(
-      "usage: npm run evidence:check -- <worker-url> [<worker-url>...] [--sample=24] [--only=family] "
-      + "[--browser=chrome]\n");
-    process.exit(2);
-  }
+/** The collector: the comparison above, written out as the report `lab-fetch.yml` fetches, with the exit code the verdict means. */
+function evidenceCollector(): Collector {
+  return async (fetched, pending) => {
+    const extra = pending.extra as { selected: string[]; titles: Record<string, string | null>; baseUrl: string };
+    const selected = extra.selected.map((id) => ({ id }));
+    const write = (line: string) => process.stdout.write(line);
+    const { results, io, compareCase, boxOf } = compareFetched({
+      fetched, selected, titles: extra.titles, write,
+      baselineFor: (testCase, variant) => readCapture(BASELINE, testCase.id, variant),
+    });
+    for (const testCase of selected) {
+      try {
+        await compareCase(testCase, { worker: boxOf(testCase.id) });
+      } catch {
+        // `caseComparer` has already said FAILED for the variant; the reconciliation below counts the one that never came back.
+      }
+    }
+    countUncomparedAgainstCoverage({ selected, results, io });
+    const summary = summarise(results);
+    const workers = fetched.manifest.boxes.map((box) => box.name);
+    const { runReport } = writeReports({ workers, results, summary });
+    // WHICH BOXES ACTUALLY CAPTURED, on the run's own output rather than only in the fetched report:
+    // #1908's acceptance is ten reads posted with the worker each came from, and an operator reading a
+    // dispatch log had no way to answer that at all.
+    const capturedBy = [...new Set(results.map((r: Loose) => r.worker).filter(Boolean))];
+    write(`\nCaptured by ${capturedBy.length} of the ${workers.length} box(es) the job used: ${capturedBy.join(", ") || "none"}\n`);
+    write(`${summary.compared} compared: ` +
+      `${summary.counts.SAME} same, ${summary.counts.DRIFT} drift, ${summary.counts.CHANGED} changed` +
+      (summary.counts.REJECTED ? `, ${summary.counts.REJECTED} rejected (excluded)` : "") + "\n");
+    write(`${summary.recommendation}\n`);
+    write(`Pages: ${extra.baseUrl}\nReport: ${REPORT}\n`);
+    // #2122: NAMED ON THE RUN'S OWN OUTPUT, not only on disk. The durable copy is worth nothing to an
+    // operator reading a dispatch log who cannot tell which file this read became.
+    write(`This run: ${runReport}\n`);
+    // Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed,
+    // 2 could not answer, 3 (`EXIT.THREW`, #2197) it threw and never got to answer.
+    // `inconclusive` MUST NOT exit 0, and that now covers PARTIAL coverage as well as none: the stratified
+    // sample means an uncompared capture is an unexamined FAMILY, so a verdict drawn from the ones that
+    // landed says nothing about the ones that did not.
+    return { recapture: [], attempts: {}, exit: exitCodeFor(summary) };
+  };
+}
+
+const flowFor = (inputs: FleetInputs) => ({
+  root: OUT,
+  inputs,
+  hint: (job: string) => `npm run evidence:check -- --collect=${job}`,
+  collect: evidenceCollector(),
+});
+
+async function submit(inputs: FleetInputs) {
   const comparable = selectComparable();
   const selected = stratify(comparable, sampleSize);
-  process.stdout.write(`Evidence check: ${selected.length} case(s), both variants, across `
-    + `${workers.length} worker(s): ${workers.join(", ")}\n`);
+  process.stdout.write(`Evidence check: ${selected.length} case(s), both variants, as a fleet job on ${inputs.boxes} box(es)\n`);
   process.stdout.write(`Pages: ${pagesBase()}\nBaseline: ${BASELINE}\n\n`);
 
   // Lease the pages the same way a real run does, instead of assuming somebody left a server up. What
@@ -663,40 +694,43 @@ async function main() {
     port: Number(process.env.DATASET_PAGES_PORT || 5050),
     probePath: `${selected[0].id}/good.html`,
   });
-  await requirePagesServed(selected);
-
-  const { results, evicted } = await compareAcrossPool(selected);
-  if (evicted.length) {
-    process.stdout.write(`\nEvicted ${evicted.length} worker(s): ${evicted.join(", ")}\n`);
+  try {
+    await requirePagesServed(selected);
+    const titles = new Map<string, string | null>();
+    for (const testCase of selected) {
+      for (const variant of ["good", "bad"]) titles.set(`${testCase.id}.${variant}`, await pageTitle(testCase, variant));
+    }
+    const job = evidenceJob({
+      selected, baseUrl: pagesBase(), baselineFor: (testCase, variant) => readCapture(BASELINE, testCase.id, variant),
+      titleOf: (id, variant) => titles.get(`${id}.${variant}`) ?? null,
+    });
+    const flow = flowFor(inputs);
+    const { titles: jobTitles, ...forService } = job;
+    const pending = submitJob(flow, {
+      kind: JOB_KIND, ...forService,
+      extra: { selected: selected.map((testCase: Loose) => testCase.id), titles: jobTitles, baseUrl: pagesBase() },
+    });
+    if (inputs.wait === null && pagesLease.started) {
+      process.stderr.write("This process started the page server the boxes fetch from, and stops it when it exits. Run with --wait=<duration> (or A11Y_FLEET_WAIT) to hold it "
+        + "for the job, or serve the pages from a server that stays up.\n");
+    }
+    process.exitCode = await follow(flow, [pending]);
+  } finally {
+    await pagesLease.release();
   }
+}
 
-  await pagesLease.release();
-
-  const summary = summarise(results);
-  const { runReport } = writeReports({ workers, results, summary });
-
-  // WHICH BOXES ACTUALLY CAPTURED, on the run's own output rather than only in the fetched report:
-  // #1908's acceptance is ten reads posted with the worker each came from, and an operator reading a
-  // dispatch log had no way to answer that at all.
-  const capturedBy = [...new Set(results.map((r: Loose) => r.worker).filter(Boolean))];
-  process.stdout.write(`\nCaptured by ${capturedBy.length} of the ${workers.length} worker(s) named: `
-    + `${capturedBy.join(", ") || "none"}\n`);
-
-  process.stdout.write(`${summary.compared} compared: ` +
-    `${summary.counts.SAME} same, ${summary.counts.DRIFT} drift, ${summary.counts.CHANGED} changed` +
-    (summary.counts.REJECTED ? `, ${summary.counts.REJECTED} rejected (excluded)` : "") + "\n");
-  process.stdout.write(`${summary.recommendation}\n`);
-  process.stdout.write(`Report: ${REPORT}\n`);
-  // #2122: NAMED ON THE RUN'S OWN OUTPUT, not only on disk. The durable copy is worth nothing to an
-  // operator reading a dispatch log who cannot tell which file this read became.
-  process.stdout.write(`This run: ${runReport}\n`);
-  // Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed,
-  // 2 could not answer, 3 (`EXIT.THREW`, #2197) it threw and never got to answer.
-  // `inconclusive` MUST NOT exit 0, and that now covers PARTIAL coverage as well as
-  // none: this exited 0 with "safe to ship" having compared 2 of 48, because a concurrent run stopped the
-  // page server two captures in. The stratified sample means an uncompared capture is an unexamined
-  // FAMILY, so a verdict drawn from the ones that landed says nothing about the ones that did not.
-  process.exit(exitCodeFor(summary));
+async function main() {
+  refuseIfRunsReadonly(OUT);
+  const args = process.argv.slice(2);
+  const notice = workerAddressNotice({ argv: args, positional });
+  if (notice) process.stderr.write(notice);
+  const inputs = fleetInputs(args);
+  if (COLLECT !== undefined) {
+    process.exitCode = await collectFlow(flowFor(inputs), COLLECT || undefined, JOB_KIND);
+    return;
+  }
+  await submit(inputs);
 }
 
 /**
@@ -734,4 +768,15 @@ function selectComparable()
   return comparable;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await runToExit(main);
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  await runToExit(async () => {
+    try {
+      await main();
+    } catch (error) {
+      // A refusal in words (no label, an address with no boxes named) is a mistake in the CALL, not a crash: it exits as a usage error and says so.
+      if (!(error instanceof FleetInputError)) throw error;
+      process.stderr.write(`${error.message}\n`);
+      process.exitCode = 2;
+    }
+  });
+}

@@ -36,7 +36,8 @@ const EXEMPT = {
  * because the shape alone cannot tell "the worker's JSON API" from "the dataset page server".
  */
 const CONVERTED_FUNCTIONS: Record<string, string[]> = {
-  "packages/lab/src/training/capture-status.mjs": ["workerState"],
+  // `capture-status.mjs`'s `workerState` was the other entry. It went with the worker probe (A11-263): a run the fleet job service holds names no worker, so the status
+  // command asks `fleet job status <id>` and sends nothing to a box. The assertion that it stays so is the test below this one.
   "packages/lab/src/harnesses/capture-check.ts": ["workerIsServing"],
 };
 
@@ -51,9 +52,9 @@ function functionBody(source: string, name: string): string {
 }
 
 test("every converted lab call site no longer bypasses requestJson for a worker endpoint", () => {
-  // The positive control for the emptiness assertions: the population is the two entries above, and
+  // The positive control for the emptiness assertions: the population is the entry above, and
   // `functionBody` asserts on a name that is gone, so a rename fails rather than passing over nothing.
-  assert.ok(Object.keys(CONVERTED_FUNCTIONS).length >= 2, "CONVERTED_FUNCTIONS was emptied");
+  assert.ok(Object.keys(CONVERTED_FUNCTIONS).length >= 1, "CONVERTED_FUNCTIONS was emptied");
   const stillRaw: string[] = [];
   for (const [file, names] of Object.entries(CONVERTED_FUNCTIONS)) {
     const source = read(file);
@@ -66,6 +67,11 @@ test("every converted lab call site no longer bypasses requestJson for a worker 
   assert.deepEqual(missingImport, [],
     `these files no longer import requestJson at all -- either the conversion regressed or the file `
     + `changed shape:\n${missingImport.join("\n")}`);
+});
+
+test("the status command sends nothing to a box: a run the service holds names no worker (A11-263)", () => {
+  const text = read("packages/lab/src/training/capture-status.mjs");
+  assert.doesNotMatch(text, /requestJson|\bfetch\(|worker-http/, "capture-status.mjs probes a worker again; it should ask `fleet job status <id>` instead");
 });
 
 test("the one exempt call site is still raw fetch, and still says why", () => {

@@ -44,33 +44,51 @@ The capture command leases the generated page server for the duration of the
 run. Do not start `pnpm dlx serve` by hand; this avoids leaked servers and a stray
 server serving the wrong directory.
 
-In the interactive Windows session that owns NVDA, start the existing worker:
-
-~~~powershell
-$env:A11Y_PORT = "8765"
-pnpm run worker
-~~~
-
-Then run the capture step from the control machine, with the worker reachable
-over the network:
+The boxes that take the captures are booked by the **fleet job service** on the control plane
+(control `docs/fleet-jobs.md`), and `training:capture` is a client of it: it does not drive a
+worker. It submits the cases as one job, records the job ID, and writes the corpus from the
+job's manifest when the job is done. A box does one capture at a time, so two agents' jobs
+never run on one box at once; a job that cannot get its boxes waits in the queue.
 
 ~~~sh
-A11Y_WORKER=http://windows-host:8765 \
 DATASET_BASE_URL=http://control-host:5050 \
-pnpm run training:capture
+pnpm run training:capture --label=A11-263 --boxes=3 --wait=4h
 ~~~
 
-On a Mac with the local UTM worker VM, set neither. The capture step starts the
-VM on demand, works out the address the guest can use to reach this host, and
-puts the VM back in the state it found it (see docs/local-worker-vm.md):
+- `--label=<ticket key>` (or `A11Y_FLEET_LABEL`) books the job under the ticket it is for, and is
+  required: a call without one is refused before anything is sent.
+- `--boxes=<n|ready|name,name>` (or `A11Y_FLEET_BOXES`) is how many boxes, every ready one, or these by
+  name. With none it is `ready`.
+- `--wait=<duration>` (or `A11Y_FLEET_WAIT`) is the longest this process waits, as `fleet job wait`
+  does, once: `90s`, `30m`, `2h`, at most 24h. The job outlives the wait. With a wait the run
+  submits, waits, collects, and re-captures what the evidence check rejected, all inside that
+  one budget.
+- **With no wait the command prints the job ID and the command that collects it, and exits 75.** A
+  pipeline that forgot to say how long to wait stops there and does not export a corpus it has
+  not collected. An agent declares the wait instead (`waitingOn: [{ "fleetJob": "<id>" }]`), ends
+  its turn, and is woken when the job ends; then:
 
 ~~~sh
-pnpm run training:capture
+pnpm run training:capture -- --collect            # the newest job not yet collected
+pnpm run training:capture -- --collect=<job ID>   # a named one
 ~~~
 
-DATASET_BASE_URL still wins if you set it, but a `localhost` value is rewritten
-to the host's address on the VM's subnet, because `localhost` inside the guest
-is the guest.
+A pair's good and bad variants are one **group** of the job, and the service holds a group to ONE
+box and captures it in order: the comparison is only meaningful if both came from one screen
+reader on one machine. That rule is the service's now, and it holds across a re-capture: a
+variant the evidence check rejects is captured again by `fleet job recapture`, on the box its
+group was captured on, up to three attempts, and a rejected attempt is kept under
+`captures/rejected/`.
+
+The pages are fetched by the boxes from **this host**, so it serves them for as long as the job
+runs, and `DATASET_BASE_URL` (or `localhost` rewritten to this host's address on the control
+plane's subnet) is the URL they use. A `training:capture` that exits 75 stops the page server
+it started; run with a wait, or serve the pages from a server that stays up.
+
+A worker address (`--worker=`, `A11Y_WORKER`, `A11Y_WORKERS`) is not taken any more: it is
+ignored with one line when `A11Y_FLEET_BOXES` is set, and refused, naming the new form, when it
+is not. A local UTM worker VM is not a fleet box and has nothing to book; this command does not
+drive one.
 
 A full matrix run is two NVDA captures per case -- **3,430** at the manifest's
 1,715 cases, read 2026-09-23T14:26Z. The disk carries more, **4,500 captures**, because
@@ -83,65 +101,42 @@ pnpm run training:status
 ~~~
 
 ~~~
-run:      started 2026-07-26T08:20:19.822Z
+run:      started 2026-10-25T08:20:19.822Z
 progress: 1,061/1,061 cases  (1,061 captured, 0 failed, 0 skipped)
-worker:   http://REDACTED-INTERNAL-ADDRESS:8765
-pages:    http://REDACTED-INTERNAL-ADDRESS:5050
+boxes:    a11y-worker-1, a11y-worker-2, a11y-worker-3
+job:      fj-20261025T082019Z-3a9c1e (dataset, submitted 2026-10-25T08:20:19.822Z)  ->  fleet job status fj-20261025T082019Z-3a9c1e
+pages:    http://control-host:5050
 current:  finished
 last update: recently
-worker now: idle
 ~~~
 
-Those totals are **that run's** -- the 1,061-case matrix of 2026-07-26, kept because the
-block is here to show the SHAPE of the output and a real run is the honest way to show it.
-They are not today's corpus. Read the count off `training:status` or the manifest, never
-off this page.
+Those totals are an example of the SHAPE of the output, not today's corpus. Read the count off
+`training:status` or the manifest, never off this page. The status reads the progress file once and
+names the job ID; it sends nothing to a box, because the run names no worker, and a quiet file is
+not a wedged run (`fleet job status <id>` is the authority).
 
-Run across several workers to cut wall-clock, and **set nothing to get it**: with neither
-`A11Y_WORKER` nor `A11Y_WORKERS` set, the run discovers every local worker VM, starts what is
-stopped, spreads cases across them, and puts each back as it found it afterwards -- so an
-overnight run does not leave three Windows guests burning resources. A VM you had already
-started is left running, and one busy with another capture is never stopped underneath it.
+The **cache** is the service's `skipWhen`: a case whose pair on disk still matches the page, the
+options and the protocol is submitted with the environment that pair was taken under, and the
+service leaves the group alone on a box that reads the same. Such a case is reported
+`cached: unchanged`, as before, and no capture is spent on it. `--no-cache` sends no `skipWhen`.
 
-Measured on 10 mixed cases: 318s on one
-worker, 167s on two -- **1.90x**, with only 5% per-case degradation and byte-identical
-evidence:
+Do not poll it in a loop, and do not hold a wait in a shell. `pnpm run training:wait` waits on
+nothing: it prints the same status, and for a run still going it prints the line to declare:
 
 ~~~sh
-# every a11y-worker* VM, started and reported as JSON
-./scripts/local-worker/worker-ctl.sh pool-up
-
-A11Y_WORKERS=http://REDACTED-INTERNAL-ADDRESS:8765,http://REDACTED-INTERNAL-ADDRESS:8765 pnpm run training:capture
+pnpm run training:wait             # exits 0 finished clean or still going, 1 failures, 2 no run, 3 wedged
+pnpm run training:wait --json      # plus next_command, and `declare` for a run still going
 ~~~
 
-Add a worker with `./scripts/local-worker/clone-worker.sh` (it handles the duplicate-MAC
-trap that `utmctl clone` leaves behind), and release them by hand with
-`./scripts/local-worker/worker-ctl.sh pool-stop` if you ever need to. A pair's good and bad variants always run on the
-SAME worker: the comparison is only meaningful if both came from one screen reader on one
-machine.
+Exit codes: 0 healthy or finished clean, 1 finished with failures, 2 no run recorded, 3 wedged (a
+progress file from before the service, quiet for longer than one capture timeout plus slack). The
+retry for failed cases is a new submission of them (`--only=<ids> --no-cache --label=...`); a
+case whose capture was merely rejected has already been re-captured up to its limit.
 
-Do not poll it in a loop. To block until a run finishes:
-
-~~~sh
-pnpm run training:wait             # exits 0 clean, 1 failures, 2 no run, 3 wedged
-pnpm run training:wait --json      # plus next_command
-~~~
-
-It reads `runs/screenreader-dataset/capture-progress.json`, which the run rewrites
-atomically after every step, and separately asks the worker whether it is still
-capturing -- so "finished", "working" and "wedged" are distinguishable rather than
-inferred from silence. Exit codes: 0 healthy or finished clean, 1 finished with
-failures, 2 no run recorded, 3 wedged (no update within one capture timeout plus
-slack). A wedged or interrupted run does not have to start over:
-
-~~~sh
-pnpm run training:capture --resume --no-cache
-~~~
-
-Resume skips a case only when the previous run recorded it captured, both files are
+`--resume` still skips a case only when the previous run recorded it captured, both files are
 still on disk, and their recorded page identity matches the current bytes. Legacy
 captures without `pageHash` are checked by recomputing their stored cache key; captures
-without sufficient provenance are recaptured. This keeps `--resume --no-cache` safe
+without sufficient provenance are recaptured, so `--resume --no-cache` stays safe
 after a fixture edit rather than silently trusting old evidence.
 
 Before exporting, prove the labels can actually tell the pairs apart:

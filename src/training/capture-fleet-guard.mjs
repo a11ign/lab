@@ -425,3 +425,18 @@ async function guestFrom(url, probe) {
 async function healthOfGuest(url) {
   return (await requestJson(`${url}/health`, { timeoutMs: HEALTH_TIMEOUT_MS })).json ?? null;
 }
+
+/**
+ * A probe that answers from the job's MANIFEST instead of asking a box (A11-263): the service read each box's `/health` when the job began and kept its whole environment,
+ * so the browser-split check can run at collect time over the boxes the job used, with no address and no request. A box whose health was not read, or that reported no
+ * environment, answers nothing, which the check treats as unreachable and not as a fault, exactly as it does a box that does not answer.
+ *
+ * @param {{ boxes: { name: string, environment?: Record<string, unknown> | null }[] }} manifest
+ * @returns {(box: string) => Promise<any>}
+ */
+export function manifestProbe(manifest) {
+  return async (box) => {
+    const environment = manifest.boxes.find((candidate) => candidate.name === box)?.environment;
+    return environment ? { environment } : null;
+  };
+}

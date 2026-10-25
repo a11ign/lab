@@ -1,75 +1,64 @@
 // @ts-check
 // Run under tsx, not plain node (see package.json), so this host-side script can import the
-// TypeScript worker-lease module. The rest of src/training is .mjs under node; this one file
-// needs the shared lifecycle logic, and duplicating it in .mjs would let the two copies
+// TypeScript fleet client. The rest of src/training is .mjs under node; this one file
+// needs the shared flow logic, and duplicating it in .mjs would let the two copies
 // drift.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+//
+// IT SUBMITS A FLEET JOB AND RUNS NO CAPTURE (A11-263). Each case becomes a good and a bad service case in one group, which the control plane holds to one box;
+// the client records the job ID, waits once if it was told to (`A11Y_FLEET_WAIT`, `--wait=`), and writes the corpus from the job's manifest. Without a wait it
+// prints the ID and the collect command and exits 75. `--collect[=<job ID>]` collects a job that has finished.
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { setTimeout as sleep } from "node:timers/promises";
-import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11ign/screenreader-fleet";
-import { requestJson } from "@a11ign/screenreader-fleet/worker-http";
-import { configuredWorkers, inventoryWorkerUrls } from "@a11ign/screenreader-fleet/fleet-env";
-import { captureTolerantly as tolerantCapture } from "@a11ign/screenreader-fleet/capture-client";
 import { assertFleetRunsThisCheckout } from "@a11ign/screenreader-fleet/worker-code-check";
 import { titleOf } from "@a11ign/evidence/verify";
-import {
-  isEvidence, rejectionReason, runOutcome, shouldRetireWorker,
-} from "./capture-decisions.mjs";
-import { beginRun, readProgress } from "./capture-progress.mjs";
-import { cacheDecision, cacheKey, hashPageDir, stampProvenance } from "./capture-cache.mjs";
-import { drainAcrossPool } from "./worker-pool.mjs";
+import { beginRun, continueRun, readProgress } from "./capture-progress.mjs";
+import { hashPageDir, skipWhenFor } from "./capture-cache.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
 import { leasePageServer } from "./page-server.mjs";
 import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.ts";
-import { wakeNamedWorkers, survivingNamedWorkers } from "./wake-by-hand.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 import { datasetRoot, captureRoot, refuseIfRunsReadonly, runsRoot } from "../dataset-paths.ts";
-import { captureRunsFile, recordUnguardedRun } from "./capture-run-record.mjs";
-import { probeWorker } from "@a11ign/control/fleet-wake";
-import { captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.ts";
+import { appendRunRecord, captureRunsFile, runRecordFromManifest } from "./capture-run-record.mjs";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";
+import { datasetCollector, datasetJob } from "./dataset-fleet.ts";
+import { FleetInputError, fleetInputs, pagesBaseUrl, workerAddressNotice } from "../fleet/fleet-job.ts";
+import { collectFlow, follow, submitJob } from "../fleet/capture-flow.ts";
 
 /**
  * a typo here costs a full corpus run: `--resmue` silently means a fresh capture of 1,061 pairs.
  *
  * An unrecognised flag is otherwise IGNORED — every CLI here parses argv by looking for the flags it
  * knows — so it runs the default and reports success. See `cli-flags.mjs`.
+ *
+ * `--worker=` is still NAMED: it is refused (or ignored, when the catalogue also passes `A11Y_FLEET_BOXES`) with the new form, which a typo-guard's "unknown flag" would not say.
  */
-refuseUnknownFlags(["--only=", "--resume", "--no-cache", "--allow-stale-workers", "--allow-battery"],
+refuseUnknownFlags(["--only=", "--resume", "--no-cache", "--allow-stale-workers", "--allow-battery", "--boxes=", "--label=", "--wait=", "--collect", "--worker="],
   { entry: import.meta.url, command: "npm run training:capture" });
 
 const ROOT = datasetRoot();
-const MANIFEST_PATH = resolve(ROOT, "manifest.json");
 const CAPTURE_ROOT = captureRoot(ROOT);
 const PAGE_ROOT = resolve(ROOT, "pages");
 const REJECTED_ROOT = resolve(CAPTURE_ROOT, "rejected");
 const DEFAULT_BASE_URL = "http://localhost:5050";
 const PAGES_PORT = Number(process.env.DATASET_PAGES_PORT || new URL(DEFAULT_BASE_URL).port);
+const MANIFEST_PATH = resolve(ROOT, "manifest.json");
 const STEPS = Number(process.env.DATASET_CAPTURE_STEPS || 150);
 const ONLY = flagValue(process.argv, "only");
 const RESUME = process.argv.includes("--resume");
 /** Capture with a fleet that is not running this checkout. Says so in the output; never the default. */
 const ALLOW_STALE = process.argv.includes("--allow-stale-workers");
+/** `--collect` collects the newest uncollected dataset job; `--collect=<job ID>` a named one. Undefined when the flag is absent. */
+const COLLECT = process.argv.find((arg) => arg === "--collect" || arg.startsWith("--collect="))?.slice("--collect".length + 1);
 // Caching is refused for acceptance runs, whatever the flags say: those runs exist to test whether
 // NVDA's output is still stable, and reusing evidence would make them pass by construction.
 // `--no-cache` forces a recapture anywhere.
 const KIND = process.env.DATASET_KIND || "training";
 const CACHE = !process.argv.includes("--no-cache") && KIND !== "acceptance";
-// A comma-separated A11Y_WORKERS runs cases across those workers concurrently; unset keeps the
-// single-worker behaviour. Read via `configuredWorkers()` at the point of use rather than captured
-// here, so this file cannot drift from doctor and worker:code about what the fleet is again.
-// Must sit ABOVE the worker's own hard timeout, or the host gives up before the guest can report WHY a
-// capture failed — the same race the CLI lost, one layer out. `budget-ladder.test.ts` asserts the ordering
-// against the worker's shipped constants, and it is what caught this when the budget was raised for real
-// pages: 520 s hard timeout inside a 300 s host timeout would have silently truncated every long capture.
-// 560000 -> 620000 on architecture-audit.md §14.5: the worker also spends up to 60 s clearing the desktop
-// BEFORE the hard-timeout-wrapped attempt starts, sequentially, so the true worst case is 580 s and 560 s
-// sat below it — mirroring CAPTURE_CLIENT_TIMEOUT_MS's own fix in worker-http.mjs, which see for the
-// derivation.
-const CAPTURE_TIMEOUT_MS = Number(process.env.DATASET_CAPTURE_TIMEOUT_MS || 620000);
+/** What this client's pending files are filed under, so `--collect` reads a dataset job and never a real-page or evidence-check one. */
+const JOB_KIND = "dataset";
 // Only used to size the power check below, so an estimate is enough — but it must be a MEASURED one,
 // because a stale figure here would wave through a run that cannot finish before the host sleeps.
 // 32.7 s is the mean over the two page-size buckets, timed on this host (see scale-buckets.test.ts,
@@ -158,84 +147,12 @@ function nearestIds(/** @type {any} */ want, /** @type {any[]} */ all) {
   return stem ? all.filter((/** @type {any} */ id) => id.startsWith(stem)).slice(0, 3) : [];
 }
 
-// `requestJson`, not `fetch`: a capture can hold the connection well past undici's 300 s headers cap,
-// which no AbortSignal lifts. See worker-http.mjs — this call site declared 560 s and got 300 s.
-async function fetchJson(/** @type {any} */ url, options = {}, timeoutMs = 30000) {
-  return raiseForStatus(url, await requestJson(url, { ...options, timeoutMs }));
-}
-
-/**
- * The body, or a typed throw — ONE construction, used by both the plain fetch and the tolerant capture.
- *
- * Split out when the recovery moved to the shared client, because the alternative was raising this error
- * in two places and hoping they stayed identical. The fields are the entire point: every retry decision in
- * this file keys on the status and on the worker's fault CODE, never on the message text.
- *
- * The body is typed `any` deliberately: it is whatever the worker sent, and every caller in this file
- * already reads it that way (`health.busy`, `capture.transcript`). Narrowing it here would only push the
- * casts outward to a dozen call sites.
- *
- * @param {string} url @param {{ok: boolean, status: number, text: string, json: unknown}} response
- * @returns {any}
- */
-function raiseForStatus(url, response) {
-  const body = /** @type {any} */ (response.json ?? { raw: response.text });
-  if (response.ok) return body;
-  const failed = /** @type {Error & { status?: number, code?: string }} */ (
-    new Error("HTTP " + response.status + " from " + url + ": " + JSON.stringify(body)));
-  // The status as a NUMBER, so callers branch on it instead of matching the message they just built.
-  // Recovery needs exactly this: 404 means re-capture, 500 means the worker has a diagnosis for us.
-  failed.status = response.status;
-  // Carry the worker's fault code across the wire so retry decisions can key on it instead of on the
-  // wording of a message that crossed two processes. Absent from older workers, which is why
-  // isTransient still falls back to matching the text.
-  if (body?.fault) failed.code = body.fault;
-  throw failed;
-}
 
 function readManifest() {
   if (!existsSync(MANIFEST_PATH)) {
     throw new Error("Missing " + MANIFEST_PATH + ". Run npm run training:generate first.");
   }
   return JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
-}
-
-async function checkWorker(/** @type {any} */ { worker, source }) {
-  if (source === "default") {
-    throw new Error(
-      "No NVDA worker available. Dataset capture needs the interactive Windows/NVDA worker: " +
-        "set A11Y_WORKER=http://host:8765, or on a Mac create the local VM " +
-        "(scripts/local-worker/build-vm.sh) and it will be started on demand."
-    );
-  }
-  let health;
-  try {
-    health = await fetchJson(worker + "/health");
-  } catch (error) {
-    throw new Error(
-      "The worker at " + worker + " did not answer /health. If you set A11Y_WORKER yourself, " +
-        "check that machine is up and the a11ysrv task is running; unset it to have a local VM " +
-        "started on demand instead.",
-      { cause: error }
-    );
-  }
-  if (health.screenReader !== "NVDA") {
-    throw new Error("Worker is not an NVDA worker: " + JSON.stringify(health));
-  }
-  if (health.busy) console.log("Worker reports busy; the next capture may be rejected.");
-  console.log("Connected to NVDA worker at " + worker);
-}
-
-// The guest fetches these pages itself, so the base URL has to be reachable from THERE.
-// With a local VM, the host's `localhost` is not: it resolves to the guest, which serves
-// nothing, and every capture then comes back describing an empty page with no error.
-function resolveBaseUrl(/** @type {any} */ lease) {
-  const configured = (process.env.DATASET_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, "");
-  const reachable = guestReachableUrl(configured, lease);
-  if (reachable !== configured) {
-    console.log("Dataset pages: rewrote " + configured + " -> " + reachable + " (the guest cannot reach the host's localhost)");
-  }
-  return reachable;
 }
 
 function captureUrl(/** @type {any} */ baseUrl, /** @type {any} */ testCase, /** @type {any} */ variant) {
@@ -311,14 +228,6 @@ export function captureOptions(/** @type {any} */ testCase) {
   };
 }
 
-function writeCapture(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture, /** @type {any} */ provenance) {
-  mkdirSync(CAPTURE_ROOT, { recursive: true });
-  if (provenance) capture = stampProvenance(capture, provenance);
-  const path = captureFilePath(CAPTURE_ROOT, testCase.id, variant);
-  writeFileSync(path, JSON.stringify(capture, null, 2) + "\n", "utf8");
-  return path;
-}
-
 // Fetch the page the way the guest will, and hand back its title so the capture can be
 // checked against it. Doing this first turns a misconfigured base URL into one clear error
 // instead of a whole dataset of captured 404 pages -- which is what happened before this
@@ -351,578 +260,60 @@ async function pageTitle(/** @type {any} */ url) {
   return titleOf(await response.text());
 }
 
-const CAPTURE_ATTEMPTS = 3;
-const WORKER_WAIT_MS = Number(process.env.DATASET_WORKER_WAIT_MS || 600000);
-const WORKER_POLL_MS = 10000;
-
 /**
- * The worker's own vitals, and whether it answered at all.
- *
- * These are two different facts and collapsing them into one null hid a whole failure mode. "Answered
- * but reports no vitals" is an older worker, and must keep working exactly as before. "Did not answer"
- * is a worker that may be wedged — and a wedged guest does not merely stop contributing, it spins and
- * degrades its neighbours. A single silence is still not evidence: `shouldRetireWorker` requires a
- * streak, so a flaky probe on a loaded host costs nothing.
- *
- * @returns {Promise<{ reachable: boolean, vitals: object | null }>}
+ * What a dataset job's collect step needs that the manifest does not hold, read from the page files at SUBMIT time: the title each page is read as (so a rejected
+ * capture is judged against the page that was submitted, not against whatever the files hold when a later `--collect` runs), and the bytes of each page directory.
+ * @param {{ id: string }[]} cases
  */
-async function workerVitals(/** @type {any} */ worker) {
-  try {
-    return { reachable: true, vitals: (await fetchJson(worker + "/health", {}, 15000)).vitals ?? null };
-  } catch {
-    return { reachable: false, vitals: null };
+function submittedPages(cases) {
+  /** @type {Record<string, string | null>} */ const titles = {};
+  /** @type {Record<string, string>} */ const pageHashes = {};
+  for (const { id } of cases) {
+    pageHashes[id] = hashPageDir(resolve(PAGE_ROOT, id));
+    for (const variant of ["good", "bad"]) titles[`${id}.${variant}`] = titleOf(readFileSync(resolve(PAGE_ROOT, id, `${variant}.html`), "utf8"));
   }
+  return { titles, pageHashes };
 }
 
-/** Consecutive silent /health probes per worker, so one blip cannot retire anybody. */
-const unreachableStreaks = new Map();
-
-/**
- * Stop sending work to a worker that is quietly costing four times what it should, or that has stopped
- * answering altogether.
- *
- * Checked after a success, because that is the state the degradation fault hides in: a guest whose NVDA
- * goes mute on every capture still returns evidence and still records zero failures, so the eviction
- * rule -- three consecutive failures -- can never reach it. Nothing is requeued; the cases it captured
- * are fine. It simply stops taking more.
- *
- * Also checked after a FAILURE, which it was not, and that omission is why a wedged guest survived. It
- * never succeeded, so this function was never called for it; it never returned a clean failure either,
- * so eviction never reached it. It sat in the rotation for twelve minutes spinning at 178% CPU while
- * its neighbour's mute rate went from 0/10 to 6/18.
- *
- * @returns {Promise<{retire: boolean, reason: string|null}>}
- *   The VERDICT AND ITS REASON, which is what `shouldRetireWorker` returns and what the pool accepts.
- *   This said `Promise<boolean>` for as long as it has existed -- a contract nobody could act on, since
- *   the run summary names why a worker was retired and a boolean cannot say.
- */
-async function retireIfDegraded(/** @type {any} */ { worker, poolSize, evictedCount, retiredCount }) {
-  const { reachable, vitals } = await workerVitals(worker);
-  const streak = reachable ? 0 : (unreachableStreaks.get(worker) ?? 0) + 1;
-  unreachableStreaks.set(worker, streak);
-  // Both counts, because a worker leaves the pool two ways and the "never the last one standing" guard has to
-  // see both. Reading them here — AFTER the await — is deliberate and safe: the read, the decision and the
-  // push below are one synchronous run, and Node does not interleave those. A read taken before the await
-  // would be a stale snapshot.
-  // Returned rather than acted on: the pool owns who is in it, and pushing to its list from here was how
-  // this function ended up needing the pool object at all.
-  return shouldRetireWorker({
-    vitals, unreachableStreak: streak, poolSize, retiredCount, evictedCount,
-  });
-}
-
-async function waitForWorker(/** @type {any} */ worker) {
-  const deadline = Date.now() + WORKER_WAIT_MS;
-  while (Date.now() < deadline) {
-    try {
-      const health = await fetchJson(worker + "/health", {}, WORKER_POLL_MS);
-      // Answering is not the same as able to capture. A worker reports `ready: false` while NVDA
-      // is still warming up after a boot -- which is when the first capture used to fail on
-      // `nvda.start` and be recorded as a broken case. Waiting here turns that into patience.
-      //
-      // `ready !== false` rather than `=== true` on purpose: a worker predating this field is
-      // treated as ready, so an un-redeployed guest keeps working instead of stalling the run.
-      // Staleness has its own detector (npm run worker:code).
-      if (health.busy || health.ready === false) {
-        await sleep(WORKER_POLL_MS);
-        continue;
-      }
-      const waited = Math.round((WORKER_WAIT_MS - (deadline - Date.now())) / 1000);
-      // Silent when there was nothing to wait for. This is now called once per worker before it
-      // takes any work, so announcing "back after 0s" for a healthy pool was three lines of noise
-      // per run, and "back" is wrong for a worker that never went away.
-      if (waited > 0) console.log("    worker ready after " + waited + "s: " + worker);
-      return;
-    } catch {
-      // Expected while it is down -- the whole point is to keep asking. The loop's own
-      // timeout is the error path, so there is nothing to record here.
-      await sleep(WORKER_POLL_MS);
-    }
-  }
-  throw new Error("the worker did not come back within " + Math.round(WORKER_WAIT_MS / 60000) + " minutes");
-}
-
-/**
- * One capture, tolerant of the worker disappearing underneath it.
- *
- * THE RECOVERY LIVES IN `@a11ign/screenreader-fleet`'s `capture-client.mjs` NOW (moved there from
- * `packages/lab` on architecture-audit.md §5, item 6, so `packages/cli` could reach it too). This file
- * held the only implementation for months while nine other modules POSTed to `/capture` with none -- the
- * remedy-at-one-call-site shape this repo pays for most often. Two copies of a subtle protocol (404 means
- * re-capture, 202 does not, a 500 carries the worker's diagnosis) is the fact-stated-twice shape on top
- * of it.
- *
- * What stays here is what is genuinely this runner's: `waitForWorker`, because a corpus run can afford to
- * wait minutes for a box to come back where a gate wants an answer now, and the THROW contract below,
- * which every retry decision in this file keys on.
- */
-async function captureTolerantly(/** @type {any} */ ctx, /** @type {any} */ testCase, /** @type {any} */ url) {
-  const response = await tolerantCapture({
-    worker: ctx.worker,
-    body: { url, ...captureOptions(testCase) },
-    timeoutMs: CAPTURE_TIMEOUT_MS,
-    beforeRecovery: async (/** @type {any} */ error) => {
-      console.log("    worker unreachable (" + (error?.message ?? error) + "); waiting for it to come back");
-      await waitForWorker(ctx.worker);
-    },
-  });
-  if (response.recovered) console.log("    recovered the completed capture — no re-capture needed");
-  // The shared client RESOLVES a non-2xx where `fetchJson` throws, and this file's retry decisions read
-  // `error.status` and `error.code`. Converting here keeps that contract exactly rather than rewriting
-  // every caller -- and a recovered FAILURE arrives as a 500 and throws identically to the original.
-  return raiseForStatus(ctx.worker + "/capture", response);
-}
-
-function writeRejected(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture, /** @type {any} */ attempt) {
-  mkdirSync(REJECTED_ROOT, { recursive: true });
-  const path = rejectedCaptureFilePath(REJECTED_ROOT, testCase.id, variant, attempt);
-  writeFileSync(path, JSON.stringify(capture, null, 2) + "\n", "utf8");
-  return path;
-}
-
-async function captureVerified(/** @type {any} */ ctx, /** @type {any} */ testCase, /** @type {any} */ { url, title, variant }) {
-  // `rejectionReason` answers null when the capture IS evidence, and this accumulates whichever
-  // reason the last attempt produced. Typed to carry both, since an empty string and "no reason"
-  // are the same thing here only by accident.
-  /** @type {string | null} */
-  let wrong = "";
-  for (let attempt = 1; attempt <= CAPTURE_ATTEMPTS; attempt++) {
-    // A LOST CAPTURE IS A RE-ISSUABLE CASE, and its own error says so: "the work is gone and the case must
-    // be re-issued". Nothing acted on that. `CAPTURE_LOST` is thrown when the worker 404s a captureId it
-    // had accepted — it restarted mid-capture — and it is in neither transient set, so it escaped this
-    // loop, reached the pool as one consecutive failure, and the case was recorded failed WITHOUT being
-    // requeued. Three in a row would evict the worker and hand the work back; a single restart lost
-    // exactly one case, quietly.
-    //
-    // Retried here rather than made "transient", which would have been inert: `isTransient` has one
-    // production caller and it is on the SYNC path, where this is never thrown.
-    let capture;
-    try {
-      capture = await captureTolerantly(ctx, testCase, url);
-    } catch (error) {
-      if (/** @type {{ code?: string }} */ (error)?.code !== "CAPTURE_LOST") throw error;
-      console.log("  attempt " + attempt + "/" + CAPTURE_ATTEMPTS + ": the worker restarted mid-capture "
-        + "and forgot this one; re-issuing");
-      wrong = "the worker restarted mid-capture";
-      continue;
-    }
-    // Both questions, because the title check alone cannot answer the second and is in fact
-    // SATISFIED by the failure: a degenerate capture's whole transcript is the document title.
-    // Measured on a live worker -- 2 of 5 captures returned transcript ["<page title>"] with no
-    // headings and no cells, and would have been written to the dataset as read evidence.
-    // Three questions, all answerable from the capture alone: is this the right page, was anything
-    // read at all, and does the capture agree with itself.
-    //
-    // Deliberately NOT "did the probes we asked for produce anything". That gate rejected 100 of the
-    // 2,122 captures in a corpus check-signals scores as fully discriminating, and failed 44 cases in
-    // a live run. For the custom-control family an empty form probe IS the finding: its bad pages are
-    // div-based fake buttons, so NVDA finds no controls and that absence is the 4.1.2 failure being
-    // demonstrated. Whether absence is evidence or malfunction depends on the CASE DEFINITION, which
-    // check-signals can see and this layer cannot -- and check-signals already reports it, as BLIND or
-    // CONTAMINATED. captureRanRequestedProbes is kept for diagnostics; it must never gate.
-    if (isEvidence(capture, title)) return capture;
-    wrong = rejectionReason(capture, { title, url });
-    const kept = writeRejected(testCase, variant, capture, attempt);
-    console.log("  attempt " + attempt + "/" + CAPTURE_ATTEMPTS + ": " + wrong);
-    console.log("    diagnostics kept: " + kept);
-  }
-  throw new Error(wrong + " after " + CAPTURE_ATTEMPTS + " attempts. Not written as evidence; " +
-    "the rejected captures are in " + REJECTED_ROOT + " for diagnosis.");
-}
-
-/** The worker's own account of what it is, which the cache key depends on. */
-async function workerEnvironment(/** @type {any} */ worker) {
-  try {
-    return (await fetchJson(worker + "/health", {}, 15000)).environment ?? {};
-  } catch {
-    // An unreachable worker is handled by waitForWorker; keying on {} here just means its captures
-    // will not match cached ones, which is the safe direction.
-    return {};
-  }
-}
-
-function provenanceFor(/** @type {any} */ ctx, /** @type {any} */ testCase) {
-  const pageDir = resolve(PAGE_ROOT, testCase.id);
-  const pageHash = hashPageDir(pageDir);
-  const options = captureOptions(testCase);
-  const environment = ctx.environment ?? {};
+/** The flow this client follows: where its pending files live, how it collects, and the command that does. @param {import("../fleet/fleet-job.ts").FleetInputs} inputs @param {import("./capture-progress.mjs").RunRecorder} progress */
+function flowFor(inputs, progress) {
+  const startedAt = progress.snapshot().startedAt;
   return {
-    key: cacheKey({ caseId: testCase.id, pageHash, options, environment }),
-    pageHash,
-    options,
-    environment,
-    worker: ctx.worker ?? null,
-  };
-}
-
-/**
- * Reuse the pair on disk when nothing that shapes it has changed, otherwise capture it.
- *
- * @returns {Promise<{cached: boolean, phrases?: object, reason?: string}>}
- */
-async function cachedOrCapture(/** @type {any} */ ctx, /** @type {any} */ testCase) {
-  if (!CACHE) return { cached: false, phrases: await captureCase(ctx, testCase) };
-  const { key } = provenanceFor(ctx, testCase);
-  const decision = cacheDecision({ captureRoot: CAPTURE_ROOT, caseId: testCase.id, key });
-  if (!decision.reuse) {
-    // SAY WHY. A miss and a hit were both silent, so a run that recaptured all 1,061 cases looked
-    // identical to one that reused them apart from a count at the end -- and the count says "1 captured"
-    // whether the page changed, the worker was upgraded, or a new capture option re-keyed the corpus by
-    // accident. `cacheDecision` has always computed the reason and nothing read it, which is this repo's
-    // `sweepLog` shape: a diagnostic that exists, is correct, and reaches nobody.
-    //
-    // It also distinguishes the two cases that matter most and are otherwise identical from outside:
-    // "no usable pair on disk" (first capture of a new case -- expected) and "page, options or
-    // environment changed" (something re-keyed evidence that already existed -- check what, before
-    // spending hours of fleet time).
-    console.log("  " + testCase.id + ": capturing (" + decision.reason + ")");
-    return { cached: false, phrases: await captureCase(ctx, testCase) };
-  }
-  // Worth saying out loud: the evidence is valid by protocol version, but it was produced by
-  // different capture code. Silently reusing it is how you lose track of what made your dataset.
-  if (decision.staleCode && decision.staleCode !== ctx.environment?.workerCode) {
-    console.log("  " + testCase.id + ": reusing evidence produced by different capture code (" +
-      decision.staleCode + " vs " + (ctx.environment?.workerCode ?? "unknown") + ")");
-  }
-  return { cached: true, reason: decision.reason };
-}
-
-async function captureCase(/** @type {any} */ ctx, /** @type {any} */ testCase) {
-  /** @type {Record<string, number>} */
-  const phrases = {};
-  ctx = { ...ctx, provenance: provenanceFor(ctx, testCase) };
-  for (const variant of ["good", "bad"]) {
-    const url = captureUrl(ctx.baseUrl, testCase, variant);
-    const title = await pageTitle(url);
-    ctx.progress.startCase(testCase.id, variant, ctx.worker);
-    console.log("Capturing " + testCase.id + " (" + variant + ")" +
-      (ctx.poolSize > 1 ? " on " + ctx.worker : ""));
-    const capture = await captureVerified(ctx, testCase, { url, title, variant });
-    const path = writeCapture(testCase, variant, capture, ctx.provenance);
-    console.log("  " + capture.transcript.length + " transcript phrases -> " + path);
-    phrases[variant] = capture.transcript.length;
-  }
-  return phrases;
-}
-
-// A run interrupted an hour in should not start over. Must be read BEFORE beginRun, which
-// replaces the progress file with a fresh all-pending one. Cache-enabled training runs do not
-// use filenames as a completion signal: a file can be complete yet stale after a protocol, page,
-// option, or worker-runtime change. cachedOrCapture must see every case so the cache key gets the
-// final say. Acceptance runs deliberately disable caching, so they may use the previous progress
-// record to skip cases completed in the same acceptance run.
-//
-// A case counts as done only if the previous run recorded it captured AND both files are
-// still on disk: the progress file and the captures can be deleted independently, and
-// trusting either alone silently skips work that no longer exists.
-function afterRun() {
-  const v = process.env.A11Y_VM_AFTER;
-  if (!v) return "restore";
-  if (isAfterRun(v)) return v;
-  throw new Error('A11Y_VM_AFTER must be restore|stop|pause|leave (got "' + v + '")');
-}
-
-/**
- * Drain the case queue across the pool, and report what happened to the run rather than to each worker.
- *
- * The dispatch itself — the shared queue, each worker's failure streak, eviction and requeue — moved to
- * `worker-pool.mjs` so `evidence:check` and `capture:check` can use the fleet too. They ran against ONE
- * worker while three sat idle, because this was the only caller that knew how.
- *
- * What stays here is what is specific to a corpus run and has no business in a shared module: the cache, the
- * `--resume` set, and the progress file.
- *
- * **The unit of work is a CASE, not a capture**, and that is a correctness constraint rather than a
- * convenience: a pair is only comparable if both variants came from the same screen reader on the same
- * machine. Splitting one across workers would compare two NVDA instances and call the difference evidence.
- */
-async function captureAcrossPool(/** @type {any} */ ctxBase, /** @type {any} */ cases, /** @type {any} */ done, /** @type {any} */ workers) {
-  const skipped = [], cachedIds = [];
-  const outcome = await drainAcrossPool({
-    workers,
-    items: cases,
-    // Once per worker: the cache key depends on this guest's NVDA, Edge, protocol and provisioning, and a
-    // pool member that differs must not reuse another's evidence.
-    prepare: async (worker) => {
-      await waitForWorker(worker);
-      return { ...ctxBase, worker, environment: await workerEnvironment(worker) };
-    },
-    handle: async (testCase, { context: ctx }) => {
-      if (done.has(testCase.id)) {
-        ctx.progress.skipped(testCase.id, "already captured (--resume)");
-        skipped.push(testCase.id);
-        return;
-      }
-      const result = await cachedOrCapture(ctx, testCase);
-      if (result.cached) {
-        ctx.progress.skipped(testCase.id, "cached: " + result.reason);
-        cachedIds.push(testCase.id);
-        return;
-      }
-      ctx.progress.captured(testCase.id, result.phrases);
-    },
-    // The pool supplies the counts it owns; `retireIfDegraded` measures the vitals and makes the call, so
-    // the decision stays in `capture-decisions.mjs` where `pool-invariants.test.ts` already pins it.
-    isDegraded: (/** @type {any} */ { worker, poolSize, evictedCount, retiredCount }) =>
-      retireIfDegraded({ worker, poolSize, evictedCount, retiredCount }),
-    hooks: {
-      onWorkerUnusable: (/** @type {any} */ worker, /** @type {any} */ error) =>
-        console.error("  worker never became ready, skipping it: " + worker + " (" + /** @type {any} */ (error).message + ")"),
-      onItemFailed: (/** @type {any} */ testCase, /** @type {any} */ error, /** @type {any} */ { worker }) => {
-        // The progress entry is written here and deliberately NOT rolled back on requeue: another worker
-        // capturing the case overwrites it, and a failure that was really the worker's is still worth
-        // having been visible while it stood.
-        ctxBase.progress.failed(testCase.id, /** @type {any} */ (error).message, worker);
-        console.error("  CAPTURE_FAILED " + testCase.id + ": " + /** @type {any} */ (error).message);
-      },
-      onEvicted: (/** @type {any} */ worker, /** @type {any} */ { consecutiveFailures, handedBack, error }) =>
-        console.error("  EVICTING " + worker + " after " + consecutiveFailures + " consecutive failures; "
-          + handedBack + " case(s) go back to the queue. Last error: " + /** @type {any} */ (error).message),
-      onRetired: (/** @type {any} */ worker, /** @type {any} */ { handedBack, reason }) =>
-        console.error("  RETIRING " + worker + " — " + reason
-          + (handedBack ? "; " + handedBack + " case(s) go back to the queue" : "")),
-    },
-  });
-
-  if (cachedIds.length) {
-    console.log("Reused cached evidence for " + cachedIds.length + " case(s); no worker time spent on them.");
-  }
-  // Never silent: a run that finished on two of three workers must say so, or the next person wonders why it
-  // took longer and finds nothing.
-  if (outcome.evicted.length) console.error("Evicted " + outcome.evicted.length + " worker(s): " + outcome.evicted.join(", "));
-  if (outcome.retired.length) console.error("Retired " + outcome.retired.length + " degraded worker(s): " + outcome.retired.join(", "));
-  return {
-    failures: outcome.failures.map((f) => f.key + ": " + f.error.message),
-    evicted: outcome.evicted,
-    retired: outcome.retired,
-    skippedCount: skipped.length + cachedIds.length,
-    cachedCount: cachedIds.length,
-  };
-}
-
-async function captureAll(/** @type {any} */ ctxBase, /** @type {any} */ cases, /** @type {any} */ done) {
-  const failures = [];
-  const ctx = { ...ctxBase, environment: await workerEnvironment(ctxBase.worker) };
-  let cached = 0;
-  for (const testCase of cases) {
-    if (done.has(testCase.id)) {
-      ctx.progress.skipped(testCase.id, "already captured (--resume)");
-      console.log("Skipping " + testCase.id + " (already captured)");
-      continue;
-    }
-    try {
-      const result = await cachedOrCapture(ctx, testCase);
-      if (result.cached) {
-        ctx.progress.skipped(testCase.id, "cached: " + result.reason);
-        console.log("Reusing " + testCase.id + " (cached: " + result.reason + ")");
-        cached += 1;
-        continue;
-      }
-      ctx.progress.captured(testCase.id, result.phrases);
-    } catch (error) {
-      failures.push(testCase.id + ": " + /** @type {any} */ (error).message);
-      ctx.progress.failed(testCase.id, /** @type {any} */ (error).message);
-      console.error("  CAPTURE_FAILED " + failures.at(-1));
-    }
-  }
-  // Cached cases are skipped, not captured -- counting them as captured would report worker time
-  // that was never spent, which is the one number this whole feature exists to change.
-  const outcome = runOutcome({
-    total: cases.length, failures: failures.length, skipped: done.size + cached, cached, poolSize: 1,
-  });
-  ctx.progress.finish(outcome);
-  console.log("Capture complete: " + outcome + ".");
-  if (failures.length) {
-    throw new Error(failures.length + " case(s) failed. The completed captures were kept; " +
-      "see npm run training:status, and re-run with --resume --no-cache to retry only what is missing.");
-  }
-}
-
-/**
- * The fleet this run was ASKED to use, named the way `acquireDatasetWorkers` names it (the explicit pool, else the
- * inventory); empty when the run leases local guests, which nobody named. Read again here rather than threaded out
- * of `acquireDatasetWorkers`, because a run that finds nobody throws before it has anything to return.
- */
-function namedFleet() {
-  const named = configuredWorkers();
-  return named.length ? named.map((/** @type {{ url: string }} */ w) => w.url) : inventoryWorkerUrls();
-}
-
-/**
- * This run's line in `runs/capture-runs.jsonl` (#4462), the same record `capture-real-pages.mjs` writes (#4459). NOT
- * behind `capture-fleet-guard.mjs`, so no ready count was read and the record says `null` (see `recordUnguardedRun`).
- * @param {{ file: string, startedAt: string, named: string[] }} run
- * @param {string[]} participants
- */
-function recordDatasetRun(run, participants) {
-  return recordUnguardedRun({ ...run, participants }, { probe: probeWorker });
-}
-
-/**
- * A run that found NOBODY still leaves its record, then fails as it would have: it is the run a baseline of "how
- * many boxes does a capture really get" most needs to see.
- * @param {{ file: string, startedAt: string, named: string[] }} run
- * @param {unknown} error
- * @returns {Promise<never>}
- */
-async function recordNobodyThenFail(run, error) {
-  await recordDatasetRun(run, []);
-  throw error;
-}
-
-async function acquireDatasetWorkers() {
-  // Same lease as the witness CLI: an explicit A11Y_WORKER is used untouched, otherwise a
-  // local VM is started on demand and put back as it was found. Dataset capture is the run
-  // that benefits most -- it is long, unattended, and used to leave the guest running after.
-  // Three ways to get workers, in priority order:
-  //   A11Y_WORKERS  an explicit pool -- someone else's to manage, so no lifecycle handling
-  //   two or more local VMs  leased as a pool AND put back afterwards
-  //   otherwise     the single-worker lease, as before
-  //
-  // The middle case is the point: pooling used to hand back a no-op release, so a pooled run
-  // left every VM running indefinitely. That is the exact cost the single-worker lease exists
-  // to avoid, and it came back the moment pooling became the normal way to run.
-  // One parser, in fleet-env.mjs. This copy and doctor's and check-worker-code's had drifted apart on
-  // precedence, which meant a diagnostic could describe a different fleet from the one about to run.
-  const named = configuredWorkers();
-  const explicitPool = named.length ? named.map((w) => w.url) : null;
-  if (explicitPool) {
-    // Run BY HAND, `A11Y_WORKERS` never goes through `lab:job`'s own wake -- #2655's table, row 6. One
-    // asleep box used to fail silently at the first request; this sends it #2655's own packet, and #2756
-    // narrows the pool to whoever answers rather than refusing the whole run over one that does not.
-    const pool = await survivingNamedWorkers(explicitPool, await wakeNamedWorkers(explicitPool));
-    return {
-      pool,
-      lease: { worker: pool[0], source: "explicit", hostAddress: undefined, release: async () => {} },
-    };
-  }
-  // THE BARE-METAL FLEET, before the deprecated local guests. This function went named -> local UTM pool
-  // -> single-VM lease and NEVER READ THE INVENTORY, while `doctor` went named -> inventory and
-  // `check-worker-code` went named -> local -> inventory: three modules, three precedences, and the
-  // comment six lines up claiming they had been unified covered the NAMED half only.
-  //
-  // So a bare `npm run training:capture` on a Mac with a registered guest captured the CORPUS on a
-  // deprecated laptop VM while five bare-metal boxes sat idle. In practice the job always sets
-  // `A11Y_WORKERS` (`lab-job.yml` passes `lab_fleet_workers`), which is why this never bit — a default
-  // that is wrong and always overridden is a trap waiting for the first person who does not override it.
-  //
-  // NO LEASE, exactly like the explicit branch above: these machines are always on and are not ours to
-  // start or stop. Leasing them would be `worker-ctl.sh` reaching for `utmctl` against a physical box.
-  const fleet = inventoryWorkerUrls();
-  if (fleet.length) {
-    // Named by inventory.yml rather than A11Y_WORKERS, but the same by-hand case: #2655's table, row 6,
-    // narrowed by #2756 the same way the explicit branch above is.
-    const pool = await survivingNamedWorkers(fleet, await wakeNamedWorkers(fleet));
-    return {
-      pool,
-      lease: { worker: pool[0], source: "inventory.yml", hostAddress: undefined, release: async () => {} },
-    };
-  }
-
-  if (!process.env.A11Y_WORKER) {
-    // leaseWorkerPool returns NULL when it finds fewer than two local VMs -- one VM is the
-    // single-worker path's job. That contract was documented and unhandled: a resume crashed with
-    // "Cannot read properties of null (reading 'workers')" the moment the pool query came back short.
-    // TypeScript declares the nullable return, but this file is .mjs so nothing checked the caller.
-    const localPool = await leaseWorkerPool(afterRun());
-    if (localPool) {
-      return {
-        pool: localPool.workers,
-        lease: {
-          worker: localPool.workers[0], source: "local-vm",
-          hostAddress: localPool.hostAddress, release: localPool.release,
-        },
-      };
-    }
-    // Fall through to the single-worker lease, which starts and restores one VM on its own.
-  }
-  return { pool: null, lease: await leaseWorker({ worker: process.env.A11Y_WORKER ?? null, after: afterRun() }) };
-}
-
-async function checkDatasetWorkers(/** @type {any} */ pool, /** @type {any} */ lease) {
-  let checked = pool;
-  if (pool) {
-    // Check every one of them before starting: discovering a dead worker an hour in wastes the hour, and
-    // the pool driver would keep handing it cases. #2756: a worker that fails THIS check (NVDA readiness,
-    // not just TCP reachability -- `survivingNamedWorkers` upstream already excluded anything that could
-    // not even answer `/health`) is excluded here too rather than refusing the whole pool, since the same
-    // "one down worker must not block the run" direction applies to a failure discovered a step later.
-    const outcomes = await Promise.all(pool.map(async (/** @type {string} */ worker) => {
-      try {
-        await checkWorker({ worker, source: "explicit" });
-        return true;
-      } catch (error) {
-        console.log(`REPORTED, not blocking: ${worker} failed its pre-run check (${
-          /** @type {any} */ (error).message}) and is excluded from this run`);
-        return false;
-      }
-    }));
-    checked = pool.filter((/** @type {string} */ _, /** @type {number} */ i) => outcomes[i]);
-    if (!checked.length) throw new Error("Every named worker failed its pre-run check; nothing to capture with.");
-    console.log(`Pool of ${checked.length}: ${checked.join(", ")}`);
-  } else {
-    await checkWorker(lease);
-  }
-  // AND that they run the code this checkout expects — here as well as in `capture-real-pages.mjs`, which
-  // is the whole point. A remedy that reaches one of several paths is this repo's most expensive recurring
-  // shape, and the SYNTHETIC corpus is the worse half of it: real-page captures never cache, so a stale
-  // worker's evidence there is at least overwritten next run. Here it is CACHED, and `workerCode` is
-  // deliberately outside the cache key — so one stale guest's capture is reused for ever with nothing
-  // recording which code produced it.
-  // Said BEFORE the run, not after it fails. This host serves the pages and drives the dispatch, and the
-  // only place that dependency was ever mentioned is a battery guard's refusal — which is how it came to be
-  // met with `--allow-battery` rather than understood.
-  const hostNotice = nonAuthoritativeHostNotice({ cwd: process.cwd(), servesPages: true });
-  if (hostNotice) process.stdout.write(hostNotice);
-  await assertFleetRunsThisCheckout(checked ?? [lease.worker],
-    { when: "before the run", allow: ALLOW_STALE, bareMetalUrls: inventoryWorkerUrls() });
-  return checked;
-}
-
-function captureProgress(/** @type {any} */ cases, /** @type {any} */ lease, /** @type {any} */ pool, /** @type {any} */ baseUrl) {
-  const progress = beginRun({
     root: ROOT,
-    worker: lease.worker,
-    baseUrl,
-    cases,
-    captureTimeoutMs: CAPTURE_TIMEOUT_MS,
-  });
-  progress.setWorkers(pool ?? [lease.worker]);
-  console.log("Progress: " + progress.path + " (watch it: npm run training:status, or block: npm run training:wait)");
-  return progress;
+    inputs,
+    hint: (/** @type {string} */ job) => `npm run training:capture -- --collect=${job}`,
+    collect: datasetCollector({
+      captureRoot: CAPTURE_ROOT,
+      rejectedRoot: REJECTED_ROOT,
+      progress,
+      // Over the boxes the manifest names, read from the manifest rather than asked: the service already read each box's `/health` when the job began.
+      assertFleetRunsThisCheckout: (boxes, { when, read }) => assertFleetRunsThisCheckout(boxes, { when, allow: ALLOW_STALE, read, bareMetalUrls: [] }),
+      recordRun: (manifest) => recordRun({ startedAt, manifest }),
+      log: (line) => console.log(line),
+      logError: (line) => console.error(line),
+    }),
+  };
 }
 
-async function captureWithPool(/** @type {any} */ { baseUrl, progress, pool }, /** @type {any} */ cases, /** @type {any} */ done) {
-  const { failures, skippedCount, cachedCount, evicted } = await captureAcrossPool(
-    { baseUrl, progress, poolSize: pool.length }, cases, done, pool);
-  const outcome = runOutcome({
-    total: cases.length, failures: failures.length, skipped: skippedCount,
-    cached: cachedCount, poolSize: pool.length, evicted,
-  });
-  progress.finish(outcome);
-  console.log("Capture complete: " + outcome + ".");
-  if (failures.length) {
-    throw new Error(failures.length + " case(s) failed. The completed captures were kept; " +
-      "see npm run training:status, and re-run with --resume --no-cache to retry only what is missing.");
+/**
+ * This run's line in `runs/capture-runs.jsonl` (#4462), the same record `capture-real-pages.mjs` writes (#4459): the boxes the job used, each dropped one as excluded, and the job ID.
+ * NOT behind `capture-fleet-guard.mjs`, so no ready count was read and the record says `null`. A record that cannot be written is SAID and never changes the run's exit.
+ * @param {{ startedAt: string, manifest: import("../fleet/fleet-job.ts").Manifest }} run
+ */
+function recordRun({ startedAt, manifest }) {
+  const file = captureRunsFile(runsRoot());
+  try {
+    appendRunRecord(runRecordFromManifest({ startedAt, manifest }), file);
+  } catch (error) {
+    process.stderr.write(`CAPTURE RUN RECORD NOT WRITTEN to ${file}: ${/** @type {Error} */ (error).message}\n`);
   }
 }
 
-async function captureDataset(/** @type {any} */ cases, /** @type {any} */ done, /** @type {any} */ pool, /** @type {any} */ lease) {
-  const baseUrl = resolveBaseUrl(lease);
-  // Prove the pages are served before capturing anything. captureAll treats a bad page as
-  // a per-case failure, so without this a wrong base URL reports the same error 45 times
-  // over -- and each one costs a full NVDA capture first.
-  await pageTitle(captureUrl(baseUrl, cases[0], "good"));
-  const progress = captureProgress(cases, lease, pool, baseUrl);
-  if (pool && pool.length > 1) {
-    await captureWithPool({ baseUrl, progress, pool }, cases, done);
-    return;
-  }
-  await captureAll({ worker: lease.worker, baseUrl, progress, poolSize: 1 }, cases, done);
-}
-
-async function main() {
-  refuseIfRunsReadonly(ROOT);
+/**
+ * Choose the cases, refuse what cannot be run, and say what `--no-cache` cannot reach. Split from `submit` so each reads as one step.
+ * @returns {{ cases: any[], done: Set<string> }}
+ */
+function chooseCases() {
   const manifest = readManifest();
   // A CAPTURE TAKEN UNDER A STALE MANIFEST IS TAKEN UNDER THE OLD DEFINITIONS (#958). The export's own header
   // records the cost: `probeFocus: true` was added to a case and the capture ran without the probe, because
@@ -943,6 +334,11 @@ async function main() {
   }
   if (!cases.length) throw new Error("No generated case matches --only=" + ONLY);
 
+  // A run interrupted an hour in should not start over. Must be read BEFORE beginRun, which replaces the
+  // progress file with a fresh all-pending one. Cache-enabled training runs do not use filenames as a
+  // completion signal: a file can be complete yet stale after a protocol, page, option, or worker-runtime
+  // change, so the service gets to decide (`skipWhen`). Acceptance runs deliberately disable caching, so they
+  // may use the previous progress record to skip cases completed in the same acceptance run.
   const done = previouslyCaptured({
     cases,
     previous: readProgress(ROOT),
@@ -967,44 +363,94 @@ async function main() {
     console.log("  --no-cache CANNOT reach those " + done.size + " — they are skipped on the files already "
       + "on disk, so a re-read of them is not a second measurement. Drop --resume to re-measure.");
   }
+  return { cases, done };
+}
 
-  // The pages are leased like the workers are: started if missing, put back as found. Serving them
-  // was a manual step nobody owned, which leaked four `serve` processes onto this host and, worse,
-  // let a stray server from another directory 404 an entire run while it reported success.
-  // Power BEFORE anything expensive is leased. A run that dies because the host slept reports every
-  // in-flight capture as `the worker did not come back within 10 minutes`, which reads as a broken
-  // guest and was misdiagnosed here as exactly that. Estimated from what is left to do, not the whole
-  // corpus, so a resume of the last twenty cases is not held to an overnight run's standard.
-  const remaining = cases.length - done.size;
+/**
+ * Power BEFORE anything expensive is leased. A run that dies because the host slept reports every in-flight capture as lost, which reads as a broken guest and was
+ * misdiagnosed here as exactly that. Estimated from what is left to do, not the whole corpus, so a resume of the last twenty cases is not held to an overnight run's standard.
+ * This host serves the pages for the whole job, so the guard stays.
+ * @param {number} remaining
+ * @returns {Promise<boolean>} whether the run may start
+ */
+async function powerAllows(remaining) {
   const power = await hostPowerState();
   const verdict = powerVerdict({ ...power, estimatedHours: (remaining * MEAN_CAPTURE_S * 2) / 3600 });
   if (!verdict.ok && !process.argv.includes("--allow-battery")) {
     console.error(`Refusing to start: ${verdict.reason}`);
     process.exitCode = 2;
-    return;
+    return false;
   }
+  return true;
+}
+
+/**
+ * Submit the cases as one job, then follow it as far as this run was asked to.
+ * @param {import("../fleet/fleet-job.ts").FleetInputs} inputs
+ */
+async function submit(inputs) {
+  const { cases, done } = chooseCases();
+  const todo = cases.filter((/** @type {{ id: string }} */ testCase) => !done.has(testCase.id));
+  if (!await powerAllows(todo.length)) return;
   // Leased like everything else here, and released in the same `finally`, so a run that throws does
   // not leave the host pinned awake.
   const awake = keepHostAwake();
-
-  const pages = await leasePageServer({
-    root: PAGE_ROOT,
-    port: PAGES_PORT,
-    probePath: `${cases[0].id}/good.html`,
-  });
-  const run = { file: captureRunsFile(runsRoot()), startedAt: new Date().toISOString(), named: namedFleet() };
-  const { pool, lease } = await acquireDatasetWorkers().catch((error) => recordNobodyThenFail(run, error));
+  // The pages are leased: started if missing, put back as found. The BOXES fetch them from this host for as long as the job runs.
+  const pages = await leasePageServer({ root: PAGE_ROOT, port: PAGES_PORT, probePath: `${cases[0].id}/good.html` });
   try {
-    const checked = await checkDatasetWorkers(pool, lease).catch((error) => recordNobodyThenFail(run, error));
-    await recordDatasetRun(run, checked ?? [lease.worker]);
-    await captureDataset(cases, done, checked, lease);
+    const hostNotice = nonAuthoritativeHostNotice({ cwd: process.cwd(), servesPages: true });
+    if (hostNotice) process.stdout.write(hostNotice);
+    const baseUrl = pagesBaseUrl(process.env, PAGES_PORT);
+    // Prove the pages are served before submitting anything, as the guest will fetch them. A wrong base URL is one clear error here and not a corpus of captured 404 pages.
+    await pageTitle(captureUrl(baseUrl, cases[0], "good"));
+    const progress = beginRun({ root: ROOT, worker: null, baseUrl, cases });
+    for (const id of done) progress.skipped(id, "already captured (--resume)");
+    if (!todo.length) return finishWithoutJob(progress, cases.length, done.size);
+    const job = datasetJob({
+      cases: todo, baseUrl, optionsOf: captureOptions, captureRoot: CAPTURE_ROOT,
+      skipWhenOf: (testCase) => CACHE ? skipWhenFor({ captureRoot: CAPTURE_ROOT, caseId: testCase.id, pageHash: hashPageDir(resolve(PAGE_ROOT, testCase.id)), options: captureOptions(testCase) }) : null,
+    });
+    console.log(`Submitting ${todo.length} case(s) as ${job.cases.length} captures in ${todo.length} group(s), each good and bad held to one box`
+      + `${Object.values(job.groups).filter((g) => g.skipWhen).length ? `; ${Object.values(job.groups).filter((g) => g.skipWhen).length} carry skipWhen, left alone on a box that has not changed` : ""}.`);
+    const flow = flowFor(inputs, progress);
+    const pending = submitJob(flow, { kind: JOB_KIND, ...job, extra: submittedPages(todo) });
+    progress.addFleetJob({ id: pending.job, kind: JOB_KIND, submittedAt: pending.submittedAt });
+    console.log(`Progress: ${progress.path} (follow the job: fleet job status ${pending.job}; npm run training:status)`);
+    if (inputs.wait === null && pages.started) {
+      console.error("This process started the page server the boxes fetch from, and stops it when it exits. Run with --wait=<duration> (or A11Y_FLEET_WAIT) to hold it "
+        + "for the job, or serve the pages from a server that stays up.");
+    }
+    process.exitCode = await follow(flow, [pending]);
   } finally {
-    // Workers first: they are the expensive resource, and the page server costs nothing to hold for
-    // the extra second. Both run even if the other throws.
-    await lease.release().catch((e) => console.error("worker release failed: " + /** @type {any} */ (e).message));
     await pages.release();
     await awake.release();
   }
+}
+
+/** Every selected case was already captured by the run being resumed, so there is nothing to submit. @param {import("./capture-progress.mjs").RunRecorder} progress @param {number} total @param {number} skipped */
+function finishWithoutJob(progress, total, skipped) {
+  const outcome = `0 captured, 0 failed, ${skipped} skipped, of ${total} cases`;
+  progress.finish(outcome);
+  console.log(`Nothing to capture: ${outcome}.`);
+}
+
+/**
+ * `--collect[=<job ID>]`: write the corpus from a job that has finished, carrying on as a wait would have.
+ * @param {import("../fleet/fleet-job.ts").FleetInputs} inputs
+ */
+async function collect(inputs) {
+  const progress = continueRun(ROOT);
+  process.exitCode = await collectFlow(flowFor(inputs, progress), COLLECT || undefined, JOB_KIND);
+}
+
+async function main() {
+  refuseIfRunsReadonly(ROOT);
+  const args = process.argv.slice(2);
+  const notice = workerAddressNotice({ argv: args });
+  if (notice) process.stderr.write(notice);
+  const inputs = fleetInputs(args);
+  if (COLLECT !== undefined) await collect(inputs);
+  else await submit(inputs);
 }
 
 // Guarded, because importing this module used to START A CAPTURE RUN. That bit three times in one
@@ -1014,6 +460,6 @@ async function main() {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   main().catch((error) => {
     console.error("training:capture failed:", /** @type {any} */ (error).message);
-    process.exitCode = 1;
+    process.exitCode = error instanceof FleetInputError ? 2 : 1;
   });
 }

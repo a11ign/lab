@@ -41,9 +41,23 @@ test("every client that takes --worker validates it", () => {
     "found too few --worker clients; the discovery walk is broken, not the codebase clean");
 
   for (const [name, src] of clients) {
-    assert.match(src, /assertWorkerUrl/,
-      `${name} reads --worker but never validates it. A truthiness check passes \`http://:8765\`, and the `
+    // A client that submits to the fleet job service takes no address at all (A11-263): it ignores `--worker=` with a line, or refuses it, through `fleet-job.ts`, so
+    // there is no address to validate. Either way the argument is dealt with where it ENTERS the program.
+    assert.match(src, /assertWorkerUrl|workerAddressNotice\(/,
+      `${name} reads --worker but neither validates it nor routes it through workerAddressNotice. A truthiness check passes \`http://:8765\`, and the `
       + "cost of that is 5 minutes per page of readiness timeout recorded as a failure of the page.");
+  }
+});
+
+test("a client that submits to the fleet job service never reads a worker address for a box", () => {
+  // The positive control is the floor above; this is the other direction. `workerAddressNotice` ignores or refuses an address, so a file that calls it and then
+  // validates an address with `assertWorkerUrl` as well is a file that still dispatches to one. The three clients that moved in A11-263 are named, and each must do only the former.
+  const moved = ["capture-screenreader-dataset.mjs", "capture-real-pages.mjs"];
+  const found = workerArgClients().filter(([name]) => moved.some((file) => name.endsWith(file)));
+  assert.equal(found.length, moved.length, "the discovery must find the moved clients, or this test compares nothing");
+  for (const [name, src] of found) {
+    assert.match(src, /workerAddressNotice\(/, `${name} must route a worker address through workerAddressNotice`);
+    assert.doesNotMatch(src, /assertWorkerUrl/, `${name} submits to the service and must not validate an address for a box`);
   }
 });
 

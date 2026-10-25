@@ -29,7 +29,7 @@ export const EXCLUSION_REASONS = Object.freeze(["inconsistent", "asleep", "down"
 
 /** @typedef {"inconsistent" | "asleep" | "down"} ExclusionReason */
 /** @typedef {{ worker: string, reason: ExclusionReason }} Exclusion */
-/** @typedef {{ startedAt: string, readyCount: number | null, participants: string[], excluded: Exclusion[] }} CaptureRunRecord */
+/** @typedef {{ startedAt: string, readyCount: number | null, participants: string[], excluded: Exclusion[], fleetJob?: string }} CaptureRunRecord */
 
 /** @param {string} runsRoot */
 export function captureRunsFile(runsRoot) {
@@ -37,16 +37,40 @@ export function captureRunsFile(runsRoot) {
 }
 
 /**
- * @param {{ startedAt: string, readyCount: number | null, participants: string[], excluded: Exclusion[] }} run
+ * `fleetJob` is the service's job ID for a run that went through it (A11-263), and is absent from a record that did not.
+ *
+ * @param {{ startedAt: string, readyCount: number | null, participants: string[], excluded: Exclusion[], fleetJob?: string }} run
  * @returns {CaptureRunRecord}
  */
-export function buildRunRecord({ startedAt, readyCount, participants, excluded }) {
+export function buildRunRecord({ startedAt, readyCount, participants, excluded, fleetJob }) {
   const unknown = excluded.filter(({ reason }) => !EXCLUSION_REASONS.includes(reason));
   if (unknown.length) {
     throw new Error(`capture run record: ${unknown.map(({ worker, reason }) => `${worker} (${reason})`).join(", ")} `
       + `is not one of ${EXCLUSION_REASONS.join("/")}`);
   }
-  return { startedAt, readyCount, participants: [...participants], excluded: excluded.map(({ worker, reason }) => ({ worker, reason })) };
+  return {
+    startedAt, readyCount, participants: [...participants], excluded: excluded.map(({ worker, reason }) => ({ worker, reason })),
+    ...(fleetJob === undefined ? {} : { fleetJob }),
+  };
+}
+
+/**
+ * A run through the fleet job service, as its manifest tells it (A11-263): the boxes that took part, and each box dropped mid-job as excluded.
+ *
+ * A dropped box answered and then stopped being usable (three captures in a row failed, or the drift record listed it), which is `down` in this record's three
+ * reasons. The service books the boxes and does not report a ready count, so `readyCount` is `null`, never a guess.
+ *
+ * @param {{ startedAt: string, manifest: { job: string, boxes: { name: string, read?: boolean }[], dropped: { box: string }[] } }} run
+ * @returns {CaptureRunRecord}
+ */
+export function runRecordFromManifest({ startedAt, manifest }) {
+  const dropped = new Set(manifest.dropped.map(({ box }) => box));
+  return buildRunRecord({
+    startedAt, readyCount: null,
+    participants: manifest.boxes.map(({ name }) => name).filter((name) => !dropped.has(name)),
+    excluded: [...dropped].map((worker) => ({ worker, reason: /** @type {const} */ ("down") })),
+    fleetJob: manifest.job,
+  });
 }
 
 /**

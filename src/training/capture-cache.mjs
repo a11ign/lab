@@ -171,6 +171,19 @@ export function environmentKey(environment = {}) {
   };
 }
 
+/**
+ * EVERY `/health` environment field `environmentKey` reads, by the name the worker reports it under (A11-263).
+ *
+ * The fleet job service decides whether a group is skipped (`skipWhen`), and it can only compare the fields it is handed: the box a group lands on is
+ * known to the service and to no client. So a client that has a usable pair on disk sends THESE fields of the environment the pair was taken under, and the
+ * service leaves the group alone on a box that reads the same. `capture-cache.test.ts` changes each field in turn and requires the key to move, so a field
+ * `environmentKey` starts to read cannot be left off this list and let the service skip a group whose key has changed.
+ */
+export const ENVIRONMENT_KEY_FIELDS = Object.freeze([
+  "screenReader", "screenReaderVersion", "guidepupVersion", "browser", "browserVersion", "windowsVersion", "architecture",
+  "captureProtocol", "screenReaderSettings", "provisionRevision", "browserProfile", "windowSize",
+]);
+
 /** The identity of a capture: same key means the same evidence should result. */
 /**
  * @param {{ caseId: string, pageHash: string, options?: Record<string, unknown>,
@@ -267,4 +280,30 @@ export function cacheDecision({ captureRoot, caseId, key }) {
   const codes = new Set(captures.map((c) => c.provenance?.workerCode));
   const staleCode = codes.size === 1 ? [...codes][0] : [...codes].join(",");
   return { reuse: true, reason: "unchanged", staleCode };
+}
+
+/**
+ * The `skipWhen` for a case whose pair is already on disk, or null when the pair must be captured whatever box it lands on.
+ *
+ * The pair is reusable only if the service can be asked the one remaining question, "is this box the environment the pair was taken under?". So
+ * everything the cache key holds EXCEPT the environment must already match: both halves usable, both stamped, the page bytes the same, the options the
+ * same, and both halves taken under one environment. The environment fields then go to the service as they were stored, and an absent one is `null`,
+ * which is how the service reads an absent field of a box's `/health`. A pair with no stored environment cannot say what it was taken under, so it is recaptured.
+ *
+ * @param {{ captureRoot: string, caseId: string, pageHash: string, options: Record<string, unknown> }} request
+ * @returns {{ environment: Record<string, unknown> } | null}
+ */
+export function skipWhenFor({ captureRoot, caseId, pageHash, options }) {
+  const captures = ["good", "bad"].map((variant) => readCaptureOrRecapture(captureRoot, caseId, variant));
+  if (!captures.every(isUsableCapture)) return null;
+  const [good, bad] = captures;
+  const sameAsNow = (/** @type {any} */ capture) => capture.provenance?.cacheKey && capture.provenance.pageHash === pageHash
+    && JSON.stringify(canonical(capture.provenance.options ?? null)) === JSON.stringify(canonical(JSON.parse(JSON.stringify(options))));
+  if (!sameAsNow(good) || !sameAsNow(bad)) return null;
+  const goodEnvironment = good.environment;
+  const badEnvironment = bad.environment;
+  if (!goodEnvironment || typeof goodEnvironment !== "object" || !badEnvironment || typeof badEnvironment !== "object") return null;
+  const keyOf = (/** @type {any} */ environment) => JSON.stringify(canonical(environmentKey(environment)));
+  if (keyOf(goodEnvironment) !== keyOf(badEnvironment)) return null;
+  return { environment: Object.fromEntries(ENVIRONMENT_KEY_FIELDS.map((field) => [field, goodEnvironment[field] ?? null])) };
 }

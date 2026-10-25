@@ -35,17 +35,17 @@ import { sourceFiles } from "../../../worker-fleet/src/source-walk.ts";
 /**
  * The host's per-capture timeout, READ from the file that owns it rather than copied here.
  *
- * A hardcoded copy would keep asserting the old number after somebody lowered the real one, so the ladder
- * would look sound while the outermost rung had moved underneath it — the same silent-drift failure the
- * ladder exists to prevent, reintroduced by its own test. Static parse rather than an import, because that
- * module is a script: `pure-graph.test.ts` sets the precedent for checking a source file by reading it.
+ * It is the FLEET JOB SERVICE'S timeout now (A11-263): a lab client submits cases and waits for the job, so no lab client holds a per-capture ceiling of its own, and the
+ * service sends every capture through the shared client, whose default is `CAPTURE_CLIENT_TIMEOUT_MS`. A hardcoded copy would keep asserting the old number after somebody
+ * lowered the real one, so the ladder would look sound while the outermost rung had moved underneath it -- the same silent-drift failure the ladder exists to prevent,
+ * reintroduced by its own test. Static parse rather than an import, because that module is a script: `pure-graph.test.ts` sets the precedent for checking a source file by reading it.
  */
 const HOST_TIMEOUT_MS = (() => {
   const here = dirname(fileURLToPath(import.meta.url));
-  const src = readFileSync(join(here, "capture-screenreader-dataset.mjs"), "utf8");
-  const match = src.match(/DATASET_CAPTURE_TIMEOUT_MS\s*\|\|\s*(\d+)/);
-  if (!match) throw new Error("could not read the host capture timeout — has that constant been renamed?");
-  return Number(match[1]);
+  const src = readFileSync(join(here, "..", "..", "..", "worker-fleet", "src", "worker-http.ts"), "utf8");
+  const match = src.match(/CAPTURE_CLIENT_TIMEOUT_MS\s*=\s*([\d_]+)/);
+  if (!match) throw new Error("could not read the host capture timeout — has CAPTURE_CLIENT_TIMEOUT_MS been renamed?");
+  return Number(match[1].replace(/_/g, ""));
 })();
 
 /**
@@ -289,6 +289,29 @@ test("the shared client ceiling covers desktop preparation PLUS the hard timeout
     `the client waits ${ceilingMs} ms, but the worker's own worst case is ${DESKTOP_PREPARE_MS} ms of desktop `
     + `preparation PLUS ${CAPTURE_HARD_TIMEOUT_DEFAULT_MS} ms of capture = ${worstCaseServerMs} ms, `
     + `sequentially. A client that gives up first reports legitimate worker-side work as a client failure.`);
+});
+
+/**
+ * A MOVED CLIENT'S BUDGET IS ITS WAIT, NOT A PER-CAPTURE TIMEOUT (A11-263).
+ *
+ * A client that submits a fleet job does not send a capture, so it has no ceiling to set below the worker's worst case: the service sends each capture with the shared client's
+ * ceiling (asserted above). What it does carry is how long it will wait for the job, `A11Y_FLEET_WAIT` or `--wait=`, read through `fleetInputs`, and that wait is bounded by
+ * `fleet job wait`, which always ends. So the assertion for these files is the absence of a ceiling of their own, and the presence of the wait: a `timeoutMs` or
+ * `DATASET_CAPTURE_TIMEOUT_MS` reappearing in one would be a second, unrelated budget that the ladder above cannot see.
+ */
+test("a moved capture client takes its budget from its wait and declares no per-capture ceiling", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const moved = [
+    join(here, "capture-screenreader-dataset.mjs"),
+    join(here, "capture-real-pages.mjs"),
+    join(here, "..", "..", "scripts", "evidence-check.ts"),
+  ];
+  for (const file of moved) {
+    const src = readFileSync(file, "utf8");
+    assert.match(src, /fleetInputs\(/, `${file} must read its budget from its wait (fleetInputs)`);
+    assert.doesNotMatch(src, /timeoutMs:|AbortSignal\.timeout\(\s*[A-Za-z_]|DATASET_CAPTURE_TIMEOUT_MS/,
+      `${file} declares a per-capture ceiling of its own; a moved client submits a job and the service owns that budget`);
+  }
 });
 
 /**

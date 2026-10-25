@@ -87,14 +87,15 @@ test("omitting the other count keeps the old behaviour rather than crashing", ()
   );
 });
 
-test("both call sites actually pass both counts, wherever they now live", () => {
-  // The defaults above make a forgetful caller silently wrong, so the callers are checked directly. Read as
+test("the pool's eviction call passes both counts, and the dataset run no longer decides retirement at all", () => {
+  // The defaults above make a forgetful caller silently wrong, so the caller is checked directly. Read as
   // text: importing the run module starts a capture, because it has no main guard.
   //
-  // The two calls are in DIFFERENT files since the pool was extracted, and that split is the point of the
-  // extraction rather than an accident. Eviction counts consecutive failures, which only the pool can see,
-  // so it decides there. Retirement needs the worker's vitals, which only the run can measure — so the pool
-  // hands it the counts and the run makes the call. Either half forgetting a count reopens the same hole.
+  // THE RETIREMENT CALL SITE MOVED OUT OF THE RUN (A11-263). Eviction counts consecutive failures, which only the pool can see, so it decides there -- and still does,
+  // for the clients that dispatch through the pool. Retirement needed the worker's vitals, which only the dataset run measured, so the pool handed it the counts and
+  // the run made the call. The run submits a fleet job now and holds no pool: the SERVICE takes a box out of a job (three captures in a row failed, or the drift
+  // record lists it) and its lease says so. So the second half of this invariant has no caller left in the lab to forget a count, and what is asserted is that
+  // it is gone, rather than a call site that cannot exist.
   const pool = readFileSync(fileURLToPath(new URL("./worker-pool.mjs", import.meta.url)), "utf8");
   const run = readFileSync(
     fileURLToPath(new URL("./capture-screenreader-dataset.mjs", import.meta.url)), "utf8");
@@ -102,21 +103,9 @@ test("both call sites actually pass both counts, wherever they now live", () => 
   const evictCall = /shouldEvictWorker\(\{[\s\S]{0,200}?\}\)/.exec(pool)?.[0] ?? "";
   assert.match(evictCall, /evictedCount/, "the evict call must pass evictedCount");
   assert.match(evictCall, /retiredCount/, "the evict call must pass retiredCount");
-
-  const retireCall = /shouldRetireWorker\(\{[\s\S]{0,300}?\}\)/.exec(run)?.[0] ?? "";
-  assert.match(retireCall, /retiredCount/, "the retire call must pass retiredCount");
-  assert.match(retireCall, /evictedCount/, "the retire call must pass evictedCount");
-
-  // And the counts must actually REACH the run, which is the new seam and therefore the new way to get this
-  // wrong: the pool passing them and the run ignoring them would look fine in both files alone.
   assert.match(pool, /poolSize: pool\.size,\s*evictedCount: pool\.evicted\.length,\s*retiredCount: pool\.retired\.length,/,
     "the pool must hand its counts to the degradation predicate");
-  // The JSDoc type comment is optional in this pattern, and that is not laxity. This is a CALL-SITE
-  // check, so it reads source text -- and source text includes annotations. When `capture-screenreader-
-  // dataset.mjs` was typechecked, `/** @type {any} */` appeared between the paren and the brace and this
-  // failed, reporting that the run had stopped taking the counts when nothing about that had changed.
-  // A guard that a correct file can break gets weakened rather than fixed; the property under test is
-  // the four NAMES, so the pattern matches those and tolerates what sits beside them.
-  assert.match(run, /isDegraded: \((?:\s*\/\*\*[^*]*\*\/\s*)?\{ worker, poolSize, evictedCount, retiredCount \}\)/,
-    "and the run must take them rather than reaching for a pool it no longer has");
+
+  assert.doesNotMatch(run, /shouldRetireWorker|drainAcrossPool|isDegraded/,
+    "the dataset run holds no pool any more: if it grows one, the retire call must pass both counts again and this test must say so");
 });

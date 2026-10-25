@@ -24,7 +24,7 @@ The root [`LICENSE`](LICENSE) is the core's, byte for byte (`lab` shipped none o
 
 ```bash
 pnpm run training:generate        # write the corpus pages from the case definitions
-pnpm run training:capture         # drive them through the worker fleet (cached; a full run is ~1,100 pairs)
+pnpm run training:capture         # submit them to the fleet job service and collect the job (cached; --label=<ticket> required; a full run is ~1,100 pairs)
 pnpm run training:check-signals   # does every case still discriminate its good page from its bad one?
 pnpm run corpus:starvation        # which features will the corpus starve — asked BEFORE a capture run
 pnpm run scorer:shortcuts         # which features did a head penalise for free — asked AFTER training

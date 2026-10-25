@@ -57,7 +57,7 @@ test("a run that THROWS exits with THREW, not with the CHANGED code (real script
     writeFileSync(join(dataset, "manifest.json"),
       JSON.stringify({ cases: [{ id: first.id, task: "a task the code no longer defines" }] }));
 
-    const run = runUnderLoader(SCRIPT, ["http://127.0.0.1:1", "--sample=1"], { DATASET_ROOT: dataset });
+    const run = runUnderLoader(SCRIPT, ["--label=A11-263", "--boxes=1", "--sample=1"], { DATASET_ROOT: dataset });
 
     assert.match(run.stderr, /no longer match CASES/,
       `the run did not fail on the stale manifest, so this exercised some other path.\n${run.stderr}`);
@@ -65,6 +65,17 @@ test("a run that THROWS exits with THREW, not with the CHANGED code (real script
       `a throw exited ${run.status}. 1 is what Node gives an unhandled rejection and is ALSO the CHANGED `
       + "verdict, so an operator cannot tell a crash from an answer");
     assert.notEqual(run.status, EXIT.CHANGED);
+  } finally {
+    rmSync(dataset, { recursive: true, force: true });
+  }
+});
+
+test("a call that names no label is a USAGE refusal in words, exit 2, before anything is read or sent (real script)", () => {
+  const dataset = mkdtempSync(join(tmpdir(), "evidence-check-nolabel-"));
+  try {
+    const run = runUnderLoader(SCRIPT, ["--sample=1"], { DATASET_ROOT: dataset, A11Y_FLEET_LABEL: "", A11Y_FLEET_BOXES: "" });
+    assert.match(run.stderr, /pass --label=<ticket key>/, `the refusal must say what to pass.\n${run.stderr}`);
+    assert.equal(run.status, EXIT.INCONCLUSIVE, "a usage refusal exits 2, as the missing worker argument did");
   } finally {
     rmSync(dataset, { recursive: true, force: true });
   }

@@ -5,8 +5,9 @@ import { readFileSync, readdirSync } from "node:fs";
  * (who builds the body) and `worker-code-check-clients.test.ts` (who runs the preflight) both read, so the two
  * cannot drift into disagreeing about what a capture client is.
  *
- * DISPATCHING WORK is the signature, and it has two spellings: a literal POST, or a call to the shared
- * `captureTolerantly`. Matching only the first found four clients after nine moved behind the shared one.
+ * DISPATCHING WORK is the signature, and it has three spellings: a literal POST, a call to the shared
+ * `captureTolerantly`, or SUBMITTING a fleet job (A11-263): `submitCases(`, `submitJob(` (the flow every moved client goes through, which calls `submitCases`) or `recapture(`.
+ * Matching only the first found four clients after nine moved behind the shared one, and matching only the first two would lose every client that moved onto the service.
  * Still NOT matched: reading `/capture/<id>` to recover a lost response, which asks for work already done.
  *
  * `.ts` since lab v0.1.27 (a11ign/a11ign#4519). The control copy of the discovery matched `.mjs` alone, so the
@@ -25,7 +26,8 @@ export function captureClients(repo: string): string[] {
       const path = `${dir}/${entry}`;
       const source = readFileSync(`${repo}${path}`, "utf8");
       const dispatches = /["'`][^"'`]*\/capture["'`][^]{0,120}?method:\s*["']POST["']/.test(source)
-        || /\bcaptureTolerantly\(/.test(source);
+        || /\bcaptureTolerantly\(/.test(source)
+        || /\b(?:submitCases|submitJob|recapture)\(/.test(source);
       if (dispatches) found.push(path);
     }
   }

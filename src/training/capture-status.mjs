@@ -3,8 +3,8 @@
  * Report the state of a dataset capture run: npm run training:status
  *
  * The supported way to ask "how is that hour-long capture going, and is it still alive".
- * Reads the progress file the run publishes (capture-progress.mjs) and, if a worker is
- * recorded, asks it directly whether it is still capturing.
+ * Reads the progress file the run publishes (capture-progress.mjs) ONCE and prints it. A run the fleet job service holds (A11-263) names its job IDs in that file and
+ * names no worker, so there is no worker to probe: the next command is `fleet job status <id>`, and the file is not read as a heartbeat (a quiet file is a healthy job).
  *
  * Exit codes are for scripts and CI, not decoration:
  *   0  finished cleanly, or in progress and healthy
@@ -15,7 +15,6 @@
 import { pathToFileURL } from "node:url";
 import { inFlight, isStale, readProgress, stalenessMs, tally } from "./capture-progress.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
-import { requestJson } from "@a11ign/screenreader-fleet/worker-http";
 import { datasetRoot } from "../dataset-paths.ts";
 
 /**
@@ -26,7 +25,6 @@ import { datasetRoot } from "../dataset-paths.ts";
 refuseUnknownFlags(["--json", "--since"], { entry: import.meta.url, command: "npm run training:status" });
 
 const ROOT = datasetRoot();
-const HEALTH_TIMEOUT_MS = 5_000;
 const MS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
 
@@ -119,25 +117,6 @@ function minutes(ms) {
   return (ms / MS_PER_SECOND / SECONDS_PER_MINUTE).toFixed(1) + " min";
 }
 
-// Reported as unreachable rather than thrown: the worker being gone is a finding to print,
-// not a reason for the status command itself to fail.
-/** @param {string} worker */
-async function workerState(worker) {
-  if (!worker) return "not recorded";
-  try {
-    // `requestJson`, not `fetch` -- audit §9's "the HTTP client" row. This is a 5 s /health probe, well
-    // under undici's 300 s headers cap that motivated `requestJson`, but a second hand-rolled JSON client
-    // for the same worker API is the duplication itself; `requestJson` also carries a CODE
-    // (`ECONNREFUSED`, `EHOSTUNREACH`) in the message rather than fetch's bare "fetch failed".
-    const response = await requestJson(worker + "/health", { timeoutMs: HEALTH_TIMEOUT_MS });
-    if (!response.ok) return "HTTP " + response.status;
-    if (response.json === undefined) return "unreachable (invalid JSON)";
-    return response.json.busy ? "capturing now" : "idle";
-  } catch (error) {
-    return "unreachable (" + /** @type {Error} */ (error).message + ")";
-  }
-}
-
 /** @param {Record<string, any>} progress */
 function printFailures(progress) {
   const failed = Object.entries(progress.cases ?? {}).filter(([, c]) => c.status === "failed");
@@ -162,7 +141,11 @@ function printProgressLines(progress, counts, now) {
   console.log("run:      started " + progress.startedAt + (progress.finishedAt ? ", finished " + progress.finishedAt : ""));
   console.log("progress: " + done + "/" + progress.total + " cases  (" +
     counts.captured + " captured, " + counts.failed + " failed, " + counts.skipped + " skipped)");
-  console.log("worker:   " + progress.worker);
+  const boxes = progress.workers?.length ? progress.workers : progress.worker ? [progress.worker] : [];
+  if (boxes.length) console.log("boxes:    " + boxes.join(", "));
+  for (const job of progress.fleetJobs ?? []) {
+    console.log("job:      " + job.id + " (" + job.kind + ", submitted " + job.submittedAt + ")  ->  fleet job status " + job.id);
+  }
   console.log("pages:    " + progress.baseUrl);
   for (const c of inFlight(progress)) {
     console.log("current:  " + c.id + " (" + c.variant + "), " +
@@ -260,6 +243,24 @@ function reportPredatingRun(progress) {
   process.exitCode = EXIT.noRun;
 }
 
+/**
+ * What to run next. A run the service holds is followed by job ID, and its retry is a new submission of the cases that failed (the service already re-captured each
+ * variant the evidence check rejected, up to the client's attempt limit); a run from before the service keeps the commands it has always named.
+ *
+ * @param {Record<string, any>} progress @param {number} verdict
+ */
+function nextCommandFor(progress, verdict) {
+  const jobs = progress.fleetJobs ?? [];
+  if (jobs.length) {
+    if (verdict === EXIT.failures) return "npm run training:capture -- --only=<the failed cases above> --no-cache --label=<ticket key>";
+    if (progress.finishedAt) return "npm run training:check-signals && npm run training:export";
+    return "fleet job status " + jobs[jobs.length - 1].id;
+  }
+  if (verdict === EXIT.failures) return "npm run training:capture -- --resume --no-cache";
+  if (verdict === EXIT.stale) return "npm run doctor && npm run training:capture -- --resume --no-cache";
+  return progress.finishedAt ? "npm run training:check-signals && npm run training:export" : "npm run training:wait";
+}
+
 async function main() {
   if (SINCE_UNREADABLE) return;
   const progress = readProgress(ROOT);
@@ -282,7 +283,8 @@ async function main() {
       failed: counts.failed,
       skipped: counts.skipped,
       current: inFlight(progress),
-      workers: progress.workers ?? [progress.worker],
+      workers: progress.workers?.length ? progress.workers : progress.worker ? [progress.worker] : [],
+      fleet_jobs: progress.fleetJobs ?? [],
       eta_minutes: etaMinutes(progress, counts, now),
       worker: progress.worker,
       last_update_ms_ago: stalenessMs(progress, now),
@@ -290,16 +292,12 @@ async function main() {
       failures: Object.entries(progress.cases ?? {}).filter(([, c]) => c.status === "failed")
         .map(([id, c]) => ({ id, reason: c.reason })),
       verdict,
-      next_command: verdict === EXIT.failures ? "npm run training:capture -- --resume --no-cache"
-        : verdict === EXIT.stale ? "npm run doctor && npm run training:capture -- --resume --no-cache"
-        : progress.finishedAt ? "npm run training:check-signals && npm run training:export"
-        : "npm run training:wait",
+      next_command: nextCommandFor(progress, verdict),
     }, null, 2));
     process.exitCode = verdict;
     return;
   }
   printProgressLines(progress, counts, now);
-  console.log("worker now: " + (await workerState(progress.worker)));
   printFailures(progress);
   if (progress.outcome) console.log("\noutcome:  " + progress.outcome);
   process.exitCode = outcomeExit(progress, counts, now);

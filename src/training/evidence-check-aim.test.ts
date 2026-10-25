@@ -17,9 +17,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
-import { drainAcrossPool } from "./worker-pool.mjs";
 import {
-  narrowTo, stratify, resultRow, caseComparer, countUncomparedAgainstCoverage, writeReports,
+  narrowTo, stratify, resultRow, caseComparer, countUncomparedAgainstCoverage, writeReports, compareFetched, evidenceJob, captureBody,
 } from "../../scripts/evidence-check.ts";
 
 /** #1908's family, and the string its seven cases embed. */
@@ -90,43 +89,35 @@ test("--sample is inert under a one-family --only=, and is not inert without one
     "unnarrowed, a bigger sample takes more families — otherwise the limit is being dropped");
 });
 
-test("one case is one worker, and the row names the one that captured it", async () => {
+test("one case is one group on one box, and the row names the box the MANIFEST says captured it", async () => {
   // A case is INDIVISIBLE by construction (a good/bad pair must come from the same screen reader on the
-  // same machine), so a one-case run is one worker's work however many boxes are named. Ten stub workers,
-  // one item: nine drain an empty queue. Which box that leaves is not a choice anyone made — which is why
-  // the report has to record it rather than assume it.
-  const workers = Array.from({ length: 10 }, (_unused, index) => `http://203.0.113.${index}:8765`);
-  const testCase = { id: "stub-case", family: "stub" };
-  const rows: { id: string; worker: string | null }[] = [];
-  const handledBy: string[] = [];
+  // same machine), so a sampled case is ONE group of the job and the service holds it to one box however
+  // many boxes the job names. Which box that is is not a choice anyone made -- the service chose it -- which is why the report
+  // records it from the manifest rather than assuming the first one named.
+  const boxes = ["w1", "w2", "w3"];
+  const job = evidenceJob({ selected: [{ id: "stub-case", family: "stub" }], baseUrl: "http://pages.test", baselineFor: () => EVIDENCE, titleOf: () => TITLE });
+  assert.deepEqual(job.cases.map((c) => [c.id, c.group]), [["stub-case.good", "stub-case"], ["stub-case.bad", "stub-case"]],
+    "both variants in ONE group, so the service captures them on one box, in order");
+  assert.deepEqual(Object.keys(job.groups), ["stub-case"]);
 
-  await drainAcrossPool({
-    workers,
-    items: [testCase],
-    // `workers[0]` REFUSES READINESS, which is the sharpest form of the defect: the report used to name
-    // the first url on the argv, so it would have named a box that never became usable. Refusing rather
-    // than racing also makes this deterministic — the assertion below is about attribution, and a test
-    // that depends on which of ten stubs wins a timer is a different test.
-    prepare: async (worker: string) => {
-      if (worker === workers[0]) throw new Error("not ready");
-      return worker;
-    },
-    handle: async (item: typeof testCase, { worker }: { worker: string }) => {
-      handledBy.push(worker);
-      rows.push(resultRow({
-        testCase: item, variant: "good", worker,
-        comparison: { verdict: "SAME", changes: [], phrases: null },
-      }));
-    },
+  const capture = (variant: string, box: string) => ({
+    page: `http://pages.test/stub-case/${variant}.html`, pass: 1, case: `stub-case.${variant}`, group: "stub-case", attempt: 1, file: `stub-case.${variant}.a1.json`,
+    box, status: "done" as const, startedAt: null, finishedAt: null, httpStatus: 200, error: null, note: null,
   });
+  const manifest = {
+    version: 2, job: "fj-1", label: "A11-263", state: "done", reason: null, dropped: [], agreement: { consistent: true, mismatches: [], reportedOnly: [], compared: 0 },
+    boxes: boxes.map((name) => ({ name, workerCode: null, windowsBuild: null, edge: null, nvda: null, read: true, environment: null })),
+    captures: [capture("good", "w2"), capture("bad", "w2")],
+  };
+  const fetched = { job: "fj-1", dir: "/nowhere", manifest, record: () => ({ capturedAt: "2026-10-25T00:00:00.000Z", worker: "w2", status: 200, capture: EVIDENCE }) };
+  const { results, compareCase, boxOf } = compareFetched({
+    fetched: fetched as never, selected: [{ id: "stub-case" }], titles: { "stub-case.good": TITLE, "stub-case.bad": TITLE }, baselineFor: () => EVIDENCE, write: () => {},
+  });
+  await compareCase({ id: "stub-case" }, { worker: boxOf("stub-case") });
 
-  assert.equal(handledBy.length, 1, "one item is handled once, whatever the pool size");
-  assert.equal(new Set(handledBy).size, 1, "and by exactly one worker, because a case is indivisible");
-  assert.equal(rows[0].worker, handledBy[0],
-    "the row must name the box that captured it, taken from the pool's own context");
-  assert.notEqual(rows[0].worker, workers[0],
-    "`workers[0]` is what `report.json` named for every row until #1948, and here it is a worker that "
-    + "never even became usable — the field was a constant, not a measurement");
+  assert.deepEqual(results.map((r) => r.worker), ["w2", "w2"], "the row names the box that captured it, taken from the manifest");
+  assert.notEqual(results[0].worker, boxes[0],
+    "`boxes[0]` is what `report.json` named for every row until #1948, and here it is a box that captured nothing -- the field was a constant, not a measurement");
 });
 
 test("a case no worker captured names no worker, rather than inventing one", () => {
@@ -251,6 +242,36 @@ test("#1948: the report's top level names the POOL, and no singular `worker` ret
     assert.equal(report.results[0].worker, "http://worker-3:7331",
       "the positive control for the assertion above: a `worker` key EXISTS in this report, on the row "
       + "where it is a measurement, so `\"worker\" in report` is false by absence and not by an empty file");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the job asks only for variants that have a baseline, each with the case's probe flags by prefix and the browser if one was asked for", () => {
+  const testCase = { id: "table-case", family: "tables", task: "read the table", probeTables: true, probeNewThing: true, probeOff: false };
+  const job = evidenceJob({
+    selected: [testCase], baseUrl: "http://pages.test",
+    baselineFor: (_case, variant) => (variant === "good" ? EVIDENCE : null), titleOf: () => TITLE,
+  });
+  assert.deepEqual(job.cases.map((c) => c.id), ["table-case.good"], "no baseline for `bad`, so nothing to compare it with and nothing to capture");
+  assert.deepEqual(job.cases[0]!.body, { task: "read the table", probeTables: true, probeNewThing: true }, "a flag nobody listed is forwarded; a false one is not");
+  assert.equal(job.cases[0]!.url, "http://pages.test/table-case/good.html");
+  assert.deepEqual(captureBody(testCase, "chrome"), { task: "read the table", probeTables: true, probeNewThing: true, browser: "chrome" });
+  assert.deepEqual(captureBody({ id: "x" }, null), { task: null }, "an ordinary run sends no browser");
+});
+
+test("the report from a job names BOXES, as it named workers: the pool as dispatched, and the box on each row", () => {
+  const dir = mkdtempSync(join(tmpdir(), "evidence-check-boxes-"));
+  try {
+    const { report } = writeReports({
+      workers: ["a11y-worker-2", "a11y-worker-3"],
+      results: [resultRow({ testCase: { id: FAMILY }, variant: "good", worker: "a11y-worker-3", comparison: { verdict: "SAME" } })],
+      summary: { compared: 1 }, out: dir, runs: join(dir, "runs"),
+    });
+    assert.deepEqual(Object.keys(report), ["at", "runId", "commit", "workers", "results", "summary"].filter((key) => key in report), "the shape lab-fetch.yml and the readers know");
+    assert.deepEqual(report.workers, ["a11y-worker-2", "a11y-worker-3"]);
+    assert.equal(report.results[0].worker, "a11y-worker-3");
+    assert.doesNotMatch(JSON.stringify(report), /https?:\/\//, "no address anywhere in it: the service never gives one");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

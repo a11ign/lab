@@ -173,11 +173,27 @@ test("absentFrom: a box that returned nothing is asleep, one that answered or re
 });
 
 // THE CAPTURE SCRIPT CANNOT BE IMPORTED HERE (its closure reaches the corpus), so its wiring is read as TEXT. That is
-// a weak instrument and it is used only for the one thing it can say: the record goes to the check BEFORE the run
-// and not to the one after it, which would count one run twice. Its positive control is the first assertion, and
-// both directions were run by hand: dropping the argument, and adding it to the END check, each fail one assertion.
-test("capture-real-pages hands the record to the check before the run, and not to the one after it", () => {
+// a weak instrument and it is used only for the one thing it can say: the record is written from the manifest, once, and the guard is not
+// handed one as well, which would count one run twice.
+test("capture-real-pages records its run from the job's manifest, once, and asks the guard about the boxes the manifest names", () => {
   const source = readFileSync(fileURLToPath(new URL("./capture-real-pages.mjs", import.meta.url)), "utf8");
-  assert.match(source, /assertOneBrowserAcross\(workers, "before the run", runRecord\)/);
-  assert.match(source, /assertOneBrowserAcross\(workers, "by the END of the run"\)/);
+  // The record is `runRecordFromManifest` (the boxes that took part, each dropped one excluded, the job ID), written by the collector, not by the guard: the guard is probed from
+  // the manifest (`manifestProbe`) and given no `runRecord`, because the check after the run describes the same run again and a second line would count one run twice.
+  assert.match(source, /runRecordFromManifest\(\{ startedAt, manifest \}\)/);
+  assert.match(source, /manifestProbe\(manifest\)/);
+  assert.doesNotMatch(source, /\brunRecord:/, "the guard is not handed a runRecord any more: the manifest writes the one line");
+  assert.match(source, /assertOneBrowser\(manifest, "at the END of the run"\)/);
+});
+
+test("a record from a job's manifest names its boxes, excludes the ones dropped, and carries the job ID", async () => {
+  const { runRecordFromManifest } = await import("./capture-run-record.mjs");
+  const manifest = { job: "fj-20261025T000000Z-abc123", boxes: [{ name: "w1" }, { name: "w2" }, { name: "w3" }], dropped: [{ box: "w3" }] };
+  assert.deepEqual(runRecordFromManifest({ startedAt: STARTED_AT, manifest }), {
+    startedAt: STARTED_AT, readyCount: null, participants: ["w1", "w2"], excluded: [{ worker: "w3", reason: "down" }], fleetJob: "fj-20261025T000000Z-abc123",
+  });
+});
+
+test("a record that did not go through the service has no fleetJob, so the key is absent and not undefined", () => {
+  const record = buildRunRecord({ startedAt: STARTED_AT, readyCount: null, participants: [A], excluded: [] });
+  assert.equal("fleetJob" in record, false);
 });

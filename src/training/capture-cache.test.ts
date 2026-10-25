@@ -3,9 +3,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { stripComments } from "@a11ign/toolchain/lib/source-text";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { cacheDecision, cacheKey, environmentKey, hashPageDir, stampProvenance } from "./capture-cache.mjs";
+import { cacheDecision, cacheKey, ENVIRONMENT_KEY_FIELDS, environmentKey, hashPageDir, skipWhenFor, stampProvenance } from "./capture-cache.mjs";
 import { captureFilePath } from "../capture/evidence-diff.ts";
 import { workerSource } from "../packaging/laid-worker.ts";
 
@@ -374,4 +376,54 @@ test("capture-cache.mjs does not read a capture's document identity", () => {
   assert.equal(/document-identity/.test(source), false,
     "capture-cache.mjs imported document-identity — a cache key is decided before the capture runs, so "
     + "there is nothing there for it to read except a decision to invalidate the corpus. #687.");
+});
+
+// ---- skipWhen (A11-263): the fields the fleet job service is handed ----------------------------------------------------------------------------------------
+
+test("every environment field environmentKey reads is on the list skipWhen sends, and moving any one of them moves the key", () => {
+  // The service can compare only the fields it is handed, so a field the key reads and the list lacks would let it skip a group whose key has changed. Two directions:
+  // each listed field moves the key (so the list names nothing inert), and every `environment.<field>` the key function reads is listed (so it omits nothing).
+  const base = { ...ENV, guidepupVersion: "0.31.0", windowsVersion: "11", architecture: "x64", screenReaderSettings: "default", browserProfile: "adopted", windowSize: "maximized" };
+  const alternative: Record<string, unknown> = {
+    screenReader: "JAWS", screenReaderVersion: "other", guidepupVersion: "other", browser: "Chrome", browserVersion: "other", windowsVersion: "other", architecture: "arm64",
+    captureProtocol: 99, screenReaderSettings: "other", provisionRevision: "other", browserProfile: "other", windowSize: "1x1",
+  };
+  assert.deepEqual(Object.keys(alternative).sort(), [...ENVIRONMENT_KEY_FIELDS].sort(), "the fixture covers the list, no more and no fewer");
+  for (const field of ENVIRONMENT_KEY_FIELDS) {
+    assert.notDeepEqual(environmentKey({ ...base, [field]: alternative[field] } as never), environmentKey(base as never), `${field} must move the key`);
+  }
+  const source = stripComments(readFileSync(fileURLToPath(new URL("./capture-cache.mjs", import.meta.url)), "utf8"));
+  const body = source.slice(source.indexOf("export function environmentKey"), source.indexOf("export function cacheKey"));
+  const read = [...new Set([...body.matchAll(/\benvironment\.([A-Za-z]+)/g)].map(([, field]) => field))].sort();
+  assert.ok(read.length >= ENVIRONMENT_KEY_FIELDS.length, "positive control: the scan found the fields the function reads");
+  assert.deepEqual(read, [...ENVIRONMENT_KEY_FIELDS].sort(), "the key reads a field the list does not send, or the list sends one the key never reads");
+});
+
+test("skipWhenFor: a pair is eligible only when everything but the environment matches, and sends the environment it was taken under", () => {
+  const { root, pages, captures } = sandbox();
+  try {
+    const pageHash = hashPageDir(pages);
+    const options = { steps: 150, probeForms: false, task: null, reuseScreenReader: true };
+    const write = (variant: string, environment: Record<string, unknown>) => {
+      const capture = stampProvenance({ screenReader: "NVDA", transcript: ["a", "b"], structure: {}, environment },
+        { key: cacheKey({ caseId: "case-1", pageHash, options, environment }), pageHash, options, environment, worker: "w1" });
+      writeFileSync(captureFilePath(captures, "case-1", variant), JSON.stringify(capture));
+    };
+    write("good", ENV); write("bad", ENV);
+    const eligible = skipWhenFor({ captureRoot: captures, caseId: "case-1", pageHash, options });
+    assert.equal(eligible?.environment.screenReaderVersion, "2026.1.1");
+    assert.equal(eligible?.environment.browserVersion, "150.0.4078.105");
+    assert.equal(eligible?.environment.windowSize, null, "an absent field is null, which is how the service reads an absent field of a box");
+    // The same decision the cache itself makes, from the other side: when skipWhenFor is eligible and the box matches, cacheDecision reuses.
+    assert.equal(cacheDecision({ captureRoot: captures, caseId: "case-1", key: keyFor(pages) }).reuse, true);
+
+    assert.equal(skipWhenFor({ captureRoot: captures, caseId: "case-1", pageHash: "0".repeat(16), options }), null, "the page changed");
+    assert.equal(skipWhenFor({ captureRoot: captures, caseId: "case-1", pageHash, options: { ...options, steps: 99 } }), null, "the options changed");
+    write("bad", { ...ENV, screenReaderVersion: "2027.1" });
+    assert.equal(skipWhenFor({ captureRoot: captures, caseId: "case-1", pageHash, options }), null, "the halves came from different environments");
+    writeFileSync(captureFilePath(captures, "case-1", "good"), "{ not json");
+    assert.equal(skipWhenFor({ captureRoot: captures, caseId: "case-1", pageHash, options }), null, "an unreadable file is a recapture, as it is for the cache");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
