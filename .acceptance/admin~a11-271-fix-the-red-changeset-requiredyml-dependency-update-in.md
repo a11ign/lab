@@ -5,14 +5,17 @@ Supersedes Dependabot's #148: `.github/workflows/ci.yml` calls `a11ign/toolchain
 Acceptance:
 
 ```bash
+bash -ec '
 # the ref is the new one and the old one is gone
-grep -qF 'changeset-required.yml@eb23973525fd24c019abd8e424f11d4db7310ef1' .github/workflows/ci.yml
-! grep -qF '745b552ed550f44cc15c9d797718d350730540ce' .github/workflows/ci.yml
+grep -qF "changeset-required.yml@eb23973525fd24c019abd8e424f11d4db7310ef1" .github/workflows/ci.yml
+if grep -qF 745b552ed550f44cc15c9d797718d350730540ce .github/workflows/ci.yml; then echo "old ref is back"; exit 1; fi
 # the retired refusal and job are not back
-! grep -q 'gate:core-held' package.json
-! grep -qE '^  refusalOwners:' .github/workflows/ci.yml
-# the diff against main is that one line in that one file
-test "$(git diff --name-only origin/main...HEAD -- . ':!.acceptance' | tr '\n' ' ')" = ".github/workflows/ci.yml "
-test "$(git diff --numstat origin/main...HEAD -- .github/workflows/ci.yml | cut -f1,2)" = "$(printf '1\t1')"
-python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))"
+if grep -q "gate:core-held" package.json; then echo "gate:core-held is back"; exit 1; fi
+if grep -qE "^  refusalOwners:" .github/workflows/ci.yml; then echo "refusalOwners is back"; exit 1; fi
+# the committed diff against main is that one line in that one file
+test "$(git diff --name-only origin/main...HEAD -- . ":!.acceptance" | tr "\n" " ")" = ".github/workflows/ci.yml "
+test "$(git diff --numstat origin/main...HEAD -- .github/workflows/ci.yml | cut -f1,2)" = "$(printf "1\t1")"
+python3 -c "import yaml;yaml.safe_load(open(\".github/workflows/ci.yml\"))"
+echo acceptance-ok
+'
 ```
