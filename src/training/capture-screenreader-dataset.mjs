@@ -25,7 +25,7 @@ import { appendRunRecord, captureRunsFile, runRecordFromManifest } from "./captu
 import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";
 import { datasetCollector, datasetJob } from "./dataset-fleet.ts";
 import { FleetInputError, fleetInputs, pagesBaseUrl, workerAddressNotice } from "../fleet/fleet-job.ts";
-import { collectFlow, follow, submitJob } from "../fleet/capture-flow.ts";
+import { collectFlow, follow, noWaitPageServerNotice, submitJob } from "../fleet/capture-flow.ts";
 
 /**
  * a typo here costs a full corpus run: `--resmue` silently means a fresh capture of 1,061 pairs.
@@ -410,21 +410,25 @@ async function submit(inputs) {
       cases: todo, baseUrl, optionsOf: captureOptions, captureRoot: CAPTURE_ROOT,
       skipWhenOf: (testCase) => CACHE ? skipWhenFor({ captureRoot: CAPTURE_ROOT, caseId: testCase.id, pageHash: hashPageDir(resolve(PAGE_ROOT, testCase.id)), options: captureOptions(testCase) }) : null,
     });
-    console.log(`Submitting ${todo.length} case(s) as ${job.cases.length} captures in ${todo.length} group(s), each good and bad held to one box`
-      + `${Object.values(job.groups).filter((g) => g.skipWhen).length ? `; ${Object.values(job.groups).filter((g) => g.skipWhen).length} carry skipWhen, left alone on a box that has not changed` : ""}.`);
+    console.log(describeSubmission(job));
     const flow = flowFor(inputs, progress);
     const pending = submitJob(flow, { kind: JOB_KIND, ...job, extra: submittedPages(todo) });
     progress.addFleetJob({ id: pending.job, kind: JOB_KIND, submittedAt: pending.submittedAt });
     console.log(`Progress: ${progress.path} (follow the job: fleet job status ${pending.job}; npm run training:status)`);
-    if (inputs.wait === null && pages.started) {
-      console.error("This process started the page server the boxes fetch from, and stops it when it exits. Run with --wait=<duration> (or A11Y_FLEET_WAIT) to hold it "
-        + "for the job, or serve the pages from a server that stays up.");
-    }
+    const notice = noWaitPageServerNotice(inputs, pages.started);
+    if (notice) process.stderr.write(notice);
     process.exitCode = await follow(flow, [pending]);
   } finally {
     await pages.release();
     await awake.release();
   }
+}
+
+/** What is about to be submitted, in a line: the cases, the groups that hold each pair to one box, and how many the service may leave alone. @param {{ cases: unknown[], groups: Record<string, { skipWhen?: unknown }> }} job */
+function describeSubmission({ cases, groups }) {
+  const skippable = Object.values(groups).filter((group) => group.skipWhen).length;
+  return `Submitting ${Object.keys(groups).length} case(s) as ${cases.length} captures in ${Object.keys(groups).length} group(s), each good and bad held to one box`
+    + `${skippable ? `; ${skippable} carry skipWhen, left alone on a box that has not changed` : ""}.`;
 }
 
 /** Every selected case was already captured by the run being resumed, so there is nothing to submit. @param {import("./capture-progress.mjs").RunRecorder} progress @param {number} total @param {number} skipped */
@@ -448,7 +452,7 @@ async function main() {
   const args = process.argv.slice(2);
   const notice = workerAddressNotice({ argv: args });
   if (notice) process.stderr.write(notice);
-  const inputs = fleetInputs(args);
+  const inputs = fleetInputs(args, process.env, { forCollect: COLLECT !== undefined });
   if (COLLECT !== undefined) await collect(inputs);
   else await submit(inputs);
 }

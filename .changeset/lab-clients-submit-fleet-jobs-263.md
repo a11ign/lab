@@ -1,0 +1,5 @@
+---
+"@a11ign/lab": minor
+---
+
+The synthetic-corpus capture (`training:capture`, `training:capture-acceptance`), the real-page capture and `evidence:check` submit their captures to the fleet job service and read the results from the job's manifest, instead of dispatching to workers themselves (a11ign A11-263, step 3). A case is a good and a bad service case in one group, which the service holds to one box; a rejected or lost variant is a `fleet job recapture` on that box, up to three attempts; the cache is the service's `skipWhen`; real pages are grouped by publisher. A call needs `--label=<ticket key>` (or `A11Y_FLEET_LABEL`), takes `--boxes=` and `--wait=` (or `A11Y_FLEET_BOXES`, `A11Y_FLEET_WAIT`), and with no wait prints the job ID and exits 75; `--collect[=<job ID>]` collects a finished job. A worker address is ignored when `A11Y_FLEET_BOXES` is set and refused otherwise. `training:status` and `training:wait` name the job and send nothing to a box. Output files, their names and shapes are unchanged; `provenance.worker` is the box's name.

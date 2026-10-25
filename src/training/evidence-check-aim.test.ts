@@ -111,7 +111,7 @@ test("one case is one group on one box, and the row names the box the MANIFEST s
   };
   const fetched = { job: "fj-1", dir: "/nowhere", manifest, record: () => ({ capturedAt: "2026-10-25T00:00:00.000Z", worker: "w2", status: 200, capture: EVIDENCE }) };
   const { results, compareCase, boxOf } = compareFetched({
-    fetched: fetched as never, selected: [{ id: "stub-case" }], titles: { "stub-case.good": TITLE, "stub-case.bad": TITLE }, baselineFor: () => EVIDENCE, write: () => {},
+    fetched: fetched as never, titles: { "stub-case.good": TITLE, "stub-case.bad": TITLE }, baselineFor: () => EVIDENCE, write: () => {},
   });
   await compareCase({ id: "stub-case" }, { worker: boxOf("stub-case") });
 
@@ -268,7 +268,8 @@ test("the report from a job names BOXES, as it named workers: the pool as dispat
       results: [resultRow({ testCase: { id: FAMILY }, variant: "good", worker: "a11y-worker-3", comparison: { verdict: "SAME" } })],
       summary: { compared: 1 }, out: dir, runs: join(dir, "runs"),
     });
-    assert.deepEqual(Object.keys(report), ["at", "runId", "commit", "workers", "results", "summary"].filter((key) => key in report), "the shape lab-fetch.yml and the readers know");
+    assert.deepEqual(Object.keys(report).filter((key) => key !== "commit" && key !== "commitError"), ["at", "runId", "workers", "results", "summary"], "the shape lab-fetch.yml and the readers know");
+    assert.ok("commit" in report, "and the commit it ran at (null, with why, when git could not say), as the report always carried");
     assert.deepEqual(report.workers, ["a11y-worker-2", "a11y-worker-3"]);
     assert.equal(report.results[0].worker, "a11y-worker-3");
     assert.doesNotMatch(JSON.stringify(report), /https?:\/\//, "no address anywhere in it: the service never gives one");

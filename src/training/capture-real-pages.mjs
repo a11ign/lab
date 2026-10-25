@@ -328,7 +328,7 @@ export function realPagesCollector(io) {
     }
     io.progress.finish(`${captured} of ${manifest.captures.length} captured, ${failed.length} failed`);
     summarise({ io, extra, captured, failed });
-    return { recapture: [], attempts: {}, exit: failed.length ? 1 : 0 };
+    return { recapture: [], exit: failed.length ? 1 : 0 };
   };
 }
 
@@ -489,7 +489,7 @@ async function main() {
   const args = process.argv.slice(2);
   const notice = workerAddressNotice({ argv: args });
   if (notice) process.stderr.write(notice);
-  const inputs = fleetInputs(args);
+  const inputs = fleetInputs(args, process.env, { forCollect: COLLECT !== undefined });
   if (COLLECT === undefined) {
     await submit(inputs);
     return;

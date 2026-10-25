@@ -23,8 +23,6 @@ export type CollectOutcome = {
   recapture: string[];
   /** Cases to submit again WHOLE, in a new job, because the box their group sat on left the fleet. */
   resubmit?: { cases: FleetCase[]; groups: FleetGroups; names: Record<string, string>; extra?: Record<string, unknown> };
-  /** How many attempts each case has had, carried to the next job's pending file. */
-  attempts: Record<string, number>;
   /** The exit the run ends with when nothing more is asked of it: 0, or 1 when it finished with failures. */
   exit: number;
 };
@@ -101,21 +99,29 @@ async function collectOne(flow: Flow, pending: Pending): Promise<CollectOutcome 
 /** The follow-up jobs a collect asked for, each with its own pending file. */
 function followUps(flow: Flow, from: Pending, outcome: CollectOutcome): Pending[] {
   const jobs: Pending[] = [];
-  const label = flow.inputs.label;
+  // A `--collect` carries no label of its own: a re-capture is booked under the label the job was submitted with.
+  const label = flow.inputs.label || from.label;
   const submittedAt = new Date((flow.deps?.now ?? DEFAULTS.now)()).toISOString();
   if (outcome.recapture.length) {
     const job = recapture({ job: from.job, caseIds: outcome.recapture, label, run: flow.deps?.run });
     const names = Object.fromEntries(outcome.recapture.map((id) => [id, from.names[id] ?? ""]));
-    const next: Pending = { job, label, submittedAt, kind: from.kind, names, recaptureOf: from.job, attempts: outcome.attempts, ...(from.extra ? { extra: from.extra } : {}) };
+    const next: Pending = { job, label, submittedAt, kind: from.kind, names, recaptureOf: from.job, ...(from.extra ? { extra: from.extra } : {}) };
     writePending(flow.root, next);
     jobs.push(next);
   }
   if (outcome.resubmit) {
-    const next = submitJob(flow, { kind: from.kind, ...outcome.resubmit, extra: outcome.resubmit.extra ?? from.extra });
-    writePending(flow.root, { ...next, attempts: outcome.attempts });
-    jobs.push({ ...next, attempts: outcome.attempts });
+    jobs.push(submitJob(flow, { kind: from.kind, ...outcome.resubmit, extra: outcome.resubmit.extra ?? from.extra }));
   }
   return jobs;
+}
+
+/**
+ * The page server a client leased stops with the client. A run with no wait exits at once, so the boxes would be fetching pages from a server that is gone: say so, and what to do.
+ */
+export function noWaitPageServerNotice(inputs: FleetInputs, startedByThisProcess: boolean): string | null {
+  if (inputs.wait !== null || !startedByThisProcess) return null;
+  return "This process started the page server the boxes fetch from, and stops it when it exits. Run with --wait=<duration> (or A11Y_FLEET_WAIT) to hold it "
+    + "for the job, or serve the pages from a server that stays up.\n";
 }
 
 /** Say what is to be collected and how, for a run that has stopped without waiting. */

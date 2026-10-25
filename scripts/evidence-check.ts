@@ -44,7 +44,7 @@ import { hasUsableCaptureFiles } from "../src/training/capture-resume.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { FleetInputError, fleetInputs, pagesBaseUrl, workerAddressNotice } from "../src/fleet/fleet-job.ts";
 import type { FetchedJob, FleetCase, FleetInputs } from "../src/fleet/fleet-job.ts";
-import { collectFlow, follow, submitJob } from "../src/fleet/capture-flow.ts";
+import { collectFlow, follow, noWaitPageServerNotice, submitJob } from "../src/fleet/capture-flow.ts";
 import type { Collector } from "../src/fleet/capture-flow.ts";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "../src/training/manifest-matches-cases.mjs";
@@ -405,8 +405,8 @@ export function resultRow({ testCase, variant, worker, comparison }: { testCase:
  * Takes the same `io` as `caseComparer` and for the same reason: this is the FOURTH `resultRow` site and
  * the only one that passes `worker: null` correctly, so it cannot be guarded by a rule over the pushes —
  * a "no site passes null" scan would turn exactly this line red. It is guarded by being run, and the
- * mutant it has to stop is `null` becoming `worker`, which here resolves to the module-level `workers[0]`
- * and would name a box that captured nothing for the row that exists BECAUSE nothing captured it.
+ * mutant it has to stop is `null` becoming `worker`, which would name a box that captured nothing for the row
+ * that exists BECAUSE nothing captured it.
  *
  * @param {{selected: any[], results: any[], io: {baselineFor: Function, write: Function}}} args
  */
@@ -438,16 +438,15 @@ for (const testCase of selected) {
 }
 
 /**
- * THE POOL'S HANDLER: one case, both variants, on the one worker the pool leased for it.
+ * THE COMPARER: one case, both variants, on the one box the service held its group to.
  *
  * Its I/O arrives as a parameter and the handler is built at module scope, rather than the whole thing
- * being an arrow closed over `compareAcrossPool`. That is this row's attribution guard and not a shape
- * preference. Three of the four `resultRow` sites are in here, each recording the worker that CAPTURED,
- * and a source read cannot tell them apart from the defect: `worker` also names a module-level
- * `workers[0]` two scopes up (`:82`, still live for `pagesBase` and the usage line), so deleting the
- * `{ worker }` parameter leaves every line below reading and every row naming the first url on the argv
- * — the exact constant #1948 removed, restored silently. Driven by `evidence-check-aim.test.ts` with
- * stub I/O, both bindings are in scope at once and only the parameter answers.
+ * being an arrow closed over the collector. That is this row's attribution guard and not a shape
+ * preference. Three of the four `resultRow` sites are in here, each recording the box that CAPTURED
+ * (its name, from the manifest), and a source read cannot tell them apart from the defect: deleting the
+ * `{ worker }` parameter would leave every line below reading and every row naming some other box -- the
+ * constant #1948 removed, restored silently. Driven by `evidence-check-aim.test.ts` with stub I/O, only the
+ * parameter can produce the name asserted.
  *
  * `io` is bundled rather than four positional collaborators (`max-params`), and holds only what touches
  * the world: `isEvidence` and `compareCapture` are pure and stay imported, so a test drives the real
@@ -551,8 +550,8 @@ export function evidenceJob(
  * reads INCONCLUSIVE and never "safe to ship". A REJECTED capture stays a finding and is not captured again.
  */
 export function compareFetched(
-  { fetched, selected, titles, baselineFor, write }:
-  { fetched: FetchedJob; selected: Loose[]; titles: Record<string, string | null>; baselineFor: (testCase: Loose, variant: string) => unknown; write: (line: string) => void },
+  { fetched, titles, baselineFor, write }:
+  { fetched: FetchedJob; titles: Record<string, string | null>; baselineFor: (testCase: Loose, variant: string) => unknown; write: (line: string) => void },
 ) {
   const results: Loose[] = [];
   const io = {
@@ -568,7 +567,7 @@ export function compareFetched(
   };
   const compareCase = caseComparer({ results, io });
   const boxOf = (id: string) => fetched.manifest.captures.find((c) => c.group === id)?.box ?? null;
-  return { results, io, compareCase, boxOf, selected };
+  return { results, io, compareCase, boxOf };
 }
 
 /**
@@ -629,7 +628,7 @@ function evidenceCollector(): Collector {
     const selected = extra.selected.map((id) => ({ id }));
     const write = (line: string) => process.stdout.write(line);
     const { results, io, compareCase, boxOf } = compareFetched({
-      fetched, selected, titles: extra.titles, write,
+      fetched, titles: extra.titles, write,
       baselineFor: (testCase, variant) => readCapture(BASELINE, testCase.id, variant),
     });
     for (const testCase of selected) {
@@ -661,7 +660,7 @@ function evidenceCollector(): Collector {
     // `inconclusive` MUST NOT exit 0, and that now covers PARTIAL coverage as well as none: the stratified
     // sample means an uncompared capture is an unexamined FAMILY, so a verdict drawn from the ones that
     // landed says nothing about the ones that did not.
-    return { recapture: [], attempts: {}, exit: exitCodeFor(summary) };
+    return { recapture: [], exit: exitCodeFor(summary) };
   };
 }
 
@@ -710,10 +709,8 @@ async function submit(inputs: FleetInputs) {
       kind: JOB_KIND, ...forService,
       extra: { selected: selected.map((testCase: Loose) => testCase.id), titles: jobTitles, baseUrl: pagesBase() },
     });
-    if (inputs.wait === null && pagesLease.started) {
-      process.stderr.write("This process started the page server the boxes fetch from, and stops it when it exits. Run with --wait=<duration> (or A11Y_FLEET_WAIT) to hold it "
-        + "for the job, or serve the pages from a server that stays up.\n");
-    }
+    const notice = noWaitPageServerNotice(inputs, pagesLease.started);
+    if (notice) process.stderr.write(notice);
     process.exitCode = await follow(flow, [pending]);
   } finally {
     await pagesLease.release();
@@ -725,7 +722,7 @@ async function main() {
   const args = process.argv.slice(2);
   const notice = workerAddressNotice({ argv: args, positional });
   if (notice) process.stderr.write(notice);
-  const inputs = fleetInputs(args);
+  const inputs = fleetInputs(args, process.env, { forCollect: COLLECT !== undefined });
   if (COLLECT !== undefined) {
     process.exitCode = await collectFlow(flowFor(inputs), COLLECT || undefined, JOB_KIND);
     return;

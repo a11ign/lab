@@ -254,6 +254,18 @@ test("with no wait the client prints the ID and the collect command, exits 75, a
   assert.ok(readPending(r.corpus, "fj-1")?.collectedAt, "a collected job is marked");
 });
 
+test("a --collect that names no label books its re-capture under the label the job was submitted with", async () => {
+  const r = rig({ ids: ["fj-1", "fj-2"] }, { wait: null });
+  r.configure({ ids: ["fj-1", "fj-2"], fixtures: { "fj-1": datasetResults(r.root, "fj-1", { "x.good": EVIDENCE, "x.bad": NOT_EVIDENCE }) } });
+  const submitting = r.flow(datasetCollector(r.io));
+  assert.equal(await follow(submitting, [submitX(r, submitting)]), 75);
+
+  const collecting = { ...r.flow(datasetCollector({ ...r.io, progress: continueRun(r.corpus) })), inputs: { boxes: "ready", label: "", wait: null } };
+  assert.equal(await collectFlow(collecting, "fj-1", "dataset"), 75, "the re-capture is submitted and, with no wait, left for the next collect");
+  assert.equal(r.stub.recaptured("fj-2").label, "A11-263");
+  assert.equal(readPending(r.corpus, "fj-2")?.recaptureOf, "fj-1");
+});
+
 test("a wait that ends in 124 leaves the job running, says how to collect it, and fetches nothing", async () => {
   const r = rig({ ids: ["fj-1"], waitCodes: { "fj-1": 124 } });
   const flow = r.flow(datasetCollector(r.io));

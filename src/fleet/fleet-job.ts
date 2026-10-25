@@ -99,24 +99,30 @@ export type FleetInputs = { boxes: string; label: string; wait: string | null };
  * The boxes, the label and the wait a moved client submits with.
  *
  * - boxes: `A11Y_FLEET_BOXES`, else `--boxes=`, else `ready`;
- * - the label: `A11Y_FLEET_LABEL`, else `--label=`, and REFUSED if neither is set, before `fleet` runs: a job is booked under a ticket key;
+ * - the label: `A11Y_FLEET_LABEL`, else `--label=`, and REFUSED if neither is set, before `fleet` runs: a job is booked under a ticket key. A `--collect` (`forCollect`) may leave
+ *   it out: the job it reads was booked under a label already, which a re-capture it asks for is booked under too;
  * - the wait: `A11Y_FLEET_WAIT`, else `--wait=`, and with neither the client submits, records the ID and does not wait.
  */
-export function fleetInputs(argv: readonly string[], env: NodeJS.ProcessEnv = process.env): FleetInputs {
+export function fleetInputs(argv: readonly string[], env: NodeJS.ProcessEnv = process.env, { forCollect = false }: { forCollect?: boolean } = {}): FleetInputs {
   const boxes = given(env.A11Y_FLEET_BOXES) ?? given(flagOf(argv, "boxes")) ?? "ready";
-  const label = given(env.A11Y_FLEET_LABEL) ?? given(flagOf(argv, "label"));
+  const label = given(env.A11Y_FLEET_LABEL) ?? given(flagOf(argv, "label")) ?? (forCollect ? "" : undefined);
   const wait = given(env.A11Y_FLEET_WAIT) ?? given(flagOf(argv, "wait")) ?? null;
   if (label === undefined) {
     throw new FleetInputError("a fleet job is booked under a ticket key: pass --label=<ticket key> (or set A11Y_FLEET_LABEL), for example --label=A11-263");
   }
-  if (!LABEL.test(label)) throw new FleetInputError(`the label is a ticket key (letters, digits, '.', '_' and '-', at most 64): ${JSON.stringify(label)} is not one`);
+  refuseMalformed({ boxes, label, wait });
+  return { boxes, label, wait };
+}
+
+/** Each input's shape, in words, before `fleet` runs. An empty label is a `--collect` that named none, which is not malformed. */
+function refuseMalformed({ boxes, label, wait }: FleetInputs): void {
+  if (label !== "" && !LABEL.test(label)) throw new FleetInputError(`the label is a ticket key (letters, digits, '.', '_' and '-', at most 64): ${JSON.stringify(label)} is not one`);
   if (!BOXES.test(boxes)) {
     throw new FleetInputError(`--boxes is a number of boxes, \`ready\`, or box names separated by commas: ${JSON.stringify(boxes)} is none of these`);
   }
   if (wait !== null && !DURATION.test(wait)) {
     throw new FleetInputError(`--wait is a whole number and a unit, such as 90s, 30m or 2h: ${JSON.stringify(wait)} is not one`);
   }
-  return { boxes, label, wait };
 }
 
 /**
@@ -277,8 +283,8 @@ export function fetchManifest({ job, dir, run = realFleet() }: { job: string; di
  */
 export type Pending = {
   job: string; label: string; submittedAt: string; kind: string; names: Record<string, string>;
-  /** The job this one re-captures, and how many attempts each case has had. */
-  recaptureOf?: string; attempts?: Record<string, number>;
+  /** The job this one re-captures. */
+  recaptureOf?: string;
   extra?: Record<string, unknown>;
   collectedAt?: string;
 };

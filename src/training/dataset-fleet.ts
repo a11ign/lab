@@ -220,10 +220,8 @@ function collectGroups(io: DatasetIo, fetched: FetchedJob, pending: Pending, ext
   const recapture: string[] = [];
   const lost: string[] = [];
   const failures: string[] = [];
-  const attempts: Record<string, number> = {};
   for (const group of groups) {
     const entries = manifest.captures.filter((c) => c.group === group);
-    for (const entry of entries) attempts[entry.case as string] = entry.attempt;
     const result = collectGroup(io, fetched, extra, { group, entries });
     recapture.push(...result.recapture);
     if (result.boxLost) lost.push(group);
@@ -237,7 +235,7 @@ function collectGroups(io: DatasetIo, fetched: FetchedJob, pending: Pending, ext
   const again = lost.filter((g) => !extra.resubmitted?.[g]);
   for (const group of again) io.progress.recapturing(group, "the box left the fleet; the case is submitted again, whole");
   settle(io);
-  return { recapture, attempts, exit: failures.length ? 1 : 0, ...(again.length ? { resubmit: resubmission(manifest, again, pending, extra) } : {}) };
+  return { recapture, exit: failures.length ? 1 : 0, ...(again.length ? { resubmit: resubmission(manifest, again, pending, extra) } : {}) };
 }
 
 /**

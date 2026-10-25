@@ -57,6 +57,8 @@ test("the boxes, the label and the wait come from the environment, else the flag
     { boxes: "w1,w2", label: "A11-2", wait: "28800s" }, "the environment wins, as the catalogue sets it");
   assert.deepEqual(fleetInputs(["--label=A11-1"], {}), { boxes: "ready", label: "A11-1", wait: null }, "no boxes means ready, and no wait means the client does not wait");
   assert.throws(() => fleetInputs(["--label=A11-1", "--boxes=a;b"], {}), /--boxes/);
+  assert.deepEqual(fleetInputs([], {}, { forCollect: true }), { boxes: "ready", label: "", wait: null }, "a --collect needs no label: the job it reads was booked under one");
+  assert.throws(() => fleetInputs(["--label=bad label"], {}, { forCollect: true }), /is not one/, "but one it is given must still be a ticket key");
   assert.throws(() => fleetInputs(["--label=A11-1", "--wait=forever"], {}), /--wait/);
 });
 
