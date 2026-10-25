@@ -1,0 +1,8 @@
+{
+  "npm": {
+    "ignore": [
+      { "name": "@a11ign/control", "reason": "declared in the manifest and not on the registry, so a run that reads it fails (#3789)" },
+      { "name": "@a11ign/nvda-speech", "reason": "declared in the manifest and not on the registry, so a run that reads it fails (#3789)" }
+    ]
+  }
+}

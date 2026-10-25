@@ -107,6 +107,11 @@ jobs:
           typescript=$(jq -r '.devDependencies.typescript' core/package.json)
           npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$RUNNER_TEMP/toolchain" "@a11ign/toolchain@$version" "@rstest/coverage-v8@$coverage" "typescript@$typescript"
           node "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain/dist/layout-check.mjs" lab
+      # THE DEPENDABOT CONFIG IS GENERATED (A11-253, under A11-251): `.github/dependabot.yml` must be exactly what `dependabot-config --write` produces from the toolchain this manifest names. It is a step on this
+      # repository's own checkout, not a test, because this repository's tests run only once it is laid at a11ign/a11ign's `packages/lab`, where a test would read a11ign's `.github/` and not this one's. The bin is
+      # run by path with `node` for the reason the layout check is. To fix a failure: `npx --yes --package @a11ign/toolchain@<the version in package.json> dependabot-config --write` in this checkout.
+      - name: The Dependabot config is what the toolchain generates
+        run: node "$RUNNER_TEMP/toolchain/node_modules/@a11ign/toolchain/dist/dependabot-config.mjs" --check --root lab
       # pnpm/action-setup reads the version out of `packageManager`, and comes before setup-node because `cache: pnpm` shells out to it.
       - uses: pnpm/action-setup@v6
         with: { package_json_file: core/package.json }
