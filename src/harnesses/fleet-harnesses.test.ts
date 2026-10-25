@@ -12,6 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { format } from "node:util";
 
 import { scratchDir as tempDir } from "../fleet/scratch-dir.ts";
 import { stubFleet, manifestFixture, writeResults } from "../fleet/stub-fleet.ts";
@@ -43,19 +44,23 @@ const capture = (...phrases: string[]) => ({
 });
 
 /**
- * Run a block with stdout and stderr captured. Written by hand rather than with `node:test`'s `mock`: this suite runs under rstest in CI, whose `node:test` shim has no `mock.restore`.
+ * Run a block with stdout, stderr and the console captured. Written by hand rather than with `node:test`'s `mock`: this suite runs under rstest in CI, whose `node:test` shim has no
+ * `mock.restore`, and whose console is its own, so `console.log` does not reach `process.stdout.write` there.
  */
 async function quietly<T>(body: () => Promise<T> | T): Promise<{ result: T; out: string }> {
   const lines: string[] = [];
-  const originals = { stdout: process.stdout.write, stderr: process.stderr.write };
+  const originals = { stdout: process.stdout.write, stderr: process.stderr.write, log: console.log, info: console.info, warn: console.warn, error: console.error };
   const capture = (chunk: unknown): boolean => { lines.push(String(chunk)); return true; };
+  const captureLine = (...args: unknown[]): void => { lines.push(`${format(...args)}\n`); };
   process.stdout.write = capture as typeof process.stdout.write;
   process.stderr.write = capture as typeof process.stderr.write;
+  console.log = captureLine; console.info = captureLine; console.warn = captureLine; console.error = captureLine;
   try {
     return { result: await body(), out: lines.join("") };
   } finally {
     process.stdout.write = originals.stdout;
     process.stderr.write = originals.stderr;
+    console.log = originals.log; console.info = originals.info; console.warn = originals.warn; console.error = originals.error;
   }
 }
 
