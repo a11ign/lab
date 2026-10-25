@@ -4,7 +4,8 @@
 // needs the shared flow logic, and duplicating it in .mjs would let the two copies
 // drift.
 //
-// IT SUBMITS A FLEET JOB AND RUNS NO CAPTURE (A11-263). Each case becomes a good and a bad service case in one group, which the control plane holds to one box;
+// ON THE FLEET IT SUBMITS A FLEET JOB AND RUNS NO CAPTURE (A11-263). A run that names no fleet input (no --label, --boxes, --wait, --collect, none of A11Y_FLEET_*) drives a person's own
+// local UTM worker VM instead, in capture-local-vm.ts, which this file does not contain. Each case becomes a good and a bad service case in one group, which the control plane holds to one box;
 // the client records the job ID, waits once if it was told to (`A11Y_FLEET_WAIT`, `--wait=`), and writes the corpus from the job's manifest. Without a wait it
 // prints the ID and the collect command and exits 75. `--collect[=<job ID>]` collects a job that has finished.
 import { existsSync, readFileSync } from "node:fs";
@@ -20,11 +21,12 @@ import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.ts";
 import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 import { datasetRoot, captureRoot, refuseIfRunsReadonly, runsRoot } from "../dataset-paths.ts";
-import { appendRunRecord, captureRunsFile, runRecordFromManifest } from "./capture-run-record.mjs";
+import { appendRunRecord, captureRunsFile, recordUnguardedRun, runRecordFromManifest } from "./capture-run-record.mjs";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";
 import { datasetCollector, datasetJob } from "./dataset-fleet.ts";
-import { FleetInputError, fleetInputs, newestPending, pagesBaseUrl, readPending, retiredKnobsNotice, workerAddressNotice } from "../fleet/fleet-job.ts";
+import { FleetInputError, fleetInputs, fleetRequested, newestPending, pagesBaseUrl, readPending, retiredKnobsNotice, workerAddressNotice } from "../fleet/fleet-job.ts";
+import { acquireLocalWorkers, captureOnLocalWorkers, checkLocalWorkers } from "./capture-local-vm.ts";
 import { collectFlow, follow, pageServerEndsNotice, pagesUnheldNotice, submitJob, uncollectedNotice } from "../fleet/capture-flow.ts";
 
 /**
@@ -459,9 +461,44 @@ async function collect(inputs) {
   }
 }
 
+/**
+ * THE LOCAL UTM WORKER VM ROUTE (the plan: "the local UTM VM pool and in-process capture paths stay"). A run that names no fleet input drives the person's own VM(s) as it always did
+ * on a Mac, in `capture-local-vm.ts`; this file stays free of any capture of its own. Power, the page server and the run record are shared with the fleet route.
+ */
+async function captureLocally() {
+  const { cases, done } = chooseCases();
+  if (!await powerAllows(cases.length - done.size)) return;
+  const awake = keepHostAwake();
+  const pages = await leasePageServer({ root: PAGE_ROOT, port: PAGES_PORT, probePath: `${cases[0].id}/good.html` });
+  const startedAt = new Date().toISOString();
+  const lease = await acquireLocalWorkers().catch(async (error) => { await pages.release(); await awake.release(); throw error; });
+  try {
+    await checkLocalWorkers(lease.workers);
+    const hostNotice = nonAuthoritativeHostNotice({ cwd: process.cwd(), servesPages: true });
+    if (hostNotice) process.stdout.write(hostNotice);
+    await recordUnguardedRun({ file: captureRunsFile(runsRoot()), startedAt, named: [], participants: lease.workers }, { probe: async () => ({ outcome: "ok" }) });
+    await captureOnLocalWorkers({
+      cases, done, captureRoot: CAPTURE_ROOT, rejectedRoot: REJECTED_ROOT, pageRoot: PAGE_ROOT, cache: CACHE, allowStale: ALLOW_STALE,
+      optionsOf: captureOptions, urlOf: captureUrl, titleOf: pageTitle, baseUrl: (process.env.DATASET_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, ""),
+      progressFor: ({ worker, baseUrl, workers, captureTimeoutMs }) => {
+        const progress = beginRun({ root: ROOT, worker, baseUrl, cases, captureTimeoutMs });
+        progress.setWorkers(workers);
+        console.log(`Progress: ${progress.path} (watch it: npm run training:status)`);
+        return progress;
+      },
+      log: (line) => console.log(line),
+    }, lease);
+  } finally {
+    await lease.release().catch((e) => console.error(`worker release failed: ${/** @type {any} */ (e).message}`));
+    await pages.release();
+    await awake.release();
+  }
+}
+
 async function main() {
   refuseIfRunsReadonly(ROOT);
   const args = process.argv.slice(2);
+  if (!fleetRequested(args, process.env)) return captureLocally();
   for (const line of [workerAddressNotice({ argv: args }), retiredKnobsNotice()]) if (line) process.stderr.write(line);
   const inputs = fleetInputs(args, process.env, { forCollect: COLLECT !== undefined });
   if (COLLECT !== undefined) await collect(inputs);

@@ -73,6 +73,17 @@ test("no moved client contains a wait, a poll, a pgrep, a capture of its own or 
   }
 });
 
+test("the one place a corpus capture still POSTs to a worker is the local VM route, which is a module of its own that the fleet route never reaches", () => {
+  const local = readFileSync(join(LAB, "src/training/capture-local-vm.ts"), "utf8");
+  assert.ok(found(local).includes("captureTolerantly"), "positive control: the local route does capture (it is the scan's own subject, kept out of MOVED)");
+  assert.ok(!MOVED.includes("src/training/capture-local-vm.ts"));
+  for (const file of MOVED) assert.ok(!/capture-local-vm/.test(codeOf(readFileSync(join(LAB, file), "utf8"))) || file === "src/training/capture-screenreader-dataset.mjs",
+    `${file} reaches the local VM route; only the dataset client's own bare-run branch may`);
+  const client = codeOf(readFileSync(join(LAB, "src/training/capture-screenreader-dataset.mjs"), "utf8"));
+  assert.match(client, /if \(!fleetRequested\(args, process\.env\)\) return captureLocally\(\);/, "the local route is taken only by a run that names no fleet input");
+  assert.doesNotMatch(readFileSync(join(LAB, "src/training/capture-local-vm.ts"), "utf8"), /fleet job|capture-flow|fleet-job/, "and the local route reaches no fleet service");
+});
+
 test("`fleet job wait` is spelled in ONE lab file, and `waitOnce` is called from one place", () => {
   const files: string[] = [];
   const walk = (dir: string) => {

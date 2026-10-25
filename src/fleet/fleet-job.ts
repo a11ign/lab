@@ -126,6 +126,16 @@ function refuseMalformed({ boxes, label, wait }: FleetInputs): void {
 }
 
 /**
+ * Whether a run is a FLEET run: it names a label, boxes, a wait or a `--collect` (on the command line or in `A11Y_FLEET_*`), or it still gives a worker address, which the
+ * fleet route refuses in words. A run that names none of these is not for the service: it is the local UTM worker VM route of `training:capture`, a person's own VM, which has nothing to book.
+ */
+export function fleetRequested(argv: readonly string[], env: NodeJS.ProcessEnv = process.env): boolean {
+  const flags = ["boxes", "label", "wait"].some((name) => flagOf(argv, name) !== undefined);
+  const named = ["A11Y_FLEET_BOXES", "A11Y_FLEET_LABEL", "A11Y_FLEET_WAIT", "A11Y_WORKER", "A11Y_WORKERS"].some((name) => given(env[name]) !== undefined);
+  return flags || named || flagOf(argv, "worker") !== undefined || argv.some((arg) => arg === "--collect" || arg.startsWith("--collect="));
+}
+
+/**
  * A worker ADDRESS given to a moved client: `--worker=`, a positional address, `A11Y_WORKER` or `A11Y_WORKERS`.
  *
  * The client no longer knows a box's address; the service names boxes and never gives one. So an address is IGNORED, with one stderr line, when `A11Y_FLEET_BOXES` is set

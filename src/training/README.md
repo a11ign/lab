@@ -90,13 +90,26 @@ A job that FAILS or is cancelled still holds the captures that landed before it 
 that never ran is a failure saying "the job ended before this was captured", and the command stops
 with the job's own exit code. A box that leaves the fleet mid-job takes its unsent cases with it; a
 dataset case is then submitted again whole, once, and a real page once, and a second loss fails it.
-`DATASET_CAPTURE_TIMEOUT_MS`, `DATASET_WORKER_WAIT_MS` and `A11Y_VM_AFTER` do nothing now, and a run
-that sets one says so.
+`DATASET_CAPTURE_TIMEOUT_MS`, `DATASET_WORKER_WAIT_MS` and `A11Y_VM_AFTER` do nothing on the fleet
+route, and a run that sets one says so (the local VM route reads the first and the last).
 
 A worker address (`--worker=`, `A11Y_WORKER`, `A11Y_WORKERS`) is not taken any more: it is
 ignored with one line when `A11Y_FLEET_BOXES` is set, and refused, naming the new form, when it
-is not. A local UTM worker VM is not a fleet box and has nothing to book; this command does not
-drive one.
+is not.
+
+**On a Mac with a local UTM worker VM, name no fleet input** (no `--label`, `--boxes`, `--wait`,
+`--collect`, none of `A11Y_FLEET_*`) and the capture step drives your own VM(s) as it always did
+(`capture-local-vm.ts`): it starts them on demand, works out the address the guest can use to reach
+this host, shares the cases between them, and puts each VM back in the state it found it (see
+docs/local-worker-vm.md). A local VM is not a fleet box and has nothing to book; the fleet route
+never reaches it, and it never reaches a fleet box.
+
+~~~sh
+pnpm run training:capture
+~~~
+
+`DATASET_BASE_URL` still wins if you set it, and a `localhost` value is rewritten to the host's
+address on the VM's subnet, because `localhost` inside the guest is the guest.
 
 A full matrix run is two NVDA captures per case -- **3,430** at the manifest's
 1,715 cases, read 2026-09-23T14:26Z. The disk carries more, **4,500 captures**, because

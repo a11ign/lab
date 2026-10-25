@@ -31,6 +31,7 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
  * exist.
  */
 const CORPUS_WRITERS = [
+  "packages/lab/src/training/capture-local-vm.ts",
   "packages/lab/src/training/capture-real-pages.mjs",
   "packages/lab/src/training/capture-screenreader-dataset.mjs",
 ];
