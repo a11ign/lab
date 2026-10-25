@@ -5,9 +5,7 @@ Step 2 of 2 (lab): `.github/dependabot.yml` is now the output of `dependabot-con
 Acceptance:
 
 ```bash
-d=$(mktemp -d) && npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$d" "@a11ign/toolchain@$(jq -r ".devDependencies[\"@a11ign/toolchain\"]" package.json)"
-# the committed file is exactly the template's output (exit 1 and a diff on drift)
-node "$d/node_modules/@a11ign/toolchain/dist/dependabot-config.mjs" --check --root .
+bash -c 'd=$(mktemp -d) && npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$d" "@a11ign/toolchain@$(jq -r ".devDependencies[\"@a11ign/toolchain\"]" package.json)" && node "$d/node_modules/@a11ign/toolchain/dist/dependabot-config.mjs" --check --root . ; rc=$?; rm -rf "${d:?}"; exit $rc'
 # weekly at one fixed time, one group per ecosystem
 grep -q 'interval: weekly' .github/dependabot.yml
 grep -q 'time: "05:23"' .github/dependabot.yml
@@ -18,5 +16,4 @@ grep -qF 'dependency-name: "@a11ign/screenreader-worker"' .github/dependabot.yml
 grep -qF 'dependency-name: "@a11ign/screenreader-fleet"' .github/dependabot.yml
 grep -qF 'dependency-name: "@guidepup/guidepup"' .github/dependabot.yml
 grep -qF 'dependency-name: "@guidepup/setup"' .github/dependabot.yml
-rm -rf "${d:?}"
 ```
