@@ -101,7 +101,7 @@ export function manifestFixture(
   },
 ) {
   return {
-    version: 2, job, label: "A11-263", state, reason: null, submittedAt: "2026-10-25T00:00:00.000Z", startedAt: "2026-10-25T00:00:01.000Z", finishedAt: "2026-10-25T00:10:00.000Z",
+    version: 2, job, label: "A11-263", state, reason: null as string | null, submittedAt: "2026-10-25T00:00:00.000Z", startedAt: "2026-10-25T00:00:01.000Z", finishedAt: "2026-10-25T00:10:00.000Z",
     pages: [], passes: 1, body: {}, recaptureOf,
     cases: captures.map((c) => ({ id: c.case, url: c.url, group: c.group, body: c.body ?? {}, attempt: c.attempt ?? 1 })),
     freeze: null, pins: {},

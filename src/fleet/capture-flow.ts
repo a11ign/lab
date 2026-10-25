@@ -11,6 +11,7 @@
  * What a client brings is only what is its own: the cases it submits, and a collector that writes its outputs from a fetched job and says which cases it wants captured again.
  * No wait, poll or sleep is written here or in any client; `waitOnce` is the one wait.
  */
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import {
   EXIT_UNCOLLECTED, WAIT_EXIT, FleetInputError, fetchManifest, markCollected, newestPending, pendingDir, readPending, recapture, submitCases, waitOnce, writePending,
@@ -62,6 +63,11 @@ export type Flow = {
   collect: Collector;
   hint: CollectHint;
   deps?: FlowDeps;
+  /**
+   * Maps the code a run stops with BEFORE its collector has answered (a job that failed or was cancelled, the wait running out, an unreachable service) onto the client's own exit
+   * contract, for a client whose collector's exit codes mean something else. `evidence:check` exits 1 for CHANGED, and a failed job must not read as that.
+   */
+  stopExit?: (code: number) => number;
 };
 
 /** Submit a job of cases and record it. Returns the pending record, which is written before anything else can fail. */
@@ -86,14 +92,36 @@ function unendedExit(fetched: FetchedJob, err: (text: string) => void): number |
   return WAIT_EXIT.TIMEOUT;
 }
 
-/** Fetch a job's results and hand them to the collector, then mark the job collected. A job that did not end `done` is a stop, with the exit code its state means. */
+/**
+ * Fetch a job's results and hand them to the collector, then mark the job collected and drop the fetched copy (the service still holds the results).
+ *
+ * A job that did not end `done` is a stop, with the exit code its state means. One that FAILED or was CANCELLED still holds the captures that landed before it ended, and
+ * those are the client's to keep (a real page is live-web evidence that cannot be replayed), so they are collected, each capture that never ran is a failure, and
+ * the run still stops with the job's code. A job still queued or running has nothing to collect yet.
+ */
 async function collectOne(flow: Flow, pending: Pending): Promise<CollectOutcome | { stop: number }> {
-  const fetched = fetchManifest({ job: pending.job, dir: join(pendingDir(flow.root), "fetched"), run: flow.deps?.run });
-  const stop = unendedExit(fetched, flow.deps?.err ?? DEFAULTS.err);
-  if (stop !== null) return { stop };
+  const err = flow.deps?.err ?? DEFAULTS.err;
+  const dir = join(pendingDir(flow.root), "fetched");
+  const fetched = fetchManifest({ job: pending.job, dir, run: flow.deps?.run });
+  const stop = unendedExit(fetched, err);
+  const landed = fetched.manifest.captures.filter((c) => c.status === "done").length;
+  const endedWithRecords = stop !== null && stop !== WAIT_EXIT.TIMEOUT && landed > 0;
+  if (stop !== null && !endedWithRecords) return { stop };
+  if (endedWithRecords) err(`${pending.job} ended ${fetched.manifest.state}; collecting the ${landed} capture(s) that finished before it did\n`);
   const outcome = await flow.collect(fetched, pending);
   markCollected(flow.root, pending);
-  return outcome;
+  rmSync(join(dir, pending.job), { recursive: true, force: true });
+  return stop === null ? outcome : { stop };
+}
+
+/** A job `wait` reported failed or cancelled: what landed is kept if its results can be fetched, and the run stops with the job's code either way. */
+async function collectEnded(flow: Flow, pending: Pending, code: number): Promise<{ stop: number }> {
+  try {
+    await collectOne(flow, pending);
+  } catch (error) {
+    (flow.deps?.err ?? DEFAULTS.err)(`${pending.job} ended with ${code}; its results could not be collected: ${(error as Error).message}\n`);
+  }
+  return { stop: code };
 }
 
 /** The follow-up jobs a collect asked for, each with its own pending file. */
@@ -116,12 +144,27 @@ function followUps(flow: Flow, from: Pending, outcome: CollectOutcome): Pending[
 }
 
 /**
- * The page server a client leased stops with the client. A run with no wait exits at once, so the boxes would be fetching pages from a server that is gone: say so, and what to do.
+ * The page server a client leased stops with the client. A run that exits with its job still going (no wait, so 75, or a wait that ran out, so 124) leaves the boxes
+ * fetching pages from a server that is gone: say so, and what to do. A run that waited and finished says nothing.
  */
-export function noWaitPageServerNotice(inputs: FleetInputs, startedByThisProcess: boolean): string | null {
-  if (inputs.wait !== null || !startedByThisProcess) return null;
-  return "This process started the page server the boxes fetch from, and stops it when it exits. Run with --wait=<duration> (or A11Y_FLEET_WAIT) to hold it "
-    + "for the job, or serve the pages from a server that stays up.\n";
+export function pageServerEndsNotice(exit: number, startedByThisProcess: boolean): string | null {
+  if (!startedByThisProcess || (exit !== EXIT_UNCOLLECTED && exit !== WAIT_EXIT.TIMEOUT)) return null;
+  return "This process started the page server the boxes fetch from, and stops it as it exits while the job is still going: a capture the boxes have not yet taken will find no page. "
+    + "Run with a --wait=<duration> (or A11Y_FLEET_WAIT) long enough to hold it for the job, or serve the pages from a server that stays up; `fleet job cancel <id>` ends a job that cannot finish.\n";
+}
+
+/** A collect that submitted a follow-up job (it exits 75 or 124 with one going) when nothing holds a page server for the boxes. */
+export function pagesUnheldNotice(exit: number): string | null {
+  if (exit !== EXIT_UNCOLLECTED && exit !== WAIT_EXIT.TIMEOUT) return null;
+  return "A job is still going and nothing here serves the pages the boxes fetch: if it is a re-capture of a page this host serves, serve them again for as long as it runs "
+    + "(run this with a --wait=<duration> to hold them), or `fleet job cancel <id>` it.\n";
+}
+
+/** A job of this kind that was submitted and never collected, named when a new run begins, because a new run replaces the progress file that names it. */
+export function uncollectedNotice(root: string, kind: string): string | null {
+  const earlier = newestPending(root, kind);
+  return earlier ? `NOTE: ${earlier.job} (submitted ${earlier.submittedAt}) was never collected, and this run replaces the progress file that names it. `
+    + `Collect it with --collect=${earlier.job} or end it with fleet job cancel ${earlier.job}.\n` : null;
 }
 
 /** Say what is to be collected and how, for a run that has stopped without waiting. */
@@ -132,6 +175,9 @@ function printUncollected(flow: Flow, jobs: readonly Pending[]): void {
   err(`the job${jobs.length === 1 ? "" : "s"} run${jobs.length === 1 ? "s" : ""} on the control plane and go${jobs.length === 1 ? "es" : ""} on without this process. Declare the wait, `
     + `waitingOn: [${jobs.map(({ job }) => `{ "fleetJob": "${job}" }`).join(", ")}], and end the turn; when it is done: ${jobs.map(({ job }) => flow.hint(job)).join("  ;  ")}\n`);
 }
+
+/** A stop code in the client's own contract, when it has one. The run's own 75 (submitted, not waited on) is never remapped. */
+const mapped = (flow: Flow, code: number): number => (flow.stopExit && code !== EXIT_UNCOLLECTED ? flow.stopExit(code) : code);
 
 /** Wait for one job from what is left of the budget, and return the exit code that stops the run, or null when the job is done and ready to collect. */
 function waitForJob(flow: Flow, pending: Pending, deadline: number | null): number | null {
@@ -158,9 +204,11 @@ export async function follow(flow: Flow, first: Pending[], { collectNow = false 
   for (let pending = queue.shift(), collected = collectNow; pending; pending = queue.shift(), collected = false) {
     const stop = collected ? null : waitForJob(flow, pending, deadline);
     if (stop === EXIT_UNCOLLECTED) printUncollected(flow, [pending, ...queue]);
-    if (stop !== null) return stop;
-    const outcome = await collectOne(flow, pending);
-    if ("stop" in outcome) return outcome.stop;
+    // A job that FAILED or was CANCELLED may still hold captures that landed; `collectOne` keeps them and returns the job's own code.
+    const ended = stop === WAIT_EXIT.FAILED || stop === WAIT_EXIT.CANCELLED;
+    if (stop !== null && !ended) return mapped(flow, stop);
+    const outcome = ended ? await collectEnded(flow, pending, stop) : await collectOne(flow, pending);
+    if ("stop" in outcome) return mapped(flow, outcome.stop);
     exit = Math.max(exit, outcome.exit);
     queue.push(...followUps(flow, pending, outcome));
   }

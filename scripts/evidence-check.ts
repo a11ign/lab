@@ -42,15 +42,15 @@ import { leasePageServer } from "../src/training/page-server.mjs";
 import { nonAuthoritativeHostNotice } from "../src/training/capture-host.mjs";
 import { hasUsableCaptureFiles } from "../src/training/capture-resume.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
-import { FleetInputError, fleetInputs, pagesBaseUrl, workerAddressNotice } from "../src/fleet/fleet-job.ts";
+import { FleetInputError, fleetInputs, pagesBaseUrl, whyNoCapture, workerAddressNotice } from "../src/fleet/fleet-job.ts";
 import type { FetchedJob, FleetCase, FleetInputs } from "../src/fleet/fleet-job.ts";
-import { collectFlow, follow, noWaitPageServerNotice, submitJob } from "../src/fleet/capture-flow.ts";
+import { collectFlow, follow, pageServerEndsNotice, submitJob, uncollectedNotice } from "../src/fleet/capture-flow.ts";
 import type { Collector } from "../src/fleet/capture-flow.ts";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "../src/training/manifest-matches-cases.mjs";
 // #2197: a crash and a CHANGED verdict no longer share an exit code. A leaf module, so a test can read the
 // codes without importing this script and its corpus paths.
-import { exitCodeFor, runToExit } from "../src/training/evidence-check-exit.mjs";
+import { EXIT, exitCodeFor, runToExit } from "../src/training/evidence-check-exit.mjs";
 import type { Loose } from "../src/capture/loose.ts";
 
 /**
@@ -559,7 +559,7 @@ export function compareFetched(
     captureOn: async (testCase: Loose, variant: string) => {
       const entry = fetched.manifest.captures.find((c) => c.case === `${testCase.id}.${variant}`);
       const record = entry ? fetched.record(entry) : null;
-      if (!entry || entry.status !== "done" || !record) throw new Error(entry?.error ?? record?.capture?.error ?? "the service returned no record for it");
+      if (!entry || entry.status !== "done" || !record) throw new Error(entry ? whyNoCapture(entry, record) : "the service returned no record for it");
       return record.capture;
     },
     titleFor: async (testCase: Loose, variant: string) => titles[`${testCase.id}.${variant}`] ?? null,
@@ -664,14 +664,24 @@ function evidenceCollector(): Collector {
   };
 }
 
+/**
+ * The exit codes of this tool are its own contract (0 safe, 1 CHANGED, 2 inconclusive, 3 threw), and a stop that happens BEFORE the comparison -- a job that failed or was
+ * cancelled, the service unreachable -- must not read as a verdict: a failed job exiting 1 would read as "evidence CHANGED" and invite a protocol bump. Those are 3, "it could not
+ * answer". The run's own 75 (submitted, not waited on) and 124 (the wait ran out, the job goes on) are not verdicts either and are kept.
+ */
+export const stopExit = (code: number): number => (code === 75 || code === 124 ? code : EXIT.THREW);
+
 const flowFor = (inputs: FleetInputs) => ({
   root: OUT,
   inputs,
+  stopExit,
   hint: (job: string) => `npm run evidence:check -- --collect=${job}`,
   collect: evidenceCollector(),
 });
 
 async function submit(inputs: FleetInputs) {
+  const earlier = uncollectedNotice(OUT, JOB_KIND);
+  if (earlier) process.stderr.write(earlier);
   const comparable = selectComparable();
   const selected = stratify(comparable, sampleSize);
   process.stdout.write(`Evidence check: ${selected.length} case(s), both variants, as a fleet job on ${inputs.boxes} box(es)\n`);
@@ -709,9 +719,9 @@ async function submit(inputs: FleetInputs) {
       kind: JOB_KIND, ...forService,
       extra: { selected: selected.map((testCase: Loose) => testCase.id), titles: jobTitles, baseUrl: pagesBase() },
     });
-    const notice = noWaitPageServerNotice(inputs, pagesLease.started);
-    if (notice) process.stderr.write(notice);
     process.exitCode = await follow(flow, [pending]);
+    const ends = pageServerEndsNotice(process.exitCode, pagesLease.started);
+    if (ends) process.stderr.write(ends);
   } finally {
     await pagesLease.release();
   }

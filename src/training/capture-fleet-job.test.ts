@@ -15,14 +15,14 @@ import { join } from "node:path";
 
 import { scratchDir as tempDir } from "../fleet/scratch-dir.ts";
 import { stubFleet, manifestFixture, writeResults } from "../fleet/stub-fleet.ts";
-import { collectFlow, follow, submitJob } from "../fleet/capture-flow.ts";
+import { collectFlow, follow, pageServerEndsNotice, pagesUnheldNotice, submitJob, uncollectedNotice } from "../fleet/capture-flow.ts";
 import type { Flow } from "../fleet/capture-flow.ts";
-import { fleetInputs, realFleet, readPending } from "../fleet/fleet-job.ts";
+import { fleetInputs, realFleet, readPending, retiredKnobsNotice, writePending } from "../fleet/fleet-job.ts";
 import { datasetCollector, datasetJob } from "./dataset-fleet.ts";
 import { beginRun, continueRun, readProgress } from "./capture-progress.mjs";
 import { cacheKey, skipWhenFor, stampProvenance } from "./capture-cache.mjs";
 import { captureOptions } from "./capture-screenreader-dataset.mjs";
-import { caseIdsFor, publisherOf, realPageBody, realPagesCollector, realPagesJob } from "./capture-real-pages.mjs";
+import { caseIdsFor, finishWithoutJob, publisherOf, realPageBody, realPagesCollector, realPagesJob } from "./capture-real-pages.mjs";
 import { FAULT } from "@a11ign/screenreader-worker/capture-faults";
 
 const TITLE = "Aquarium 001 schedule";
@@ -70,7 +70,7 @@ function datasetResults(root: string, job: string, captures: Record<string, unkn
   return writeResults(join(root, `results-${job}`), manifest, captures);
 }
 
-const extra = { titles: { "x.good": TITLE, "x.bad": TITLE }, pageHashes: { x: "feedface00000000" } };
+const extra = { titles: { "x.good": TITLE, "x.bad": TITLE }, pageHashes: { x: "feedface00000000" }, baseUrl: BASE, bodies: { x: { task: "t" } } };
 const submitX = (r: ReturnType<typeof rig>, flow: Flow) => submitJob(flow, {
   kind: "dataset", ...datasetJob({ cases: [{ id: "x" }], baseUrl: BASE, optionsOf: () => ({ task: "t" }), captureRoot: r.captureRoot }), extra,
 });
@@ -274,13 +274,16 @@ test("a wait that ends in 124 leaves the job running, says how to collect it, an
   assert.match(r.err.join(""), /still running; it goes on in the service\. collect it: --collect=fj-1/);
 });
 
-test("a job that fails or is cancelled stops the run with the code `job wait` gave, and fetches nothing", async () => {
-  for (const code of [1, 3, 2]) {
-    const r = rig({ ids: ["fj-1"], waitCodes: { "fj-1": code } });
-    const flow = r.flow(datasetCollector(r.io));
-    assert.equal(await follow(flow, [submitX(r, flow)]), code);
-    assert.ok(!r.stub.calls().some((c) => c.argv[1] === "fetch"));
-  }
+test("a job that fails or is cancelled stops the run with the code `job wait` gave, whether or not its results can be fetched; an unreachable service fetches nothing", () => {
+  return (async () => {
+    for (const [code, fetches] of [[1, true], [3, true], [2, false]] as const) {
+      const r = rig({ ids: ["fj-1"], waitCodes: { "fj-1": code } });
+      const flow = r.flow(datasetCollector(r.io));
+      assert.equal(await follow(flow, [submitX(r, flow)]), code);
+      assert.equal(r.stub.calls().some((c) => c.argv[1] === "fetch"), fetches, `code ${code}`);
+      if (fetches) assert.match(r.err.join(""), /its results could not be collected/, "a fetch that fails is said, and the run still stops with the job's code");
+    }
+  })();
 });
 
 test("one wait budget covers the submit and every re-capture: the second wait gets what the first left", async () => {
@@ -367,4 +370,127 @@ test("the flow reads the three inputs the catalogue sets, and a client with no l
   const inputs = fleetInputs([], { A11Y_FLEET_BOXES: "ready", A11Y_FLEET_LABEL: "A11-263", A11Y_FLEET_WAIT: "28800s" });
   assert.deepEqual(inputs, { boxes: "ready", label: "A11-263", wait: "28800s" });
   assert.throws(() => fleetInputs([], { A11Y_FLEET_BOXES: "ready" }), /--label/);
+});
+
+// ---- what the review of this change found ---------------------------------------------------------------------------------------------------------------------
+
+test("a group whose box left DURING a re-capture is submitted again WHOLE: both variants, so a pair never lands on two boxes", async () => {
+  const r = rig({ ids: ["fj-1", "fj-2", "fj-3"] }, { wait: "1h" });
+  const lostRecapture = writeResults(join(r.root, "lost-recapture"), manifestFixture({
+    job: "fj-2", recaptureOf: "fj-1", boxes: [{ name: "w1", workerCode: "code-1", environment: ENVIRONMENT }],
+    captures: [{ case: "x.bad", group: "x", url: `${BASE}/x/bad.html`, box: "w1", attempt: 2, status: "failed", error: "w1 left the fleet: 3 captures in a row failed on it", body: { task: "t" } }],
+  }), {});
+  r.configure({ ids: ["fj-1", "fj-2", "fj-3"], fixtures: {
+    "fj-1": datasetResults(r.root, "fj-1", { "x.good": EVIDENCE, "x.bad": NOT_EVIDENCE }),
+    "fj-2": lostRecapture,
+    "fj-3": datasetResults(r.root, "fj-3", { "x.good": EVIDENCE, "x.bad": EVIDENCE }),
+  } });
+  const flow = r.flow(datasetCollector(r.io));
+  assert.equal(await follow(flow, [submitX(r, flow)]), 0, r.err.join(""));
+  const resubmitted = r.stub.submittedCases("fj-3");
+  assert.deepEqual(resubmitted.cases.map((c) => [c.id, c.group, c.url]), [
+    ["x.good", "x", `${BASE}/x/good.html`], ["x.bad", "x", `${BASE}/x/bad.html`],
+  ], "good AND bad, not the one variant the re-capture job held");
+  assert.deepEqual(resubmitted.cases.map((c) => c.body), [{ task: "t" }, { task: "t" }], "with the body each was first submitted with");
+});
+
+test("a job that FAILED keeps the captures that landed, fails the ones that never ran, and stops with the job's own code", async () => {
+  for (const waitCode of [1, 3]) {
+    const r = rig({ ids: ["fj-1"], waitCodes: { "fj-1": waitCode } });
+    const state = waitCode === 1 ? "failed" : "cancelled";
+    const manifest = { ...manifestFixture({
+      job: "fj-1", state, boxes: [{ name: "w1", workerCode: "code-1", environment: ENVIRONMENT }],
+      captures: [
+        { case: "x.good", group: "x", url: `${BASE}/x/good.html`, box: "w1", body: { task: "t" } },
+        { case: "x.bad", group: "x", url: `${BASE}/x/bad.html`, box: "w1", body: { task: "t" } },
+      ],
+    }), reason: "no box was left" };
+    // The bad variant never ran: pending, and no record.
+    manifest.captures[1] = { ...manifest.captures[1]!, status: "pending" as never, error: null, httpStatus: null };
+    const results = writeResults(join(r.root, `ended-${state}`), manifest, { "x.good": EVIDENCE });
+    r.configure({ ids: ["fj-1"], fixtures: { "fj-1": results } });
+    const flow = r.flow(datasetCollector(r.io));
+    assert.equal(await follow(flow, [submitX(r, flow)]), waitCode, `a ${state} job stops the run with its own code`);
+    assert.ok(existsSync(join(r.captureRoot, "x.good.json")), `the variant that landed before the job ${state === "failed" ? "failed" : "was cancelled"} is kept`);
+    assert.ok(!existsSync(join(r.captureRoot, "x.bad.json")));
+    assert.match(readProgress(r.corpus)!.cases.x.reason, /the job ended before this was captured/, "and the one that never ran is a failure saying so");
+    assert.match(r.err.join(""), new RegExp(`ended ${state}; collecting the 1 capture\\(s\\) that finished`));
+    assert.equal(r.stub.calls().filter((c) => c.argv[1] === "recapture").length, 0, "a job that did not end done asks for no re-capture");
+  }
+});
+
+test("a fetched copy is dropped once its job is collected, and the pending file stays", async () => {
+  const r = rig({ ids: ["fj-1"] });
+  r.configure({ ids: ["fj-1"], fixtures: { "fj-1": datasetResults(r.root, "fj-1", { "x.good": EVIDENCE, "x.bad": EVIDENCE }) } });
+  const flow = r.flow(datasetCollector(r.io));
+  assert.equal(await follow(flow, [submitX(r, flow)]), 0);
+  assert.ok(!existsSync(join(r.corpus, ".fleet-jobs", "fetched", "fj-1")), "the service still holds the results; the copy would only sit in the corpus");
+  assert.ok(readPending(r.corpus, "fj-1")?.collectedAt);
+});
+
+test("real pages: a page whose box left is submitted again once, and a second loss fails it, named", async () => {
+  const root = tempDir("real-lost-");
+  const out = join(root, "corpus");
+  mkdirSync(out, { recursive: true });
+  const job = realPagesJob({ pages: PAGES.slice(0, 2), out });
+  const [a, b] = job.cases;
+  const gone = (id: string, name: string) => manifestFixture({
+    job: id, boxes: [{ name: "w1", workerCode: "c", environment: ENVIRONMENT }],
+    captures: [
+      { case: a!.id, group: a!.group!, url: a!.url, box: "w1" },
+      { case: b!.id, group: b!.group!, url: b!.url, box: "w1", status: "failed", error: `${name} left the fleet: 3 captures in a row failed on it` },
+    ],
+  });
+  const progress = beginRun({ root: out, worker: null, baseUrl: null, cases: PAGES.slice(0, 2).map((p) => ({ id: p.url })) });
+  const collect = realPagesCollector({
+    out, progress, assertFleetRunsThisCheckout: async () => undefined, assertOneBrowser: async () => undefined, log: () => undefined,
+  });
+  const base = { names: job.names, label: "A11-263", submittedAt: "x", kind: "real-pages" };
+  const extra0 = { pages: job.described, wanted: PAGES.slice(0, 2).map((p) => p.url), total: 2, reused: 0, taken: 2 };
+  const fetchedOf = (manifest: ReturnType<typeof gone>, results: string) => ({ job: manifest.job, dir: results, manifest, record: (c: { file: string }) => JSON.parse(readFileSync(join(results, c.file), "utf8")) });
+
+  const m1 = gone("fj-1", "w1");
+  const first = await collect(fetchedOf(m1, writeResults(join(root, "r1"), m1, { [a!.id]: { transcript: ["x"], structure: {} } })) as never, { ...base, job: "fj-1", extra: extra0 });
+  assert.deepEqual(first.resubmit?.cases.map((c) => c.id), [b!.id], "only the page that never ran, in a job of its own");
+  assert.equal(first.exit, 0, "not a failure yet: it is submitted again");
+  assert.equal(readProgress(out)!.cases[PAGES[1]!.url].status, "capturing");
+  assert.ok(!readProgress(out)!.finishedAt, "the run is not over while a page is in flight");
+
+  const m2 = gone("fj-2", "w2");
+  const second = await collect(fetchedOf(m2, writeResults(join(root, "r2"), m2, { [a!.id]: { transcript: ["x"], structure: {} } })) as never, { ...base, job: "fj-2", extra: first.resubmit!.extra });
+  assert.equal(second.resubmit, undefined, "a second loss is not submitted again");
+  assert.equal(second.exit, 1);
+  assert.match(readProgress(out)!.cases[PAGES[1]!.url].reason, /left the fleet/);
+  assert.ok(readProgress(out)!.finishedAt);
+});
+
+test("real pages: --resume with nothing left to capture finishes at once, as the pool did", () => {
+  const root = tempDir("real-resume-");
+  const progress = beginRun({ root, worker: null, baseUrl: null, cases: [] });
+  const written: string[] = [];
+  const original = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((text: string) => { written.push(String(text)); return true; }) as never;
+  try { finishWithoutJob(progress, 3, 3); } finally { process.stdout.write = original; }
+  assert.match(written.join(""), /3\/3 captured \(3 reused by --resume, 0 taken now\)/);
+  assert.equal(readProgress(root)!.outcome, "0 of 0 captured, 0 failed");
+  assert.ok(readProgress(root)!.finishedAt);
+});
+
+test("a run that leaves its job going says the page server stops with it; a run that finished, or did not start the server, says nothing", () => {
+  assert.match(pageServerEndsNotice(75, true) ?? "", /stops it as it exits while the job is still going/);
+  assert.match(pageServerEndsNotice(124, true) ?? "", /a capture the boxes have not yet taken will find no page/);
+  assert.equal(pageServerEndsNotice(0, true), null, "the job finished inside the wait");
+  assert.equal(pageServerEndsNotice(75, false), null, "someone else's server is theirs to keep");
+  assert.match(pagesUnheldNotice(75) ?? "", /nothing here serves the pages/);
+  assert.equal(pagesUnheldNotice(0), null);
+});
+
+test("a job submitted and never collected is named when the next run begins, and the retired knobs are named when set", () => {
+  const root = tempDir("uncollected-");
+  assert.equal(uncollectedNotice(root, "dataset"), null);
+  writePending(root, { job: "fj-old", label: "A11-263", submittedAt: "2026-10-25T00:00:00.000Z", kind: "dataset", names: {} });
+  assert.match(uncollectedNotice(root, "dataset") ?? "", /fj-old \(submitted 2026-10-25T00:00:00\.000Z\) was never collected.*--collect=fj-old.*fleet job cancel fj-old/s);
+  assert.equal(uncollectedNotice(root, "real-pages"), null, "another client's job is not this client's to warn about");
+  assert.equal(retiredKnobsNotice({}), null);
+  assert.match(retiredKnobsNotice({ DATASET_CAPTURE_TIMEOUT_MS: "600000", A11Y_VM_AFTER: "stop", DATASET_WORKER_WAIT_MS: "" }) ?? "", /^ignoring DATASET_CAPTURE_TIMEOUT_MS, A11Y_VM_AFTER:/);
 });

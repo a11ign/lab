@@ -85,6 +85,14 @@ runs, and `DATASET_BASE_URL` (or `localhost` rewritten to this host's address on
 plane's subnet) is the URL they use. A `training:capture` that exits 75 stops the page server
 it started; run with a wait, or serve the pages from a server that stays up.
 
+A job that FAILS or is cancelled still holds the captures that landed before it ended, and
+`--collect` (or the run, if it was waiting) keeps them: each variant that landed is written, each
+that never ran is a failure saying "the job ended before this was captured", and the command stops
+with the job's own exit code. A box that leaves the fleet mid-job takes its unsent cases with it; a
+dataset case is then submitted again whole, once, and a real page once, and a second loss fails it.
+`DATASET_CAPTURE_TIMEOUT_MS`, `DATASET_WORKER_WAIT_MS` and `A11Y_VM_AFTER` do nothing now, and a run
+that sets one says so.
+
 A worker address (`--worker=`, `A11Y_WORKER`, `A11Y_WORKERS`) is not taken any more: it is
 ignored with one line when `A11Y_FLEET_BOXES` is set, and refused, naming the new form, when it
 is not. A local UTM worker VM is not a fleet box and has nothing to book; this command does not

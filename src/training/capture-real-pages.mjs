@@ -42,8 +42,8 @@ import { beginRun, continueRun } from "./capture-progress.mjs";
 import { resumePlan, describeResume } from "./real-page-resume.mjs";
 import { discoverRoles, roleCoverageLine } from "./real-page-role-coverage.mjs";
 import { identityChecksFor, servedRequestedPageLine } from "./real-page-identity-summary.mjs";
-import { FleetInputError, fleetInputs, reachableFromBoxes, workerAddressNotice } from "../fleet/fleet-job.ts";
-import { collectFlow, follow, submitJob } from "../fleet/capture-flow.ts";
+import { FleetInputError, LEFT_THE_FLEET, fleetInputs, reachableFromBoxes, whyNoCapture, workerAddressNotice } from "../fleet/fleet-job.ts";
+import { collectFlow, follow, pageServerEndsNotice, submitJob, uncollectedNotice } from "../fleet/capture-flow.ts";
 // BY CODE, not the literal string — architecture-audit.md §5, item 4. `capture-faults.mjs` has no
 // imports of its own, so it is safe from any portable tree; a renamed fault must not be able to make
 // this branch silently stop firing.
@@ -266,7 +266,7 @@ export function realPagesJob({ pages, out, reachable = (url) => url }) {
  *   afterRun?: (wanted: Set<string>) => any[],
  *   log?: (line: string) => void,
  * }} RealPagesIo
- * @typedef {{ pages: Record<string, { url: string, role: string, publishedClaim: unknown, source: unknown, demonstrates: unknown }>, wanted: string[], total: number, reused: number, taken: number }} RealPagesExtra
+ * @typedef {{ pages: Record<string, { url: string, role: string, publishedClaim: unknown, source: unknown, demonstrates: unknown }>, wanted: string[], total: number, reused: number, taken: number, resubmitted?: Record<string, boolean> }} RealPagesExtra
  */
 
 /** @param {string} url @param {string} message @param {string | undefined} fault @param {(line: string) => void} log */
@@ -294,7 +294,6 @@ function reportFailed(url, message, fault, log) {
  * @returns {import("../fleet/capture-flow.ts").Collector}
  */
 export function realPagesCollector(io) {
-  const log = io.log ?? (() => {});
   return async (fetched, pending) => {
     const { manifest } = fetched;
     const extra = /** @type {RealPagesExtra} */ (pending.extra);
@@ -303,38 +302,70 @@ export function realPagesCollector(io) {
     await io.assertOneBrowser(manifest, "at the END of the run");
     await io.recordRun?.(manifest);
     io.progress.setWorkers(manifest.boxes.map((box) => box.name));
-    const failed = [];
-    let captured = 0;
-    for (const entry of manifest.captures) {
-      const page = extra.pages[/** @type {string} */ (entry.case)];
-      const record = fetched.record(entry);
-      const evidence = record?.capture;
-      if (entry.status !== "done" || !evidence || evidence.error) {
-        const message = String(evidence?.error ?? entry.error ?? "no record was written").slice(0, 300);
-        reportFailed(page.url, message, evidence?.fault, log);
-        io.progress.failed(page.url, message);
-        failed.push(`${page.url}: ${message}`);
-        continue;
-      }
-      log(`  ${page.role}  ${page.url}  [${entry.box}]`);
-      // The label travels WITH the evidence, and names who made the claim. A later step must never have
-      // to re-derive it, because re-deriving it means deciding conformance ourselves.
-      writeJsonAtomic(resolve(io.out, `${slug(page.url)}.json`), {
-        role: page.role, publishedClaim: page.publishedClaim, claimSource: page.source, demonstrates: page.demonstrates,
-        capturedAt: record.capturedAt, capture: evidence,
-      });
-      captured += 1;
-      io.progress.captured(page.url, (evidence?.transcript ?? []).length);
-    }
-    io.progress.finish(`${captured} of ${manifest.captures.length} captured, ${failed.length} failed`);
-    summarise({ io, extra, captured, failed });
-    return { recapture: [], exit: failed.length ? 1 : 0 };
+    const lost = manifest.captures.filter((entry) => collectPage(io, fetched, extra, entry) === "lost").map((entry) => /** @type {string} */ (entry.case));
+    if (lost.length) return { recapture: [], resubmit: resubmission(manifest, lost, pending, extra), exit: 0 };
+    return { recapture: [], exit: summarise({ io, extra }) };
   };
 }
 
-/** Reported against the WHOLE role, not against what this invocation happened to take. A resumed run saying "3/3 captured" would be true of the run and a lie about the corpus. */
-function summarise(/** @type {{ io: RealPagesIo, extra: RealPagesExtra, captured: number, failed: string[] }} */ { io, extra, captured, failed }) {
+/**
+ * One page of the job: write its record, or fail it, saying why. A box that left the fleet took its unsent pages with it; a real page is independent of its neighbours, so each such
+ * page is `lost` here and submitted again, once, in a new job.
+ *
+ * @param {RealPagesIo} io @param {import("../fleet/fleet-job.ts").FetchedJob} fetched @param {RealPagesExtra} extra @param {import("../fleet/fleet-job.ts").ManifestCapture} entry
+ * @returns {"written" | "failed" | "lost"}
+ */
+function collectPage(io, fetched, extra, entry) {
   const log = io.log ?? (() => {});
+  const caseId = /** @type {string} */ (entry.case);
+  const page = extra.pages[caseId];
+  const record = fetched.record(entry);
+  const evidence = record?.capture;
+  if (entry.status === "done" && evidence && !evidence.error) {
+    log(`  ${page.role}  ${page.url}  [${entry.box}]`);
+    // The label travels WITH the evidence, and names who made the claim. A later step must never have
+    // to re-derive it, because re-deriving it means deciding conformance ourselves.
+    writeJsonAtomic(resolve(io.out, `${slug(page.url)}.json`), {
+      role: page.role, publishedClaim: page.publishedClaim, claimSource: page.source, demonstrates: page.demonstrates,
+      capturedAt: record.capturedAt, capture: evidence,
+    });
+    io.progress.captured(page.url, (evidence.transcript ?? []).length);
+    return "written";
+  }
+  const message = String(evidence?.error ?? whyNoCapture(entry, record)).slice(0, 300);
+  if (LEFT_THE_FLEET.test(message) && !extra.resubmitted?.[caseId]) {
+    io.progress.recapturing(page.url, "the box left the fleet; the page is submitted again");
+    return "lost";
+  }
+  reportFailed(page.url, message, evidence?.fault, log);
+  io.progress.failed(page.url, message);
+  return "failed";
+}
+
+/** The pages whose box left, as a job of their own, marked so a second loss fails them instead of submitting them for ever. */
+function resubmission(/** @type {import("../fleet/fleet-job.ts").Manifest} */ manifest, /** @type {string[]} */ lost, /** @type {import("../fleet/fleet-job.ts").Pending} */ pending, /** @type {RealPagesExtra} */ extra) {
+  const wanted = new Set(lost);
+  const cases = (manifest.cases ?? []).filter((c) => wanted.has(c.id)).map((c) => ({ id: c.id, url: c.url, body: c.body, group: c.group }));
+  const marked = { ...(extra.resubmitted ?? {}), ...Object.fromEntries(lost.map((id) => [id, true])) };
+  return {
+    cases, groups: Object.fromEntries(cases.map((c) => [c.group, {}])), names: Object.fromEntries(cases.map((c) => [c.id, pending.names[c.id] ?? ""])),
+    extra: { ...extra, resubmitted: marked },
+  };
+}
+
+/**
+ * End the run: the progress file's outcome, and what the corpus now holds. Reported against the WHOLE role, not against what this invocation happened to take. A resumed
+ * run saying "3/3 captured" would be true of the run and a lie about the corpus. Counted from the progress file, so a page re-captured in a second job is counted once, in
+ * the run it belongs to. Returns the exit code: 1 when any page failed.
+ *
+ * @param {{ io: RealPagesIo, extra: RealPagesExtra }} run
+ */
+function summarise({ io, extra }) {
+  const log = io.log ?? (() => {});
+  const cases = Object.entries(io.progress.snapshot().cases);
+  const captured = cases.filter(([, c]) => c.status === "captured").length;
+  const failed = cases.filter(([, c]) => c.status === "failed").map(([url, c]) => `${url}: ${c.reason}`);
+  io.progress.finish(`${captured} of ${cases.length} captured, ${failed.length} failed`);
   log(`\n${captured + extra.reused}/${extra.total} captured`
     + (extra.reused ? ` (${extra.reused} reused by --resume, ${extra.taken} taken now)` : ""));
   // Named, not counted. "3 failed" tells you nothing about whether the corpus is usable.
@@ -345,6 +376,7 @@ function summarise(/** @type {{ io: RealPagesIo, extra: RealPagesExtra, captured
   const wanted = new Set(extra.wanted);
   const written = io.afterRun?.(wanted) ?? [];
   if (io.afterRun) log(servedRequestedPageLine(identityChecksFor(written)).replace(/\n$/, ""));
+  return failed.length ? 1 : 0;
 }
 
 /**
@@ -423,6 +455,12 @@ function flowFor(inputs, progress) {
   };
 }
 
+/** @param {import("./capture-progress.mjs").RunRecorder} progress @param {number} total @param {number} reused */
+export function finishWithoutJob(progress, total, reused) {
+  progress.finish("0 of 0 captured, 0 failed");
+  process.stdout.write(`\n${reused}/${total} captured (${reused} reused by --resume, 0 taken now)\n`);
+}
+
 /** @param {import("../fleet/fleet-job.ts").FleetInputs} inputs */
 async function submit(inputs) {
   const declared = ROLE ? pagesFor(/** @type {any} */ (ROLE)) : REAL_PAGES;
@@ -470,7 +508,11 @@ async function submit(inputs) {
   if (hostNotice) process.stdout.write(hostNotice);
   const pageServer = await leaseFixtureServer(pages);
   try {
+    const earlier = uncollectedNotice(OUT, JOB_KIND);
+    if (earlier) process.stderr.write(earlier);
     const progress = beginRun({ root: OUT, worker: null, baseUrl: null, cases: toCapture.map((page) => ({ id: page.url })) });
+    // Everything was captured recently enough to be this measurement (`--resume`): nothing to submit, and the run says so as it always did.
+    if (!toCapture.length) return finishWithoutJob(progress, pages.length, plan.reused);
     const job = realPagesJob({ pages: toCapture, out: OUT, reachable: (url) => reachableFromBoxes(url) });
     const flow = flowFor(inputs, progress);
     const pending = submitJob(flow, {
@@ -479,6 +521,8 @@ async function submit(inputs) {
     });
     progress.addFleetJob({ id: pending.job, kind: JOB_KIND, submittedAt: pending.submittedAt });
     process.exitCode = await follow(flow, [pending]);
+    const ends = pageServerEndsNotice(process.exitCode, pageServer?.started === true);
+    if (ends) process.stderr.write(ends);
   } finally {
     await pageServer?.release?.();
   }

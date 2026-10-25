@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
 import {
-  narrowTo, stratify, resultRow, caseComparer, countUncomparedAgainstCoverage, writeReports, compareFetched, evidenceJob, captureBody,
+  narrowTo, stratify, resultRow, caseComparer, countUncomparedAgainstCoverage, writeReports, compareFetched, evidenceJob, captureBody, stopExit,
 } from "../../scripts/evidence-check.ts";
 
 /** #1908's family, and the string its seven cases embed. */
@@ -276,4 +276,12 @@ test("the report from a job names BOXES, as it named workers: the pool as dispat
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a stop before the comparison is 3, never a verdict: a failed job does not read as CHANGED", () => {
+  assert.equal(stopExit(1), 3, "`fleet job wait` says 1 for a failed job, which is also this tool's CHANGED");
+  assert.equal(stopExit(3), 3, "a cancelled job could not answer");
+  assert.equal(stopExit(2), 3, "an unreachable service could not answer; 2 is INCONCLUSIVE, a verdict about the sample");
+  assert.equal(stopExit(75), 75, "submitted and not waited on is not a verdict and is kept");
+  assert.equal(stopExit(124), 124, "the wait ran out and the job goes on");
 });

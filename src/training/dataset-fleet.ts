@@ -12,6 +12,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { readCapture, captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.ts";
 import type { Loose } from "../capture/loose.ts";
 import type { CollectOutcome, Collector } from "../fleet/capture-flow.ts";
+import { LEFT_THE_FLEET, whyNoCapture } from "../fleet/fleet-job.ts";
 import type { FetchedJob, FleetCase, FleetGroups, Manifest, ManifestCapture, Pending } from "../fleet/fleet-job.ts";
 import { isEvidence, rejectionReason } from "./capture-decisions.mjs";
 import { cacheKey, stampProvenance } from "./capture-cache.mjs";
@@ -22,8 +23,6 @@ export const CAPTURE_ATTEMPTS = 3;
 
 /** A worker that restarted mid-capture forgets a capture it had accepted; the shared client throws this, and the service records it as the capture's error. */
 export const LOST_CAPTURE = /worker forgot capture/;
-/** A box that left the fleet mid-job: the service fails each capture it had not sent, saying so. */
-export const LEFT_THE_FLEET = /left the fleet/;
 
 export const VARIANTS = ["good", "bad"] as const;
 
@@ -62,7 +61,12 @@ export function datasetJob(
  * What a dataset job's collect step needs that the manifest does not hold, recorded at submit: the title each page must be read as, and the bytes of each page directory
  * the key is computed over. Both are the page as it was SUBMITTED, not as it is when the job is collected.
  */
-export type DatasetExtra = { titles: Record<string, string | null>; pageHashes: Record<string, string>; resubmitted?: Record<string, boolean> };
+export type DatasetExtra = {
+  titles: Record<string, string | null>; pageHashes: Record<string, string>;
+  /** The base URL the pages were submitted under, and each case's body, so a case whose box left can be submitted again WHOLE, both variants, whatever job it is collected from. */
+  baseUrl: string; bodies: Record<string, Record<string, unknown>>;
+  resubmitted?: Record<string, boolean>;
+};
 
 export type DatasetIo = {
   captureRoot: string;
@@ -144,7 +148,7 @@ function judgeVariant(io: DatasetIo, fetched: FetchedJob, extra: DatasetExtra, {
   const variant = variantOf(entry.case ?? "", group);
   const verdict: Verdict = { variant, accepted: false, recapture: false, boxLost: false, failure: null };
   const record = fetched.record(entry);
-  if (entry.status !== "done" || !record) return judgeFailed(io, verdict, { entry, error: String(entry.error ?? record?.capture?.error ?? "no record was written") });
+  if (entry.status !== "done" || !record) return judgeFailed(io, verdict, { entry, error: whyNoCapture(entry, record) });
   const title = extra.titles[entry.case as string] ?? null;
   if (title !== null && isEvidence(record.capture, title)) {
     const options = fetched.manifest.cases?.find((c) => c.id === entry.case)?.body ?? {};
@@ -187,9 +191,11 @@ function collectGroup(io: DatasetIo, fetched: FetchedJob, extra: DatasetExtra, {
 }
 
 /** The whole groups to submit again, from the cases the manifest holds for them. */
-function resubmission(manifest: Manifest, again: string[], pending: Pending, extra: DatasetExtra): NonNullable<CollectOutcome["resubmit"]> {
-  const wanted = new Set(again);
-  const cases = (manifest.cases ?? []).filter((c) => wanted.has(c.group)).map((c) => ({ id: c.id, url: c.url, body: c.body, group: c.group }));
+function resubmission(again: string[], pending: Pending, extra: DatasetExtra): NonNullable<CollectOutcome["resubmit"]> {
+  // A GROUP IS RESUBMITTED WHOLE, from what was submitted and not from the job being collected: a re-capture job holds only the variants that were rejected, and
+  // sending those alone would land half a pair on another box.
+  const cases: FleetCase[] = again.flatMap((group) => VARIANTS.map((variant) => (
+    { id: serviceCaseId(group, variant), url: `${extra.baseUrl}/${group}/${variant}.html`, body: extra.bodies[group] ?? {}, group })));
   const names = Object.fromEntries(cases.map((c) => [c.id, pending.names[c.id] ?? ""]));
   const resubmitted = { ...(extra.resubmitted ?? {}), ...Object.fromEntries(again.map((group) => [group, true])) };
   return { cases, groups: Object.fromEntries(again.map((group) => [group, {}])), names, extra: { ...extra, resubmitted } };
@@ -235,7 +241,7 @@ function collectGroups(io: DatasetIo, fetched: FetchedJob, pending: Pending, ext
   const again = lost.filter((g) => !extra.resubmitted?.[g]);
   for (const group of again) io.progress.recapturing(group, "the box left the fleet; the case is submitted again, whole");
   settle(io);
-  return { recapture, exit: failures.length ? 1 : 0, ...(again.length ? { resubmit: resubmission(manifest, again, pending, extra) } : {}) };
+  return { recapture, exit: failures.length ? 1 : 0, ...(again.length ? { resubmit: resubmission(again, pending, extra) } : {}) };
 }
 
 /**

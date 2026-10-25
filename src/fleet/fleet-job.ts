@@ -145,6 +145,25 @@ export function workerAddressNotice(
     + "Name them instead, --boxes=<a number|ready|box,box> with --label=<ticket key>");
 }
 
+/** The environment variables that used to size a capture run's own waits and VM, and now do nothing: the service owns the waiting. */
+const RETIRED_KNOBS = ["DATASET_CAPTURE_TIMEOUT_MS", "DATASET_WORKER_WAIT_MS", "A11Y_VM_AFTER"];
+
+/** One stderr line naming a retired variable that is set, so it is not silently ignored; null when none is. */
+export function retiredKnobsNotice(env: NodeJS.ProcessEnv = process.env): string | null {
+  const set = RETIRED_KNOBS.filter((name) => given(env[name]) !== undefined);
+  return set.length ? `ignoring ${set.join(", ")}: this client submits to the fleet job service, which owns the waiting and the boxes (\`--wait=\` is the longest this run waits)\n` : null;
+}
+
+/** A box that left the fleet mid-job: the service fails each capture it had not sent, saying `<box> left the fleet: <why>`. */
+export const LEFT_THE_FLEET = /left the fleet/;
+
+/** Why a capture has no usable record, in words: the service's error if it gave one, else what its status says. */
+export function whyNoCapture(entry: Pick<ManifestCapture, "status" | "error">, record: CaptureRecord | null): string {
+  const error = entry.error ?? record?.capture?.error;
+  if (error) return String(error);
+  return entry.status === "pending" || entry.status === "dispatched" ? "the job ended before this was captured" : "no record was written";
+}
+
 /** NAME=value lines of a `fleet.env` file (an `export ` before the name, and quotes around the value, are allowed). The file is read, never run. */
 export function parseEnvFile(text: string): Record<string, string> {
   const found: Record<string, string> = {};

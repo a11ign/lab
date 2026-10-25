@@ -13,7 +13,7 @@ bash -c 'set -euo pipefail; T=$(mktemp -d); mkdir "$T/packages"; for p in "$HOME
     packages/lab/src/training/pool-invariants.test.ts'
 ```
 
-Measured on this branch's head: `tests 126, pass 126, fail 0`.
+Measured on this branch's head: `tests 134, pass 134, fail 0`.
 
 **What the block shows:** the client asks the service for exactly what the plan says (a group of good and bad per case, each with its own body, `--boxes`, `--label`, one `job wait` per job from one budget), writes the corpus files and provenance from the manifest, and re-captures only the rejected variant through `job recapture`; no moved file contains a wait, a poll, a `pgrep`, a `/capture` POST, `captureTolerantly` or a pool.
 

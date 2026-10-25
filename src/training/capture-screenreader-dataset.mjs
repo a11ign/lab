@@ -24,8 +24,8 @@ import { appendRunRecord, captureRunsFile, runRecordFromManifest } from "./captu
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";
 import { datasetCollector, datasetJob } from "./dataset-fleet.ts";
-import { FleetInputError, fleetInputs, pagesBaseUrl, workerAddressNotice } from "../fleet/fleet-job.ts";
-import { collectFlow, follow, noWaitPageServerNotice, submitJob } from "../fleet/capture-flow.ts";
+import { FleetInputError, fleetInputs, newestPending, pagesBaseUrl, readPending, retiredKnobsNotice, workerAddressNotice } from "../fleet/fleet-job.ts";
+import { collectFlow, follow, pageServerEndsNotice, pagesUnheldNotice, submitJob, uncollectedNotice } from "../fleet/capture-flow.ts";
 
 /**
  * a typo here costs a full corpus run: `--resmue` silently means a fresh capture of 1,061 pairs.
@@ -395,6 +395,8 @@ async function submit(inputs) {
   // Leased like everything else here, and released in the same `finally`, so a run that throws does
   // not leave the host pinned awake.
   const awake = keepHostAwake();
+  const earlier = uncollectedNotice(ROOT, JOB_KIND);
+  if (earlier) process.stderr.write(earlier);
   // The pages are leased: started if missing, put back as found. The BOXES fetch them from this host for as long as the job runs.
   const pages = await leasePageServer({ root: PAGE_ROOT, port: PAGES_PORT, probePath: `${cases[0].id}/good.html` });
   try {
@@ -412,12 +414,12 @@ async function submit(inputs) {
     });
     console.log(describeSubmission(job));
     const flow = flowFor(inputs, progress);
-    const pending = submitJob(flow, { kind: JOB_KIND, ...job, extra: submittedPages(todo) });
+    const pending = submitJob(flow, { kind: JOB_KIND, ...job, extra: { ...submittedPages(todo), baseUrl, bodies: Object.fromEntries(todo.map((testCase) => [testCase.id, captureOptions(testCase)])) } });
     progress.addFleetJob({ id: pending.job, kind: JOB_KIND, submittedAt: pending.submittedAt });
     console.log(`Progress: ${progress.path} (follow the job: fleet job status ${pending.job}; npm run training:status)`);
-    const notice = noWaitPageServerNotice(inputs, pages.started);
-    if (notice) process.stderr.write(notice);
     process.exitCode = await follow(flow, [pending]);
+    const ends = pageServerEndsNotice(process.exitCode, pages.started);
+    if (ends) process.stderr.write(ends);
   } finally {
     await pages.release();
     await awake.release();
@@ -444,14 +446,23 @@ function finishWithoutJob(progress, total, skipped) {
  */
 async function collect(inputs) {
   const progress = continueRun(ROOT);
-  process.exitCode = await collectFlow(flowFor(inputs, progress), COLLECT || undefined, JOB_KIND);
+  // A re-capture this collect submits is fetched from THIS host's page server, so when the run is going to wait for it the pages are served for as long as it does.
+  const pending = COLLECT ? readPending(ROOT, COLLECT) : newestPending(ROOT, JOB_KIND);
+  const probe = Object.keys(/** @type {{ pageHashes?: object } | undefined} */ (pending?.extra)?.pageHashes ?? {})[0];
+  const pages = inputs.wait !== null && probe && existsSync(PAGE_ROOT)
+    ? await leasePageServer({ root: PAGE_ROOT, port: PAGES_PORT, probePath: `${probe}/good.html` }) : null;
+  try {
+    process.exitCode = await collectFlow(flowFor(inputs, progress), COLLECT || undefined, JOB_KIND);
+    if (!pages) { const unheld = pagesUnheldNotice(process.exitCode); if (unheld) process.stderr.write(unheld); }
+  } finally {
+    await pages?.release();
+  }
 }
 
 async function main() {
   refuseIfRunsReadonly(ROOT);
   const args = process.argv.slice(2);
-  const notice = workerAddressNotice({ argv: args });
-  if (notice) process.stderr.write(notice);
+  for (const line of [workerAddressNotice({ argv: args }), retiredKnobsNotice()]) if (line) process.stderr.write(line);
   const inputs = fleetInputs(args, process.env, { forCollect: COLLECT !== undefined });
   if (COLLECT !== undefined) await collect(inputs);
   else await submit(inputs);
