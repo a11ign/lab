@@ -79,7 +79,7 @@ jobs:
       contents: write
       checks: read
       id-token: write
-    uses: a11ign/toolchain/.github/workflows/release-per-merge.yml@a86c03b40654c760422d17b491ea4405c360aa8b
+    uses: a11ign/toolchain/.github/workflows/release-per-merge.yml@7c69486d4becc9794e98c3004a36fdf0f8148cf6
     with:
       kind: tag
       gate-check: gate
